@@ -213,11 +213,8 @@ class Database:
             c.execute("UPDATE attendance SET attendance_status='Present' WHERE COALESCE(check_in,'') <> ''")
         if not self.get_setting("working_weekdays"):
             self.set_setting("working_weekdays", "0,1,2,3,4")
-        if not self.get_setting("pin_salt"):
-            salt, digest = hash_pin("1234")
-            self.set_setting("pin_salt", salt)
-            self.set_setting("pin_hash", digest)
-            self.set_setting("pin_setup_required", "1")
+        # Do not create a known/default credential. Authentication is handled by
+        # the first-run Admin account and per-user password/recovery records.
         self.conn.commit()
 
     def get_setting(self, key, default=""):
@@ -320,7 +317,7 @@ class AccountSetupDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         title = QLabel("Set up your administrator account")
-        title.setStyleSheet("font-size: 18pt; font-weight: 700; color: #0f172a;")
+        title.setStyleSheet("font-size: 18pt; font-weight: 700; color: #eaf7ff;")
         layout.addWidget(title)
         layout.addWidget(QLabel("Create a secure account before using Raw Strength Calisthenics — Employee Audit Manager. No default password is used."))
         form = QFormLayout()
@@ -338,11 +335,12 @@ class AccountSetupDialog(QDialog):
         form.addRow("Recovery answer", self.answer)
         layout.addLayout(form)
         note = QLabel("Your recovery answer is stored as a salted hash. Choose an answer you can remember.")
-        note.setWordWrap(True); note.setStyleSheet("color:#64748b;")
+        note.setWordWrap(True); note.setStyleSheet("color:#9bb8cc;")
         layout.addWidget(note)
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.create_admin); buttons.rejected.connect(self.reject)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save)
+        buttons.accepted.connect(self.create_admin)
         layout.addWidget(buttons)
+        layout.addWidget(QLabel("First launch requirement: create your own password before the sign-in screen can open."))
 
     def create_admin(self):
         username = self.username.text().strip()
@@ -626,7 +624,13 @@ class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
         self.setWindowTitle(APP_NAME); self.resize(1380, 860); self.setMinimumSize(1080, 700)
-        self.tabs=QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.West); self.tabs.setMovable(False); self.setCentralWidget(self.tabs)
+        self.tabs=QTabWidget()
+        # Keep navigation as a compact horizontal bar above the content rather than a side rail.
+        self.tabs.setTabPosition(QTabWidget.TabPosition.North)
+        self.tabs.setMovable(False)
+        self.tabs.setDocumentMode(True)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
+        self.setCentralWidget(self.tabs)
         self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for widget,title in [(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings & Backup")]:
             self.tabs.addTab(widget,title)
@@ -653,7 +657,7 @@ class MainWindow(QMainWindow):
         brand.addWidget(logo)
         brand_title=QLabel("RAW STRENGTH\nCALISTHENICS")
         brand_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_title.setStyleSheet("font-size: 13pt; font-weight: 800; color: #65dcff; letter-spacing: 1px;")
+        brand_title.setStyleSheet("font-size: 13pt; font-weight: 800; color: #c5a3ff; letter-spacing: 1px;")
         brand.addWidget(brand_title)
         hero.addLayout(brand, 1)
         heading=QVBoxLayout()
@@ -661,7 +665,7 @@ class MainWindow(QMainWindow):
         title.setProperty("pageTitle", True)
         heading.addWidget(title)
         subtitle=QLabel("PEOPLE   |   PRODUCTIVITY   |   PROGRESS   |   PERFORMANCE")
-        subtitle.setStyleSheet("color:#55d9ff; font-weight:700; letter-spacing:1px;")
+        subtitle.setStyleSheet("color:#b99aff; font-weight:700; letter-spacing:1px;")
         heading.addWidget(subtitle)
         heading.addWidget(QLabel("Offline workforce tracking, attendance, daily tasks and audit reporting."))
         heading.addStretch(1)
@@ -678,7 +682,7 @@ class MainWindow(QMainWindow):
         self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
         self.kpi_labels=[]
         for title in ["Active employees","Tasks today","Completed today","Pending / blocked","Missing proof"]:
-            box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setStyleSheet("font-size:28px;font-weight:600"); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
+            box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setStyleSheet("font-size:28px;font-weight:700;color:#d0b6ff;padding:4px;"); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
         row=QHBoxLayout(); l.addLayout(row)
         self.dashboard_tasks=QTableWidget(0,6); self.dashboard_tasks.setHorizontalHeaderLabels(["Employee","Task","Status","Progress","Due","Proof"])
         self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -769,27 +773,59 @@ class MainWindow(QMainWindow):
         l=QVBoxLayout(self.reports_tab)
         l.addWidget(QLabel("<h2>Print Center</h2><p>Generate employee attendance, employee details, or reference-style Audit/EOD reports. Export to Word, PDF, or CSV.</p>"))
         form=QFormLayout(); l.addLayout(form)
-        self.report_type=QComboBox(); self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details"])
+        self.report_type=QComboBox(); self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"])
         self.report_date=QDateEdit(); self.report_date.setCalendarPopup(True); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setDate(QDate.currentDate())
         self.report_scope=QComboBox(); self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
         self.report_employee=QComboBox(); self.report_employee.addItem("All employees",None)
         self.report_format=QComboBox(); self.report_format.addItems(["Word (.docx)","PDF (.pdf)","CSV (.csv)"])
+        self.eod_options_group = QGroupBox("Audit / EOD content — choose sections to include")
+        eod_grid = QVBoxLayout(self.eod_options_group)
+        self.eod_checks = {}
+        eod_rows = [QHBoxLayout(), QHBoxLayout(), QHBoxLayout()]
+        eod_options = [
+            ("summary", "Daily summary", True),
+            ("identity", "Employee ID / Department / Role", True),
+            ("contact", "Phone / Email", False),
+            ("work_status", "Work / EOD status", True),
+            ("late_links", "Late / Links status", True),
+            ("missing_proof", "Missing proof", True),
+            ("tasks", "Task names and status", True),
+            ("details", "Task details", True),
+            ("due_time", "Due time", True),
+            ("proof", "Proof / evidence links", True),
+            ("proof_notes", "Proof notes", False),
+            ("remarks", "Manager remarks", True),
+            ("pending", "Pending items", True),
+        ]
+        for index, (key, label, checked) in enumerate(eod_options):
+            cb = QCheckBox(label)
+            cb.setChecked(checked)
+            cb.stateChanged.connect(lambda _state: self.preview_report())
+            self.eod_checks[key] = cb
+            eod_rows[min(index // 5, 2)].addWidget(cb)
+        for row in eod_rows:
+            row.addStretch(1)
+            eod_grid.addLayout(row)
+        eod_grid.setSpacing(5)
+        eod_grid.setContentsMargins(8, 8, 8, 8)
         self.archived_report=QComboBox()
         self.archived_report.addItem("Generated report for selected date", None)
         form.addRow("Report type",self.report_type); form.addRow("Report date",self.report_date); form.addRow("Report scope",self.report_scope); form.addRow("Employee",self.report_employee); form.addRow("Output format",self.report_format)
         form.addRow("Historical archived PDF (optional)", self.archived_report)
+        l.addWidget(self.eod_options_group)
         self.report_scope.currentIndexChanged.connect(self._report_scope_changed)
         self.archived_report.currentIndexChanged.connect(self._archived_report_changed)
         row=QHBoxLayout(); l.addLayout(row)
         for label,slot in [("Preview Report",self.preview_report),("Generate / Save",self.generate_report),("Print Selected Report",self.print_report),("Open reports folder",self.open_export_folder)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
         self.report_summary=QTextEdit(); self.report_summary.setReadOnly(True); self.report_summary.setPlaceholderText("Report preview summary appears here."); l.addWidget(self.report_summary)
-        self.report_type.currentTextChanged.connect(lambda _value: self.preview_report())
+        self.report_type.currentTextChanged.connect(self._report_type_changed)
         self.report_date.dateChanged.connect(lambda _value: self.preview_report())
         self.report_employee.currentIndexChanged.connect(lambda _value: self.preview_report())
         self.refresh_report_employees()
         self.refresh_archived_report_choices()
         self._report_scope_changed()
+        self._report_type_changed()
 
     def build_archive(self):
         l=QVBoxLayout(self.archive_tab)
@@ -951,10 +987,27 @@ class MainWindow(QMainWindow):
         is_archived = self.archived_report.currentData() is not None
         for widget in (self.report_type, self.report_date, self.report_scope, self.report_employee, self.report_format):
             widget.setEnabled(not is_archived)
+        if hasattr(self, "eod_options_group"):
+            self.eod_options_group.setEnabled(not is_archived)
+            self.eod_options_group.setVisible(self.report_type.currentText() == "Audit / EOD")
         if is_archived:
             self.report_summary.setPlainText("Historical archived PDF selected. Use Print Selected Report to print it, or Generate / Save to export a copy.")
         else:
             self.preview_report()
+
+    def _report_type_changed(self, *_args):
+        if hasattr(self, "eod_options_group"):
+            self.eod_options_group.setVisible(self.report_type.currentText() == "Audit / EOD")
+            self.eod_options_group.setEnabled(self.archived_report.currentData() is None)
+        self.preview_report()
+
+    def selected_eod_options(self):
+        defaults = {
+            "summary": True, "identity": True, "contact": False, "work_status": True,
+            "late_links": True, "missing_proof": True, "tasks": True, "details": True,
+            "due_time": True, "proof": True, "proof_notes": False, "remarks": True, "pending": True,
+        }
+        return {key: cb.isChecked() for key, cb in getattr(self, "eod_checks", {}).items()} or defaults
 
     def _report_scope_changed(self, *_args):
         if not hasattr(self, "report_scope") or not hasattr(self, "report_employee"):
@@ -1321,9 +1374,9 @@ class MainWindow(QMainWindow):
         return rows
 
     def _report_title(self, report_type):
-        return {"Audit / EOD":"EMPLOYEE AUDIT / END-OF-DAY REPORT", "Employee Attendance":"EMPLOYEE ATTENDANCE REPORT", "Employee Details":"EMPLOYEE DETAILS REGISTER"}.get(report_type,"EMPLOYEE AUDIT / END-OF-DAY REPORT")
+        return {"Audit / EOD":"EMPLOYEE AUDIT / END-OF-DAY REPORT", "Employee Attendance":"EMPLOYEE ATTENDANCE REPORT", "Employee Details":"EMPLOYEE DETAILS REGISTER", "Employee Productivity":"EMPLOYEE PRODUCTIVITY REPORT"}.get(report_type,"EMPLOYEE AUDIT / END-OF-DAY REPORT")
 
-    def make_docx(self, path, report_date, employee_id=None, report_type="Audit / EOD"):
+    def make_docx(self, path, report_date, employee_id=None, report_type="Audit / EOD", eod_options=None):
         doc=Document(); sec=doc.sections[0]
         sec.top_margin=Inches(.62); sec.bottom_margin=Inches(.58); sec.left_margin=Inches(.68); sec.right_margin=Inches(.68)
         styles=doc.styles; styles["Normal"].font.name="Aptos"; styles["Normal"].font.size=Pt(9); styles["Normal"].paragraph_format.space_after=Pt(4)
@@ -1333,7 +1386,8 @@ class MainWindow(QMainWindow):
         footer=sec.footer.paragraphs[0]; footer.text=f"Confidential internal report  •  Generated {now_text()}"; footer.alignment=1
         for r in footer.runs: r.font.size=Pt(8); r.font.color.rgb=RGBColor(100,116,139)
         title=doc.add_paragraph(style="Title"); title.alignment=1; title.add_run(self._report_title(report_type))
-        sub=doc.add_paragraph(); sub.alignment=1; sub.add_run(f"Report date: {report_date}    |    Scope: {self.db.employee(employee_id)['name'] if employee_id and self.db.employee(employee_id) else 'All employees'}").bold=True
+        chosen=self.db.employee(employee_id) if employee_id else None
+        sub=doc.add_paragraph(); sub.alignment=1; sub.add_run(f"Report date: {report_date}    |    Scope: {chosen['name'] if chosen else 'All employees'}").bold=True
         doc.add_paragraph("")
         emps=self._report_employees(employee_id)
         if report_type=="Employee Details":
@@ -1342,54 +1396,90 @@ class MainWindow(QMainWindow):
             for c,v in zip(tab.rows[0].cells,headers): c.text=v
             for e in emps:
                 cells=tab.add_row().cells
-                vals=[e["employee_code"] or "—",e["name"],e["department"] or "—",e["designation"] or "—",e["phone"] or "—",e["email"] or "—",e["joining_date"] or "—","Active" if e["active"] else "Inactive"]
+                vals=[e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A",e["phone"] or "N/A",e["email"] or "N/A",e["joining_date"] or "N/A","Active" if e["active"] else "Inactive"]
                 for c,v in zip(cells,vals): c.text=str(v)
             doc.add_paragraph(f"Total employees: {len(emps)}")
         elif report_type=="Employee Attendance":
-            if self.db.is_holiday(report_date): doc.add_paragraph(f"Declared holiday: {self.db.conn.execute('SELECT holiday_name FROM holidays WHERE holiday_date=?',(report_date,)).fetchone()['holiday_name']}")
+            if self.db.is_holiday(report_date):
+                holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(report_date,)).fetchone()
+                doc.add_paragraph(f"Declared holiday: {holiday['holiday_name'] if holiday else 'Holiday'}")
             tab=doc.add_table(rows=1,cols=7); tab.style="Light Shading Accent 1"
             headers=["Employee ID","Employee","Status","Check-in","Check-out","Net hours","Remarks"]
             for c,v in zip(tab.rows[0].cells,headers): c.text=v
             rows=self._attendance_report_rows(report_date,employee_id)
             for item in rows:
                 e=item["employee"]; cells=tab.add_row().cells
-                vals=[e["employee_code"] or "—",e["name"],item["status"],item["check_in"] or "—",item["check_out"] or "—",item["net_hours"] or "—",item["note"] or "—"]
+                vals=[e["employee_code"] or "N/A",e["name"],item["status"],item["check_in"] or "N/A",item["check_out"] or "N/A",item["net_hours"] or "N/A",item["note"] or "N/A"]
                 for c,v in zip(cells,vals): c.text=str(v)
             present=sum(x["status"]=="Present" for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
             doc.add_paragraph(f"Summary: Present {present}  |  Absent {absent}  |  Leave {leave}  |  Employees {len(rows)}")
-        else:
-            data=self.report_data(report_date,employee_id); all_tasks=[t for _,ts,_ in data for t in ts]
-            completed=sum(1 for t in all_tasks if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100)
-            pending=sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))
-            missing=sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,report_date).startswith("Yes"))
-            tab=doc.add_table(rows=0,cols=4); tab.style="Light Shading Accent 1"
-            for vals in [("SUMMARY","COUNT","SUMMARY","COUNT"),("Employees",str(len(data)),"Tasks",str(len(all_tasks))),("Completed / submitted",str(completed),"Pending / other",str(pending)),("Missing proof",str(missing),"Report date",report_date)]:
-                cells=tab.add_row().cells
-                for c,v in zip(cells,vals): c.text=v
-            for e,tasks,a in data:
+        elif report_type=="Employee Productivity":
+            data=self.report_data(report_date,employee_id)
+            for e,tasks,_att in data:
+                prod=self.employee_productivity(e)
                 doc.add_heading(e["name"],level=1)
-                p=doc.add_paragraph(); p.add_run(f'Employee ID: {e["employee_code"] or "—"}   |   Department: {e["department"] or "—"}   |   Role: {e["designation"] or "—"}').bold=True
-                p=doc.add_paragraph(f'Phone: {e["phone"] or "—"}   |   Email: {e["email"] or "—"}')
+                for label,value in [
+                    ("Employee ID",e["employee_code"] or "N/A"),("Department",e["department"] or "N/A"),
+                    ("Overall productivity score",f'{prod["score"]}%'),
+                    ("Task progress component",f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),
+                    ("Attendance component",f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data"),
+                    ("Scoring explanation","Task progress contributes 70% and attendance contributes 30% when both are available; if only one component is available, that component is used."),
+                    ("Tracking start",prod["start"].isoformat()),("Working days since tracking start",prod["working_days"]),
+                    ("Present days recorded",prod["present"]),("Tasks counted",prod["tasks"]),("Completed/submitted tasks",prod["completed"]),
+                ]:
+                    doc.add_paragraph(f"{label}: {value}",style="List Bullet")
+                if tasks:
+                    doc.add_paragraph("TASK PROGRESS",style="Heading 2")
+                    for t in tasks:
+                        doc.add_paragraph(f'{t["title"]} — Status: {t["status"]} — Progress: {t["progress"]}%',style="List Bullet")
+                else:
+                    doc.add_paragraph("No tasks recorded for the selected date.",style="List Bullet")
+        else:
+            opts=eod_options or self.selected_eod_options()
+            data=self.report_data(report_date,employee_id)
+            all_tasks=[t for _,ts,_ in data for t in ts]
+            completed=sum(1 for t in all_tasks if t["status"] in ("Completed","Submitted"))
+            pending_count=sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))
+            missing=sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,report_date).startswith("Yes"))
+            if opts.get("summary",True):
+                doc.add_heading("DAILY SUMMARY",level=1)
+                for item in [f"Employees: {len(data)}",f"Tasks recorded: {len(all_tasks)}",f"Completed / submitted tasks: {completed}",f"Pending / other tasks: {pending_count}",f"Employees flagged for missing proof: {missing}"]:
+                    doc.add_paragraph(item,style="List Bullet")
+            for e,tasks,_att in data:
+                doc.add_heading(e["name"].upper(),level=1)
+                if opts.get("identity",True):
+                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"}  |  Department: {e["department"] or "N/A"}  |  Role: {e["designation"] or "N/A"}',style="List Bullet")
+                if opts.get("contact",False):
+                    doc.add_paragraph(f'Phone: {e["phone"] or "N/A"}  |  Email: {e["email"] or "N/A"}',style="List Bullet")
                 eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
-                late=self.source_status(e,"late",report_date) or "Review required"; links=self.source_status(e,"links",report_date) or "Not independently checked"
-                attendance="Holiday" if self.db.is_holiday(report_date) else (a["attendance_status"] if a else "Unmarked")
-                if a and attendance=="Unmarked" and a["check_in"]: attendance="Present"
-                doc.add_paragraph(f"WORK / EOD STATUS: {eod}     LATE: {late}     LINKS: {links}")
-                doc.add_paragraph(f'ATTENDANCE: {attendance}   |   IN: {a["check_in"] if a and a["check_in"] else "Not recorded"}   |   OUT: {a["check_out"] if a and a["check_out"] else "Not recorded"}')
-                prod=self.employee_productivity(e); doc.add_paragraph(f'Productivity score: {prod["score"]}%   |   Working days since tracking start: {prod["working_days"]}   |   Present days recorded: {prod["present"]}')
-                doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}')
-                task_table=doc.add_table(rows=1,cols=4); task_table.style="Light Shading Accent 1"
-                for c,v in zip(task_table.rows[0].cells,["Task / Work description","Status / Progress","Proof / Evidence","Manager remarks"]): c.text=v
-                for t in tasks:
-                    cells=task_table.add_row().cells
-                    proof=self.task_proof_label(e,t,report_date)
-                    vals=[t["title"]+("\n"+t["details"] if t["details"] else ""),f'{t["status"]} ({t["progress"]}%)'+(f'\nDue: {t["due_time"]}' if t["due_time"] else ""),proof+(f'\n{t["proof_note"]}' if t["proof_note"] else ""),t["manager_note"] or "—"]
-                    for c,v in zip(cells,vals): c.text=str(v)
-                if not tasks: doc.add_paragraph("No tasks recorded for this date.")
-                doc.add_paragraph("PENDING: "+("; ".join(t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")) or "No"))
+                if opts.get("work_status",True): doc.add_paragraph(f"WORK / EOD STATUS: {eod}",style="List Bullet")
+                if opts.get("late_links",True):
+                    late=self.source_status(e,"late",report_date) or "Review required"
+                    links=self.source_status(e,"links",report_date) or "Not independently checked"
+                    doc.add_paragraph(f"LATE: {late}  |  LINKS: {links}",style="List Bullet")
+                if opts.get("missing_proof",True):
+                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}',style="List Bullet")
+                if opts.get("tasks",True):
+                    doc.add_paragraph("TASKS / WORK ITEMS",style="Heading 2")
+                    if tasks:
+                        for idx,t in enumerate(tasks,1):
+                            doc.add_paragraph(f'{idx}. {t["title"]} — Status: {t["status"]}',style="List Bullet")
+                            if opts.get("details",True) and t["details"]: doc.add_paragraph(f'Details: {t["details"]}',style="List Bullet 2")
+                            if opts.get("due_time",True) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
+                            if opts.get("proof",True):
+                                doc.add_paragraph(f'Proof / Evidence: {self.task_proof_label(e,t,report_date)}',style="List Bullet 2")
+                                if t["proof_url"]: doc.add_paragraph(str(t["proof_url"]),style="List Bullet 2")
+                            if opts.get("proof_notes",False) and t["proof_note"]: doc.add_paragraph(f'Proof notes: {t["proof_note"]}',style="List Bullet 2")
+                            if opts.get("remarks",True): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
+                    else:
+                        doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
+                if opts.get("pending",True):
+                    pending_titles=[t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")]
+                    doc.add_paragraph("PENDING",style="Heading 2")
+                    doc.add_paragraph("; ".join(pending_titles) if pending_titles else "No",style="List Bullet")
         doc.save(path)
 
-    def make_pdf(self, path, report_date, employee_id=None, report_type="Audit / EOD"):
+    def make_pdf(self, path, report_date, employee_id=None, report_type="Audit / EOD", eod_options=None):
         """Create a readable, reference-style PDF using aligned headings and bullets (no tables)."""
         from xml.sax.saxutils import escape
         from reportlab.lib.pagesizes import A4
@@ -1494,56 +1584,83 @@ class MainWindow(QMainWindow):
                     HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)]
                 story.extend(block)
 
+        elif report_type == "Employee Productivity":
+            data = self.report_data(report_date, employee_id)
+            for e, tasks, _att in data:
+                prod = self.employee_productivity(e)
+                story.append(Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]))
+                for label, value in [
+                    ("Employee ID", e["employee_code"] or "N/A"),
+                    ("Department", e["department"] or "N/A"),
+                    ("Overall productivity score", f'{prod["score"]}%'),
+                    ("Task progress component", f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),
+                    ("Attendance component", f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data"),
+                    ("Scoring explanation", "Task progress contributes 70% and attendance contributes 30% when both are available. If only one component is available, that component is used."),
+                    ("Tracking start", prod["start"].isoformat()),
+                    ("Working days since tracking start", str(prod["working_days"])),
+                    ("Present days recorded", str(prod["present"])),
+                    ("Tasks counted", str(prod["tasks"])),
+                    ("Completed / submitted tasks", str(prod["completed"])),
+                ]:
+                    story.append(bullet(f"{label}: {value}"))
+                story.append(Paragraph("TASK PROGRESS", styles["RSSection"]))
+                if tasks:
+                    for t in tasks:
+                        story.append(bullet(f'{t["title"]} — Status: {t["status"]} — Progress: {t["progress"]}%'))
+                else:
+                    story.append(bullet("No tasks recorded for the selected date."))
+                story.append(HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5))
         else:
+            opts = eod_options or self.selected_eod_options()
             data = self.report_data(report_date, employee_id)
             all_tasks = [t for _, tasks, _ in data for t in tasks]
-            completed = sum(1 for t in all_tasks if t["status"] in ("Completed", "Submitted") or int(t["progress"] or 0) >= 100)
-            pending = sum(1 for t in all_tasks if t["status"] not in ("Completed", "Submitted", "Cancelled"))
+            completed = sum(1 for t in all_tasks if t["status"] in ("Completed", "Submitted"))
+            pending_count = sum(1 for t in all_tasks if t["status"] not in ("Completed", "Submitted", "Cancelled"))
             missing = sum(1 for e, tasks, _ in data if self.employee_missing_proof(e, tasks, report_date).startswith("Yes"))
-            story.extend([Paragraph("DAILY SUMMARY", styles["RSSection"]),
-                bullet(f"Employees: {len(data)}"), bullet(f"Tasks recorded: {len(all_tasks)}"),
-                bullet(f"Completed / submitted tasks: {completed}"), bullet(f"Pending / other tasks: {pending}"),
-                bullet(f"Employees flagged for missing proof: {missing}"), Spacer(1, 5),
-                HRFlowable(width="100%", thickness=.6, color=cyan, spaceAfter=6)])
-            for employee_index, (e, tasks, attendance_row) in enumerate(data):
-                if employee_index:
-                    story.append(Spacer(1, 6))
+            if opts.get("summary", True):
+                story.extend([Paragraph("DAILY SUMMARY", styles["RSSection"]),
+                    bullet(f"Employees: {len(data)}"), bullet(f"Tasks recorded: {len(all_tasks)}"),
+                    bullet(f"Completed / submitted tasks: {completed}"), bullet(f"Pending / other tasks: {pending_count}"),
+                    bullet(f"Employees flagged for missing proof: {missing}"), Spacer(1, 5),
+                    HRFlowable(width="100%", thickness=.6, color=cyan, spaceAfter=6)])
+            for e, tasks, _att in data:
+                story.append(Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]))
+                if opts.get("identity", True):
+                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}'))
+                if opts.get("contact", False):
+                    story.append(bullet(f'Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}'))
                 eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted", "Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
-                late = self.source_status(e, "late", report_date) or "Review required"
-                links = self.source_status(e, "links", report_date) or "Not independently checked"
-                attendance = "Holiday" if self.db.is_holiday(report_date) else (attendance_row["attendance_status"] if attendance_row else "Unmarked")
-                if attendance_row and attendance == "Unmarked" and attendance_row["check_in"]:
-                    attendance = "Present"
-                prod = self.employee_productivity(e)
-                block = [Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]),
-                    bullet(f"Employee ID: {e['employee_code'] or '—'} | Department: {e['department'] or '—'} | Role: {e['designation'] or '—'}"),
-                    bullet(f"Phone: {e['phone'] or '—'} | Email: {e['email'] or '—'}"),
-                    bullet(f"WORK / EOD STATUS: {eod}"),
-                    bullet(f"LATE: {late} | LINKS: {links}"),
-                    bullet(f"ATTENDANCE: {attendance} | IN: {attendance_row['check_in'] if attendance_row and attendance_row['check_in'] else 'Not recorded'} | OUT: {attendance_row['check_out'] if attendance_row and attendance_row['check_out'] else 'Not recorded'}"),
-                    bullet(f"Productivity score: {prod['score']}% | Working days since tracking start: {prod['working_days']} | Present days recorded: {prod['present']}"),
-                    bullet(f"MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}"),
-                    Paragraph("TASKS / WORK ITEMS", styles["RSSection"])]
-                if tasks:
-                    for task_index, t in enumerate(tasks, 1):
-                        block.append(bullet(f"{task_index}. {t['title']} — Status: {t['status']} — Progress: {t['progress']}%"))
-                        if t["details"]:
-                            block.append(bullet(f"Details: {t['details']}"))
-                        if t["due_time"]:
-                            block.append(bullet(f"Due time: {t['due_time']}"))
-                        proof_label = self.task_proof_label(e, t, report_date)
-                        block.append(bullet(f"Proof / Evidence: {proof_label}"))
-                        if t["proof_url"]:
-                            block.append(Paragraph("&#8226;&nbsp; " + escape(str(t["proof_url"])), styles["RSLink"]))
-                        if t["proof_note"]:
-                            block.append(bullet(f"Proof notes: {t['proof_note']}"))
-                        block.append(bullet(f"Manager remarks: {t['manager_note'] or '—'}"))
-                else:
-                    block.append(bullet("No tasks recorded for this date."))
-                pending_titles = [t["title"] for t in tasks if t["status"] not in ("Completed", "Submitted", "Cancelled")]
-                block.extend([Paragraph("PENDING", styles["RSSection"]), bullet("; ".join(pending_titles) if pending_titles else "No"),
-                    Spacer(1, 5), HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5)])
-                story.extend(block)
+                if opts.get("work_status", True):
+                    story.append(bullet(f"WORK / EOD STATUS: {eod}"))
+                if opts.get("late_links", True):
+                    late = self.source_status(e, "late", report_date) or "Review required"
+                    links = self.source_status(e, "links", report_date) or "Not independently checked"
+                    story.append(bullet(f"LATE: {late} | LINKS: {links}"))
+                if opts.get("missing_proof", True):
+                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}'))
+                if opts.get("tasks", True):
+                    story.append(Paragraph("TASKS / WORK ITEMS", styles["RSSection"]))
+                    if tasks:
+                        for idx, t in enumerate(tasks, 1):
+                            story.append(bullet(f'{idx}. {t["title"]} — Status: {t["status"]}'))
+                            if opts.get("details", True) and t["details"]:
+                                story.append(bullet(f'Details: {t["details"]}'))
+                            if opts.get("due_time", True) and t["due_time"]:
+                                story.append(bullet(f'Due time: {t["due_time"]}'))
+                            if opts.get("proof", True):
+                                story.append(bullet(f'Proof / Evidence: {self.task_proof_label(e, t, report_date)}'))
+                                if t["proof_url"]:
+                                    story.append(Paragraph("&#8226;&nbsp; " + escape(str(t["proof_url"])), styles["RSLink"]))
+                            if opts.get("proof_notes", False) and t["proof_note"]:
+                                story.append(bullet(f'Proof notes: {t["proof_note"]}'))
+                            if opts.get("remarks", True):
+                                story.append(bullet(f'Manager remarks: {t["manager_note"] or "N/A"}'))
+                    else:
+                        story.append(bullet("No tasks recorded for this date."))
+                if opts.get("pending", True):
+                    pending_titles = [t["title"] for t in tasks if t["status"] not in ("Completed", "Submitted", "Cancelled")]
+                    story.extend([Paragraph("PENDING", styles["RSSection"]), bullet("; ".join(pending_titles) if pending_titles else "No")])
+                story.extend([Spacer(1, 5), HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5)])
 
         def draw_page(canvas, doc_obj):
             canvas.saveState()
@@ -1562,37 +1679,77 @@ class MainWindow(QMainWindow):
             author="Raw Strength Calisthenics", subject=f"{report_type} - {report_date}")
         document.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
 
-    def export_report_csv(self, path, report_date, employee_id=None, report_type="Audit / EOD"):
+    def export_report_csv(self, path, report_date, employee_id=None, report_type="Audit / EOD", eod_options=None):
         import csv
+        opts=eod_options or self.selected_eod_options()
         with open(path,"w",newline="",encoding="utf-8-sig") as f:
             w=csv.writer(f)
             if report_type=="Employee Details":
                 w.writerow(["Employee ID","Name","Department","Role","Phone","Email","Joining date","Status","Notes"])
-                for e in self._report_employees(employee_id): w.writerow([e["employee_code"],e["name"],e["department"],e["designation"],e["phone"],e["email"],e["joining_date"],"Active" if e["active"] else "Inactive",e["notes"]])
+                for e in self._report_employees(employee_id):
+                    w.writerow([e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A",e["phone"] or "N/A",e["email"] or "N/A",e["joining_date"] or "N/A","Active" if e["active"] else "Inactive",e["notes"] or "N/A"])
             elif report_type=="Employee Attendance":
                 w.writerow(["Report date","Employee ID","Employee","Department","Status","Check-in","Check-out","Net hours","Remarks"])
                 for x in self._attendance_report_rows(report_date,employee_id):
-                    e=x["employee"]; w.writerow([report_date,e["employee_code"],e["name"],e["department"],x["status"],x["check_in"],x["check_out"],x["net_hours"],x["note"]])
-            else:
-                w.writerow(["Report date","Employee ID","Employee","Department","Role","EOD status","Late","Links status","Attendance","Check-in","Check-out","Missing proof","Task","Task details","Task status","Progress %","Due time","Proof URL","Proof notes","Manager remarks","Productivity score"])
-                for e,tasks,a in self.report_data(report_date,employee_id):
-                    att="Holiday" if self.db.is_holiday(report_date) else (a["attendance_status"] if a else "Unmarked")
-                    if a and att=="Unmarked" and a["check_in"]: att="Present"
-                    eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+                    e=x["employee"]; w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",x["status"],x["check_in"] or "N/A",x["check_out"] or "N/A",x["net_hours"] or "N/A",x["note"] or "N/A"])
+            elif report_type=="Employee Productivity":
+                w.writerow(["Report date","Employee ID","Employee","Department","Overall score %","Task progress component %","Attendance component %","Scoring explanation","Tracking start","Working days since start","Present days","Tasks counted","Completed/submitted tasks","Task","Task status","Task progress %"])
+                for e,tasks,_att in self.report_data(report_date,employee_id):
                     prod=self.employee_productivity(e)
-                    if not tasks: w.writerow([report_date,e["employee_code"],e["name"],e["department"],e["designation"],eod,self.source_status(e,"late",report_date) or "Review required",self.source_status(e,"links",report_date) or "Not independently checked",att,a["check_in"] if a else "",a["check_out"] if a else "",self.employee_missing_proof(e,[],report_date),"","","","","","","","",prod["score"]])
-                    for t in tasks: w.writerow([report_date,e["employee_code"],e["name"],e["department"],e["designation"],eod,self.source_status(e,"late",report_date) or "Review required",self.source_status(e,"links",report_date) or "Not independently checked",att,a["check_in"] if a else "",a["check_out"] if a else "",self.employee_missing_proof(e,tasks,report_date),t["title"],t["details"],t["status"],t["progress"],t["due_time"],t["proof_url"],t["proof_note"],t["manager_note"],prod["score"]])
+                    explanation="Task progress 70% + attendance 30% when both available; otherwise available component used."
+                    if not tasks:
+                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["present"],prod["tasks"],prod["completed"],"N/A","N/A","N/A"])
+                    for t in tasks:
+                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["present"],prod["tasks"],prod["completed"],t["title"],t["status"],t["progress"]])
+            else:
+                headers=["Report date","Employee ID","Employee","Department","Role"]
+                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
+                headers += [label for key,label in field_keys if opts.get(key,True)]
+                w.writerow(headers)
+                for e,tasks,_att in self.report_data(report_date,employee_id):
+                    eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+                    base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A"]
+                    task_rows=tasks or [None]
+                    for t in task_rows:
+                        values={
+                            "EOD status":eod,
+                            "Late":self.source_status(e,"late",report_date) or "Review required",
+                            "Links status":self.source_status(e,"links",report_date) or "Not independently checked",
+                            "Missing proof":self.employee_missing_proof(e,tasks,report_date),
+                            "Task":t["title"] if t else "N/A",
+                            "Task details":t["details"] if t else "N/A",
+                            "Task status":t["status"] if t else "N/A",
+                            "Due time":t["due_time"] or "N/A" if t else "N/A",
+                            "Proof URL":t["proof_url"] or "N/A" if t else "N/A",
+                            "Proof notes":t["proof_note"] or "N/A" if t else "N/A",
+                            "Manager remarks":t["manager_note"] or "N/A" if t else "N/A",
+                            "Pending items":"; ".join(x["title"] for x in tasks if x["status"] not in ("Completed","Submitted","Cancelled")) or "No",
+                        }
+                        row=base+[values[label] for key,label in field_keys if opts.get(key,True)]
+                        w.writerow(row)
 
     def preview_report(self):
         if not hasattr(self,"report_summary"): return
         d=self.report_date.date().toString("yyyy-MM-dd"); eid=self._effective_report_employee_id(); kind=self.report_type.currentText()
         if kind=="Employee Details":
-            emps=self._report_employees(eid); lines=[self._report_title(kind),f"Employees: {len(emps)}","", "\n".join(f'{e["employee_code"] or "—"} | {e["name"]} | {e["department"] or "—"} | {e["designation"] or "—"}' for e in emps)]
+            emps=self._report_employees(eid); lines=[self._report_title(kind),f"Employees: {len(emps)}","", "\n".join(f'{e["employee_code"] or "N/A"} | {e["name"]} | {e["department"] or "N/A"} | {e["designation"] or "N/A"}' for e in emps)]
             self.report_summary.setPlainText("\n".join(lines))
         elif kind=="Employee Attendance":
             rows=self._attendance_report_rows(d,eid); lines=[self._report_title(kind),f"Date: {d}",""]
             lines += [f'{x["employee"]["name"]} | {x["status"]} | In: {x["check_in"] or "—"} | Out: {x["check_out"] or "—"} | Hours: {x["net_hours"] or "—"}' for x in rows]
             self.report_summary.setPlainText("\n".join(lines))
+        elif kind=="Employee Productivity":
+            lines=[self._report_title(kind),f"Date: {d}",""]
+            for e,tasks,_a in self.report_data(d,eid):
+                prod=self.employee_productivity(e)
+                lines.extend([e["name"],f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"}',
+                    f'Overall score: {prod["score"]}%',
+                    f'Task progress component: {round(prod["task_score"])}%' if prod["task_score"] is not None else "Task progress component: N/A",
+                    f'Attendance component: {round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Attendance component: N/A",
+                    "Reason: task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used.",
+                    f'Tracking start: {prod["start"].isoformat()} | Working days: {prod["working_days"]} | Present days: {prod["present"]}'])
+                lines.extend([f'• {t["title"]}: {t["status"]} — {t["progress"]}%' for t in tasks]); lines.append("")
+            self.report_summary.setPlainText("\\n".join(lines))
         else: self.report_summary.setPlainText(self.report_preview_text(d,eid))
         self.db.log("Report previewed",f"type={kind}, date={d}, employee={eid or 'all'}")
 
@@ -1617,23 +1774,48 @@ class MainWindow(QMainWindow):
         path,_=QFileDialog.getSaveFileName(self,"Save report",str(default),filters[ext])
         if not path: return
         try:
-            if ext==".csv": self.export_report_csv(path,d,eid,kind)
-            elif ext==".docx": self.make_docx(path,d,eid,kind)
-            else: self.make_pdf(path,d,eid,kind)
+            if ext==".csv": self.export_report_csv(path,d,eid,kind,self.selected_eod_options())
+            elif ext==".docx": self.make_docx(path,d,eid,kind,self.selected_eod_options())
+            else: self.make_pdf(path,d,eid,kind,self.selected_eod_options())
             self.preview_report(); self.db.log("Report generated",f"{kind}: {path}"); info(self,f"{kind} report saved:\n{path}")
         except Exception as ex: error(self,f"Could not generate report:\n{ex}")
 
     def report_preview_text(self,d,eid):
-        data=self.report_data(d,eid); lines=[f"RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD: {d}",""]
-        for e,tasks,a in data:
-            status="Holiday" if self.db.is_holiday(d) else (a["attendance_status"] if a else "Unmarked")
-            if a and status=="Unmarked" and a["check_in"]: status="Present"
-            productivity=self.employee_productivity(e)
-            eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "Partial / In progress" if tasks else "No tasks")
-            lines.append(f'{e["name"]} | EOD: {eod} | Attendance: {status} | Tasks: {len(tasks)} | Productivity: {productivity["score"]}% | Check-in: {a["check_in"] if a and a["check_in"] else "—"} | Check-out: {a["check_out"] if a and a["check_out"] else "—"}')
-            for t in tasks: lines.append(f'  • {t["title"]}: {t["status"]} ({t["progress"]}%) | Proof: {"Yes" if t["proof_url"] else "No"}')
-            lines.append(f'  PENDING: {"; ".join(t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")) or "No"}')
-        return "\n".join(lines)
+        data=self.report_data(d,eid); opts=self.selected_eod_options()
+        lines=[f"RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD: {d}",""]
+        all_tasks=[t for _,tasks,_ in data for t in tasks]
+        if opts.get("summary",True):
+            lines.extend(["DAILY SUMMARY",f"• Employees: {len(data)}",f"• Tasks recorded: {len(all_tasks)}",
+                f'• Completed / submitted tasks: {sum(1 for t in all_tasks if t["status"] in ("Completed","Submitted"))}',
+                f'• Pending / other tasks: {sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))}',
+                f'• Employees flagged for missing proof: {sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,d).startswith("Yes"))}',""])
+        for e,tasks,_att in data:
+            lines.append(e["name"].upper())
+            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}')
+            if opts.get("contact",False): lines.append(f'• Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}')
+            eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+            if opts.get("work_status",True): lines.append(f"• WORK / EOD STATUS: {eod}")
+            if opts.get("late_links",True):
+                lines.append(f'• LATE: {self.source_status(e,"late",d) or "Review required"} | LINKS: {self.source_status(e,"links",d) or "Not independently checked"}')
+            if opts.get("missing_proof",True): lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}')
+            if opts.get("tasks",True):
+                lines.append("TASKS / WORK ITEMS")
+                if tasks:
+                    for i,t in enumerate(tasks,1):
+                        lines.append(f'• {i}. {t["title"]} — Status: {t["status"]}')
+                        if opts.get("details",True) and t["details"]: lines.append(f'  • Details: {t["details"]}')
+                        if opts.get("due_time",True) and t["due_time"]: lines.append(f'  • Due time: {t["due_time"]}')
+                        if opts.get("proof",True):
+                            lines.append(f'  • Proof / Evidence: {self.task_proof_label(e,t,d)}')
+                            if t["proof_url"]: lines.append(f'  • {t["proof_url"]}')
+                        if opts.get("proof_notes",False) and t["proof_note"]: lines.append(f'  • Proof notes: {t["proof_note"]}')
+                        if opts.get("remarks",True): lines.append(f'  • Manager remarks: {t["manager_note"] or "N/A"}')
+                else: lines.append("• No tasks recorded for this date.")
+            if opts.get("pending",True):
+                pending=[t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")]
+                lines.append("PENDING: " + ("; ".join(pending) if pending else "No"))
+            lines.append("")
+        return "\\n".join(lines)
 
     def print_report(self):
         archived_id = self.archived_report.currentData() if hasattr(self, "archived_report") else None
@@ -1656,8 +1838,8 @@ class MainWindow(QMainWindow):
         ext=".docx" if fmt.startswith("Word") else ".pdf"
         path=EXPORT_DIR/f"Print_{kind.replace(' / ','_').replace(' ','_')}_{d}{('_Employee_'+str(eid)) if eid else ''}{ext}"
         try:
-            if ext==".docx": self.make_docx(path,d,eid,kind)
-            else: self.make_pdf(path,d,eid,kind)
+            if ext==".docx": self.make_docx(path,d,eid,kind,self.selected_eod_options())
+            else: self.make_pdf(path,d,eid,kind,self.selected_eod_options())
             if sys.platform=="win32": os.startfile(str(path),"print")
             else: info(self,f"Report created for printing:\n{path}")
             self.db.log("Report sent to print",f"{kind}: {path}")
@@ -1888,49 +2070,51 @@ def resource_path(relative_path):
 def main():
     app=QApplication(sys.argv); app.setStyle("Fusion")
     app.setStyleSheet("""
-      * { font-family: "Segoe UI"; font-size: 10pt; color: #e6f0ff; }
-      QMainWindow { background: #06111f; }
+      * { font-family: "Segoe UI"; font-size: 10pt; color: #eaf1ff; }
+      QMainWindow { background: #07111f; }
       QWidget { background-color: transparent; }
-      QMenuBar { background: #081a2b; border-bottom: 1px solid #183b56; padding: 5px 9px; }
-      QMenuBar::item { padding: 8px 12px; border-radius: 6px; background: transparent; }
-      QMenuBar::item:selected { background: #123b5c; color: #66d9ff; }
-      QMenu { background: #0b1e30; border: 1px solid #24506e; padding: 5px; }
+      QMenuBar { background: #0b1930; border-bottom: 1px solid #263b5d; padding: 5px 9px; }
+      QMenuBar::item { padding: 8px 12px; border-radius: 7px; background: transparent; }
+      QMenuBar::item:selected { background: #25365a; color: #c7a6ff; }
+      QMenu { background: #111f38; border: 1px solid #35476c; padding: 5px; }
       QMenu::item { padding: 9px 24px; border-radius: 5px; }
-      QMenu::item:selected { background: #12476a; color: #ffffff; }
-      QTabWidget::pane { border: 1px solid #1c4965; border-radius: 12px; background: #091a2a; top: -1px; }
+      QMenu::item:selected { background: #6339a8; color: #ffffff; }
+      QTabWidget::pane { border: 1px solid #263958; border-radius: 14px; background: #0d1a2e; top: -1px; }
       QTabWidget { background: transparent; }
       QTabBar { background: transparent; }
-      QTabBar::tab { background: #0a2033; color: #b7d3e6; padding: 16px 12px; margin: 3px 5px; border-radius: 9px; font-weight: 700; min-width: 145px; min-height: 24px; text-align: left; }
-      QTabBar::tab:selected { background: #07539a; color: #ffffff; border: 1px solid #00c8ff; }
-      QTabBar::tab:hover:!selected { background: #123c5a; color: #e9f7ff; }
-      QPushButton { padding: 10px 15px; min-height: 20px; border: 1px solid #285574; border-radius: 8px; background: #102b42; color: #e9f6ff; font-weight: 650; }
-      QPushButton:hover { background: #164a6b; border-color: #13bdf3; color: #ffffff; }
-      QPushButton:pressed { background: #0c3855; }
-      QPushButton:disabled { background: #172635; color: #72869a; border-color: #23394b; }
-      QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit { background: #071827; color: #e6f0ff; border: 1px solid #28506b; border-radius: 7px; padding: 8px 10px; selection-background-color: #087eae; }
-      QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus { border: 1px solid #00b8ff; }
+      QTabBar::tab { background: #14223a; color: #b8c7e3; padding: 12px 14px; margin: 5px 3px 2px 3px; border-top-left-radius: 9px; border-top-right-radius: 9px; font-weight: 700; min-width: 105px; min-height: 22px; }
+      QTabBar::tab:selected { background: #673ab7; color: #ffffff; border: 1px solid #9b6bff; border-bottom: 3px solid #c3a1ff; }
+      QTabBar::tab:hover:!selected { background: #253657; color: #ffffff; }
+      QTabBar::scroller { width: 22px; }
+      QTabBar QToolButton { background: #172946; color: #e6edff; border: 1px solid #35476c; border-radius: 5px; }
+      QPushButton { padding: 10px 15px; min-height: 20px; border: 1px solid #46577b; border-radius: 9px; background: #1b2b47; color: #f4f6ff; font-weight: 650; }
+      QPushButton:hover { background: #34476c; border-color: #ad86ff; color: #ffffff; }
+      QPushButton:pressed { background: #4c2b80; }
+      QPushButton:disabled { background: #172235; color: #72809b; border-color: #283750; }
+      QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit { background: #091629; color: #edf2ff; border: 1px solid #344765; border-radius: 8px; padding: 8px 10px; selection-background-color: #673ab7; }
+      QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus { border: 1px solid #b18aff; }
       QComboBox::drop-down, QDateEdit::drop-down, QTimeEdit::drop-down { border: 0; width: 25px; }
-      QComboBox QAbstractItemView { background: #0b2032; color: #e6f0ff; selection-background-color: #155274; border: 1px solid #28506b; }
-      QTableWidget { background: #081a2a; alternate-background-color: #0c2235; color: #e6f0ff; border: 1px solid #1d4964; border-radius: 8px; gridline-color: #18364b; selection-background-color: #124e70; selection-color: #ffffff; outline: 0; }
-      QTableWidget::item { padding: 8px; border-bottom: 1px solid #122e43; }
-      QTableWidget::item:selected { background: #125276; color: #ffffff; }
-      QHeaderView::section { background: #102b41; color: #9edfff; padding: 10px 8px; border: none; border-bottom: 1px solid #24506a; font-weight: 700; }
-      QGroupBox { font-weight: 700; color: #d8f0ff; border: 1px solid #0876a9; border-radius: 12px; margin-top: 13px; padding: 17px 13px 13px 13px; background: #0a1e2f; }
-      QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; color: #6ed8ff; }
-      QLabel { background: transparent; color: #e6f0ff; }
-      QLabel[h1="true"] { font-size: 22pt; font-weight: 700; color: #f0f8ff; }
-      QLabel[pageTitle="true"] { font-size: 20pt; font-weight: 750; color: #f0f8ff; padding: 5px 2px; }
-      QProgressBar { border: 1px solid #28506b; border-radius: 5px; text-align: center; color: #f2fbff; background: #10283a; }
-      QProgressBar::chunk { background: #00b8a9; border-radius: 4px; }
-      QCheckBox { spacing: 7px; padding: 4px; color: #c9deee; }
+      QComboBox QAbstractItemView { background: #111f38; color: #edf2ff; selection-background-color: #53328a; border: 1px solid #344765; }
+      QTableWidget { background: #0a1729; alternate-background-color: #101f35; color: #eaf1ff; border: 1px solid #263958; border-radius: 10px; gridline-color: #1b2d49; selection-background-color: #46316c; selection-color: #ffffff; outline: 0; }
+      QTableWidget::item { padding: 8px; border-bottom: 1px solid #1a2b45; }
+      QTableWidget::item:selected { background: #513484; color: #ffffff; }
+      QHeaderView::section { background: #172742; color: #d4c0ff; padding: 10px 8px; border: none; border-bottom: 1px solid #35476c; font-weight: 700; }
+      QGroupBox { font-weight: 700; color: #e7ddff; border: 1px solid #3c3b64; border-radius: 13px; margin-top: 13px; padding: 17px 13px 13px 13px; background: #101d32; }
+      QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; color: #c4a4ff; }
+      QLabel { background: transparent; color: #eaf1ff; }
+      QLabel[h1="true"] { font-size: 22pt; font-weight: 700; color: #ffffff; }
+      QLabel[pageTitle="true"] { font-size: 20pt; font-weight: 750; color: #ffffff; padding: 5px 2px; }
+      QProgressBar { border: 1px solid #344765; border-radius: 6px; text-align: center; color: #f2f4ff; background: #15243a; }
+      QProgressBar::chunk { background: #a56bff; border-radius: 5px; }
+      QCheckBox { spacing: 7px; padding: 4px; color: #d1dcef; }
       QCheckBox::indicator { width: 17px; height: 17px; }
-      QRadioButton { spacing: 7px; color: #c9deee; }
-      QStatusBar { background: #071827; color: #8caec5; border-top: 1px solid #183b56; }
-      QScrollBar:vertical, QScrollBar:horizontal { background: #081a2a; width: 12px; height: 12px; margin: 2px; }
-      QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #285574; border-radius: 5px; min-height: 25px; min-width: 25px; }
-      QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #1685b5; }
-      QDialog { background: #091a2a; }
-      QToolTip { background: #102b41; color: #ffffff; border: 1px solid #00a8e8; padding: 5px; }
+      QRadioButton { spacing: 7px; color: #d1dcef; }
+      QStatusBar { background: #091629; color: #9eafca; border-top: 1px solid #263958; }
+      QScrollBar:vertical, QScrollBar:horizontal { background: #0a1729; width: 12px; height: 12px; margin: 2px; }
+      QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #46577b; border-radius: 5px; min-height: 25px; min-width: 25px; }
+      QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #9362df; }
+      QDialog { background: #0d1a2e; }
+      QToolTip { background: #172742; color: #ffffff; border: 1px solid #a56bff; padding: 5px; }
     """)
     db=Database()
     seed_initial_audit(db)
