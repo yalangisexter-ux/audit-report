@@ -9,15 +9,17 @@ from PySide6.QtWidgets import (
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QPixmap
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether, HRFlowable
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # Embedded historical audit seed data (combined from audit_seed.py).
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
@@ -624,7 +626,7 @@ class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
         self.setWindowTitle(APP_NAME); self.resize(1380, 860); self.setMinimumSize(1080, 700)
-        self.tabs=QTabWidget(); self.setCentralWidget(self.tabs)
+        self.tabs=QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.West); self.tabs.setMovable(False); self.setCentralWidget(self.tabs)
         self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for widget,title in [(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings & Backup")]:
             self.tabs.addTab(widget,title)
@@ -640,7 +642,39 @@ class MainWindow(QMainWindow):
 
     def build_dashboard(self):
         l=QVBoxLayout(self.dashboard)
-        l.addWidget(QLabel("<h1>Raw Strength Calisthenics</h1><p>Employee Audit Manager · Offline workforce tracking and daily audit reporting</p>"))
+        hero=QHBoxLayout()
+        brand=QVBoxLayout()
+        logo=QLabel()
+        logo_path = resource_path("assets/raw_strength_brand.png")
+        if Path(logo_path).exists():
+            pix=QPixmap(logo_path)
+            logo.setPixmap(pix.scaled(170, 170, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand.addWidget(logo)
+        brand_title=QLabel("RAW STRENGTH\nCALISTHENICS")
+        brand_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_title.setStyleSheet("font-size: 13pt; font-weight: 800; color: #65dcff; letter-spacing: 1px;")
+        brand.addWidget(brand_title)
+        hero.addLayout(brand, 1)
+        heading=QVBoxLayout()
+        title=QLabel("Raw Strength Calisthenics — Employee Audit Manager")
+        title.setProperty("pageTitle", True)
+        heading.addWidget(title)
+        subtitle=QLabel("PEOPLE   |   PRODUCTIVITY   |   PROGRESS   |   PERFORMANCE")
+        subtitle.setStyleSheet("color:#55d9ff; font-weight:700; letter-spacing:1px;")
+        heading.addWidget(subtitle)
+        heading.addWidget(QLabel("Offline workforce tracking, attendance, daily tasks and audit reporting."))
+        heading.addStretch(1)
+        hero.addLayout(heading, 5)
+        athlete_panel = QLabel()
+        athlete_path = resource_path("assets/raw_strength_athlete.png")
+        if Path(athlete_path).exists():
+            athlete_pix = QPixmap(athlete_path)
+            athlete_panel.setPixmap(athlete_pix.scaled(210, 145, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        athlete_panel.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        athlete_panel.setMinimumWidth(150)
+        hero.addWidget(athlete_panel, 2)
+        l.addLayout(hero)
         self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
         self.kpi_labels=[]
         for title in ["Active employees","Tasks today","Completed today","Pending / blocked","Missing proof"]:
@@ -699,15 +733,11 @@ class MainWindow(QMainWindow):
         self.tracker_progress=QProgressBar(); self.tracker_progress.setRange(0,100); self.tracker_progress.setValue(0); self.tracker_progress.setFormat("Average task progress: %p%")
         l.addWidget(self.tracker_progress)
         actions=QHBoxLayout(); l.addLayout(actions)
-        for label,slot in [
-            ("Add Task for Employee", self.add_tracker_task),
-            ("Update Selected Task", self.edit_tracker_task),
-            ("Delete Selected Task", self.delete_tracker_task),
-            ("Edit Task / Proof Link", self.edit_tracker_task),
-            ("Open Proof", self.open_tracker_proof),
-            ("Refresh", self.refresh_tracker),
-        ]:
-            b=QPushButton(label); b.clicked.connect(lambda checked=False, fn=slot: fn()); actions.addWidget(b)
+        # Employee Tracker is a read-only employee/date view. Task creation,
+        # editing, deletion and proof maintenance remain in Task Manager.
+        refresh_button = QPushButton("Refresh")
+        refresh_button.clicked.connect(self.refresh_tracker)
+        actions.addWidget(refresh_button)
         self.tracker_table=QTableWidget(0,8)
         self.tracker_table.setHorizontalHeaderLabels(["Task ID","Task","Priority","Status","Progress","Due time","Proof link","Manager remarks"])
         self.tracker_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -744,8 +774,12 @@ class MainWindow(QMainWindow):
         self.report_scope=QComboBox(); self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
         self.report_employee=QComboBox(); self.report_employee.addItem("All employees",None)
         self.report_format=QComboBox(); self.report_format.addItems(["Word (.docx)","PDF (.pdf)","CSV (.csv)"])
+        self.archived_report=QComboBox()
+        self.archived_report.addItem("Generated report for selected date", None)
         form.addRow("Report type",self.report_type); form.addRow("Report date",self.report_date); form.addRow("Report scope",self.report_scope); form.addRow("Employee",self.report_employee); form.addRow("Output format",self.report_format)
+        form.addRow("Historical archived PDF (optional)", self.archived_report)
         self.report_scope.currentIndexChanged.connect(self._report_scope_changed)
+        self.archived_report.currentIndexChanged.connect(self._archived_report_changed)
         row=QHBoxLayout(); l.addLayout(row)
         for label,slot in [("Preview Report",self.preview_report),("Generate / Save",self.generate_report),("Print Selected Report",self.print_report),("Open reports folder",self.open_export_folder)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
@@ -754,13 +788,14 @@ class MainWindow(QMainWindow):
         self.report_date.dateChanged.connect(lambda _value: self.preview_report())
         self.report_employee.currentIndexChanged.connect(lambda _value: self.preview_report())
         self.refresh_report_employees()
+        self.refresh_archived_report_choices()
         self._report_scope_changed()
 
     def build_archive(self):
         l=QVBoxLayout(self.archive_tab)
         l.addWidget(QLabel("<h2>Historical EOD PDF Archive</h2><p>Upload older employee EOD PDFs and keep their file contents inside the local SQLite database.</p>"))
         row=QHBoxLayout(); l.addLayout(row)
-        for label,slot in [("Upload PDF(s)",self.upload_eod_pdfs),("Open Selected",self.open_archived_pdf),("Export Selected",self.export_archived_pdf),("Delete Selected",self.delete_archived_pdf),("Refresh",self.refresh_archive)]:
+        for label,slot in [("Upload PDF(s)",self.upload_eod_pdfs),("View Selected",self.open_archived_pdf),("Export Selected",self.export_archived_pdf),("Delete Selected",self.delete_archived_pdf),("Refresh",self.refresh_archive)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
         self.archive_table=QTableWidget(0,7)
         self.archive_table.setHorizontalHeaderLabels(["ID","File name","Employee","Report date","Uploaded","Notes","Size"])
@@ -895,6 +930,31 @@ class MainWindow(QMainWindow):
         if hasattr(self, "report_scope") and self.report_scope.currentIndex() == 0:
             return None
         return self.report_employee.currentData() if hasattr(self, "report_employee") else None
+
+    def refresh_archived_report_choices(self):
+        if not hasattr(self, "archived_report"):
+            return
+        current = self.archived_report.currentData()
+        self.archived_report.blockSignals(True)
+        self.archived_report.clear()
+        self.archived_report.addItem("Generated report for selected date", None)
+        for item in self.db.archive_documents():
+            label = f'{item["report_date"] or "Unknown date"} — {item["file_name"]} — {item["employee_name"] or "All employees"}'
+            self.archived_report.addItem(label, item["id"])
+        idx = self.archived_report.findData(current)
+        self.archived_report.setCurrentIndex(max(idx, 0))
+        self.archived_report.blockSignals(False)
+
+    def _archived_report_changed(self, *_args):
+        if not hasattr(self, "archived_report"):
+            return
+        is_archived = self.archived_report.currentData() is not None
+        for widget in (self.report_type, self.report_date, self.report_scope, self.report_employee, self.report_format):
+            widget.setEnabled(not is_archived)
+        if is_archived:
+            self.report_summary.setPlainText("Historical archived PDF selected. Use Print Selected Report to print it, or Generate / Save to export a copy.")
+        else:
+            self.preview_report()
 
     def _report_scope_changed(self, *_args):
         if not hasattr(self, "report_scope") or not hasattr(self, "report_employee"):
@@ -1330,60 +1390,177 @@ class MainWindow(QMainWindow):
         doc.save(path)
 
     def make_pdf(self, path, report_date, employee_id=None, report_type="Audit / EOD"):
+        """Create a readable, reference-style PDF using aligned headings and bullets (no tables)."""
         from xml.sax.saxutils import escape
-        styles=getSampleStyleSheet()
-        styles.add(ParagraphStyle(name="BrandTitle",parent=styles["Title"],fontName="Helvetica-Bold",fontSize=17,leading=21,alignment=TA_CENTER,textColor=colors.HexColor("#17324d"),spaceAfter=5))
-        styles.add(ParagraphStyle(name="ReportSub",parent=styles["Normal"],fontSize=9,leading=12,alignment=TA_CENTER,textColor=colors.HexColor("#475569"),spaceAfter=12))
-        styles.add(ParagraphStyle(name="EmployeeHeading",parent=styles["Heading2"],fontSize=12,leading=15,textColor=colors.HexColor("#17324d"),spaceBefore=10,spaceAfter=5,keepWithNext=True))
-        styles.add(ParagraphStyle(name="SmallCell",parent=styles["BodyText"],fontSize=7.3,leading=9,wordWrap="CJK"))
-        def para(value, style="BodyText"):
-            return Paragraph(escape("—" if value is None or value == "" else str(value)).replace("\n","<br/>"),styles[style])
-        story=[Paragraph("RAW STRENGTH CALISTHENICS",styles["BrandTitle"]),Paragraph(self._report_title(report_type),styles["Heading1"]),Paragraph(f"Report date: {escape(report_date)}  |  Scope: {escape(self.db.employee(employee_id)['name'] if employee_id and self.db.employee(employee_id) else 'All employees')}",styles["ReportSub"])]
-        emps=self._report_employees(employee_id)
-        header_style=TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#17324d")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("GRID",(0,0),(-1,-1),.35,colors.HexColor("#cbd5e1")),("VALIGN",(0,0),(-1,-1),"TOP"),("FONTSIZE",(0,0),(-1,-1),7.5),("LEADING",(0,0),(-1,-1),9),("LEFTPADDING",(0,0),(-1,-1),5),("RIGHTPADDING",(0,0),(-1,-1),5),("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5)])
-        if report_type=="Employee Details":
-            rows=[[para(x,"SmallCell") for x in ["Employee ID","Name","Department","Role","Phone","Email","Joining date","Status"]]]
-            for e in emps: rows.append([para(x,"SmallCell") for x in [e["employee_code"] or "—",e["name"],e["department"] or "—",e["designation"] or "—",e["phone"] or "—",e["email"] or "—",e["joining_date"] or "—","Active" if e["active"] else "Inactive"]])
-            story += [Table(rows,colWidths=[18*mm,26*mm,22*mm,20*mm,20*mm,32*mm,22*mm,16*mm],repeatRows=1,style=header_style),Spacer(1,8),para(f"Total employees: {len(emps)}")]
-        elif report_type=="Employee Attendance":
-            rows=[[para(x,"SmallCell") for x in ["Employee ID","Employee","Status","Check-in","Check-out","Net hours","Remarks"]]]
-            att=self._attendance_report_rows(report_date,employee_id)
-            for item in att:
-                e=item["employee"]; rows.append([para(x,"SmallCell") for x in [e["employee_code"] or "—",e["name"],item["status"],item["check_in"] or "—",item["check_out"] or "—",item["net_hours"] or "—",item["note"] or "—"]])
-            story += [Table(rows,colWidths=[20*mm,32*mm,24*mm,19*mm,19*mm,18*mm,45*mm],repeatRows=1,style=header_style),Spacer(1,8)]
-            story.append(para(f"Employees: {len(att)}  |  Present: {sum(x['status']=='Present' for x in att)}  |  Absent: {sum(x['status']=='Absent' for x in att)}  |  Leave: {sum(x['status']=='Leave' for x in att)}"))
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether, HRFlowable
+        from reportlab.lib.units import mm
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        font_regular = resource_path("assets/DejaVuSans.ttf")
+        font_bold = resource_path("assets/DejaVuSans-Bold.ttf")
+        regular_name, bold_name = "Helvetica", "Helvetica-Bold"
+        try:
+            if Path(font_regular).exists() and Path(font_bold).exists():
+                if "RawStrengthSans" not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont("RawStrengthSans", font_regular))
+                    pdfmetrics.registerFont(TTFont("RawStrengthSans-Bold", font_bold))
+                regular_name, bold_name = "RawStrengthSans", "RawStrengthSans-Bold"
+        except Exception:
+            pass
+
+        navy = colors.HexColor("#102B42")
+        cyan = colors.HexColor("#00AEEA")
+        muted = colors.HexColor("#526579")
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(name="RSBrand", fontName=bold_name, fontSize=15, leading=19,
+            alignment=TA_CENTER, textColor=navy, spaceAfter=3))
+        styles.add(ParagraphStyle(name="RSTitle", fontName=bold_name, fontSize=13, leading=17,
+            alignment=TA_CENTER, textColor=cyan, spaceAfter=6))
+        styles.add(ParagraphStyle(name="RSSubtitle", fontName=regular_name, fontSize=8.5, leading=12,
+            alignment=TA_CENTER, textColor=muted, spaceAfter=12))
+        styles.add(ParagraphStyle(name="RSEmployee", fontName=bold_name, fontSize=11, leading=15,
+            textColor=navy, spaceBefore=8, spaceAfter=5, keepWithNext=True))
+        styles.add(ParagraphStyle(name="RSSection", fontName=bold_name, fontSize=9.2, leading=12,
+            textColor=navy, spaceBefore=5, spaceAfter=3, keepWithNext=True))
+        styles.add(ParagraphStyle(name="RSBody", fontName=regular_name, fontSize=8.5, leading=12,
+            textColor=colors.HexColor("#1F2937"), spaceAfter=3, wordWrap="LTR"))
+        styles.add(ParagraphStyle(name="RSBullet", parent=styles["RSBody"], leftIndent=13,
+            firstLineIndent=-8, bulletIndent=1, spaceAfter=3))
+        styles.add(ParagraphStyle(name="RSMeta", fontName=regular_name, fontSize=8, leading=11,
+            textColor=muted, spaceAfter=3))
+        styles.add(ParagraphStyle(name="RSLink", fontName=regular_name, fontSize=7.7, leading=10,
+            textColor=colors.HexColor("#075E9B"), leftIndent=13, firstLineIndent=-8,
+            wordWrap="CJK", spaceAfter=3))
+
+        def clean(value):
+            if value is None or str(value).strip() == "":
+                return "—"
+            return escape(str(value)).replace("\r\n", "\n").replace("\n", "<br/>")
+
+        def para(label, value, style="RSBody"):
+            return Paragraph(f"<b>{escape(label)}</b> {clean(value)}", styles[style])
+
+        def bullet(value, style="RSBullet"):
+            return Paragraph("&#8226;&nbsp; " + clean(value), styles[style])
+
+        def add_field(story, label, value):
+            story.append(para(label, value))
+
+        employee = self.db.employee(employee_id) if employee_id else None
+        scope = employee["name"] if employee else "All employees"
+        story = [Paragraph("RAW STRENGTH CALISTHENICS", styles["RSBrand"]),
+                 Paragraph(escape(self._report_title(report_type)), styles["RSTitle"]),
+                 Paragraph(f"Report date: {escape(report_date)} &nbsp;&nbsp; | &nbsp;&nbsp; Scope: {escape(scope)}", styles["RSSubtitle"]),
+                 HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9)]
+
+        if report_type == "Employee Details":
+            emps = self._report_employees(employee_id)
+            story.append(para("TOTAL EMPLOYEES:", len(emps), "RSSection"))
+            for index, e in enumerate(emps, 1):
+                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"]),
+                    bullet(f"Employee ID: {e['employee_code'] or '—'}"),
+                    bullet(f"Department: {e['department'] or '—'}"),
+                    bullet(f"Role / Designation: {e['designation'] or '—'}"),
+                    bullet(f"Phone: {e['phone'] or '—'}"),
+                    bullet(f"Email: {e['email'] or '—'}"),
+                    bullet(f"Joining date: {e['joining_date'] or '—'}"),
+                    bullet(f"Status: {'Active' if e['active'] else 'Inactive'}"),
+                    Spacer(1, 5), HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)]
+                story.extend(block)
+
+        elif report_type == "Employee Attendance":
+            rows = self._attendance_report_rows(report_date, employee_id)
+            holiday = self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (report_date,)).fetchone()
+            if holiday:
+                story.append(para("DECLARED HOLIDAY:", holiday["holiday_name"], "RSSection"))
+            present = sum(x["status"] == "Present" for x in rows)
+            absent = sum(x["status"] == "Absent" for x in rows)
+            leave = sum(x["status"] == "Leave" for x in rows)
+            story.append(para("SUMMARY:", f"Employees {len(rows)} | Present {present} | Absent {absent} | Leave {leave}", "RSSection"))
+            for index, item in enumerate(rows, 1):
+                e = item["employee"]
+                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"]),
+                    bullet(f"Employee ID: {e['employee_code'] or '—'}"),
+                    bullet(f"Department: {e['department'] or '—'}"),
+                    bullet(f"Attendance status: {item['status']}"),
+                    bullet(f"Check-in: {item['check_in'] or 'Not recorded'}"),
+                    bullet(f"Check-out: {item['check_out'] or 'Not recorded'}"),
+                    bullet(f"Net working hours: {item['net_hours'] or 'Not available'}"),
+                    bullet(f"Remarks: {item['note'] or '—'}"), Spacer(1, 5),
+                    HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)]
+                story.extend(block)
+
         else:
-            data=self.report_data(report_date,employee_id); all_tasks=[t for _,ts,_ in data for t in ts]
-            completed=sum(1 for t in all_tasks if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100)
-            pending=sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))
-            missing=sum(1 for e,ts,_ in data if self.employee_missing_proof(e,ts,report_date).startswith("Yes"))
-            summary=[[para(x,"SmallCell") for x in ["SUMMARY","COUNT","SUMMARY","COUNT"]],[para(x,"SmallCell") for x in ["Employees",len(data),"Tasks",len(all_tasks)]],[para(x,"SmallCell") for x in ["Completed / submitted",completed,"Pending / other",pending]],[para(x,"SmallCell") for x in ["Missing proof",missing,"Report date",report_date]]]
-            story += [Table(summary,colWidths=[42*mm,20*mm,42*mm,30*mm],style=header_style),Spacer(1,8)]
-            for e,tasks,a in data:
-                story.append(Paragraph(escape(e["name"]),styles["EmployeeHeading"]))
-                story.append(para(f'Employee ID: {e["employee_code"] or "—"}  |  Department: {e["department"] or "—"}  |  Role: {e["designation"] or "—"}'))
-                story.append(para(f'Phone: {e["phone"] or "—"}  |  Email: {e["email"] or "—"}'))
-                eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
-                late=self.source_status(e,"late",report_date) or "Review required"; links=self.source_status(e,"links",report_date) or "Not independently checked"
-                attendance="Holiday" if self.db.is_holiday(report_date) else (a["attendance_status"] if a else "Unmarked")
-                if a and attendance=="Unmarked" and a["check_in"]: attendance="Present"
-                story.append(para(f"WORK / EOD STATUS: {eod}  |  LATE: {late}  |  LINKS: {links}"))
-                story.append(para(f'ATTENDANCE: {attendance}  |  IN: {a["check_in"] if a and a["check_in"] else "Not recorded"}  |  OUT: {a["check_out"] if a and a["check_out"] else "Not recorded"}'))
-                prod=self.employee_productivity(e); story.append(para(f'Productivity score: {prod["score"]}%  |  Working days since tracking start: {prod["working_days"]}  |  Present days recorded: {prod["present"]}'))
-                story.append(para(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}'))
-                rows=[[para(x,"SmallCell") for x in ["Task / Work description","Status / Progress","Proof / Evidence","Manager remarks"]]]
-                for t in tasks:
-                    title=t["title"]+("\n"+t["details"] if t["details"] else "")
-                    status=f'{t["status"]} ({t["progress"]}%)'+(f'\nDue: {t["due_time"]}' if t["due_time"] else "")
-                    proof=self.task_proof_label(e,t,report_date)+(f'\n{t["proof_note"]}' if t["proof_note"] else "")
-                    rows.append([para(title,"SmallCell"),para(status,"SmallCell"),para(proof,"SmallCell"),para(t["manager_note"] or "—","SmallCell")])
-                if not tasks: rows.append([para("No tasks recorded for this date.","SmallCell"),para("—","SmallCell"),para("—","SmallCell"),para("—","SmallCell")])
-                story += [Table(rows,colWidths=[48*mm,30*mm,48*mm,35*mm],repeatRows=1,style=header_style),Spacer(1,3),para("PENDING: "+("; ".join(t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")) or "No")),Spacer(1,8)]
-        def page(canvas,doc_obj):
-            canvas.saveState(); w,h=A4; canvas.setStrokeColor(colors.HexColor("#cbd5e1")); canvas.line(16*mm,12*mm,w-16*mm,12*mm)
-            canvas.setFont("Helvetica",7); canvas.setFillColor(colors.HexColor("#64748b")); canvas.drawString(16*mm,7*mm,"Raw Strength Calisthenics | Confidential internal report")
-            canvas.drawRightString(w-16*mm,7*mm,f"Page {doc_obj.page}"); canvas.restoreState()
-        SimpleDocTemplate(str(path),pagesize=A4,rightMargin=14*mm,leftMargin=14*mm,topMargin=14*mm,bottomMargin=17*mm,title=self._report_title(report_type),author="Raw Strength Calisthenics").build(story,onFirstPage=page,onLaterPages=page)
+            data = self.report_data(report_date, employee_id)
+            all_tasks = [t for _, tasks, _ in data for t in tasks]
+            completed = sum(1 for t in all_tasks if t["status"] in ("Completed", "Submitted") or int(t["progress"] or 0) >= 100)
+            pending = sum(1 for t in all_tasks if t["status"] not in ("Completed", "Submitted", "Cancelled"))
+            missing = sum(1 for e, tasks, _ in data if self.employee_missing_proof(e, tasks, report_date).startswith("Yes"))
+            story.extend([Paragraph("DAILY SUMMARY", styles["RSSection"]),
+                bullet(f"Employees: {len(data)}"), bullet(f"Tasks recorded: {len(all_tasks)}"),
+                bullet(f"Completed / submitted tasks: {completed}"), bullet(f"Pending / other tasks: {pending}"),
+                bullet(f"Employees flagged for missing proof: {missing}"), Spacer(1, 5),
+                HRFlowable(width="100%", thickness=.6, color=cyan, spaceAfter=6)])
+            for employee_index, (e, tasks, attendance_row) in enumerate(data):
+                if employee_index:
+                    story.append(Spacer(1, 6))
+                eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted", "Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+                late = self.source_status(e, "late", report_date) or "Review required"
+                links = self.source_status(e, "links", report_date) or "Not independently checked"
+                attendance = "Holiday" if self.db.is_holiday(report_date) else (attendance_row["attendance_status"] if attendance_row else "Unmarked")
+                if attendance_row and attendance == "Unmarked" and attendance_row["check_in"]:
+                    attendance = "Present"
+                prod = self.employee_productivity(e)
+                block = [Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]),
+                    bullet(f"Employee ID: {e['employee_code'] or '—'} | Department: {e['department'] or '—'} | Role: {e['designation'] or '—'}"),
+                    bullet(f"Phone: {e['phone'] or '—'} | Email: {e['email'] or '—'}"),
+                    bullet(f"WORK / EOD STATUS: {eod}"),
+                    bullet(f"LATE: {late} | LINKS: {links}"),
+                    bullet(f"ATTENDANCE: {attendance} | IN: {attendance_row['check_in'] if attendance_row and attendance_row['check_in'] else 'Not recorded'} | OUT: {attendance_row['check_out'] if attendance_row and attendance_row['check_out'] else 'Not recorded'}"),
+                    bullet(f"Productivity score: {prod['score']}% | Working days since tracking start: {prod['working_days']} | Present days recorded: {prod['present']}"),
+                    bullet(f"MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}"),
+                    Paragraph("TASKS / WORK ITEMS", styles["RSSection"])]
+                if tasks:
+                    for task_index, t in enumerate(tasks, 1):
+                        block.append(bullet(f"{task_index}. {t['title']} — Status: {t['status']} — Progress: {t['progress']}%"))
+                        if t["details"]:
+                            block.append(bullet(f"Details: {t['details']}"))
+                        if t["due_time"]:
+                            block.append(bullet(f"Due time: {t['due_time']}"))
+                        proof_label = self.task_proof_label(e, t, report_date)
+                        block.append(bullet(f"Proof / Evidence: {proof_label}"))
+                        if t["proof_url"]:
+                            block.append(Paragraph("&#8226;&nbsp; " + escape(str(t["proof_url"])), styles["RSLink"]))
+                        if t["proof_note"]:
+                            block.append(bullet(f"Proof notes: {t['proof_note']}"))
+                        block.append(bullet(f"Manager remarks: {t['manager_note'] or '—'}"))
+                else:
+                    block.append(bullet("No tasks recorded for this date."))
+                pending_titles = [t["title"] for t in tasks if t["status"] not in ("Completed", "Submitted", "Cancelled")]
+                block.extend([Paragraph("PENDING", styles["RSSection"]), bullet("; ".join(pending_titles) if pending_titles else "No"),
+                    Spacer(1, 5), HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5)])
+                story.extend(block)
+
+        def draw_page(canvas, doc_obj):
+            canvas.saveState()
+            page_width, page_height = A4
+            canvas.setStrokeColor(cyan)
+            canvas.setLineWidth(.6)
+            canvas.line(15*mm, 13*mm, page_width-15*mm, 13*mm)
+            canvas.setFont(regular_name, 7)
+            canvas.setFillColor(muted)
+            canvas.drawString(15*mm, 7.5*mm, "Raw Strength Calisthenics | Confidential internal report")
+            canvas.drawRightString(page_width-15*mm, 7.5*mm, f"Page {doc_obj.page}")
+            canvas.restoreState()
+
+        document = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=17*mm, leftMargin=17*mm,
+            topMargin=16*mm, bottomMargin=18*mm, title=self._report_title(report_type),
+            author="Raw Strength Calisthenics", subject=f"{report_type} - {report_date}")
+        document.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
 
     def export_report_csv(self, path, report_date, employee_id=None, report_type="Audit / EOD"):
         import csv
@@ -1420,6 +1597,19 @@ class MainWindow(QMainWindow):
         self.db.log("Report previewed",f"type={kind}, date={d}, employee={eid or 'all'}")
 
     def generate_report(self):
+        archived_id = self.archived_report.currentData() if hasattr(self, "archived_report") else None
+        if archived_id is not None:
+            archived = self.archive_content(archived_id)
+            if not archived:
+                return error(self, "The selected archived PDF could not be found.")
+            path, _ = QFileDialog.getSaveFileName(self, "Export archived PDF", str(EXPORT_DIR / archived["file_name"]), "PDF document (*.pdf)")
+            if not path: return
+            try:
+                Path(path).write_bytes(archived["content"])
+                info(self, f"Archived report exported to:\n{path}")
+            except Exception as ex:
+                error(self, f"Could not export archived PDF:\n{ex}")
+            return
         d=self.report_date.date().toString("yyyy-MM-dd"); eid=self._effective_report_employee_id(); fmt=self.report_format.currentText(); kind=self.report_type.currentText()
         ext=".docx" if fmt.startswith("Word") else ".pdf" if fmt.startswith("PDF") else ".csv"
         default=EXPORT_DIR / f"{kind.replace(' / ','_').replace(' ','_')}_{d}{('_Employee_'+str(eid)) if eid else ''}{ext}"
@@ -1446,6 +1636,20 @@ class MainWindow(QMainWindow):
         return "\n".join(lines)
 
     def print_report(self):
+        archived_id = self.archived_report.currentData() if hasattr(self, "archived_report") else None
+        if archived_id is not None:
+            archived = self.archive_content(archived_id)
+            if not archived:
+                return error(self, "The selected archived PDF could not be found.")
+            path = EXPORT_DIR / f"Archived_{archived['id']}_{Path(archived['file_name']).name}"
+            try:
+                path.write_bytes(archived["content"])
+                if sys.platform == "win32": os.startfile(str(path), "print")
+                else: info(self, f"Archived PDF prepared for printing:\n{path}")
+                self.db.log("Archived EOD sent to print", archived["file_name"])
+            except Exception as ex:
+                error(self, f"Could not print archived PDF:\n{ex}")
+            return
         d=self.report_date.date().toString("yyyy-MM-dd"); eid=self._effective_report_employee_id(); kind=self.report_type.currentText(); fmt=self.report_format.currentText()
         if fmt.startswith("CSV"):
             return info(self,"CSV files are for data export and cannot be sent directly to the print handler. Choose Word or PDF to print, or use Generate / Save to export CSV.")
@@ -1574,6 +1778,7 @@ class MainWindow(QMainWindow):
             vals=[d["id"],d["file_name"],d["employee_name"] or "Unassigned / All",d["report_date"] or "Unknown",d["uploaded_at"],d["notes"],f"{(size or 0)/1024:.1f} KB"]
             r=self.archive_table.rowCount(); self.archive_table.insertRow(r)
             for c,v in enumerate(vals): self.archive_table.setItem(r,c,QTableWidgetItem(str(v)))
+        self.refresh_archived_report_choices()
 
     def change_password(self):
         user_id = self.current_user.get("id")
@@ -1674,6 +1879,12 @@ class MainWindow(QMainWindow):
                 w.writerow([e["id"],e["employee_code"],e["name"],e["department"],e["designation"],e["phone"],e["email"],e["joining_date"],"Active" if e["active"] else "Inactive",e["notes"]])
         info(self,f"Employee list exported:\n{path}")
 
+def resource_path(relative_path):
+    """Resolve bundled assets in source and PyInstaller builds."""
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return str(base_path / relative_path)
+
+
 def main():
     app=QApplication(sys.argv); app.setStyle("Fusion")
     app.setStyleSheet("""
@@ -1689,9 +1900,9 @@ def main():
       QTabWidget::pane { border: 1px solid #1c4965; border-radius: 12px; background: #091a2a; top: -1px; }
       QTabWidget { background: transparent; }
       QTabBar { background: transparent; }
-      QTabBar::tab { background: #10283c; color: #a9c4d9; padding: 13px 18px; margin-right: 4px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: 650; min-width: 78px; }
-      QTabBar::tab:selected { background: #0c2940; color: #6cddff; border-bottom: 3px solid #00b8ff; }
-      QTabBar::tab:hover:!selected { background: #163851; color: #e9f7ff; }
+      QTabBar::tab { background: #0a2033; color: #b7d3e6; padding: 16px 12px; margin: 3px 5px; border-radius: 9px; font-weight: 700; min-width: 145px; min-height: 24px; text-align: left; }
+      QTabBar::tab:selected { background: #07539a; color: #ffffff; border: 1px solid #00c8ff; }
+      QTabBar::tab:hover:!selected { background: #123c5a; color: #e9f7ff; }
       QPushButton { padding: 10px 15px; min-height: 20px; border: 1px solid #285574; border-radius: 8px; background: #102b42; color: #e9f6ff; font-weight: 650; }
       QPushButton:hover { background: #164a6b; border-color: #13bdf3; color: #ffffff; }
       QPushButton:pressed { background: #0c3855; }
@@ -1704,7 +1915,7 @@ def main():
       QTableWidget::item { padding: 8px; border-bottom: 1px solid #122e43; }
       QTableWidget::item:selected { background: #125276; color: #ffffff; }
       QHeaderView::section { background: #102b41; color: #9edfff; padding: 10px 8px; border: none; border-bottom: 1px solid #24506a; font-weight: 700; }
-      QGroupBox { font-weight: 700; color: #d8f0ff; border: 1px solid #1e4a65; border-radius: 12px; margin-top: 13px; padding: 17px 13px 13px 13px; background: #0a1e2f; }
+      QGroupBox { font-weight: 700; color: #d8f0ff; border: 1px solid #0876a9; border-radius: 12px; margin-top: 13px; padding: 17px 13px 13px 13px; background: #0a1e2f; }
       QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; color: #6ed8ff; }
       QLabel { background: transparent; color: #e6f0ff; }
       QLabel[h1="true"] { font-size: 22pt; font-weight: 700; color: #f0f8ff; }
