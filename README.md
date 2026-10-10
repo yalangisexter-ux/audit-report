@@ -12,8 +12,9 @@ The target Windows PC does not need Python installed.
 
 ## UI updates
 
-- Main navigation is displayed horizontally above the page content, not in a side panel.
-- The dark navy/cyan theme, Raw Strength branding, and athlete image assets are retained.
+- Main navigation stays horizontal above the page content, with the existing feature pages and controls retained.
+- The Home page opens first with signed-in session details and concise instructions and examples for each section.
+- The interface follows the supplied purple dashboard and blue project-management references, with Raw Strength branding and the bundled DejaVu Sans font.
 - Forms use readable dropdowns and checkboxes where choices or multi-selection are appropriate; report scope and report options remain explicit.
 - The first run against a fresh database requires creating an Admin username, password, and recovery question/answer before login. No default password is provided.
 

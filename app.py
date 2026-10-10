@@ -3,13 +3,13 @@ from pathlib import Path
 from datetime import datetime, date
 from PySide6.QtCore import Qt, QDate, QTime
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QPixmap
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QPixmap
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
@@ -317,9 +317,11 @@ class AccountSetupDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(28, 24, 28, 24)
         title = QLabel("Set up your administrator account")
-        title.setStyleSheet("font-size: 18pt; font-weight: 700; color: #eaf7ff;")
+        title.setProperty("pageTitle", True)
         layout.addWidget(title)
-        layout.addWidget(QLabel("Create a secure account before using Raw Strength Calisthenics — Employee Audit Manager. No default password is used."))
+        intro = QLabel("Create the first Admin account to enable sign-in.")
+        intro.setProperty("pageSubtitle", True)
+        layout.addWidget(intro)
         form = QFormLayout()
         self.username = QLineEdit("admin")
         self.display_name = QLineEdit("Administrator")
@@ -335,12 +337,11 @@ class AccountSetupDialog(QDialog):
         form.addRow("Recovery answer", self.answer)
         layout.addLayout(form)
         note = QLabel("Your recovery answer is stored as a salted hash. Choose an answer you can remember.")
-        note.setWordWrap(True); note.setStyleSheet("color:#9bb8cc;")
+        note.setWordWrap(True); note.setProperty("mutedText", True)
         layout.addWidget(note)
         buttons = QDialogButtonBox(QDialogButtonBox.Save)
         buttons.accepted.connect(self.create_admin)
         layout.addWidget(buttons)
-        layout.addWidget(QLabel("First launch requirement: create your own password before the sign-in screen can open."))
 
     def create_admin(self):
         username = self.username.text().strip()
@@ -439,12 +440,12 @@ class LoginDialog(QDialog):
         self.setMinimumWidth(440)
         self.setModal(True)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 26, 28, 24)
-        layout.setSpacing(13)
+        layout.setContentsMargins(30, 28, 30, 26)
+        layout.setSpacing(14)
         title = QLabel("Raw Strength Calisthenics")
-        title.setStyleSheet("font-size: 20pt; font-weight: 700; color: #0f172a;")
+        title.setProperty("pageTitle", True)
         subtitle = QLabel("HR / Admin workspace • Offline and secure")
-        subtitle.setStyleSheet("font-size: 10pt; color: #64748b;")
+        subtitle.setProperty("pageSubtitle", True)
         layout.addWidget(title); layout.addWidget(subtitle)
         form = QFormLayout()
         self.username = QLineEdit(); self.username.setPlaceholderText("Enter username")
@@ -519,8 +520,8 @@ class EmployeeDialog(QDialog):
         self.join.setEnabled(self.join_known.isChecked())
         self.join_known.toggled.connect(self.join.setEnabled)
         self.notes=QTextEdit(row["notes"] if row else ""); self.notes.setMaximumHeight(75)
-        self.layout.addRow("Employee ID / Code", self.code); self.layout.addRow("Full name *", self.name)
-        self.layout.addRow("Department", self.department); self.layout.addRow("Role / Designation", self.designation)
+        self.layout.addRow("Employee ID", self.code); self.layout.addRow("Full name *", self.name)
+        self.layout.addRow("Department", self.department); self.layout.addRow("Job title", self.designation)
         self.layout.addRow("Phone number (optional)", self.phone); self.layout.addRow("Email address (optional)", self.email)
         self.layout.addRow("Joining date", self.join); self.layout.addRow("", self.join_known); self.layout.addRow("Notes", self.notes)
         buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -531,7 +532,16 @@ class EmployeeDialog(QDialog):
                 self.join.date().toString("yyyy-MM-dd") if self.join_known.isChecked() else "", self.notes.toPlainText().strip())
 
 class TaskDialog(QDialog):
-    STATUSES=["Not started","In progress","Submitted","Completed","Blocked","Pending review"]
+    STATUSES=[
+        ("Not started", "Not started"),
+        ("In progress", "In progress"),
+        ("Submitted", "Submitted"),
+        ("Completed", "Completed"),
+        ("Blocked", "Blocked"),
+        ("Pending review", "Pending review"),
+        ("Pending", "Pending"),
+        ("Cancelled", "Cancelled"),
+    ]
     def __init__(self, db, parent=None, row=None, employee_id=None):
         super().__init__(parent); self.setWindowTitle("Task details"); self.setMinimumWidth(520)
         self.layout=QFormLayout(self); self.db=db; self.row=row
@@ -546,7 +556,8 @@ class TaskDialog(QDialog):
         self.details=QTextEdit(row["details"] if row else ""); self.details.setMaximumHeight(70)
         self.due=QTimeEdit(); self.due.setDisplayFormat("HH:mm"); self.due.setTime(QTime.fromString(row["due_time"],"HH:mm") if row and row["due_time"] else QTime(17,0))
         self.priority=QComboBox(); self.priority.addItems(["Low","Normal","High","Urgent"])
-        self.status=QComboBox(); self.status.addItems(self.STATUSES)
+        self.status=QComboBox()
+        for label, value in self.STATUSES: self.status.addItem(label, value)
         self.progress=QSpinBox(); self.progress.setRange(0,100); self.progress.setSuffix("%")
         self.proof=QTextEdit(row["proof_url"] if row else ""); self.proof.setPlaceholderText("Optional URL or local file path. Use one proof link per line."); self.proof.setMaximumHeight(78)
         self.proof_note=QLineEdit(row["proof_note"] if row else "")
@@ -554,18 +565,23 @@ class TaskDialog(QDialog):
         if row:
             idx=self.employee.findData(row["employee_id"])
             if idx>=0: self.employee.setCurrentIndex(idx)
-            self.priority.setCurrentText(row["priority"]); self.status.setCurrentText(row["status"]); self.progress.setValue(row["progress"])
+            self.priority.setCurrentText(row["priority"])
+            status_index=self.status.findData(row["status"])
+            if status_index < 0:
+                self.status.addItem(row["status"], row["status"])
+                status_index=self.status.count()-1
+            self.status.setCurrentIndex(status_index); self.progress.setValue(row["progress"])
         self.layout.addRow("Employee *", self.employee); self.layout.addRow("Task date", self.date)
-        self.layout.addRow("Task title *", self.title); self.layout.addRow("Description / deliverable", self.details)
+        self.layout.addRow("Task title *", self.title); self.layout.addRow("Description", self.details)
         self.layout.addRow("Due time", self.due); self.layout.addRow("Priority", self.priority)
         self.layout.addRow("Status", self.status); self.layout.addRow("Progress", self.progress)
-        self.layout.addRow("Proof link / path", self.proof); self.layout.addRow("Proof notes", self.proof_note)
-        self.layout.addRow("Manager remarks", self.manager_note)
+        self.layout.addRow("Evidence link or file", self.proof); self.layout.addRow("Evidence notes", self.proof_note)
+        self.layout.addRow("Manager notes", self.manager_note)
         buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); self.layout.addRow(buttons)
     def values(self):
         if self.employee.count()==0: return None
-        status=self.status.currentText(); progress=self.progress.value()
+        status=self.status.currentData(); progress=self.progress.value()
         if status=="Completed": progress=100
         submitted=now_text() if status in ("Submitted","Completed") else (self.row["submitted_at"] if self.row else "")
         return (self.employee.currentData(), self.date.date().toString("yyyy-MM-dd"), self.title.text().strip(),
@@ -631,10 +647,10 @@ class MainWindow(QMainWindow):
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.setCentralWidget(self.tabs)
-        self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
-        for widget,title in [(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings & Backup")]:
+        self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
+        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings & Backup")]:
             self.tabs.addTab(widget,title)
-        self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
+        self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
         self.polish_tables()
         self.statusBar().showMessage(f"Signed in: {user.get('display_name') or user.get('username')} ({self.user_role})  •  Local database  •  Offline mode")
         self.refresh_all()
@@ -644,52 +660,130 @@ class MainWindow(QMainWindow):
         password_action=QAction("Change password",self); password_action.triggered.connect(self.change_password); file_menu.addAction(password_action)
         exit_action=QAction("Exit",self); exit_action.triggered.connect(self.close); file_menu.addAction(exit_action)
 
+    @staticmethod
+    def add_page_header(layout, title, subtitle):
+        header = QVBoxLayout()
+        header.setSpacing(3)
+        title_label = QLabel(title)
+        title_label.setProperty("pageTitle", True)
+        header.addWidget(title_label)
+        if subtitle:
+            subtitle_label = QLabel(subtitle)
+            subtitle_label.setProperty("pageSubtitle", True)
+            header.addWidget(subtitle_label)
+        layout.addLayout(header)
+
+    def build_home(self):
+        page_layout = QVBoxLayout(self.home_tab)
+        self.home_scroll = QScrollArea()
+        self.home_scroll.setWidgetResizable(True)
+        self.home_scroll.setObjectName("homeScroll")
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(18, 18, 18, 18)
+        content_layout.setSpacing(16)
+
+        welcome = QWidget()
+        welcome.setObjectName("welcomeHero")
+        welcome_layout = QHBoxLayout(welcome)
+        welcome_layout.setContentsMargins(20, 16, 20, 16)
+        welcome_layout.setSpacing(18)
+        logo = QLabel()
+        logo.setObjectName("welcomeLogo")
+        logo.setFixedSize(112, 76)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_path = resource_path("assets/raw_strength_brand.png")
+        if Path(logo_path).exists():
+            logo.setPixmap(QPixmap(logo_path).scaled(104, 68, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        welcome_layout.addWidget(logo)
+        welcome_copy = QVBoxLayout()
+        welcome_title = QLabel(f"Welcome, {self.current_user.get('display_name') or self.current_user.get('username')}")
+        welcome_title.setProperty("welcomeTitle", True)
+        welcome_copy.addWidget(welcome_title)
+        welcome_subtitle = QLabel("Raw Strength Calisthenics · Employee Audit Manager")
+        welcome_subtitle.setProperty("welcomeSubtitle", True)
+        welcome_copy.addWidget(welcome_subtitle)
+        welcome_layout.addLayout(welcome_copy, 1)
+        content_layout.addWidget(welcome)
+
+        session_box = QGroupBox("Signed-in session")
+        session_layout = QHBoxLayout(session_box)
+        session_layout.addWidget(QLabel(f"Account: {self.current_user.get('username', 'N/A')}"))
+        session_layout.addWidget(QLabel(f"Access: {self.user_role}"))
+        session_layout.addStretch(1)
+        session_layout.addWidget(QLabel("Local database · Offline"))
+        content_layout.addWidget(session_box)
+
+        guide_box = QGroupBox("Workspace guide")
+        guide_grid = QGridLayout(guide_box)
+        guide_grid.setHorizontalSpacing(12)
+        guide_grid.setVerticalSpacing(10)
+        guide_items = [
+            ("Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Use the shortcuts to add an employee, assign a task, or open attendance."),
+            ("Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
+            ("Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
+            ("Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
+            ("Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
+            ("Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
+            ("EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
+            ("Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
+        ]
+        for index, (section, guidance, example) in enumerate(guide_items):
+            guide_card = QGroupBox(section)
+            guide_card.setObjectName("guideCard")
+            card_layout = QVBoxLayout(guide_card)
+            card_layout.setContentsMargins(12, 12, 12, 10)
+            card_layout.setSpacing(6)
+            guidance_label = QLabel(guidance)
+            guidance_label.setWordWrap(True)
+            card_layout.addWidget(guidance_label)
+            example_label = QLabel(example)
+            example_label.setWordWrap(True)
+            example_label.setProperty("mutedText", True)
+            card_layout.addWidget(example_label)
+            guide_grid.addWidget(guide_card, index // 2, index % 2)
+        content_layout.addWidget(guide_box)
+        content_layout.addStretch(1)
+        self.home_scroll.setWidget(content)
+        page_layout.addWidget(self.home_scroll)
+
     def build_dashboard(self):
         l=QVBoxLayout(self.dashboard)
-        hero=QHBoxLayout()
-        brand=QVBoxLayout()
+        hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero")
+        hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
         logo=QLabel()
         logo_path = resource_path("assets/raw_strength_brand.png")
         if Path(logo_path).exists():
             pix=QPixmap(logo_path)
-            logo.setPixmap(pix.scaled(170, 170, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            logo.setPixmap(pix.scaled(122, 78, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        logo.setObjectName("brandLogo")
+        logo.setFixedSize(122, 78)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand.addWidget(logo)
-        brand_title=QLabel("RAW STRENGTH\nCALISTHENICS")
-        brand_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_title.setStyleSheet("font-size: 13pt; font-weight: 800; color: #c5a3ff; letter-spacing: 1px;")
-        brand.addWidget(brand_title)
-        hero.addLayout(brand, 1)
+        hero.addWidget(logo)
         heading=QVBoxLayout()
-        title=QLabel("Raw Strength Calisthenics — Employee Audit Manager")
-        title.setProperty("pageTitle", True)
+        title=QLabel("Employee Audit Manager")
+        title.setProperty("heroTitle", True)
         heading.addWidget(title)
-        subtitle=QLabel("PEOPLE   |   PRODUCTIVITY   |   PROGRESS   |   PERFORMANCE")
-        subtitle.setStyleSheet("color:#b99aff; font-weight:700; letter-spacing:1px;")
+        subtitle=QLabel("Offline workforce operations")
+        subtitle.setProperty("heroSubtitle", True)
         heading.addWidget(subtitle)
-        heading.addWidget(QLabel("Offline workforce tracking, attendance, daily tasks and audit reporting."))
         heading.addStretch(1)
-        hero.addLayout(heading, 5)
-        athlete_panel = QLabel()
-        athlete_path = resource_path("assets/raw_strength_athlete.png")
-        if Path(athlete_path).exists():
-            athlete_pix = QPixmap(athlete_path)
-            athlete_panel.setPixmap(athlete_pix.scaled(210, 145, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        athlete_panel.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        athlete_panel.setMinimumWidth(150)
-        hero.addWidget(athlete_panel, 2)
-        l.addLayout(hero)
+        hero.addLayout(heading, 1)
+        l.addWidget(hero_widget)
         self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
         self.kpi_labels=[]
-        for title in ["Active employees","Tasks today","Completed today","Pending / blocked","Missing proof"]:
-            box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setStyleSheet("font-size:28px;font-weight:700;color:#d0b6ff;padding:4px;"); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
+        for title in ["Active employees","Tasks today","Completed today","Pending or blocked","Proof missing"]:
+            box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setProperty("metricValue", True); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
         row=QHBoxLayout(); l.addLayout(row)
         self.dashboard_tasks=QTableWidget(0,6); self.dashboard_tasks.setHorizontalHeaderLabels(["Employee","Task","Status","Progress","Due","Proof"])
         self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
         row.addWidget(self.dashboard_tasks, 3)
-        productivity_box = QGroupBox("Employee productivity score")
+        productivity_box = QGroupBox("Productivity score")
         productivity_layout = QVBoxLayout(productivity_box)
-        productivity_layout.addWidget(QLabel("Score: task progress 70% + recorded attendance 30%. If one component has no recorded data, the score uses the available component. New employees are measured from joining date; otherwise the first recorded activity is used."))
+        score_note = QLabel("Task progress 70% · attendance 30%. If one component is unavailable, the other is used.")
+        score_note.setProperty("mutedText", True)
+        score_note.setToolTip("For new employees, the score period starts on the joining date. Otherwise, it starts with the first recorded activity.")
+        productivity_layout.addWidget(score_note)
         self.productivity_chart = ProductivityChart()
         productivity_layout.addWidget(self.productivity_chart)
         row.addWidget(productivity_box, 2)
@@ -724,15 +818,15 @@ class MainWindow(QMainWindow):
 
     def build_tracker(self):
         l=QVBoxLayout(self.tracker_tab)
-        l.addWidget(QLabel("<h2>Employee Task Tracker</h2><p>Select an employee to review only their tasks, update progress, and maintain evidence links.</p>"))
+        self.add_page_header(l, "Employee Task Tracker", "Review assigned work and evidence.")
         filters=QHBoxLayout(); l.addLayout(filters)
         self.tracker_employee=QComboBox(); self.tracker_employee.addItem("Select employee", None)
         self.tracker_employee.currentIndexChanged.connect(self.refresh_tracker)
         self.tracker_date=QDateEdit(); self.tracker_date.setCalendarPopup(True); self.tracker_date.setDisplayFormat("yyyy-MM-dd"); self.tracker_date.setDate(QDate.currentDate()); self.tracker_date.dateChanged.connect(self.refresh_tracker)
         filters.addWidget(QLabel("Employee")); filters.addWidget(self.tracker_employee,2)
         filters.addWidget(QLabel("Task date")); filters.addWidget(self.tracker_date)
-        self.tracker_summary=QLabel("Choose an employee to view assigned tasks.")
-        self.tracker_summary.setStyleSheet("font-size: 12pt; font-weight: 650; padding: 12px; background: #eff6ff; border: 1px solid #dbeafe; border-radius: 9px;")
+        self.tracker_summary=QLabel("Select an employee to view assigned tasks.")
+        self.tracker_summary.setProperty("statusSummary", True)
         l.addWidget(self.tracker_summary)
         self.tracker_progress=QProgressBar(); self.tracker_progress.setRange(0,100); self.tracker_progress.setValue(0); self.tracker_progress.setFormat("Average task progress: %p%")
         l.addWidget(self.tracker_progress)
@@ -751,27 +845,27 @@ class MainWindow(QMainWindow):
 
     def build_attendance(self):
         l=QVBoxLayout(self.attendance_tab)
-        header=QLabel("Attendance & Working Calendar")
-        header.setProperty("pageTitle", True)
-        l.addWidget(header)
+        self.add_page_header(l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
         row=QHBoxLayout(); l.addLayout(row)
         self.att_date=QDateEdit(); self.att_date.setCalendarPopup(True); self.att_date.setDisplayFormat("yyyy-MM-dd"); self.att_date.setDate(QDate.currentDate()); self.att_date.dateChanged.connect(self.refresh_attendance)
         row.addWidget(QLabel("Selected date")); row.addWidget(self.att_date)
         for label,slot in [("Mark Present",lambda:self.set_attendance_status("Present")),("Mark Absent",lambda:self.set_attendance_status("Absent")),("Mark Leave",lambda:self.set_attendance_status("Leave")),("Check In",self.check_in),("Check Out",self.check_out),("Edit Note",self.attendance_note),("Declare Holiday",self.declare_holiday),("Remove Holiday",self.remove_holiday)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
         self.holiday_banner=QLabel("")
-        self.holiday_banner.setStyleSheet("padding:9px 12px; border-radius:8px; background:#fff7ed; color:#9a3412; font-weight:600;")
+        self.holiday_banner.setProperty("warningBanner", True)
         l.addWidget(self.holiday_banner)
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
         self.att_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.att_table, 3)
-        l.addWidget(QLabel("Monthly and since-joining attendance summary. Declared holidays and configured non-working weekdays are excluded from working-day totals."))
+        summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
+        summary_note.setProperty("mutedText", True)
+        l.addWidget(summary_note)
         self.attendance_summary_table=QTableWidget(0,8)
         self.attendance_summary_table.setHorizontalHeaderLabels(["Employee","Join / tracking start","Working days (month)","Present (month)","Absent","Leave","Holidays excluded","Present since start"])
         self.attendance_summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.attendance_summary_table, 2)
 
     def build_reports(self):
         l=QVBoxLayout(self.reports_tab)
-        l.addWidget(QLabel("<h2>Print Center</h2><p>Generate employee attendance, employee details, or reference-style Audit/EOD reports. Export to Word, PDF, or CSV.</p>"))
+        self.add_page_header(l, "Reports", "Generate audit, attendance, productivity, and employee reports.")
         form=QFormLayout(); l.addLayout(form)
         self.report_type=QComboBox(); self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"])
         self.report_date=QDateEdit(); self.report_date.setCalendarPopup(True); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setDate(QDate.currentDate())
@@ -829,7 +923,7 @@ class MainWindow(QMainWindow):
 
     def build_archive(self):
         l=QVBoxLayout(self.archive_tab)
-        l.addWidget(QLabel("<h2>Historical EOD PDF Archive</h2><p>Upload older employee EOD PDFs and keep their file contents inside the local SQLite database.</p>"))
+        self.add_page_header(l, "Historical EOD Archive", "Store and retrieve uploaded EOD PDFs.")
         row=QHBoxLayout(); l.addLayout(row)
         for label,slot in [("Upload PDF(s)",self.upload_eod_pdfs),("View Selected",self.open_archived_pdf),("Export Selected",self.export_archived_pdf),("Delete Selected",self.delete_archived_pdf),("Refresh",self.refresh_archive)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
@@ -839,19 +933,24 @@ class MainWindow(QMainWindow):
         self.archive_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.archive_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.archive_table)
-        l.addWidget(QLabel("PDF files are stored as BLOBs in the local database. Back up the database to preserve archived EOD documents."))
+        note=QLabel("Archived PDFs are stored in the local database and included in database backups.")
+        note.setProperty("mutedText", True)
+        l.addWidget(note)
 
     def build_settings(self):
         l=QVBoxLayout(self.settings_tab)
-        l.addWidget(QLabel("<h2>Local data & security</h2>"))
-        l.addWidget(QLabel(f"Database: {DB_PATH}\nBackups: {BACKUP_DIR}\nReports: {EXPORT_DIR}"))
+        self.add_page_header(l, "Settings & Backup", "Manage local storage, account security, and working days.")
+        storage_box=QGroupBox("Storage locations"); storage_form=QFormLayout(storage_box)
+        for label,path in [("Database",DB_PATH),("Backups",BACKUP_DIR),("Reports",EXPORT_DIR)]:
+            path_label=QLabel(str(path)); path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); path_label.setProperty("mutedText", True)
+            storage_form.addRow(label,path_label)
+        l.addWidget(storage_box)
         row=QHBoxLayout(); l.addLayout(row)
-        for label,slot in [("Create Backup",self.backup_db),("Restore Backup",self.restore_backup),("Change Password",self.change_password),("Update Recovery Question",self.update_recovery_question),("Manage HR/Admin Accounts",self.manage_accounts),("Export Employees CSV",self.export_employees_csv)]:
+        for label,slot in [("Create backup",self.backup_db),("Restore backup",self.restore_backup),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
-            if label == "Manage HR/Admin Accounts" and self.user_role != "Admin":
+            if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
                 b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
-        l.addWidget(QLabel("Sign in with an HR or Admin account. Use Forgot password on the sign-in screen to reset a password with your saved recovery question. Keep database backups private."))
-        days_box=QGroupBox("Working weekdays (used for working-day calculations)")
+        days_box=QGroupBox("Working days")
         days_layout=QHBoxLayout(days_box)
         self.workday_checks=[]
         for day_name in ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]:
@@ -860,7 +959,7 @@ class MainWindow(QMainWindow):
         saved_days=self.db.working_weekdays()
         for idx,cb in enumerate(self.workday_checks): cb.setChecked(idx in saved_days)
         l.addWidget(days_box)
-        save_days=QPushButton("Save Working Week")
+        save_days=QPushButton("Save working days")
         save_days.clicked.connect(self.save_working_week)
         l.addWidget(save_days)
         l.addStretch()
@@ -1218,11 +1317,12 @@ class MainWindow(QMainWindow):
             current += timedelta(days=1)
         return total
 
-    def employee_productivity(self, employee):
+    def employee_productivity(self, employee, as_of_date=None):
         start=self.tracking_start_date(employee); today=date.today()
-        task_rows=self.db.conn.execute("SELECT progress,status FROM tasks WHERE employee_id=? AND task_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),today.isoformat())).fetchall()
+        as_of_date=min(as_of_date or today,today)
+        task_rows=self.db.conn.execute("SELECT progress,status FROM tasks WHERE employee_id=? AND task_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),as_of_date.isoformat())).fetchall()
         task_score=(sum(int(t["progress"] or 0) for t in task_rows)/len(task_rows)) if task_rows else None
-        att_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),today.isoformat())).fetchall()
+        att_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),as_of_date.isoformat())).fetchall()
         present=sum(1 for a in att_rows if (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])) and not self.db.is_holiday(a["work_date"]))
         eligible=sum(1 for a in att_rows if not self.db.is_holiday(a["work_date"]) and (a["attendance_status"] in ("Present","Absent") or (a["attendance_status"]=="Unmarked" and a["check_in"])))
         attendance_score=(present/eligible*100) if eligible else None
@@ -1230,7 +1330,7 @@ class MainWindow(QMainWindow):
         elif task_score is not None: score=round(task_score)
         elif attendance_score is not None: score=round(attendance_score)
         else: score=0
-        return {"start":start,"working_days":self.count_working_days(start,today),"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
+        return {"start":start,"working_days":self.count_working_days(start,as_of_date),"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
 
     def refresh_attendance(self):
         if not hasattr(self,"att_table"): return
@@ -1265,7 +1365,7 @@ class MainWindow(QMainWindow):
         month_start=selected.replace(day=1)
         from calendar import monthrange
         month_end=selected.replace(day=monthrange(selected.year,selected.month)[1])
-        end=min(month_end,date.today())
+        end=min(month_end,selected,date.today())
         self.attendance_summary_table.setRowCount(0)
         for e in self.db.employees(False):
             start=self.tracking_start_date(e)
@@ -1277,7 +1377,8 @@ class MainWindow(QMainWindow):
             absent=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Absent")
             leave=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Leave")
             holidays=sum(1 for h in self.db.holidays_between(effective_start.isoformat(),end.isoformat()) if date.fromisoformat(h["holiday_date"]).weekday() in self.db.working_weekdays()) if effective_start<=end else 0
-            since_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],start.isoformat(),date.today().isoformat())).fetchall()
+            since_end=min(selected,date.today())
+            since_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],start.isoformat(),since_end.isoformat())).fetchall()
             since=sum(1 for a in since_rows if not self.db.is_holiday(a["work_date"]) and (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])))
             vals=[e["name"],start.isoformat(),working,present,absent,leave,holidays,since]
             r=self.attendance_summary_table.rowCount(); self.attendance_summary_table.insertRow(r)
@@ -1416,7 +1517,7 @@ class MainWindow(QMainWindow):
         elif report_type=="Employee Productivity":
             data=self.report_data(report_date,employee_id)
             for e,tasks,_att in data:
-                prod=self.employee_productivity(e)
+                prod=self.employee_productivity(e, date.fromisoformat(report_date))
                 doc.add_heading(e["name"],level=1)
                 for label,value in [
                     ("Employee ID",e["employee_code"] or "N/A"),("Department",e["department"] or "N/A"),
@@ -1587,7 +1688,7 @@ class MainWindow(QMainWindow):
         elif report_type == "Employee Productivity":
             data = self.report_data(report_date, employee_id)
             for e, tasks, _att in data:
-                prod = self.employee_productivity(e)
+                prod = self.employee_productivity(e, date.fromisoformat(report_date))
                 story.append(Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]))
                 for label, value in [
                     ("Employee ID", e["employee_code"] or "N/A"),
@@ -1695,7 +1796,7 @@ class MainWindow(QMainWindow):
             elif report_type=="Employee Productivity":
                 w.writerow(["Report date","Employee ID","Employee","Department","Overall score %","Task progress component %","Attendance component %","Scoring explanation","Tracking start","Working days since start","Present days","Tasks counted","Completed/submitted tasks","Task","Task status","Task progress %"])
                 for e,tasks,_att in self.report_data(report_date,employee_id):
-                    prod=self.employee_productivity(e)
+                    prod=self.employee_productivity(e, date.fromisoformat(report_date))
                     explanation="Task progress 70% + attendance 30% when both available; otherwise available component used."
                     if not tasks:
                         w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["present"],prod["tasks"],prod["completed"],"N/A","N/A","N/A"])
@@ -1741,7 +1842,7 @@ class MainWindow(QMainWindow):
         elif kind=="Employee Productivity":
             lines=[self._report_title(kind),f"Date: {d}",""]
             for e,tasks,_a in self.report_data(d,eid):
-                prod=self.employee_productivity(e)
+                prod=self.employee_productivity(e, date.fromisoformat(d))
                 lines.extend([e["name"],f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"}',
                     f'Overall score: {prod["score"]}%',
                     f'Task progress component: {round(prod["task_score"])}%' if prod["task_score"] is not None else "Task progress component: N/A",
@@ -2069,53 +2170,73 @@ def resource_path(relative_path):
 
 def main():
     app=QApplication(sys.argv); app.setStyle("Fusion")
+    QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
+    QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
+    app.setFont(QFont("DejaVu Sans", 9))
     app.setStyleSheet("""
-      * { font-family: "Segoe UI"; font-size: 10pt; color: #eaf1ff; }
-      QMainWindow { background: #07111f; }
-      QWidget { background-color: transparent; }
-      QMenuBar { background: #0b1930; border-bottom: 1px solid #263b5d; padding: 5px 9px; }
-      QMenuBar::item { padding: 8px 12px; border-radius: 7px; background: transparent; }
-      QMenuBar::item:selected { background: #25365a; color: #c7a6ff; }
-      QMenu { background: #111f38; border: 1px solid #35476c; padding: 5px; }
-      QMenu::item { padding: 9px 24px; border-radius: 5px; }
-      QMenu::item:selected { background: #6339a8; color: #ffffff; }
-      QTabWidget::pane { border: 1px solid #263958; border-radius: 14px; background: #0d1a2e; top: -1px; }
-      QTabWidget { background: transparent; }
-      QTabBar { background: transparent; }
-      QTabBar::tab { background: #14223a; color: #b8c7e3; padding: 12px 14px; margin: 5px 3px 2px 3px; border-top-left-radius: 9px; border-top-right-radius: 9px; font-weight: 700; min-width: 105px; min-height: 22px; }
-      QTabBar::tab:selected { background: #673ab7; color: #ffffff; border: 1px solid #9b6bff; border-bottom: 3px solid #c3a1ff; }
-      QTabBar::tab:hover:!selected { background: #253657; color: #ffffff; }
-      QTabBar::scroller { width: 22px; }
-      QTabBar QToolButton { background: #172946; color: #e6edff; border: 1px solid #35476c; border-radius: 5px; }
-      QPushButton { padding: 10px 15px; min-height: 20px; border: 1px solid #46577b; border-radius: 9px; background: #1b2b47; color: #f4f6ff; font-weight: 650; }
-      QPushButton:hover { background: #34476c; border-color: #ad86ff; color: #ffffff; }
-      QPushButton:pressed { background: #4c2b80; }
-      QPushButton:disabled { background: #172235; color: #72809b; border-color: #283750; }
-      QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit { background: #091629; color: #edf2ff; border: 1px solid #344765; border-radius: 8px; padding: 8px 10px; selection-background-color: #673ab7; }
-      QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus { border: 1px solid #b18aff; }
-      QComboBox::drop-down, QDateEdit::drop-down, QTimeEdit::drop-down { border: 0; width: 25px; }
-      QComboBox QAbstractItemView { background: #111f38; color: #edf2ff; selection-background-color: #53328a; border: 1px solid #344765; }
-      QTableWidget { background: #0a1729; alternate-background-color: #101f35; color: #eaf1ff; border: 1px solid #263958; border-radius: 10px; gridline-color: #1b2d49; selection-background-color: #46316c; selection-color: #ffffff; outline: 0; }
-      QTableWidget::item { padding: 8px; border-bottom: 1px solid #1a2b45; }
-      QTableWidget::item:selected { background: #513484; color: #ffffff; }
-      QHeaderView::section { background: #172742; color: #d4c0ff; padding: 10px 8px; border: none; border-bottom: 1px solid #35476c; font-weight: 700; }
-      QGroupBox { font-weight: 700; color: #e7ddff; border: 1px solid #3c3b64; border-radius: 13px; margin-top: 13px; padding: 17px 13px 13px 13px; background: #101d32; }
-      QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; color: #c4a4ff; }
-      QLabel { background: transparent; color: #eaf1ff; }
-      QLabel[h1="true"] { font-size: 22pt; font-weight: 700; color: #ffffff; }
-      QLabel[pageTitle="true"] { font-size: 20pt; font-weight: 750; color: #ffffff; padding: 5px 2px; }
-      QProgressBar { border: 1px solid #344765; border-radius: 6px; text-align: center; color: #f2f4ff; background: #15243a; }
-      QProgressBar::chunk { background: #a56bff; border-radius: 5px; }
-      QCheckBox { spacing: 7px; padding: 4px; color: #d1dcef; }
-      QCheckBox::indicator { width: 17px; height: 17px; }
-      QRadioButton { spacing: 7px; color: #d1dcef; }
-      QStatusBar { background: #091629; color: #9eafca; border-top: 1px solid #263958; }
-      QScrollBar:vertical, QScrollBar:horizontal { background: #0a1729; width: 12px; height: 12px; margin: 2px; }
-      QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #46577b; border-radius: 5px; min-height: 25px; min-width: 25px; }
-      QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #9362df; }
-      QDialog { background: #0d1a2e; }
-      QToolTip { background: #172742; color: #ffffff; border: 1px solid #a56bff; padding: 5px; }
-    """)
+            * { font-family: "DejaVu Sans"; font-size: 9pt; color: #27344b; }
+            QMainWindow { background: #f1f3f8; }
+            QWidget { background-color: transparent; }
+            QMenuBar { background: #ffffff; border-bottom: 1px solid #dce2ed; padding: 4px 8px; }
+            QMenuBar::item { padding: 7px 11px; border-radius: 4px; background: transparent; }
+            QMenuBar::item:selected { background: #f0eaff; color: #6d28d9; }
+            QMenu { background: #ffffff; border: 1px solid #d7deea; padding: 4px; }
+            QMenu::item { padding: 8px 22px; border-radius: 3px; }
+            QMenu::item:selected { background: #f0eaff; color: #6d28d9; }
+            QTabWidget::pane { border: 1px solid #d9e0ea; border-radius: 5px; background: #ffffff; top: -1px; }
+            QTabWidget, QTabBar { background: transparent; }
+            QTabBar::tab { background: #e9edf6; color: #53627c; padding: 9px 13px; margin: 3px 2px 0 2px; border-bottom: 2px solid transparent; font-weight: 600; min-width: 64px; min-height: 20px; }
+            QTabBar::tab:selected { background: #ffffff; color: #6d28d9; border-bottom: 2px solid #8b35e6; }
+            QTabBar::tab:hover:!selected { background: #f4f1fc; color: #28354d; }
+            QTabBar::scroller { width: 22px; }
+            QTabBar QToolButton { background: #ffffff; color: #27344b; border: 1px solid #d7deea; border-radius: 4px; }
+            QPushButton { padding: 7px 12px; min-height: 18px; border: 1px solid #cbd5e5; border-radius: 4px; background: #ffffff; color: #27344b; font-weight: 600; }
+            QPushButton:hover { background: #edf4ff; border-color: #6c9ce0; color: #174a91; }
+            QPushButton:pressed { background: #e3ebfb; }
+            QPushButton:disabled { background: #f1f3f7; color: #8a95a8; border-color: #e0e5ed; }
+            QPushButton:default { background: #315fc4; border-color: #315fc4; color: #ffffff; }
+            QPushButton:default:hover { background: #254fae; border-color: #254fae; }
+            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit { background: #ffffff; color: #27344b; border: 1px solid #cbd5e5; border-radius: 4px; padding: 7px 9px; selection-background-color: #dbeafe; selection-color: #173b70; }
+            QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus { border: 1px solid #4d7ed1; }
+            QComboBox::drop-down, QDateEdit::drop-down, QTimeEdit::drop-down { border: 0; width: 24px; }
+            QComboBox QAbstractItemView { background: #ffffff; color: #27344b; selection-background-color: #ece5ff; selection-color: #5b21b6; border: 1px solid #cbd5e5; outline: 0; }
+            QTableWidget { background: #ffffff; alternate-background-color: #f6f8fc; color: #27344b; border: 1px solid #d9e0ea; border-radius: 4px; gridline-color: #e7ebf2; selection-background-color: #e7eefe; selection-color: #1d3971; outline: 0; }
+            QTableWidget::item { padding: 7px; border-bottom: 1px solid #edf0f5; }
+            QTableWidget::item:selected { background: #e7eefe; color: #1d3971; }
+            QHeaderView::section { background: #edf2fa; color: #40516f; padding: 8px 7px; border: none; border-bottom: 1px solid #d9e0ea; font-weight: 650; }
+            QGroupBox { font-weight: 650; color: #33425e; border: 1px solid #d9e0ea; border-radius: 5px; margin-top: 15px; padding: 13px 12px 11px 12px; background: #ffffff; }
+            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; top: -2px; left: 10px; padding: 0 5px; background: #ffffff; color: #40516f; }
+            QLabel { background: transparent; color: #27344b; }
+            QLabel[pageTitle="true"] { font-size: 18pt; font-weight: 700; color: #202e49; padding: 2px 0; }
+            QLabel[pageSubtitle="true"] { font-size: 9pt; color: #64728a; }
+            QLabel[mutedText="true"] { color: #64728a; }
+            QLabel[heroTitle="true"] { font-size: 20pt; font-weight: 700; color: #ffffff; }
+            QLabel[heroSubtitle="true"] { font-size: 10pt; color: #c7d8ff; }
+            QLabel[welcomeTitle="true"] { font-size: 20pt; font-weight: 700; color: #ffffff; }
+            QLabel[welcomeSubtitle="true"] { font-size: 10pt; color: #dfd2ff; }
+            QLabel#brandLogo, QLabel#welcomeLogo { background: #271050; border: 1px solid #7145ba; border-radius: 4px; }
+            QWidget#dashboardHero { background: #17366c; border-radius: 5px; }
+            QWidget#welcomeHero { background: #4a2085; border-radius: 5px; }
+            QWidget#homeScroll { background: transparent; border: 0; }
+            QGroupBox#guideCard { border-top: 2px solid #728ee0; }
+            QLabel[metricValue="true"] { font-size: 25pt; font-weight: 700; color: #7538cf; padding: 2px 0; }
+            QLabel[statusSummary="true"] { background: #eff4ff; border: 1px solid #d4def4; border-radius: 4px; color: #294268; font-weight: 600; padding: 10px 12px; }
+            QLabel[warningBanner="true"] { background: #fff6df; border: 1px solid #eedca9; border-radius: 4px; color: #71551a; font-weight: 600; padding: 8px 11px; }
+            QProgressBar { border: 1px solid #cbd5e5; border-radius: 4px; text-align: center; color: #27344b; background: #edf2fa; min-height: 14px; }
+            QProgressBar::chunk { background: #3b82d0; border-radius: 3px; }
+            QCheckBox { spacing: 7px; padding: 3px; color: #34435e; }
+            QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #aab8d0; border-radius: 3px; background: #ffffff; }
+            QCheckBox::indicator:checked { background: #6d28d9; border-color: #6d28d9; }
+            QRadioButton { spacing: 7px; color: #34435e; }
+            QStatusBar { background: #ffffff; color: #64728a; border-top: 1px solid #d9e0ea; }
+            QStatusBar::item { border: none; }
+            QScrollBar:vertical, QScrollBar:horizontal { background: transparent; width: 11px; height: 11px; margin: 2px; }
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #c4cde0; border-radius: 4px; min-height: 24px; min-width: 24px; }
+            QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #8ba1cc; }
+            QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+            QDialog { background: #ffffff; }
+            QToolTip { background: #ffffff; color: #27344b; border: 1px solid #b7c4d8; padding: 5px 7px; }
+        """)
     db=Database()
     seed_initial_audit(db)
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
