@@ -26,7 +26,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install PySide6 python-docx reportlab pyinstaller
 
-      - name: Check main script syntax
+      - name: Check source syntax
         shell: pwsh
         run: python -m py_compile app.py
 
@@ -41,19 +41,32 @@ jobs:
             --collect-all reportlab `
             --add-data "assets;assets" app.py
 
-      - name: Verify executable and write checksum
+      - name: Verify EXE and create checksum
         shell: pwsh
         run: |
           $exe = "dist/RawStrengthEmployeeAuditManager.exe"
           if (!(Test-Path $exe)) { throw "Build failed: $exe was not created." }
           Get-FileHash $exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  RawStrengthEmployeeAuditManager.exe" } | Out-File -Encoding ascii dist/SHA256SUMS.txt
 
-      - name: Upload executable artifact
+      - name: Install Inno Setup
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
+        with:
+          path: installer.iss
+          options: /O+
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $setup = "installer-output/RawStrengthEmployeeAuditManager-Setup.exe"
+          if (!(Test-Path $setup)) { throw "Installer was not created: $setup" }
+
+      - name: Upload Windows EXE and Setup installer
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Windows-EXE
+          name: RawStrengthEmployeeAuditManager-Windows-Release
           path: |
             dist/RawStrengthEmployeeAuditManager.exe
             dist/SHA256SUMS.txt
+            installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
