@@ -39,7 +39,7 @@ jobs:
             --collect-all shiboken6 `
             --collect-all docx `
             --collect-all reportlab `
-            app.py
+            --add-data "assets;assets" app.py
 
       - name: Verify executable and write checksum
         shell: pwsh
