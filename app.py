@@ -1493,7 +1493,9 @@ class MainWindow(QMainWindow):
         l=QVBoxLayout()
         self._wrap_page_in_scroll(self.settings_tab, l)
         if hasattr(self, "settings_tab"):
-            self.settings_tab.findChild(QWidget, "pageContent").setObjectName("settingsContent")
+            page = self.settings_tab.findChild(QWidget, "pageContent")
+            if page is not None:
+                page.setObjectName("settingsContent")
         self.add_page_header(l, "Settings & Backup", "Manage local storage, account security, and working days.")
         storage_box=QGroupBox("Storage locations"); storage_form=QFormLayout(storage_box)
         for label,path in [("Database",DB_PATH),("Backups",BACKUP_DIR),("Reports",EXPORT_DIR)]:
