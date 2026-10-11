@@ -34,7 +34,7 @@ RestartApplications=no
 ; Do not add any uninstall cleanup for user data/backups.
 
 [Files]
-Source: "dist\RawStrengthEmployeeAuditManager.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\RawStrengthEmployeeAuditManager\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]

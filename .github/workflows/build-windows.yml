@@ -37,10 +37,10 @@ jobs:
         shell: pwsh
         run: python -m py_compile app.py build_info.py
 
-      - name: Build standalone Windows EXE
+      - name: Build Windows app bundle
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --windowed `
+          python -m PyInstaller --noconfirm --clean --onedir --noupx --windowed `
             --name RawStrengthEmployeeAuditManager `
             --icon assets/raw_strength_icon.ico `
             --version-file version_info.txt `
@@ -52,8 +52,9 @@ jobs:
       - name: Verify EXE
         shell: pwsh
         run: |
-          $exe = "dist/RawStrengthEmployeeAuditManager.exe"
+          $exe = "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe"
           if (!(Test-Path $exe)) { throw "Build failed: $exe was not created." }
+          if (!(Test-Path "dist/RawStrengthEmployeeAuditManager/_internal/python312.dll")) { throw "Build failed: python312.dll is missing from the app bundle." }
 
       - name: Download and verify Visual C++ runtime
         shell: pwsh
@@ -76,12 +77,8 @@ jobs:
         run: |
           $setup = "installer-output/RawStrengthEmployeeAuditManager-Setup.exe"
           if (!(Test-Path $setup)) { throw "Installer was not created: $setup" }
-          $exeHash = (Get-FileHash "dist/RawStrengthEmployeeAuditManager.exe" -Algorithm SHA256).Hash
           $setupHash = (Get-FileHash $setup -Algorithm SHA256).Hash
-          @(
-            "$exeHash  RawStrengthEmployeeAuditManager.exe"
-            "$setupHash  RawStrengthEmployeeAuditManager-Setup.exe"
-          ) | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+          "$setupHash  RawStrengthEmployeeAuditManager-Setup.exe" | Set-Content -Encoding ascii dist/SHA256SUMS.txt
 
       - name: Publish GitHub release
         if: github.event_name == 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
@@ -92,7 +89,6 @@ jobs:
           generate_release_notes: true
           make_latest: true
           files: |
-            dist/RawStrengthEmployeeAuditManager.exe
             dist/SHA256SUMS.txt
             installer-output/RawStrengthEmployeeAuditManager-Setup.exe
 
@@ -101,7 +97,6 @@ jobs:
         with:
           name: RawStrengthEmployeeAuditManager-Windows-Release
           path: |
-            dist/RawStrengthEmployeeAuditManager.exe
             dist/SHA256SUMS.txt
             installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error

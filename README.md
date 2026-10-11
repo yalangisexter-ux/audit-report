@@ -15,7 +15,7 @@
 - Confirming the update closes the app and opens the installer. Windows may request administrator approval; the existing database and backups stay in Local AppData.
 - The built-in updater requires the GitHub repository to be public and releases to include the setup installer and `SHA256SUMS.txt`.
 
-The target Windows PC does not need Python installed. Use the setup installer for first installs and updates; the standalone EXE does not install the Visual C++ runtime prerequisite.
+The target Windows PC does not need Python installed. Use the setup installer for first installs and updates; it installs the Visual C++ runtime prerequisite and places the application DLLs in the installed app folder.
 
 ## UI updates
 
@@ -45,4 +45,4 @@ The GitHub Actions workflow installs dependencies and packages `assets/` into th
 
 ## Installer and data safety
 
-The GitHub Actions workflow now builds both the standalone EXE and an Inno Setup installer. The installer creates Start Menu and optional Desktop shortcuts. The SQLite database and backups remain in the current user's Local AppData and are not stored in the install directory; the installer script intentionally does not remove them during uninstall. Always create a database backup before replacing a production build.
+The GitHub Actions workflow builds an onedir application bundle and an Inno Setup installer. The installer creates Start Menu and optional Desktop shortcuts. The SQLite database and backups remain in the current user's Local AppData and are not stored in the install directory; the installer script intentionally does not remove them during uninstall. Always create a database backup before replacing a production build.
