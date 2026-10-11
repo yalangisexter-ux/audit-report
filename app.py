@@ -419,14 +419,16 @@ class AccountSetupDialog(QDialog):
         form = QFormLayout()
         self.username = QLineEdit("admin")
         self.display_name = QLineEdit("Administrator")
-        self.password = QLineEdit(); self.password.setEchoMode(QLineEdit.Password); self.password.setPlaceholderText("At least 8 characters, including a number")
-        self.confirm = QLineEdit(); self.confirm.setEchoMode(QLineEdit.Password)
+        pw_container = password_field("At least 8 characters, including a number")
+        self.password = pw_container.field
+        confirm_container = password_field("Confirm password")
+        self.confirm = confirm_container.field
         self.question = QComboBox(); self.question.addItems(SECURITY_QUESTIONS)
         self.answer = QLineEdit(); self.answer.setEchoMode(QLineEdit.Password); self.answer.setPlaceholderText("Recovery answer (remember it exactly)")
         form.addRow("Admin username", self.username)
         form.addRow("Display name", self.display_name)
-        form.addRow("New password", self.password)
-        form.addRow("Confirm password", self.confirm)
+        form.addRow("New password", pw_container)
+        form.addRow("Confirm password", confirm_container)
         form.addRow("Password recovery question", self.question)
         form.addRow("Recovery answer", self.answer)
         layout.addLayout(form)
@@ -525,6 +527,29 @@ class ForgotPasswordDialog(QDialog):
         info(self, "Password reset completed. You can now sign in with your new password.")
         self.accept()
 
+
+def password_field(placeholder="Enter password"):
+    """Create a password field with a show/hide toggle button."""
+    container = QWidget()
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(4)
+    field = QLineEdit()
+    field.setEchoMode(QLineEdit.Password)
+    field.setPlaceholderText(placeholder)
+    toggle = QPushButton("Show")
+    toggle.setFixedWidth(52)
+    toggle.setCheckable(True)
+    def on_toggle(checked):
+        field.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
+        toggle.setText("Hide" if checked else "Show")
+    toggle.toggled.connect(on_toggle)
+    layout.addWidget(field, 1)
+    layout.addWidget(toggle)
+    container.field = field  # expose the line edit
+    return container
+
+
 class LoginDialog(QDialog):
     def __init__(self, db):
         super().__init__()
@@ -558,12 +583,11 @@ class LoginDialog(QDialog):
         self.username = QLineEdit()
         self.username.setPlaceholderText("Enter username")
         self.username.setMinimumHeight(36)
-        self.password = QLineEdit()
-        self.password.setEchoMode(QLineEdit.Password)
-        self.password.setPlaceholderText("Enter password")
+        pw_container = password_field("Enter password")
+        self.password = pw_container.field
         self.password.setMinimumHeight(36)
         form.addRow("Username", self.username)
-        form.addRow("Password", self.password)
+        form.addRow("Password", pw_container)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
