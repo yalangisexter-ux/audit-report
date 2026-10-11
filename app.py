@@ -297,7 +297,7 @@ class Database:
         """)
         # Safe additive migrations for databases created by earlier app versions.
         employee_columns = {r["name"] for r in c.execute("PRAGMA table_info(employees)").fetchall()}
-        for column, declaration in (("phone", "TEXT DEFAULT ''"), ("email", "TEXT DEFAULT ''")):
+        for column, declaration in (("phone", "TEXT DEFAULT ''"), ("email", "TEXT DEFAULT ''"), ("active", "INTEGER DEFAULT 1")):
             if column not in employee_columns:
                 c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
