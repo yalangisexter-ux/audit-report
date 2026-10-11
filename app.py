@@ -1045,7 +1045,7 @@ class MainWindow(QMainWindow):
         self.add_page_header(l, "Reports", "Generate audit, attendance, productivity, and employee reports.")
         form=QFormLayout(); l.addLayout(form)
         self.report_type=QComboBox(); self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"])
-        self.report_date=QDateEdit(); configure_date_edit(self.report_date); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setDate(QDate.currentDate())
+        self.report_date=QDateEdit(); configure_date_edit(self.report_date); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setMaximumDate(QDate.currentDate()); self.report_date.setDate(QDate.currentDate())
         self.report_scope=QComboBox(); self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
         self.report_employee=QComboBox(); self.report_employee.addItem("All employees",None)
         self.report_format=QComboBox(); self.report_format.addItems(["Word (.docx)","PDF (.pdf)","CSV (.csv)"])
