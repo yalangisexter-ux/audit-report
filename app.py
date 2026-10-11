@@ -955,23 +955,34 @@ class MainWindow(QMainWindow):
         self._tab_animation = animation
         animation.start()
 
-    def _wrap_page_in_scroll(self, page_widget, content_layout):
+    def _wrap_page_in_scroll(self, page_widget, content_layout, page_title=None, page_subtitle=""):
         """Helper: put page content inside a scroll area so every section has a scrollbar."""
         outer = QVBoxLayout(page_widget)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
+        if page_title:
+            self._add_fixed_page_header(outer, page_title, page_subtitle)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setObjectName("pageScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         content = QWidget()
         content.setObjectName("pageContent")
-        content_layout.setContentsMargins(20, 16, 20, 16)
+        content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
         outer.addWidget(scroll)
         return outer
+
+    def _add_fixed_page_header(self, outer_layout, title, subtitle):
+        header = QWidget()
+        header.setObjectName("pageHeader")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(20, 12, 20, 0)
+        header_layout.setSpacing(0)
+        self.add_page_header(header_layout, title, subtitle)
+        outer_layout.addWidget(header)
 
     @staticmethod
     def add_page_header(layout, title, subtitle):
@@ -1217,8 +1228,7 @@ class MainWindow(QMainWindow):
 
     def build_employees(self):
         l=QVBoxLayout()
-        self._wrap_page_in_scroll(self.employees_tab, l)
-        self.add_page_header(l, "Employees", "Manage employee records, roles, and contact details.")
+        self._wrap_page_in_scroll(self.employees_tab, l, "Employees", "Manage employee records, roles, and contact details.")
         row=QHBoxLayout(); l.addLayout(row)
         self.emp_search=QLineEdit(); self.emp_search.setPlaceholderText("Search employee name, ID or department"); self.emp_search.textChanged.connect(self.refresh_employees); row.addWidget(self.emp_search)
         emp_tips = {"Add": "Add a new employee", "Edit": "Edit the selected employee", "Activate / Deactivate": "Toggle active status", "Delete": "Permanently delete the selected employee"}
@@ -1229,8 +1239,7 @@ class MainWindow(QMainWindow):
 
     def build_tasks(self):
         l=QVBoxLayout()
-        self._wrap_page_in_scroll(self.tasks_tab, l)
-        self.add_page_header(l, "Task Manager", "Add, edit, and track daily tasks and evidence.")
+        self._wrap_page_in_scroll(self.tasks_tab, l, "Task Manager", "Add, edit, and track daily tasks and evidence.")
         row=QHBoxLayout(); l.addLayout(row)
         self.task_date=QDateEdit(); configure_date_edit(self.task_date); self.task_date.setDisplayFormat("yyyy-MM-dd"); self.task_date.setDate(QDate.currentDate()); self.task_date.dateChanged.connect(self.refresh_tasks)
         row.addWidget(QLabel("Date")); row.addWidget(self.task_date)
@@ -1245,8 +1254,7 @@ class MainWindow(QMainWindow):
 
     def build_tracker(self):
         l=QVBoxLayout()
-        self._wrap_page_in_scroll(self.tracker_tab, l)
-        self.add_page_header(l, "Employee Task Tracker", "Review assigned work and evidence.")
+        self._wrap_page_in_scroll(self.tracker_tab, l, "Employee Task Tracker", "Review assigned work and evidence.")
         filters=QHBoxLayout(); l.addLayout(filters)
         self.tracker_employee=QComboBox(); self.tracker_employee.addItem("Select employee", None)
         self.tracker_employee.currentIndexChanged.connect(self.refresh_tracker)
@@ -1273,8 +1281,7 @@ class MainWindow(QMainWindow):
 
     def build_attendance(self):
         l=QVBoxLayout()
-        self._wrap_page_in_scroll(self.attendance_tab, l)
-        self.add_page_header(l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
+        self._wrap_page_in_scroll(self.attendance_tab, l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
 
         # Date row
         row=QHBoxLayout(); row.setSpacing(8); l.addLayout(row)
@@ -1349,6 +1356,7 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(self.reports_tab)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
+        self._add_fixed_page_header(outer, "Reports", "Generate audit, attendance, productivity, and employee reports.")
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -1357,10 +1365,8 @@ class MainWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("pageContent")
         l = QVBoxLayout(content)
-        l.setContentsMargins(20, 16, 20, 16)
+        l.setContentsMargins(20, 0, 20, 16)
         l.setSpacing(12)
-
-        self.add_page_header(l, "Reports", "Generate audit, attendance, productivity, and employee reports.")
 
         # Form section in a card-like group
         form_group = QGroupBox("Report parameters")
@@ -1483,8 +1489,7 @@ class MainWindow(QMainWindow):
 
     def build_archive(self):
         l=QVBoxLayout()
-        self._wrap_page_in_scroll(self.archive_tab, l)
-        self.add_page_header(l, "Historical EOD Archive", "Store and retrieve uploaded EOD PDFs.")
+        self._wrap_page_in_scroll(self.archive_tab, l, "Historical EOD Archive", "Store and retrieve uploaded EOD PDFs.")
         row=QHBoxLayout(); l.addLayout(row)
         for label,slot in [("Upload PDF(s)",self.upload_eod_pdfs),("View Selected",self.open_archived_pdf),("Export Selected",self.export_archived_pdf),("Delete Selected",self.delete_archived_pdf),("Refresh",self.refresh_archive)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
@@ -1500,12 +1505,11 @@ class MainWindow(QMainWindow):
 
     def build_settings(self):
         l=QVBoxLayout()
-        self._wrap_page_in_scroll(self.settings_tab, l)
+        self._wrap_page_in_scroll(self.settings_tab, l, "Settings & Backup", "Manage local storage, account security, and working days.")
         if hasattr(self, "settings_tab"):
             page = self.settings_tab.findChild(QWidget, "pageContent")
             if page is not None:
                 page.setObjectName("settingsContent")
-        self.add_page_header(l, "Settings & Backup", "Manage local storage, account security, and working days.")
         storage_box=QGroupBox("Storage locations"); storage_form=QFormLayout(storage_box)
         for label,path in [("Database",DB_PATH),("Backups",BACKUP_DIR),("Reports",EXPORT_DIR)]:
             path_label=QLabel(str(path)); path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); path_label.setProperty("mutedText", True)
