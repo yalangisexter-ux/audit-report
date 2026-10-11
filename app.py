@@ -381,9 +381,44 @@ class Database:
                 c.execute(f"ALTER TABLE tasks ADD COLUMN {column} {declaration}")
 
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
-        if "attendance_status" not in attendance_columns:
-            c.execute("ALTER TABLE attendance ADD COLUMN attendance_status TEXT DEFAULT 'Unmarked'")
-            c.execute("UPDATE attendance SET attendance_status='Present' WHERE COALESCE(check_in, '') <> ''")
+
+        # Additive compatibility migration for attendance tables created by older
+        # versions. Keep existing rows and recover dates from a legacy date column.
+        if "work_date" not in attendance_columns:
+            c.execute("ALTER TABLE attendance ADD COLUMN work_date TEXT NOT NULL DEFAULT ''")
+            legacy_date_column = next(
+                (name for name in ("attendance_date", "date", "record_date")
+                 if name in attendance_columns),
+                None,
+            )
+            if legacy_date_column:
+                # The column name comes only from the fixed allow-list above.
+                c.execute(
+                    f"UPDATE attendance SET work_date = CAST({legacy_date_column} AS TEXT) "
+                    "WHERE COALESCE(work_date, '') = '' "
+                    f"AND COALESCE(CAST({legacy_date_column} AS TEXT), '') <> ''"
+                )
+            attendance_columns.add("work_date")
+
+        # Ensure columns used by the current attendance screen and reports exist.
+        attendance_migrations = (
+            ("check_in", "TEXT DEFAULT ''"),
+            ("check_out", "TEXT DEFAULT ''"),
+            ("break_minutes", "INTEGER DEFAULT 0"),
+            ("attendance_status", "TEXT DEFAULT 'Unmarked'"),
+            ("attendance_note", "TEXT DEFAULT ''"),
+            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+        )
+        for column, declaration in attendance_migrations:
+            if column not in attendance_columns:
+                c.execute(f"ALTER TABLE attendance ADD COLUMN {column} {declaration}")
+                attendance_columns.add(column)
+
+        c.execute(
+            "UPDATE attendance SET attendance_status='Present' "
+            "WHERE COALESCE(check_in, '') <> '' "
+            "AND COALESCE(attendance_status, 'Unmarked') = 'Unmarked'"
+        )
         if not self.get_setting("working_weekdays"):
             self.set_setting("working_weekdays", "0,1,2,3,4")
         # Restore task-employee links only when unambiguous
