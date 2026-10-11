@@ -981,7 +981,7 @@ class MainWindow(QMainWindow):
         text_col.setSpacing(2)
         title_label = QLabel(title)
         title_label.setProperty("pageTitle", True)
-        title_label.setWordWrap(False)
+        title_label.setWordWrap(True)
         text_col.addWidget(title_label)
         if subtitle:
             subtitle_label = QLabel(subtitle)
@@ -2810,7 +2810,7 @@ QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
 QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #E0E7FF, stop:0.35 #C7D2FE, stop:0.7 #A5B4FC, stop:1 #818CF8); }
-QWidget#titleBar { background: #15233F; border-bottom: 1px solid #1E2F52; }
+QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose { min-width: 0 !important; max-width: 40px; padding: 0; margin: 0;
     background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
@@ -2820,7 +2820,7 @@ QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
 QPushButton#titleFileBtn { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; padding: 0 10px; font-weight: 600; }
 QPushButton#titleFileBtn:hover { background: #1E2F52; color: #FFFFFF; }
 QPushButton#titleFileBtn::menu-indicator { image: none; }
-QTabWidget::pane { border: 0; background: transparent; top: 0; }
+QTabWidget::pane { border: 0; background: transparent; top: 0; margin-top: 0; }
 QTabWidget { background: transparent; }
 QMenuBar { background: #F1F5F9; border-bottom: 1px solid #CBD5E1; padding: 5px 10px; color: #1E293B; }
 QMenuBar::item { padding: 7px 12px; border-radius: 6px; background: transparent; color: #1E293B; }
@@ -2829,7 +2829,7 @@ QMenu { background: #F1F5F9; border: 1px solid #CBD5E1; padding: 6px; border-rad
 QMenu::item { padding: 8px 22px; border-radius: 5px; color: #1E293B; }
 QMenu::item:selected { background: #E0E7FF; color: #5B21B6; }
 QTabBar { background: #15233F; }
-QTabBar::tab { background: transparent; color: #C7D2E8; padding: 12px 15px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 68px; min-height: 24px; }
+QTabBar::tab { background: transparent; color: #C7D2E8; padding: 10px 12px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 60px; min-height: 22px; }
 QTabBar::tab:selected { background: #1E2F52; color: #ffffff; border-bottom: 3px solid #7C5CFC; }
 QTabBar::tab:hover:!selected { background: #1A2A4A; color: #ffffff; }
 QTabBar::scroller { width: 24px; }
@@ -2931,7 +2931,7 @@ QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose { mi
 }
 QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E293B; color: #FFFFFF; }
 QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
-QTabWidget::pane { border: 0; background: transparent; top: 0; }
+QTabWidget::pane { border: 0; background: transparent; top: 0; margin-top: 0; }
 QTabWidget { background: transparent; }
 QMenuBar { background: #111827; border-bottom: 1px solid #1F2937; padding: 5px 10px; color: #E2E8F0; }
 QMenuBar::item { padding: 7px 12px; border-radius: 6px; background: transparent; color: #E2E8F0; }
