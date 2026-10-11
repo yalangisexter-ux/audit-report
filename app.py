@@ -712,14 +712,12 @@ class MainWindow(QMainWindow):
         welcome_layout = QHBoxLayout(welcome)
         welcome_layout.setContentsMargins(20, 16, 20, 16)
         welcome_layout.setSpacing(18)
-        logo = QLabel()
-        logo.setObjectName("welcomeLogo")
-        logo.setFixedSize(112, 76)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo_path = resource_path("assets/raw_strength_brand.png")
-        if Path(logo_path).exists():
-            logo.setPixmap(QPixmap(logo_path).scaled(104, 68, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        welcome_layout.addWidget(logo)
+        brand_mark = QLabel()
+        brand_mark.setObjectName("welcomeMark")
+        brand_mark.setFixedSize(80, 80)
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
+        welcome_layout.addWidget(brand_mark)
         welcome_copy = QVBoxLayout()
         welcome_title = QLabel(f"Welcome, {self.current_user.get('display_name') or self.current_user.get('username')}")
         welcome_title.setProperty("welcomeTitle", True)
@@ -789,20 +787,17 @@ class MainWindow(QMainWindow):
         l=QVBoxLayout(self.dashboard)
         hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero"); hero_widget.setFixedHeight(112)
         hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
-        logo=QLabel()
-        logo_path = resource_path("assets/raw_strength_brand.png")
-        if Path(logo_path).exists():
-            pix=QPixmap(logo_path)
-            logo.setPixmap(pix.scaled(122, 78, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        logo.setObjectName("brandLogo")
-        logo.setFixedSize(122, 78)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hero.addWidget(logo)
+        brand_mark=QLabel()
+        brand_mark.setObjectName("dashboardMark")
+        brand_mark.setFixedSize(80, 80)
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
+        hero.addWidget(brand_mark)
         heading=QVBoxLayout()
-        title=QLabel("Employee Audit Manager")
+        title=QLabel("Raw Strength Calisthenics")
         title.setProperty("heroTitle", True)
         heading.addWidget(title)
-        subtitle=QLabel("Offline workforce operations")
+        subtitle=QLabel("Employee Audit Manager · Offline workforce operations")
         subtitle.setProperty("heroSubtitle", True)
         heading.addWidget(subtitle)
         heading.addStretch(1)
@@ -2259,7 +2254,7 @@ def main():
             QLabel[heroSubtitle="true"] { font-size: 10pt; color: #c7d8ff; }
             QLabel[welcomeTitle="true"] { font-size: 20pt; font-weight: 700; color: #ffffff; }
             QLabel[welcomeSubtitle="true"] { font-size: 10pt; color: #dfd2ff; }
-            QLabel#brandLogo, QLabel#welcomeLogo { background: #271050; border: 1px solid #7145ba; border-radius: 4px; }
+            QLabel#dashboardMark, QLabel#welcomeMark { background: transparent; border: 0; }
             QWidget#dashboardHero { background: #17366c; border-radius: 5px; }
             QWidget#welcomeHero { background: #4a2085; border-radius: 5px; }
             QWidget#homeScroll, QWidget#homeContent { background: #f2f4f8; border: 0; }
