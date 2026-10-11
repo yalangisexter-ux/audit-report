@@ -1517,12 +1517,22 @@ class MainWindow(QMainWindow):
         save_days.clicked.connect(self.save_working_week)
         l.addWidget(save_days)
         appearance_box=QGroupBox("Appearance")
-        appearance_row=QHBoxLayout(appearance_box)
-        appearance_row.addWidget(QLabel("Theme"))
-        self.settings_theme_btn=QPushButton("Toggle Day / Night mode")
-        self.settings_theme_btn.clicked.connect(self.toggle_theme)
-        appearance_row.addWidget(self.settings_theme_btn)
-        appearance_row.addStretch(1)
+        appearance_layout=QVBoxLayout(appearance_box)
+        appearance_layout.setSpacing(12)
+        theme_row=QHBoxLayout()
+        theme_row.addWidget(QLabel("Theme"))
+        self.theme_combo=QComboBox()
+        self.theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
+        current = self.current_theme().capitalize()
+        if current in ["Day", "Night", "Ocean", "Sunset"]:
+            self.theme_combo.setCurrentText(current)
+        self.theme_combo.currentTextChanged.connect(lambda t: self.apply_theme(t.lower()))
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch(1)
+        appearance_layout.addLayout(theme_row)
+        note=QLabel("Choose a color theme. Changes apply immediately.")
+        note.setProperty("mutedText", True)
+        appearance_layout.addWidget(note)
         l.addWidget(appearance_box)
         l.addStretch()
 
@@ -3012,8 +3022,20 @@ def apply_app_theme(app, theme_name):
     if theme_name in ("night", "dark"):
         app.setStyleSheet(dark_stylesheet())
         return "night"
+    if theme_name == "ocean":
+        app.setStyleSheet(ocean_stylesheet())
+        return "ocean"
+    if theme_name == "sunset":
+        app.setStyleSheet(sunset_stylesheet())
+        return "sunset"
     app.setStyleSheet(light_stylesheet())
     return "day"
+
+def ocean_stylesheet():
+    return light_stylesheet().replace("#7C5CFC", "#0EA5E9").replace("#6D28D9", "#0284C7").replace("#15233F", "#0C4A6E").replace("#E2E8F0", "#E0F2FE").replace("#F1F5F9", "#F0F9FF")
+
+def sunset_stylesheet():
+    return light_stylesheet().replace("#7C5CFC", "#F97316").replace("#6D28D9", "#EA580C").replace("#15233F", "#7C2D12").replace("#E2E8F0", "#FFF7ED").replace("#F1F5F9", "#FFEDD5")
 
 
 def resource_path(relative_path):
