@@ -5,8 +5,15 @@
 1. Extract this ZIP and upload the contents of this folder to the root of a GitHub repository.
 2. Open **Actions** and select **Build Raw Strength Employee Audit Manager (Windows)**.
 3. Select **Run workflow** or push to `main` / `master`.
-4. After the workflow succeeds, download `RawStrengthEmployeeAuditManager-Windows-Release`. Use `RawStrengthEmployeeAuditManager-Setup.exe` for installation, or the standalone EXE if preferred.
+4. Pushes to `main` / `master` publish a versioned GitHub Release. The Actions artifact `RawStrengthEmployeeAuditManager-Windows-Release` is also available for 14 days.
 5. Extract the artifact and run `RawStrengthEmployeeAuditManager.exe`.
+
+## In-app updates
+
+- Select **Update application** on the Home page to check the latest GitHub Release.
+- New installers are downloaded in the background and verified against the published SHA-256 checksum before they can be started.
+- Confirming the update closes the app and opens the installer. Windows may request administrator approval; the existing database and backups stay in Local AppData.
+- The built-in updater requires the GitHub repository to be public and releases to include the setup installer and `SHA256SUMS.txt`.
 
 The target Windows PC does not need Python installed.
 

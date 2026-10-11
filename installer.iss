@@ -1,5 +1,10 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
-#define MyAppVersion "1.0.0"
+#define AppVersionEnv GetEnv("APP_VERSION")
+#if AppVersionEnv == ""
+	#define MyAppVersion "1.0.0"
+#else
+	#define MyAppVersion AppVersionEnv
+#endif
 #define MyAppPublisher "Raw Strength Calisthenics"
 #define MyAppExeName "RawStrengthEmployeeAuditManager.exe"
 
@@ -23,6 +28,8 @@ PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 Uninstallable=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
+CloseApplications=yes
+RestartApplications=no
 ; The app database is stored in {localappdata}\EmployeeAuditManager, not here.
 ; Do not add any uninstall cleanup for user data/backups.
 

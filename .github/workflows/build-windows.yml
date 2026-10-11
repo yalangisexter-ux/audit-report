@@ -6,7 +6,7 @@ on:
     branches: [main, master]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -14,6 +14,13 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set release version
+        shell: pwsh
+        run: |
+          $version = "1.0.$env:GITHUB_RUN_NUMBER"
+          "APP_VERSION = `"$version`"" | Set-Content -Encoding ascii build_info.py
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,7 +35,7 @@ jobs:
 
       - name: Check source syntax
         shell: pwsh
-        run: python -m py_compile app.py
+        run: python -m py_compile app.py build_info.py
 
       - name: Build standalone Windows EXE
         shell: pwsh
@@ -42,12 +49,11 @@ jobs:
             --collect-all reportlab `
             --add-data "assets;assets" app.py
 
-      - name: Verify EXE and create checksum
+      - name: Verify EXE
         shell: pwsh
         run: |
           $exe = "dist/RawStrengthEmployeeAuditManager.exe"
           if (!(Test-Path $exe)) { throw "Build failed: $exe was not created." }
-          Get-FileHash $exe -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  RawStrengthEmployeeAuditManager.exe" } | Out-File -Encoding ascii dist/SHA256SUMS.txt
 
       - name: Install Inno Setup
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.5
@@ -60,6 +66,25 @@ jobs:
         run: |
           $setup = "installer-output/RawStrengthEmployeeAuditManager-Setup.exe"
           if (!(Test-Path $setup)) { throw "Installer was not created: $setup" }
+          $exeHash = (Get-FileHash "dist/RawStrengthEmployeeAuditManager.exe" -Algorithm SHA256).Hash
+          $setupHash = (Get-FileHash $setup -Algorithm SHA256).Hash
+          @(
+            "$exeHash  RawStrengthEmployeeAuditManager.exe"
+            "$setupHash  RawStrengthEmployeeAuditManager-Setup.exe"
+          ) | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Raw Strength Employee Audit Manager 1.0.${{ github.run_number }}
+          generate_release_notes: true
+          make_latest: true
+          files: |
+            dist/RawStrengthEmployeeAuditManager.exe
+            dist/SHA256SUMS.txt
+            installer-output/RawStrengthEmployeeAuditManager-Setup.exe
 
       - name: Upload Windows EXE and Setup installer
         uses: actions/upload-artifact@v4

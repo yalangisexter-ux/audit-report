@@ -1,7 +1,8 @@
-import os, sys, sqlite3, shutil, webbrowser, hashlib, secrets
+import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets
 from pathlib import Path
 from datetime import datetime, date
-from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation
+from urllib.request import Request, urlopen
+from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -20,6 +21,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, 
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from build_info import APP_VERSION
 
 # Embedded historical audit seed data (combined from audit_seed.py).
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
@@ -121,6 +123,9 @@ def seed_initial_audit(db):
 
 
 APP_NAME = "Raw Strength Calisthenics — Employee Audit Manager"
+GITHUB_REPOSITORY = "yalangisexter-ux/audit-report"
+GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
+GITHUB_RELEASE_DOWNLOAD_PREFIX = f"https://github.com/{GITHUB_REPOSITORY}/releases/download/"
 APP_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "EmployeeAuditManager"
 DB_PATH = APP_DIR / "employee_audit.db"
 BACKUP_DIR = APP_DIR / "backups"
@@ -134,7 +139,90 @@ def now_text():
 
 def configure_date_edit(date_edit):
     date_edit.setCalendarPopup(True)
-    date_edit.calendarWidget().clicked.connect(date_edit.setDate)
+
+
+def release_version_tuple(version):
+    parts = str(version).strip().removeprefix("v").split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError(f"Unsupported application version: {version}")
+    return tuple(int(part) for part in parts)
+
+
+class UpdateWorker(QObject):
+    ready = Signal(str, str)
+    current = Signal(str)
+    failed = Signal(str)
+    completed = Signal()
+
+    def __init__(self, current_version):
+        super().__init__()
+        self.current_version = current_version
+
+    @staticmethod
+    def request_bytes(url, accept="application/vnd.github+json"):
+        request = Request(url, headers={
+            "Accept": accept,
+            "User-Agent": "RawStrengthEmployeeAuditManager",
+        })
+        with urlopen(request, timeout=30) as response:
+            return response.read()
+
+    def run(self):
+        try:
+            release = json.loads(self.request_bytes(GITHUB_RELEASES_API).decode("utf-8"))
+            latest_version = release.get("tag_name", "")
+            latest_parts = release_version_tuple(latest_version)
+            if latest_parts <= release_version_tuple(self.current_version):
+                self.current.emit(self.current_version)
+                return
+
+            assets = {asset.get("name"): asset.get("browser_download_url", "")
+                      for asset in release.get("assets", [])}
+            installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
+            installer_url = assets.get(installer_name, "")
+            checksum_url = assets.get("SHA256SUMS.txt", "")
+            for asset_url in (installer_url, checksum_url):
+                if not asset_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
+                    raise ValueError("The latest release is missing a trusted installer or checksum.")
+
+            checksums = self.request_bytes(checksum_url, "text/plain").decode("ascii")
+            expected_hash = None
+            for line in checksums.splitlines():
+                fields = line.split(maxsplit=1)
+                if len(fields) == 2 and Path(fields[1].lstrip("* ")).name == installer_name:
+                    expected_hash = fields[0].lower()
+                    break
+            if not expected_hash or len(expected_hash) != 64:
+                raise ValueError("The installer checksum was not found in the release.")
+
+            version_text = ".".join(str(part) for part in latest_parts)
+            update_dir = APP_DIR / "updates" / version_text
+            update_dir.mkdir(parents=True, exist_ok=True)
+            installer_path = update_dir / installer_name
+            partial_path = update_dir / (installer_name + ".part")
+            digest = hashlib.sha256()
+            try:
+                request = Request(installer_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
+                with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output.write(chunk)
+                        digest.update(chunk)
+                if digest.hexdigest() != expected_hash:
+                    raise ValueError("The downloaded installer failed SHA-256 verification.")
+                os.replace(partial_path, installer_path)
+            except Exception:
+                partial_path.unlink(missing_ok=True)
+                raise
+
+            self.ready.emit(str(installer_path), version_text)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        finally:
+            self.completed.emit()
+
 
 def hash_pin(pin, salt=None):
     salt = salt or secrets.token_hex(16)
@@ -745,6 +833,13 @@ class MainWindow(QMainWindow):
         role_label.setProperty("roleBadge", True)
         session_layout.addWidget(role_label)
         session_layout.addStretch(1)
+        version_label = QLabel(f"Version {APP_VERSION}")
+        version_label.setProperty("mutedText", True)
+        session_layout.addWidget(version_label)
+        self.update_button = QPushButton("Update application")
+        self.update_button.setToolTip("Check GitHub for the latest application installer")
+        self.update_button.clicked.connect(self.check_for_updates)
+        session_layout.addWidget(self.update_button)
         session_layout.addWidget(QLabel("Local database · Offline"))
         content_layout.addWidget(session_strip)
 
@@ -786,6 +881,54 @@ class MainWindow(QMainWindow):
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
         page_layout.addWidget(self.home_scroll)
+
+    def check_for_updates(self):
+        if getattr(self, "_update_thread", None) is not None:
+            return
+        self.update_button.setEnabled(False)
+        self.update_button.setText("Checking for updates...")
+        thread = QThread(self)
+        worker = UpdateWorker(APP_VERSION)
+        worker.moveToThread(thread)
+        self._update_thread = thread
+        self._update_worker = worker
+        thread.started.connect(worker.run)
+        worker.current.connect(self._update_is_current)
+        worker.ready.connect(self._update_is_ready)
+        worker.failed.connect(self._update_failed)
+        worker.completed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._finish_update_check)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+
+    def _update_is_current(self, version):
+        info(self, f"You are already using the latest version ({version}).")
+
+    def _update_is_ready(self, installer_path, version):
+        answer = QMessageBox.question(
+            self,
+            "Update ready",
+            f"Version {version} has been downloaded and verified. Close the app and start the installer now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            subprocess.Popen([installer_path], close_fds=True)
+        except OSError as exc:
+            return error(self, f"Could not start the update installer:\n{exc}")
+        self.close()
+
+    def _update_failed(self, message):
+        error(self, f"Could not check for or install updates:\n{message}")
+
+    def _finish_update_check(self):
+        self._update_worker = None
+        self._update_thread = None
+        self.update_button.setText("Update application")
+        self.update_button.setEnabled(True)
 
     def build_dashboard(self):
         l=QVBoxLayout(self.dashboard)
