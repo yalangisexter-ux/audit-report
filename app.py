@@ -132,6 +132,10 @@ EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def configure_date_edit(date_edit):
+    date_edit.setCalendarPopup(True)
+    date_edit.calendarWidget().clicked.connect(date_edit.setDate)
+
 def hash_pin(pin, salt=None):
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt.encode(), 200_000).hex()
@@ -513,7 +517,7 @@ class EmployeeDialog(QDialog):
         self.email=QLineEdit(row["email"] if row and "email" in row.keys() else "")
         self.phone.setPlaceholderText("Optional")
         self.email.setPlaceholderText("Optional")
-        self.join=QDateEdit(); self.join.setCalendarPopup(True); self.join.setDisplayFormat("yyyy-MM-dd")
+        self.join=QDateEdit(); configure_date_edit(self.join); self.join.setDisplayFormat("yyyy-MM-dd")
         self.join.setDate(QDate.fromString(row["joining_date"], "yyyy-MM-dd") if row and row["joining_date"] else QDate.currentDate())
         self.join_known=QCheckBox("Joining date is known")
         self.join_known.setChecked(bool(not row or row["joining_date"]))
@@ -550,7 +554,7 @@ class TaskDialog(QDialog):
         if employee_id is not None:
             idx=self.employee.findData(employee_id)
             if idx >= 0: self.employee.setCurrentIndex(idx)
-        self.date=QDateEdit(); self.date.setCalendarPopup(True); self.date.setDisplayFormat("yyyy-MM-dd")
+        self.date=QDateEdit(); configure_date_edit(self.date); self.date.setDisplayFormat("yyyy-MM-dd")
         self.date.setDate(QDate.fromString(row["task_date"],"yyyy-MM-dd") if row else QDate.currentDate())
         self.title=QLineEdit(row["title"] if row else "")
         self.details=QTextEdit(row["details"] if row else ""); self.details.setMaximumHeight(70)
@@ -836,7 +840,7 @@ class MainWindow(QMainWindow):
 
     def build_tasks(self):
         l=QVBoxLayout(self.tasks_tab); row=QHBoxLayout(); l.addLayout(row)
-        self.task_date=QDateEdit(); self.task_date.setCalendarPopup(True); self.task_date.setDisplayFormat("yyyy-MM-dd"); self.task_date.setDate(QDate.currentDate()); self.task_date.dateChanged.connect(self.refresh_tasks)
+        self.task_date=QDateEdit(); configure_date_edit(self.task_date); self.task_date.setDisplayFormat("yyyy-MM-dd"); self.task_date.setDate(QDate.currentDate()); self.task_date.dateChanged.connect(self.refresh_tasks)
         row.addWidget(QLabel("Date")); row.addWidget(self.task_date)
         self.task_filter=QComboBox(); self.task_filter.addItem("All employees",None)
         row.addWidget(self.task_filter)
@@ -852,7 +856,7 @@ class MainWindow(QMainWindow):
         filters=QHBoxLayout(); l.addLayout(filters)
         self.tracker_employee=QComboBox(); self.tracker_employee.addItem("Select employee", None)
         self.tracker_employee.currentIndexChanged.connect(self.refresh_tracker)
-        self.tracker_date=QDateEdit(); self.tracker_date.setCalendarPopup(True); self.tracker_date.setDisplayFormat("yyyy-MM-dd"); self.tracker_date.setDate(QDate.currentDate()); self.tracker_date.dateChanged.connect(self.refresh_tracker)
+        self.tracker_date=QDateEdit(); configure_date_edit(self.tracker_date); self.tracker_date.setDisplayFormat("yyyy-MM-dd"); self.tracker_date.setDate(QDate.currentDate()); self.tracker_date.dateChanged.connect(self.refresh_tracker)
         filters.addWidget(QLabel("Employee")); filters.addWidget(self.tracker_employee,2)
         filters.addWidget(QLabel("Task date")); filters.addWidget(self.tracker_date)
         self.tracker_summary=QLabel("Select an employee to view assigned tasks.")
@@ -877,7 +881,7 @@ class MainWindow(QMainWindow):
         l=QVBoxLayout(self.attendance_tab)
         self.add_page_header(l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
         row=QHBoxLayout(); l.addLayout(row)
-        self.att_date=QDateEdit(); self.att_date.setCalendarPopup(True); self.att_date.setDisplayFormat("yyyy-MM-dd"); self.att_date.setDate(QDate.currentDate()); self.att_date.dateChanged.connect(self.refresh_attendance)
+        self.att_date=QDateEdit(); configure_date_edit(self.att_date); self.att_date.setDisplayFormat("yyyy-MM-dd"); self.att_date.setDate(QDate.currentDate()); self.att_date.dateChanged.connect(self.refresh_attendance)
         row.addWidget(QLabel("Selected date")); row.addWidget(self.att_date)
         for label,slot in [("Mark Present",lambda:self.set_attendance_status("Present")),("Mark Absent",lambda:self.set_attendance_status("Absent")),("Mark Leave",lambda:self.set_attendance_status("Leave")),("Check In",self.check_in),("Check Out",self.check_out),("Edit Note",self.attendance_note),("Declare Holiday",self.declare_holiday),("Remove Holiday",self.remove_holiday)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
@@ -898,7 +902,7 @@ class MainWindow(QMainWindow):
         self.add_page_header(l, "Reports", "Generate audit, attendance, productivity, and employee reports.")
         form=QFormLayout(); l.addLayout(form)
         self.report_type=QComboBox(); self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"])
-        self.report_date=QDateEdit(); self.report_date.setCalendarPopup(True); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setDate(QDate.currentDate())
+        self.report_date=QDateEdit(); configure_date_edit(self.report_date); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setDate(QDate.currentDate())
         self.report_scope=QComboBox(); self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
         self.report_employee=QComboBox(); self.report_employee.addItem("All employees",None)
         self.report_format=QComboBox(); self.report_format.addItems(["Word (.docx)","PDF (.pdf)","CSV (.csv)"])
