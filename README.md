@@ -11,9 +11,15 @@
 ## In-app updates
 
 - Select **Update application** on the Home page to check the latest GitHub Release.
-- New installers are downloaded in the background and verified against the published SHA-256 checksum before they can be started.
+- New installers are downloaded in the background over HTTPS from the public GitHub release.
 - Confirming the update closes the app and opens the installer. Windows may request administrator approval; the existing database and backups stay in Local AppData.
-- The built-in updater requires the GitHub repository to be public and releases to include the setup installer and `SHA256SUMS.txt`.
+- The built-in updater requires the GitHub repository to be public and releases to include the setup installer (`RawStrengthEmployeeAuditManager-Setup.exe`).
+
+## Public download
+
+Latest Windows installer: [GitHub Releases](https://github.com/yalangisexter-ux/audit-report/releases/latest)
+
+Anyone with the link can download the installer without a GitHub account.
 
 The target Windows PC does not need Python installed. Use the setup installer for first installs and updates; it installs the Visual C++ runtime prerequisite and places the application DLLs in the installed app folder.
 
