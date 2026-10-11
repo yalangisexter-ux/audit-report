@@ -103,3 +103,43 @@ def test_migration_adds_missing_employee_id_column():
     assert "employee_id" in columns
     assert result["employee_id"] == 1
     conn.close()
+
+def test_database_setup_migrates_legacy_attendance_status(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.sqlite3"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE employees ("
+        "id INTEGER PRIMARY KEY, employee_name TEXT, employee_code TEXT)"
+    )
+    conn.execute("INSERT INTO employees VALUES (1, 'Alice', 'A1')")
+    conn.execute(
+        "CREATE TABLE tasks ("
+        "id INTEGER PRIMARY KEY, title TEXT, employee_name TEXT)"
+    )
+    conn.execute("INSERT INTO tasks VALUES (10, 'Legacy task', 'Alice')")
+    conn.execute(
+        "CREATE TABLE attendance ("
+        "id INTEGER PRIMARY KEY, employee_id INTEGER, "
+        "work_date TEXT, check_in TEXT, check_out TEXT)"
+    )
+    conn.execute("INSERT INTO attendance VALUES (1, 1, '2026-10-11', '09:00', '')")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    database = app.Database()
+    try:
+        attendance = database.conn.execute(
+            "SELECT attendance_status, check_in FROM attendance WHERE id = 1"
+        ).fetchone()
+        task = database.conn.execute(
+            "SELECT employee_id FROM tasks WHERE id = 10"
+        ).fetchone()
+        employee = database.conn.execute(
+            "SELECT name FROM employees WHERE id = 1"
+        ).fetchone()
+        assert attendance["attendance_status"] == "Present"
+        assert attendance["check_in"] == "09:00"
+        assert task["employee_id"] == 1
+        assert employee["name"] == "Alice"
+    finally:
+        database.conn.close()
