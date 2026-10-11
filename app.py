@@ -2803,11 +2803,12 @@ QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 QMainWindow { background: #F1F5F9; }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
-QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose { min-width: 0 !important; max-width: 40px; padding: 0; margin: 0;
-    background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
+QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
+    background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700;
 }
-QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E2F52; color: #FFFFFF; }
-QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #E2E8F0; color: #0F172A; }
+QPushButton#titleBtnClose:hover { background: #FEE2E2; color: #DC2626; }
 QPushButton#titleFileBtn { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; padding: 0 10px; font-weight: 600; }
 QPushButton#titleFileBtn:hover { background: #1E2F52; color: #FFFFFF; }
 QPushButton#titleFileBtn::menu-indicator { image: none; }
