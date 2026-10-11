@@ -778,16 +778,24 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def add_page_header(layout, title, subtitle):
-        header = QVBoxLayout()
-        header.setSpacing(3)
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+        logo = QLabel()
+        logo.setFixedSize(44, 44)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(40, 40))
+        header_row.addWidget(logo)
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
         title_label = QLabel(title)
         title_label.setProperty("pageTitle", True)
-        header.addWidget(title_label)
+        text_col.addWidget(title_label)
         if subtitle:
             subtitle_label = QLabel(subtitle)
             subtitle_label.setProperty("pageSubtitle", True)
-            header.addWidget(subtitle_label)
-        layout.addLayout(header)
+            text_col.addWidget(subtitle_label)
+        header_row.addLayout(text_col, 1)
+        layout.addLayout(header_row)
 
     def current_theme(self):
         return self.db.get_setting("ui_theme", "day") or "day"
@@ -1115,18 +1123,62 @@ class MainWindow(QMainWindow):
         self.attendance_summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.attendance_summary_table, 2)
 
     def build_reports(self):
-        l=QVBoxLayout(self.reports_tab)
+        outer = QVBoxLayout(self.reports_tab)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setObjectName("pageScroll")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setObjectName("pageContent")
+        l = QVBoxLayout(content)
+        l.setContentsMargins(20, 16, 20, 16)
+        l.setSpacing(12)
+
         self.add_page_header(l, "Reports", "Generate audit, attendance, productivity, and employee reports.")
-        form=QFormLayout(); l.addLayout(form)
-        self.report_type=QComboBox(); self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"])
-        self.report_date=QDateEdit(); configure_date_edit(self.report_date); self.report_date.setDisplayFormat("yyyy-MM-dd"); self.report_date.setMaximumDate(QDate.currentDate()); self.report_date.setDate(QDate.currentDate())
-        self.report_scope=QComboBox(); self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
-        self.report_employee=QComboBox(); self.report_employee.addItem("All employees",None)
-        self.report_format=QComboBox(); self.report_format.addItems(["Word (.docx)","PDF (.pdf)","CSV (.csv)"])
+
+        # Form section in a card-like group
+        form_group = QGroupBox("Report parameters")
+        form = QFormLayout(form_group)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        form.setHorizontalSpacing(16)
+        form.setVerticalSpacing(10)
+        form.setContentsMargins(14, 18, 14, 14)
+
+        self.report_type = QComboBox()
+        self.report_type.addItems(["Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"])
+        self.report_date = QDateEdit()
+        configure_date_edit(self.report_date)
+        self.report_date.setDisplayFormat("yyyy-MM-dd")
+        self.report_date.setMaximumDate(QDate.currentDate())
+        self.report_date.setDate(QDate.currentDate())
+        self.report_scope = QComboBox()
+        self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
+        self.report_employee = QComboBox()
+        self.report_employee.addItem("All employees", None)
+        self.report_format = QComboBox()
+        self.report_format.addItems(["Word (.docx)", "PDF (.pdf)", "CSV (.csv)"])
+        self.archived_report = QComboBox()
+        self.archived_report.addItem("Generated report for selected date", None)
+
+        form.addRow("Report type", self.report_type)
+        form.addRow("Report date", self.report_date)
+        form.addRow("Report scope", self.report_scope)
+        form.addRow("Employee", self.report_employee)
+        form.addRow("Output format", self.report_format)
+        form.addRow("Historical archived PDF (optional)", self.archived_report)
+        l.addWidget(form_group)
+
+        # EOD options with proper grid
         self.eod_options_group = QGroupBox("Audit / EOD content — choose sections to include")
-        eod_grid = QVBoxLayout(self.eod_options_group)
+        eod_grid = QGridLayout(self.eod_options_group)
+        eod_grid.setContentsMargins(12, 18, 12, 12)
+        eod_grid.setHorizontalSpacing(18)
+        eod_grid.setVerticalSpacing(8)
         self.eod_checks = {}
-        eod_rows = [QHBoxLayout(), QHBoxLayout(), QHBoxLayout()]
         eod_options = [
             ("summary", "Daily summary", True),
             ("identity", "Employee ID / Department / Role", True),
@@ -1142,28 +1194,52 @@ class MainWindow(QMainWindow):
             ("remarks", "Manager remarks", True),
             ("pending", "Pending items", True),
         ]
+        cols = 4
         for index, (key, label, checked) in enumerate(eod_options):
             cb = QCheckBox(label)
             cb.setChecked(checked)
             cb.stateChanged.connect(lambda _state: self.preview_report())
             self.eod_checks[key] = cb
-            eod_rows[min(index // 5, 2)].addWidget(cb)
-        for row in eod_rows:
-            row.addStretch(1)
-            eod_grid.addLayout(row)
-        eod_grid.setSpacing(5)
-        eod_grid.setContentsMargins(8, 8, 8, 8)
-        self.archived_report=QComboBox()
-        self.archived_report.addItem("Generated report for selected date", None)
-        form.addRow("Report type",self.report_type); form.addRow("Report date",self.report_date); form.addRow("Report scope",self.report_scope); form.addRow("Employee",self.report_employee); form.addRow("Output format",self.report_format)
-        form.addRow("Historical archived PDF (optional)", self.archived_report)
+            eod_grid.addWidget(cb, index // cols, index % cols)
         l.addWidget(self.eod_options_group)
+
         self.report_scope.currentIndexChanged.connect(self._report_scope_changed)
         self.archived_report.currentIndexChanged.connect(self._archived_report_changed)
-        row=QHBoxLayout(); l.addLayout(row)
-        for label,slot in [("Preview Report",self.preview_report),("Generate / Save",self.generate_report),("Print Selected Report",self.print_report),("Open reports folder",self.open_export_folder)]:
-            b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
-        self.report_summary=QTextEdit(); self.report_summary.setReadOnly(True); self.report_summary.setPlaceholderText("Report preview summary appears here."); l.addWidget(self.report_summary)
+
+        # Action buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(10)
+        for label, slot, primary in [
+            ("Preview Report", self.preview_report, False),
+            ("Generate / Save", self.generate_report, True),
+            ("Print Selected Report", self.print_report, False),
+            ("Open reports folder", self.open_export_folder, False),
+        ]:
+            b = QPushButton(label)
+            b.clicked.connect(slot)
+            if primary:
+                b.setDefault(True)
+                b.setProperty("primary", True)
+            btn_row.addWidget(b)
+        btn_row.addStretch(1)
+        l.addLayout(btn_row)
+
+        # Preview summary — notification-style scrollable panel
+        preview_label = QLabel("Live preview")
+        preview_label.setProperty("mutedText", True)
+        l.addWidget(preview_label)
+        self.report_summary = QTextEdit()
+        self.report_summary.setReadOnly(True)
+        self.report_summary.setPlaceholderText("Report preview summary appears here. Select options and click Preview Report.")
+        self.report_summary.setMinimumHeight(160)
+        self.report_summary.setMaximumHeight(280)
+        self.report_summary.setObjectName("reportPreview")
+        l.addWidget(self.report_summary)
+
+        l.addStretch(1)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
         self.report_type.currentTextChanged.connect(self._report_type_changed)
         self.report_date.dateChanged.connect(lambda _value: self.preview_report())
         self.report_employee.currentIndexChanged.connect(lambda _value: self.preview_report())
@@ -2160,7 +2236,7 @@ class MainWindow(QMainWindow):
                     "Reason: task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used.",
                     f'Tracking start: {prod["start"].isoformat()} | Working days: {prod["working_days"]} | Present days: {prod["present"]}'])
                 lines.extend([f'• {t["title"]}: {t["status"]} — {t["progress"]}%' for t in tasks]); lines.append("")
-            self.report_summary.setPlainText("\\n".join(lines))
+            self.report_summary.setPlainText("\n".join(lines))
         else: self.report_summary.setPlainText(self.report_preview_text(d,eid))
         self.db.log("Report previewed",f"type={kind}, date={d}, employee={eid or 'all'}")
 
@@ -2226,7 +2302,7 @@ class MainWindow(QMainWindow):
                 pending=[t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")]
                 lines.append("PENDING: " + ("; ".join(pending) if pending else "No"))
             lines.append("")
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     def print_report(self):
         archived_id = self.archived_report.currentData() if hasattr(self, "archived_report") else None
@@ -2479,53 +2555,53 @@ class MainWindow(QMainWindow):
 def light_stylesheet():
     return """
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
-QMainWindow { background: #F1F4F9; }
-QTabWidget::pane { border: 0; background: #F1F4F9; top: 0; }
-QTabWidget { background: #F1F4F9; }
-QMenuBar { background: #ffffff; border-bottom: 1px solid #E2E8F0; padding: 5px 10px; color: #1E293B; }
+QMainWindow { background: #E8EEF6; }
+QTabWidget::pane { border: 0; background: #E8EEF6; top: 0; }
+QTabWidget { background: #E8EEF6; }
+QMenuBar { background: #F1F5F9; border-bottom: 1px solid #CBD5E1; padding: 5px 10px; color: #1E293B; }
 QMenuBar::item { padding: 7px 12px; border-radius: 6px; background: transparent; color: #1E293B; }
-QMenuBar::item:selected { background: #EEF2FF; color: #5B21B6; }
-QMenu { background: #ffffff; border: 1px solid #E2E8F0; padding: 6px; border-radius: 8px; color: #1E293B; }
+QMenuBar::item:selected { background: #E0E7FF; color: #5B21B6; }
+QMenu { background: #F8FAFC; border: 1px solid #CBD5E1; padding: 6px; border-radius: 8px; color: #1E293B; }
 QMenu::item { padding: 8px 22px; border-radius: 5px; color: #1E293B; }
-QMenu::item:selected { background: #EEF2FF; color: #5B21B6; }
+QMenu::item:selected { background: #E0E7FF; color: #5B21B6; }
 QTabBar { background: #15233F; }
 QTabBar::tab { background: transparent; color: #C7D2E8; padding: 12px 15px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 68px; min-height: 24px; }
 QTabBar::tab:selected { background: #1E2F52; color: #ffffff; border-bottom: 3px solid #7C5CFC; }
 QTabBar::tab:hover:!selected { background: #1A2A4A; color: #ffffff; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #1A2A4A; color: #ffffff; border: 1px solid #3B4F75; border-radius: 4px; }
-QPushButton, QToolButton { padding: 8px 14px; min-height: 28px; min-width: 96px; border: 1px solid #CBD5E1; border-radius: 8px; background: #ffffff; color: #1E293B; font-weight: 600; text-align: center; }
-QPushButton:hover, QToolButton:hover { background: #F1F5F9; border-color: #94A3B8; color: #0F172A; }
-QPushButton:pressed, QToolButton:pressed { background: #E2E8F0; }
-QPushButton:disabled, QToolButton:disabled { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }
-QPushButton:default { background: #7C5CFC; border-color: #7C5CFC; color: #ffffff; }
-QPushButton:default:hover { background: #6D28D9; border-color: #6D28D9; }
+QPushButton, QToolButton { padding: 8px 14px; min-height: 28px; min-width: 96px; border: 1px solid #94A3B8; border-radius: 8px; background: #F1F5F9; color: #1E293B; font-weight: 600; text-align: center; }
+QPushButton:hover, QToolButton:hover { background: #E2E8F0; border-color: #64748B; color: #0F172A; }
+QPushButton:pressed, QToolButton:pressed { background: #CBD5E1; }
+QPushButton:disabled, QToolButton:disabled { background: #F1F5F9; color: #94A3B8; border-color: #E2E8F0; }
+QPushButton:default, QPushButton[primary="true"] { background: #7C5CFC; border-color: #7C5CFC; color: #ffffff; }
+QPushButton:default:hover, QPushButton[primary="true"]:hover { background: #6D28D9; border-color: #6D28D9; }
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-    background-color: #ffffff; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
+    background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
     padding: 8px 10px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox, QDateEdit {
-    background-color: #ffffff; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
+    background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
     padding: 8px 10px; min-height: 20px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
-QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #ffffff; color: #0F172A; }
-QComboBox QLineEdit { background-color: #ffffff; color: #0F172A; border: 0; padding: 0; }
+QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #F8FAFC; color: #0F172A; }
+QComboBox QLineEdit { background-color: #F8FAFC; color: #0F172A; border: 0; padding: 0; }
 QDateEdit { min-width: 142px; padding-right: 30px; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {
-    border: 2px solid #7C5CFC; background-color: #ffffff; color: #0F172A;
+    border: 2px solid #7C5CFC; background-color: #F8FAFC; color: #0F172A;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-QComboBox QAbstractItemView { background-color: #ffffff; color: #0F172A; border: 1px solid #94A3B8; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
-QComboBox QAbstractItemView::item { color: #0F172A; background-color: #ffffff; padding: 6px 10px; min-height: 22px; }
+QComboBox QAbstractItemView { background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
+QComboBox QAbstractItemView::item { color: #0F172A; background-color: #F8FAFC; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
-QHeaderView::section { background: #F8FAFC; color: #334155; padding: 10px; border: 0; border-bottom: 1px solid #E2E8F0; font-weight: 700; }
-QTableWidget { background: #ffffff; alternate-background-color: #F8FAFC; color: #0F172A; border: 1px solid #E2E8F0; border-radius: 12px; gridline-color: #F1F5F9; selection-background-color: #EEF2FF; selection-color: #312E81; outline: 0; }
-QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #F1F5F9; color: #0F172A; }
+QHeaderView::section { background: #E2E8F0; color: #334155; padding: 10px; border: 0; border-bottom: 1px solid #CBD5E1; font-weight: 700; }
+QTableWidget { background: #F8FAFC; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 12px; gridline-color: #E2E8F0; selection-background-color: #EEF2FF; selection-color: #312E81; outline: 0; }
+QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #E2E8F0; color: #0F172A; }
 QTableWidget::item:selected { background: #EEF2FF; color: #312E81; }
 QTableWidget::item:hover { background: #F5F3FF; }
-QGroupBox { font-weight: 650; color: #334155; border: 1px solid #E2E8F0; border-radius: 12px; margin-top: 0; padding: 30px 14px 14px 14px; background: #ffffff; }
+QGroupBox { font-weight: 650; color: #334155; border: 1px solid #CBD5E1; border-radius: 12px; margin-top: 0; padding: 30px 14px 14px 14px; background: #F1F5F9; }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; top: 8px; left: 12px; padding: 0; background: transparent; color: #475569; }
 QLabel { color: #1E293B; background: transparent; }
 QLabel[pageTitle="true"] { color: #0F172A; font-size: 15pt; font-weight: 700; }
@@ -2536,37 +2612,41 @@ QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F3E8FF; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:1 #312E81); border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
-QScrollArea#homeScroll { border: 0; background: #F1F4F9; }
-QWidget#homeContent { background: #F1F4F9; border: 0; }
-QWidget#sessionStrip { background: #ffffff; border: 1px solid #E2E8F0; border-radius: 12px; }
+QScrollArea#homeScroll { border: 0; background: #E8EEF6; }
+QWidget#homeContent { background: #E8EEF6; border: 0; }
+QScrollArea#pageScroll { border: 0; background: #E8EEF6; }
+QWidget#pageContent { background: #E8EEF6; }
+QTextEdit#reportPreview { background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 10px; }
+QWidget#sessionStrip { background: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 12px; }
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: #ffffff; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 12px; }
+QWidget#guideItem { background: #F8FAFC; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 12px; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 10px; color: #312E81; font-weight: 600; padding: 11px 14px; }
 QLabel[warningBanner="true"] { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; color: #92400E; font-weight: 600; padding: 9px 12px; }
-QProgressBar { border: 1px solid #E2E8F0; border-radius: 8px; text-align: center; color: #1E293B; background: #F1F5F9; min-height: 15px; }
+QProgressBar { border: 1px solid #CBD5E1; border-radius: 8px; text-align: center; color: #1E293B; background: #E2E8F0; min-height: 15px; }
 QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #7C5CFC, stop:1 #DB2777); border-radius: 7px; }
 QCheckBox { spacing: 8px; padding: 3px; color: #334155; background: transparent; }
-QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #94A3B8; border-radius: 4px; background: #ffffff; }
+QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #94A3B8; border-radius: 4px; background: #F8FAFC; }
 QCheckBox::indicator:checked { background: #7C5CFC; border-color: #7C5CFC; }
+QCheckBox::indicator:checked:hover { background: #6D28D9; }
 QRadioButton { spacing: 8px; color: #334155; background: transparent; }
-QStatusBar { background: #ffffff; color: #64748B; border-top: 1px solid #E2E8F0; }
+QStatusBar { background: #F1F5F9; color: #64748B; border-top: 1px solid #CBD5E1; }
 QStatusBar::item { border: none; }
 QScrollBar:vertical, QScrollBar:horizontal { background: transparent; width: 11px; height: 11px; margin: 2px; }
 QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #CBD5E1; border-radius: 5px; min-height: 24px; min-width: 24px; }
 QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #94A3B8; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
-QDialog { background: #ffffff; color: #1E293B; }
+QDialog { background: #E8EEF6; color: #1E293B; }
 QFormLayout QLabel { color: #334155; background: transparent; }
-QToolTip { background: #ffffff; color: #1E293B; border: 1px solid #CBD5E1; padding: 6px 8px; border-radius: 6px; }
+QToolTip { background: #F8FAFC; color: #1E293B; border: 1px solid #CBD5E1; padding: 6px 8px; border-radius: 6px; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #15233F; }
 QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 4px; padding: 6px 8px; font-weight: 600; }
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
-QCalendarWidget QAbstractItemView { background: #ffffff; alternate-background-color: #F8FAFC; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
+QCalendarWidget QAbstractItemView { background: #F8FAFC; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 """
 
 def dark_stylesheet():
@@ -2594,8 +2674,8 @@ QPushButton, QToolButton {
 QPushButton:hover, QToolButton:hover { background: #334155; border-color: #64748B; color: #FFFFFF; }
 QPushButton:pressed, QToolButton:pressed { background: #0F172A; }
 QPushButton:disabled, QToolButton:disabled { background: #111827; color: #64748B; border-color: #1F2937; }
-QPushButton:default { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #7C5CFC, stop:1 #DB2777); border: 0; color: #ffffff; }
-QPushButton:default:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6D28D9, stop:1 #BE185D); }
+QPushButton:default, QPushButton[primary="true"] { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #7C5CFC, stop:1 #DB2777); border: 0; color: #ffffff; }
+QPushButton:default:hover, QPushButton[primary="true"]:hover { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6D28D9, stop:1 #BE185D); }
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
@@ -2634,6 +2714,9 @@ QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: #0B1220; }
 QWidget#homeContent { background: #0B1220; border: 0; }
+QScrollArea#pageScroll { border: 0; background: #0B1220; }
+QWidget#pageContent { background: #0B1220; }
+QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
 QWidget#sessionStrip { background: #111827; border: 1px solid #1F2937; border-radius: 14px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #312E81; color: #DDD6FE; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
@@ -2646,8 +2729,9 @@ QLabel[warningBanner="true"] { background: #422006; border: 1px solid #A16207; b
 QProgressBar { border: 1px solid #1F2937; border-radius: 8px; text-align: center; color: #E2E8F0; background: #0F172A; min-height: 15px; }
 QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #22D3EE, stop:1 #E879F9); border-radius: 7px; }
 QCheckBox { spacing: 8px; padding: 3px; color: #CBD5E1; background: transparent; }
-QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #475569; border-radius: 4px; background: #111827; }
+QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #475569; border-radius: 4px; background: #111827; }
 QCheckBox::indicator:checked { background: #A78BFA; border-color: #A78BFA; }
+QCheckBox::indicator:checked:hover { background: #C4B5FD; }
 QRadioButton { spacing: 8px; color: #CBD5E1; background: transparent; }
 QStatusBar { background: #111827; color: #94A3B8; border-top: 1px solid #1F2937; }
 QStatusBar::item { border: none; }
