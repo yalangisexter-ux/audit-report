@@ -1522,7 +1522,7 @@ class MainWindow(QMainWindow):
         row=QHBoxLayout(); l.addLayout(row)
         set_tips = {"Create backup": "Create a backup of the local database", "Restore backup": "Restore database from a backup file", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
         for label,slot in [("Create backup",self.backup_db),("Restore backup",self.restore_backup),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setMinimumWidth(0); b.setMaximumWidth(140); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setMinimumWidth(0); row.addWidget(b)
             if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
                 b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
         days_box=QGroupBox("Working days")
@@ -2849,7 +2849,7 @@ QTabBar::tab:selected { background: #1E2F52; color: #ffffff; border-bottom: 3px 
 QTabBar::tab:hover:!selected { background: #1A2A4A; color: #ffffff; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #1A2A4A; color: #ffffff; border: 1px solid #3B4F75; border-radius: 4px; }
-QPushButton, QToolButton { padding: 8px 16px; min-height: 30px; min-width: 72px; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; color: #1E293B; font-weight: 600; text-align: center; }
+QPushButton, QToolButton { padding: 8px 12px; min-height: 30px; min-width: 0; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; color: #1E293B; font-weight: 600; text-align: center; }
 QPushButton:hover, QToolButton:hover { background: #E2E8F0; color: #0F172A; }
 QPushButton:pressed, QToolButton:pressed { background: #CBD5E1; }
 QPushButton:disabled, QToolButton:disabled { background: #F1F5F9; color: #94A3B8; border-color: #E2E8F0; }
@@ -2962,7 +2962,7 @@ QTabBar::tab:hover:!selected { background: #0F172A; color: #F8FAFC; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #111827; color: #E2E8F0; border: 1px solid #334155; border-radius: 4px; }
 QPushButton, QToolButton {
-    padding: 8px 16px; min-height: 30px; min-width: 72px; border: 1px solid #334155;
+    padding: 8px 12px; min-height: 30px; min-width: 0; border: 1px solid #334155;
     border-radius: 8px; background: #1E293B; color: #F1F5F9; font-weight: 600; text-align: center;
 }
 QPushButton:hover, QToolButton:hover { background: #334155; color: #FFFFFF; }
