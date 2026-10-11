@@ -300,6 +300,7 @@ class Database:
         for column, declaration in (("phone", "TEXT DEFAULT ''"), ("email", "TEXT DEFAULT ''"), ("active", "INTEGER DEFAULT 1")):
             if column not in employee_columns:
                 c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
+                self.conn.commit()
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
         if "attendance_status" not in attendance_columns:
             c.execute("ALTER TABLE attendance ADD COLUMN attendance_status TEXT DEFAULT 'Unmarked'")
