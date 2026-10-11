@@ -890,16 +890,6 @@ class MainWindow(QMainWindow):
         self.refresh_all()
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
-        # File menu as a button in the title bar
-        file_btn = QPushButton("File")
-        file_btn.setObjectName("titleFileBtn")
-        file_btn.setFixedHeight(28)
-        file_menu = QMenu(file_btn)
-        exit_action = QAction("Exit", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        file_btn.setMenu(file_menu)
-        title_layout.insertWidget(2, file_btn)
 
     def toggle_maximize(self):
         if self.isMaximized():
