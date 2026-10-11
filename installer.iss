@@ -35,6 +35,7 @@ RestartApplications=no
 
 [Files]
 Source: "dist\RawStrengthEmployeeAuditManager.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"
@@ -45,3 +46,22 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+	ResultCode: Integer;
+begin
+	Result := '';
+	ExtractTemporaryFile('vc_redist.x64.exe');
+	if not Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+	begin
+		Result := 'Could not start the Microsoft Visual C++ Redistributable installer.';
+		Exit;
+	end;
+
+	if (ResultCode <> 0) and (ResultCode <> 3010) and (ResultCode <> 1638) then
+		Result := Format('The Microsoft Visual C++ Redistributable installer failed with exit code %d.', [ResultCode])
+	else if ResultCode = 3010 then
+		NeedsRestart := True;
+end;

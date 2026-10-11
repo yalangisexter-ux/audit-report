@@ -1,12 +1,12 @@
 # Raw Strength Calisthenics — Employee Audit Manager
 
-## Build a standalone Windows EXE with GitHub Actions
+## Build a Windows release with GitHub Actions
 
 1. Extract this ZIP and upload the contents of this folder to the root of a GitHub repository.
 2. Open **Actions** and select **Build Raw Strength Employee Audit Manager (Windows)**.
 3. Select **Run workflow** or push to `main` / `master`.
 4. Pushes to `main` / `master` publish a versioned GitHub Release. The Actions artifact `RawStrengthEmployeeAuditManager-Windows-Release` is also available for 14 days.
-5. Extract the artifact and run `RawStrengthEmployeeAuditManager.exe`.
+5. Extract the artifact and run `RawStrengthEmployeeAuditManager-Setup.exe`. Setup installs the required Visual C++ runtime before launching the app.
 
 ## In-app updates
 
@@ -15,7 +15,7 @@
 - Confirming the update closes the app and opens the installer. Windows may request administrator approval; the existing database and backups stay in Local AppData.
 - The built-in updater requires the GitHub repository to be public and releases to include the setup installer and `SHA256SUMS.txt`.
 
-The target Windows PC does not need Python installed.
+The target Windows PC does not need Python installed. Use the setup installer for first installs and updates; the standalone EXE does not install the Visual C++ runtime prerequisite.
 
 ## UI updates
 
