@@ -113,9 +113,9 @@ def seed_initial_audit(db):
             note = proof_note.strip()
             if status == "Submitted":
                 note = (note + "\n" if note else "") + "Historical source status: WORK submitted; source item listed under Completed. Imported as Submitted, not automatically converted to Completed."
-            db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note)
-                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                            (employee_ids[name], SOURCE_DATE_ISO, title, details, "", "Normal", status, progress, proof, note, "", ""))
+            db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at)
+                               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                            (employee_ids[name], SOURCE_DATE_ISO, title, details, "", "Normal", status, progress, proof, note, "", "", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         db.conn.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, "1"))
         db.conn.execute("INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)",
                         (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Initial historical audit imported", f"Imported {len(EMPLOYEES)} employees and {len(TASKS)} task records from {SOURCE_FILENAME} ({SOURCE_DATE_DISPLAY})."))
@@ -373,6 +373,7 @@ class Database:
             ("proof_note", "TEXT DEFAULT ''"),
             ("submitted_at", "TEXT DEFAULT ''"),
             ("manager_note", "TEXT DEFAULT ''"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
         )
         for column, declaration in task_migrations:
             if column not in task_columns:
