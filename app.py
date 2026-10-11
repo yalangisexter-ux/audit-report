@@ -798,9 +798,18 @@ class MainWindow(QMainWindow):
         self.polish_tables()
         self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
-        bar=self.menuBar()
-        file_menu=bar.addMenu("File")
-        exit_action=QAction("Exit",self); exit_action.triggered.connect(self.close); file_menu.addAction(exit_action)
+        # Hide native menu bar (frameless window)
+        self.menuBar().hide()
+        # File menu as a button in the title bar
+        file_btn = QPushButton("File")
+        file_btn.setObjectName("titleFileBtn")
+        file_btn.setFixedHeight(28)
+        file_menu = QMenu(file_btn)
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        file_btn.setMenu(file_menu)
+        title_layout.insertWidget(2, file_btn)
 
     def toggle_maximize(self):
         if self.isMaximized():
@@ -2663,6 +2672,9 @@ QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
 }
 QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E2F52; color: #FFFFFF; }
 QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
+QPushButton#titleFileBtn { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; padding: 0 10px; font-weight: 600; }
+QPushButton#titleFileBtn:hover { background: #1E2F52; color: #FFFFFF; }
+QPushButton#titleFileBtn::menu-indicator { image: none; }
 QTabWidget::pane { border: 0; background: #E2E8F0; top: 0; }
 QTabWidget { background: #E2E8F0; }
 QMenuBar { background: #F1F5F9; border-bottom: 1px solid #CBD5E1; padding: 5px 10px; color: #1E293B; }
