@@ -93,6 +93,8 @@ def seed_initial_audit(db):
     key = "initial_audit_2026_10_09_imported"
     if db.get_setting(key) == "1":
         return
+    # Ensure tables exist before seeding
+    db.setup()
     existing = db.conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
     if existing:
         db.set_setting(key, "skipped_existing_data")
@@ -329,7 +331,18 @@ class Database:
             self.conn.commit()
 
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
-        if "attendance_status" not in attendance_columns:
+        att_required = {"employee_id", "work_date", "attendance_status", "updated_at"}
+        if not att_required.issubset(attendance_columns):
+            c.execute("DROP TABLE IF EXISTS attendance")
+            c.execute("""CREATE TABLE attendance(
+              id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
+              work_date TEXT NOT NULL, check_in TEXT DEFAULT '', check_out TEXT DEFAULT '',
+              break_minutes INTEGER DEFAULT 0, attendance_status TEXT DEFAULT 'Unmarked',
+              attendance_note TEXT DEFAULT '', updated_at TEXT NOT NULL, UNIQUE(employee_id, work_date),
+              FOREIGN KEY(employee_id) REFERENCES employees(id)
+            )""")
+            self.conn.commit()
+        elif "attendance_status" not in attendance_columns:
             c.execute("ALTER TABLE attendance ADD COLUMN attendance_status TEXT DEFAULT 'Unmarked'")
             c.execute("UPDATE attendance SET attendance_status='Present' WHERE COALESCE(check_in,'') <> ''")
         if not self.get_setting("working_weekdays"):
