@@ -829,8 +829,8 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(title_label)
         title_layout.addStretch(1)
 
-        btn_style = "QPushButton { background: #334155; color: #FFFFFF; border: 1px solid #475569; border-radius: 4px; font-size: 12pt; font-weight: 700; min-width: 0; max-width: 36px; padding: 0; margin: 0; } QPushButton:hover { background: #475569; color: #FFFFFF; }"
-        close_style = "QPushButton { background: #334155; color: #FFFFFF; border: 1px solid #475569; border-radius: 4px; font-size: 12pt; font-weight: 700; min-width: 0; max-width: 36px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+        btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
+        close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
 
         self.btn_min = QPushButton("—")
         self.btn_min.setObjectName("titleBtnMin")
@@ -863,6 +863,7 @@ class MainWindow(QMainWindow):
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.title_bar)
+        self.title_bar.raise_()
 
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
@@ -995,8 +996,8 @@ class MainWindow(QMainWindow):
             self.theme_toggle_btn.setText("Switch to Night mode" if theme_name == "day" else "Switch to Day mode")
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
-            btn_style = "QPushButton { background: #334155; color: #FFFFFF; border: 1px solid #475569; border-radius: 4px; font-size: 12pt; font-weight: 700; min-width: 0; max-width: 36px; padding: 0; margin: 0; } QPushButton:hover { background: #475569; color: #FFFFFF; }"
-            close_style = "QPushButton { background: #334155; color: #FFFFFF; border: 1px solid #475569; border-radius: 4px; font-size: 12pt; font-weight: 700; min-width: 0; max-width: 36px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+            btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
+            close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
             self.btn_min.setStyleSheet(btn_style)
             self.btn_max.setStyleSheet(btn_style)
             self.btn_close.setStyleSheet(close_style)
