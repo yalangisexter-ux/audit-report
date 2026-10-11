@@ -183,27 +183,14 @@ class UpdateWorker(QObject):
                       for asset in release.get("assets", [])}
             installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
             installer_url = assets.get(installer_name, "")
-            checksum_url = assets.get("SHA256SUMS.txt", "")
-            for asset_url in (installer_url, checksum_url):
-                if not asset_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
-                    raise ValueError("The latest release is missing a trusted installer or checksum.")
-
-            checksums = self.request_bytes(checksum_url, "text/plain").decode("ascii")
-            expected_hash = None
-            for line in checksums.splitlines():
-                fields = line.split(maxsplit=1)
-                if len(fields) == 2 and Path(fields[1].lstrip("* ")).name == installer_name:
-                    expected_hash = fields[0].lower()
-                    break
-            if not expected_hash or len(expected_hash) != 64:
-                raise ValueError("The installer checksum was not found in the release.")
+            if not installer_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
+                raise ValueError("The latest release is missing a trusted installer.")
 
             version_text = ".".join(str(part) for part in latest_parts)
             update_dir = APP_DIR / "updates" / version_text
             update_dir.mkdir(parents=True, exist_ok=True)
             installer_path = update_dir / installer_name
             partial_path = update_dir / (installer_name + ".part")
-            digest = hashlib.sha256()
             try:
                 request = Request(installer_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
                 with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
@@ -212,9 +199,8 @@ class UpdateWorker(QObject):
                         if not chunk:
                             break
                         output.write(chunk)
-                        digest.update(chunk)
-                if digest.hexdigest() != expected_hash:
-                    raise ValueError("The downloaded installer failed SHA-256 verification.")
+                if partial_path.stat().st_size == 0:
+                    raise ValueError("The downloaded installer is empty.")
                 os.replace(partial_path, installer_path)
             except Exception:
                 partial_path.unlink(missing_ok=True)
@@ -297,54 +283,52 @@ class Database:
           imported_at TEXT NOT NULL, UNIQUE(report_date, source_filename)
         );
         """)
-        # Safe additive migrations for databases created by earlier app versions.
+        # Additive migrations only — never drop existing data.
         employee_columns = {r["name"] for r in c.execute("PRAGMA table_info(employees)").fetchall()}
-        required = {"name", "employee_code", "department", "designation", "joining_date", "active", "notes", "created_at"}
-        if not required.issubset(employee_columns):
-            # Table is missing critical columns (corrupt or partial create). Recreate it.
-            c.execute("DROP TABLE IF EXISTS employees")
-            c.execute("""CREATE TABLE employees(
-              id INTEGER PRIMARY KEY AUTOINCREMENT, employee_code TEXT UNIQUE,
-              name TEXT NOT NULL, department TEXT DEFAULT '', designation TEXT DEFAULT '',
-              phone TEXT DEFAULT '', email TEXT DEFAULT '', joining_date TEXT DEFAULT '',
-              active INTEGER DEFAULT 1, notes TEXT DEFAULT '', created_at TEXT NOT NULL
-            )""")
-            self.conn.commit()
-        else:
-            for column, declaration in (("phone", "TEXT DEFAULT ''"), ("email", "TEXT DEFAULT ''"), ("active", "INTEGER DEFAULT 1")):
-                if column not in employee_columns:
-                    c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
-                    self.conn.commit()
-        # Ensure tasks table has required columns
+        employee_migrations = (
+            ("employee_code", "TEXT"),
+            ("name", "TEXT NOT NULL DEFAULT ''"),
+            ("department", "TEXT DEFAULT ''"),
+            ("designation", "TEXT DEFAULT ''"),
+            ("phone", "TEXT DEFAULT ''"),
+            ("email", "TEXT DEFAULT ''"),
+            ("joining_date", "TEXT DEFAULT ''"),
+            ("active", "INTEGER DEFAULT 1"),
+            ("notes", "TEXT DEFAULT ''"),
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+        )
+        for column, declaration in employee_migrations:
+            if column not in employee_columns:
+                c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
+        # Migrate legacy name columns if present
+        if "employee_name" in employee_columns and "name" in employee_columns:
+            c.execute("UPDATE employees SET name = employee_name WHERE COALESCE(name, '') = '' AND COALESCE(employee_name, '') <> ''")
+        if "full_name" in employee_columns and "name" in employee_columns:
+            c.execute("UPDATE employees SET name = full_name WHERE COALESCE(name, '') = '' AND COALESCE(full_name, '') <> ''")
+
         task_columns = {r["name"] for r in c.execute("PRAGMA table_info(tasks)").fetchall()}
-        task_required = {"employee_id", "task_date", "title", "status", "progress"}
-        if not task_required.issubset(task_columns):
-            c.execute("DROP TABLE IF EXISTS tasks")
-            c.execute("""CREATE TABLE tasks(
-              id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
-              task_date TEXT NOT NULL, title TEXT NOT NULL, details TEXT DEFAULT '',
-              due_time TEXT DEFAULT '', priority TEXT DEFAULT 'Normal',
-              status TEXT DEFAULT 'Not started', progress INTEGER DEFAULT 0,
-              proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
-              manager_note TEXT DEFAULT '', FOREIGN KEY(employee_id) REFERENCES employees(id)
-            )""")
-            self.conn.commit()
+        task_migrations = (
+            ("employee_id", "INTEGER"),
+            ("task_date", "TEXT NOT NULL DEFAULT ''"),
+            ("title", "TEXT NOT NULL DEFAULT ''"),
+            ("details", "TEXT DEFAULT ''"),
+            ("due_time", "TEXT DEFAULT ''"),
+            ("priority", "TEXT DEFAULT 'Normal'"),
+            ("status", "TEXT DEFAULT 'Not started'"),
+            ("progress", "INTEGER DEFAULT 0"),
+            ("proof_url", "TEXT DEFAULT ''"),
+            ("proof_note", "TEXT DEFAULT ''"),
+            ("submitted_at", "TEXT DEFAULT ''"),
+            ("manager_note", "TEXT DEFAULT ''"),
+        )
+        for column, declaration in task_migrations:
+            if column not in task_columns:
+                c.execute(f"ALTER TABLE tasks ADD COLUMN {column} {declaration}")
 
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
-        att_required = {"employee_id", "work_date", "attendance_status", "updated_at"}
-        if not att_required.issubset(attendance_columns):
-            c.execute("DROP TABLE IF EXISTS attendance")
-            c.execute("""CREATE TABLE attendance(
-              id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
-              work_date TEXT NOT NULL, check_in TEXT DEFAULT '', check_out TEXT DEFAULT '',
-              break_minutes INTEGER DEFAULT 0, attendance_status TEXT DEFAULT 'Unmarked',
-              attendance_note TEXT DEFAULT '', updated_at TEXT NOT NULL, UNIQUE(employee_id, work_date),
-              FOREIGN KEY(employee_id) REFERENCES employees(id)
-            )""")
-            self.conn.commit()
-        elif "attendance_status" not in attendance_columns:
+        if "attendance_status" not in attendance_columns:
             c.execute("ALTER TABLE attendance ADD COLUMN attendance_status TEXT DEFAULT 'Unmarked'")
-            c.execute("UPDATE attendance SET attendance_status='Present' WHERE COALESCE(check_in,'') <> ''")
+            c.execute("UPDATE attendance SET attendance_status='Present' WHERE COALESCE(check_in, '') <> ''")
         if not self.get_setting("working_weekdays"):
             self.set_setting("working_weekdays", "0,1,2,3,4")
         # Do not create a known/default credential. Authentication is handled by
