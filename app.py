@@ -2709,6 +2709,8 @@ class MainWindow(QMainWindow):
         info(self,f"Employee list exported:\n{path}")
 
 
+def light_stylesheet():
+    return """
 QDialog#loginDialog { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #15233F, stop:1 #312E81); }
 QDialog#loginDialog QLabel { color: #F8FAFC; }
 QDialog#loginDialog QLabel[pageTitle="true"] { color: #FFFFFF; font-size: 16pt; font-weight: 700; }
@@ -2719,8 +2721,6 @@ QDialog#loginDialog QPushButton:hover { background: #6D28D9; }
 QDialog#loginDialog QPushButton[flat="true"] { background: transparent; color: #C7D2FE; }
 QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 
-def light_stylesheet():
-    return """
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
 QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #E2E8F0, stop:0.5 #F1F5F9, stop:1 #E0E7FF); }
 QWidget#titleBar { background: #15233F; border-bottom: 1px solid #1E2F52; }
