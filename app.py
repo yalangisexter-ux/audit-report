@@ -753,21 +753,27 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(title_label)
         title_layout.addStretch(1)
 
+        btn_style = "QPushButton { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; font-size: 14pt; font-weight: 700; min-width: 0; padding: 0; } QPushButton:hover { background: #1E2F52; color: #FFFFFF; }"
+        close_style = "QPushButton { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; font-size: 14pt; font-weight: 700; min-width: 0; padding: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+
         self.btn_min = QPushButton("—")
         self.btn_min.setObjectName("titleBtnMin")
-        self.btn_min.setFixedSize(32, 28)
+        self.btn_min.setFixedSize(36, 28)
+        self.btn_min.setStyleSheet(btn_style)
         self.btn_min.clicked.connect(self.showMinimized)
         title_layout.addWidget(self.btn_min)
 
         self.btn_max = QPushButton("□")
         self.btn_max.setObjectName("titleBtnMax")
-        self.btn_max.setFixedSize(32, 28)
+        self.btn_max.setFixedSize(36, 28)
+        self.btn_max.setStyleSheet(btn_style)
         self.btn_max.clicked.connect(self.toggle_maximize)
         title_layout.addWidget(self.btn_max)
 
         self.btn_close = QPushButton("✕")
         self.btn_close.setObjectName("titleBtnClose")
-        self.btn_close.setFixedSize(32, 28)
+        self.btn_close.setFixedSize(36, 28)
+        self.btn_close.setStyleSheet(close_style)
         self.btn_close.clicked.connect(self.close)
         title_layout.addWidget(self.btn_close)
 
@@ -2667,7 +2673,7 @@ def light_stylesheet():
 QMainWindow { background: #E2E8F0; }
 QWidget#titleBar { background: #15233F; border-bottom: 1px solid #1E2F52; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
-QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose { min-width: 0; padding: 0;
     background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
 }
 QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E2F52; color: #FFFFFF; }
@@ -2776,7 +2782,7 @@ def dark_stylesheet():
 QMainWindow { background: #0B1220; }
 QWidget#titleBar { background: #070B14; border-bottom: 1px solid #111827; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
-QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose { min-width: 0; padding: 0;
     background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
 }
 QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E293B; color: #FFFFFF; }
