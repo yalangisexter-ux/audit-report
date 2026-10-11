@@ -732,7 +732,7 @@ class ProductivityChart(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
-        self.setWindowTitle(APP_NAME); self.resize(1380, 860); self.setMinimumSize(1080, 700)
+        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico"))); self.resize(1380, 860); self.setMinimumSize(1080, 700)
         self.tabs=QTabWidget()
         # Keep navigation as a compact horizontal bar above the content rather than a side rail.
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
@@ -750,7 +750,7 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self.animate_tab_transition)
         self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
         self.polish_tables()
-        self.statusBar().showMessage(f"Signed in: {user.get('display_name') or user.get('username')} ({self.user_role})  •  Local database  •  Offline mode")
+        self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
         bar=self.menuBar()
         file_menu=bar.addMenu("File")
@@ -977,6 +977,8 @@ class MainWindow(QMainWindow):
 
     def build_dashboard(self):
         l=QVBoxLayout()
+        l.setContentsMargins(20, 16, 20, 16)
+        l.setSpacing(14)
         self._wrap_page_in_scroll(self.dashboard, l)
         hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero"); hero_widget.setFixedHeight(112)
         hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
@@ -1022,6 +1024,7 @@ class MainWindow(QMainWindow):
     def build_employees(self):
         l=QVBoxLayout()
         self._wrap_page_in_scroll(self.employees_tab, l)
+        self.add_page_header(l, "Employees", "Manage employee records, roles, and contact details.")
         row=QHBoxLayout(); l.addLayout(row)
         self.emp_search=QLineEdit(); self.emp_search.setPlaceholderText("Search employee name, ID or department"); self.emp_search.textChanged.connect(self.refresh_employees); row.addWidget(self.emp_search)
         for label,slot in [("Add",self.add_employee),("Edit",self.edit_employee),("Activate / Deactivate",self.toggle_employee),("Delete",self.delete_employee)]:
@@ -1032,6 +1035,7 @@ class MainWindow(QMainWindow):
     def build_tasks(self):
         l=QVBoxLayout()
         self._wrap_page_in_scroll(self.tasks_tab, l)
+        self.add_page_header(l, "Task Manager", "Add, edit, and track daily tasks and evidence.")
         row=QHBoxLayout(); l.addLayout(row)
         self.task_date=QDateEdit(); configure_date_edit(self.task_date); self.task_date.setDisplayFormat("yyyy-MM-dd"); self.task_date.setDate(QDate.currentDate()); self.task_date.dateChanged.connect(self.refresh_tasks)
         row.addWidget(QLabel("Date")); row.addWidget(self.task_date)
@@ -2583,9 +2587,9 @@ class MainWindow(QMainWindow):
 def light_stylesheet():
     return """
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
-QMainWindow { background: #E8EEF6; }
-QTabWidget::pane { border: 0; background: #E8EEF6; top: 0; }
-QTabWidget { background: #E8EEF6; }
+QMainWindow { background: #E2E8F0; }
+QTabWidget::pane { border: 0; background: #E2E8F0; top: 0; }
+QTabWidget { background: #E2E8F0; }
 QMenuBar { background: #F1F5F9; border-bottom: 1px solid #CBD5E1; padding: 5px 10px; color: #1E293B; }
 QMenuBar::item { padding: 7px 12px; border-radius: 6px; background: transparent; color: #1E293B; }
 QMenuBar::item:selected { background: #E0E7FF; color: #5B21B6; }
@@ -2656,10 +2660,12 @@ QLabel[statusSummary="true"] { background: #EEF2FF; border: 1px solid #C7D2FE; b
 QLabel[warningBanner="true"] { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 10px; color: #92400E; font-weight: 600; padding: 9px 12px; }
 QProgressBar { border: 1px solid #CBD5E1; border-radius: 8px; text-align: center; color: #1E293B; background: #E2E8F0; min-height: 15px; }
 QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #7C5CFC, stop:1 #DB2777); border-radius: 7px; }
-QCheckBox { spacing: 8px; padding: 3px; color: #334155; background: transparent; }
-QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #94A3B8; border-radius: 4px; background: #F1F5F9; }
+QCheckBox { spacing: 10px; padding: 4px; color: #334155; background: transparent; font-weight: 500; }
+QCheckBox::indicator { width: 20px; height: 20px; border: 2px solid #94A3B8; border-radius: 5px; background: #F1F5F9; }
+QCheckBox::indicator:hover { border-color: #7C5CFC; background: #EEF2FF; }
 QCheckBox::indicator:checked { background: #7C5CFC; border-color: #7C5CFC; }
-QCheckBox::indicator:checked:hover { background: #6D28D9; }
+QCheckBox::indicator:checked:hover { background: #6D28D9; border-color: #6D28D9; }
+QStatusBar { background: #F1F5F9; color: #334155; border-top: 1px solid #CBD5E1; padding: 4px 8px; font-weight: 500; }
 QRadioButton { spacing: 8px; color: #334155; background: transparent; }
 QStatusBar { background: #F1F5F9; color: #64748B; border-top: 1px solid #CBD5E1; }
 QStatusBar::item { border: none; }
@@ -2756,10 +2762,12 @@ QLabel[statusSummary="true"] { background: #1E1B4B; border: 1px solid #4C1D95; b
 QLabel[warningBanner="true"] { background: #422006; border: 1px solid #A16207; border-radius: 12px; color: #FDE68A; font-weight: 600; padding: 9px 12px; }
 QProgressBar { border: 1px solid #1F2937; border-radius: 8px; text-align: center; color: #E2E8F0; background: #0F172A; min-height: 15px; }
 QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #22D3EE, stop:1 #E879F9); border-radius: 7px; }
-QCheckBox { spacing: 8px; padding: 3px; color: #CBD5E1; background: transparent; }
-QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #475569; border-radius: 4px; background: #111827; }
+QCheckBox { spacing: 10px; padding: 4px; color: #E2E8F0; background: transparent; font-weight: 500; }
+QCheckBox::indicator { width: 20px; height: 20px; border: 2px solid #475569; border-radius: 5px; background: #111827; }
+QCheckBox::indicator:hover { border-color: #A78BFA; background: #1E1B4B; }
 QCheckBox::indicator:checked { background: #A78BFA; border-color: #A78BFA; }
-QCheckBox::indicator:checked:hover { background: #C4B5FD; }
+QCheckBox::indicator:checked:hover { background: #C4B5FD; border-color: #C4B5FD; }
+QStatusBar { background: #111827; color: #CBD5E1; border-top: 1px solid #1F2937; padding: 4px 8px; font-weight: 500; }
 QRadioButton { spacing: 8px; color: #CBD5E1; background: transparent; }
 QStatusBar { background: #111827; color: #94A3B8; border-top: 1px solid #1F2937; }
 QStatusBar::item { border: none; }
