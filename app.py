@@ -1822,7 +1822,7 @@ class MainWindow(QMainWindow):
             self.tracker_progress.setValue(0)
             return
         rows=self.db.tasks(d,eid)
-        completed=sum(1 for t in rows if t["status"]=="Completed")
+        completed=sum(1 for t in rows if t["status"] in ("Completed", "Submitted"))
         avg=round(sum(t["progress"] for t in rows)/len(rows)) if rows else 0
         pending=sum(1 for t in rows if t["status"] not in ("Completed", "Submitted", "Cancelled"))
         blocked=sum(1 for t in rows if t["status"]=="Blocked")
@@ -1842,7 +1842,7 @@ class MainWindow(QMainWindow):
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
-        self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",vals)
+        self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
         self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
 
     def edit_tracker_task(self):
@@ -1966,8 +1966,8 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
-        self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",vals); self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
+        self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text())); self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
 
     def edit_task(self, table=None):
         table=table or self.task_table
