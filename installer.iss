@@ -51,8 +51,15 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Au
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
 	ResultCode: Integer;
+	InstallDir: String;
 begin
 	Result := '';
+	// Clean old app files in the install directory (not the user database)
+	InstallDir := ExpandConstant('{app}');
+	if DirExists(InstallDir) then
+	begin
+		DelTree(InstallDir + '\*', False, True, True);
+	end;
 	ExtractTemporaryFile('vc_redist.x64.exe');
 	if not Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
 	begin
