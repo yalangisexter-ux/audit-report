@@ -998,6 +998,9 @@ class MainWindow(QMainWindow):
         theme_name = theme_name or self.current_theme()
         theme_name = apply_app_theme(QApplication.instance(), theme_name)
         self.db.set_setting("ui_theme", theme_name)
+        # Force style refresh
+        QApplication.instance().style().unpolish(self)
+        QApplication.instance().style().polish(self)
         if hasattr(self, "theme_toggle_btn"):
             self.theme_toggle_btn.setText("Switch to Night mode" if theme_name == "day" else "Switch to Day mode")
         # Reapply title button styles so they stay visible after theme change
@@ -2874,9 +2877,9 @@ QLabel[welcomeSubtitle="true"] { color: #F3E8FF; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:1 #312E81); border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: transparent; border: 0; }
+QWidget#homeContent { background: rgba(255,255,255,0.85); border: 0; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: transparent; }
+QWidget#pageContent { background: rgba(255,255,255,0.85); }
 QTextEdit#reportPreview { background: #F1F5F9; border: 0; border-radius: 14px; }
 QWidget#sessionStrip { background: #F1F5F9; border: 0; border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
@@ -2988,9 +2991,9 @@ QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:1 #4C1D95); border-radius: 16px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: transparent; border: 0; }
+QWidget#homeContent { background: rgba(255,255,255,0.85); border: 0; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: transparent; }
+QWidget#pageContent { background: rgba(255,255,255,0.85); }
 QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
 QWidget#sessionStrip { background: #111827; border: 0; border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
