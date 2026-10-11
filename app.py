@@ -300,11 +300,23 @@ class Database:
         for column, declaration in employee_migrations:
             if column not in employee_columns:
                 c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
-        # Migrate legacy name columns if present
-        if "employee_name" in employee_columns and "name" in employee_columns:
-            c.execute("UPDATE employees SET name = employee_name WHERE COALESCE(name, '') = '' AND COALESCE(employee_name, '') <> ''")
-        if "full_name" in employee_columns and "name" in employee_columns:
-            c.execute("UPDATE employees SET name = full_name WHERE COALESCE(name, '') = '' AND COALESCE(full_name, '') <> ''")
+        # Re-read columns after adding any missing columns.
+        employee_columns = {row["name"] for row in c.execute("PRAGMA table_info(employees)").fetchall()}
+        # Preserve employee names from older database schemas.
+        if "employee_name" in employee_columns:
+            c.execute("""
+                UPDATE employees
+                SET name = employee_name
+                WHERE COALESCE(name, '') = ''
+                  AND COALESCE(employee_name, '') <> ''
+            """)
+        if "full_name" in employee_columns:
+            c.execute("""
+                UPDATE employees
+                SET name = full_name
+                WHERE COALESCE(name, '') = ''
+                  AND COALESCE(full_name, '') <> ''
+            """)
 
         task_columns = {r["name"] for r in c.execute("PRAGMA table_info(tasks)").fetchall()}
         task_migrations = (
