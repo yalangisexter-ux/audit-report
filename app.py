@@ -1492,6 +1492,8 @@ class MainWindow(QMainWindow):
     def build_settings(self):
         l=QVBoxLayout()
         self._wrap_page_in_scroll(self.settings_tab, l)
+        if hasattr(self, "settings_tab"):
+            self.settings_tab.findChild(QWidget, "pageContent").setObjectName("settingsContent")
         self.add_page_header(l, "Settings & Backup", "Manage local storage, account security, and working days.")
         storage_box=QGroupBox("Storage locations"); storage_form=QFormLayout(storage_box)
         for label,path in [("Database",DB_PATH),("Backups",BACKUP_DIR),("Reports",EXPORT_DIR)]:
@@ -2910,6 +2912,11 @@ QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-co
 
 def dark_stylesheet():
     return """
+QWidget#settingsContent QGroupBox { background: #111827; }
+QWidget#settingsContent QLabel { color: #E2E8F0; }
+QWidget#settingsContent QPushButton { background: #1E293B; color: #F1F5F9; }
+QWidget#settingsContent QComboBox { background: #0F172A; color: #F8FAFC; }
+
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #E2E8F0; }
 QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0A0F1A, stop:0.5 #111827, stop:1 #1E1B4B); }
 QWidget#titleBar { background: #070B14; border-bottom: 1px solid #111827; }
