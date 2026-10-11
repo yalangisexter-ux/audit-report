@@ -530,28 +530,60 @@ class LoginDialog(QDialog):
         self.db = db
         self.user = None
         self.setWindowTitle("HR / Admin Sign In")
-        self.setMinimumWidth(440)
+        self.setMinimumWidth(420)
         self.setModal(True)
+        self.setObjectName("loginDialog")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 28, 30, 26)
-        layout.setSpacing(14)
+        layout.setContentsMargins(36, 32, 36, 28)
+        layout.setSpacing(16)
+
+        # Logo
+        logo = QLabel()
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
+        layout.addWidget(logo)
+
         title = QLabel("Raw Strength Calisthenics")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setProperty("pageTitle", True)
+        layout.addWidget(title)
         subtitle = QLabel("HR / Admin workspace • Offline and secure")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setProperty("pageSubtitle", True)
-        layout.addWidget(title); layout.addWidget(subtitle)
+        layout.addWidget(subtitle)
+
         form = QFormLayout()
-        self.username = QLineEdit(); self.username.setPlaceholderText("Enter username")
-        self.password = QLineEdit(); self.password.setEchoMode(QLineEdit.Password); self.password.setPlaceholderText("Enter password")
-        form.addRow("Username", self.username); form.addRow("Password", self.password)
+        form.setSpacing(12)
+        self.username = QLineEdit()
+        self.username.setPlaceholderText("Enter username")
+        self.username.setMinimumHeight(36)
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.Password)
+        self.password.setPlaceholderText("Enter password")
+        self.password.setMinimumHeight(36)
+        form.addRow("Username", self.username)
+        form.addRow("Password", self.password)
         layout.addLayout(form)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.check); buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.check)
+        buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
         links = QHBoxLayout()
-        forgot = QPushButton("Forgot password?"); forgot.setFlat(True); forgot.clicked.connect(self.forgot_password)
-        change = QPushButton("Change password"); change.setFlat(True); change.clicked.connect(self.change_password)
-        links.addWidget(forgot); links.addWidget(change)
+        links.setSpacing(16)
+        forgot = QPushButton("Forgot password?")
+        forgot.setFlat(True)
+        forgot.setToolTip("Reset password using recovery question")
+        forgot.clicked.connect(self.forgot_password)
+        change = QPushButton("Change password")
+        change.setFlat(True)
+        change.setToolTip("Change password for an existing account")
+        change.clicked.connect(self.change_password)
+        links.addStretch(1)
+        links.addWidget(forgot)
+        links.addWidget(change)
+        links.addStretch(1)
         layout.addLayout(links)
         self.password.returnPressed.connect(self.check)
 
@@ -2676,6 +2708,16 @@ class MainWindow(QMainWindow):
                 w.writerow([e["id"],e["employee_code"],e["name"],e["department"],e["designation"],e["phone"],e["email"],e["joining_date"],"Active" if e["active"] else "Inactive",e["notes"]])
         info(self,f"Employee list exported:\n{path}")
 
+
+QDialog#loginDialog { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #15233F, stop:1 #312E81); }
+QDialog#loginDialog QLabel { color: #F8FAFC; }
+QDialog#loginDialog QLabel[pageTitle="true"] { color: #FFFFFF; font-size: 16pt; font-weight: 700; }
+QDialog#loginDialog QLabel[pageSubtitle="true"] { color: #C7D2FE; }
+QDialog#loginDialog QLineEdit { background: #1E293B; color: #F8FAFC; border: 1px solid #475569; border-radius: 8px; padding: 8px; }
+QDialog#loginDialog QPushButton { background: #7C5CFC; color: #FFFFFF; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 600; }
+QDialog#loginDialog QPushButton:hover { background: #6D28D9; }
+QDialog#loginDialog QPushButton[flat="true"] { background: transparent; color: #C7D2FE; }
+QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 
 def light_stylesheet():
     return """
