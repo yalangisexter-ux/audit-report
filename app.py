@@ -1,15 +1,15 @@
 import os, sys, sqlite3, shutil, webbrowser, hashlib, secrets
 from pathlib import Path
 from datetime import datetime, date
-from PySide6.QtCore import Qt, QDate, QTime
+from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView,
-    QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea
+    QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QPixmap
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
@@ -646,19 +646,42 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.tabBar().setExpanding(False)
         self.setCentralWidget(self.tabs)
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings & Backup")]:
             self.tabs.addTab(widget,title)
+        self._tab_animation = None
+        self._animated_page = None
+        self.tabs.currentChanged.connect(self.animate_tab_transition)
         self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
         self.polish_tables()
         self.statusBar().showMessage(f"Signed in: {user.get('display_name') or user.get('username')} ({self.user_role})  •  Local database  •  Offline mode")
         self.refresh_all()
         bar=self.menuBar()
         file_menu=bar.addMenu("File")
-        backup_action=QAction("Create backup",self); backup_action.triggered.connect(self.backup_db); file_menu.addAction(backup_action)
-        password_action=QAction("Change password",self); password_action.triggered.connect(self.change_password); file_menu.addAction(password_action)
         exit_action=QAction("Exit",self); exit_action.triggered.connect(self.close); file_menu.addAction(exit_action)
+
+    def animate_tab_transition(self, index):
+        page = self.tabs.widget(index)
+        if page is None:
+            return
+        if self._tab_animation:
+            self._tab_animation.stop()
+        if self._animated_page:
+            self._animated_page.setGraphicsEffect(None)
+        effect = QGraphicsOpacityEffect(page)
+        page.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(120)
+        animation.setStartValue(0.9)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(lambda: page.setGraphicsEffect(None) if page.graphicsEffect() is effect else None)
+        self._animated_page = page
+        self._tab_animation = animation
+        animation.start()
 
     @staticmethod
     def add_page_header(layout, title, subtitle):
@@ -792,9 +815,6 @@ class MainWindow(QMainWindow):
         self.productivity_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.productivity_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.productivity_table)
-        buttons=QHBoxLayout(); l.addLayout(buttons)
-        for label,slot in [("Add Employee",lambda:self.add_employee()),("Assign Task",lambda:self.add_task()),("Record Attendance",lambda:self.tabs.setCurrentWidget(self.attendance_tab)),("Generate Today's Report",lambda:self.generate_report())]:
-            b=QPushButton(label); b.clicked.connect(slot); buttons.addWidget(b)
 
     def build_employees(self):
         l=QVBoxLayout(self.employees_tab); row=QHBoxLayout(); l.addLayout(row)
@@ -2173,6 +2193,7 @@ def main():
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
     app.setFont(QFont("DejaVu Sans", 9))
+    app.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
     app.setStyleSheet("""
             * { font-family: "DejaVu Sans"; font-size: 9pt; color: #27344b; }
             QMainWindow { background: #f1f3f8; }
@@ -2185,9 +2206,9 @@ def main():
             QMenu::item:selected { background: #f0eaff; color: #6d28d9; }
             QTabWidget::pane { border: 1px solid #d9e0ea; border-radius: 5px; background: #ffffff; top: -1px; }
             QTabWidget, QTabBar { background: transparent; }
-            QTabBar::tab { background: #e9edf6; color: #53627c; padding: 9px 13px; margin: 3px 2px 0 2px; border-bottom: 2px solid transparent; font-weight: 600; min-width: 64px; min-height: 20px; }
-            QTabBar::tab:selected { background: #ffffff; color: #6d28d9; border-bottom: 2px solid #8b35e6; }
-            QTabBar::tab:hover:!selected { background: #f4f1fc; color: #28354d; }
+            QTabBar::tab { background: #e9edf6; color: #53627c; padding: 10px 13px; margin: 3px 2px 0 2px; border: 1px solid transparent; border-bottom: 2px solid transparent; border-top-left-radius: 4px; border-top-right-radius: 4px; font-weight: 600; min-width: 64px; min-height: 21px; }
+            QTabBar::tab:selected { background: #ffffff; color: #6d28d9; border: 1px solid #d9e0ea; border-bottom: 2px solid #8b35e6; }
+            QTabBar::tab:hover:!selected { background: #f4f1fc; color: #28354d; border-bottom: 2px solid #c5a7f5; }
             QTabBar::scroller { width: 22px; }
             QTabBar QToolButton { background: #ffffff; color: #27344b; border: 1px solid #d7deea; border-radius: 4px; }
             QPushButton { padding: 7px 12px; min-height: 18px; border: 1px solid #cbd5e5; border-radius: 4px; background: #ffffff; color: #27344b; font-weight: 600; }
@@ -2197,8 +2218,16 @@ def main():
             QPushButton:default { background: #315fc4; border-color: #315fc4; color: #ffffff; }
             QPushButton:default:hover { background: #254fae; border-color: #254fae; }
             QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QTimeEdit { background: #ffffff; color: #27344b; border: 1px solid #cbd5e5; border-radius: 4px; padding: 7px 9px; selection-background-color: #dbeafe; selection-color: #173b70; }
+            QDateEdit { min-width: 142px; padding-right: 30px; }
             QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus { border: 1px solid #4d7ed1; }
             QComboBox::drop-down, QDateEdit::drop-down, QTimeEdit::drop-down { border: 0; width: 24px; }
+            QDateEdit::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border-left: 1px solid #d9e0ea; }
+            QCalendarWidget { background: #ffffff; border: 1px solid #d9e0ea; }
+            QCalendarWidget QWidget#qt_calendar_navigationbar { background: #17366c; }
+            QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 3px; padding: 6px 8px; font-weight: 600; }
+            QCalendarWidget QToolButton:hover { background: #315fc4; }
+            QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; selection-background-color: #6d28d9; }
+            QCalendarWidget QAbstractItemView { background: #ffffff; alternate-background-color: #f6f8fc; color: #27344b; selection-background-color: #6d28d9; selection-color: #ffffff; outline: 0; }
             QComboBox QAbstractItemView { background: #ffffff; color: #27344b; selection-background-color: #ece5ff; selection-color: #5b21b6; border: 1px solid #cbd5e5; outline: 0; }
             QTableWidget { background: #ffffff; alternate-background-color: #f6f8fc; color: #27344b; border: 1px solid #d9e0ea; border-radius: 4px; gridline-color: #e7ebf2; selection-background-color: #e7eefe; selection-color: #1d3971; outline: 0; }
             QTableWidget::item { padding: 7px; border-bottom: 1px solid #edf0f5; }

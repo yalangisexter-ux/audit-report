@@ -8,16 +8,21 @@ AppId={{4A2A33C8-8C51-4CF5-A6B0-8D5F9F9A42D1}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+AppPublisherURL=https://github.com/yalangisexter-ux/audit-report
+AppSupportURL=https://github.com/yalangisexter-ux/audit-report
+AppUpdatesURL=https://github.com/yalangisexter-ux/audit-report
 DefaultDirName={autopf}\Raw Strength Employee Audit Manager
 DefaultGroupName={#MyAppName}
 OutputDir=installer-output
 OutputBaseFilename=RawStrengthEmployeeAuditManager-Setup
+SetupIconFile=assets\raw_strength_icon.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 Uninstallable=yes
+UninstallDisplayIcon={app}\{#MyAppExeName}
 ; The app database is stored in {localappdata}\EmployeeAuditManager, not here.
 ; Do not add any uninstall cleanup for user data/backups.
 
