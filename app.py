@@ -760,21 +760,21 @@ class MainWindow(QMainWindow):
         self.btn_min.setObjectName("titleBtnMin")
         self.btn_min.setFixedSize(36, 28)
         self.btn_min.setStyleSheet(btn_style)
-        self.btn_min.clicked.connect(self.showMinimized)
+        self.btn_min.setToolTip("Minimize"); self.btn_min.clicked.connect(self.showMinimized)
         title_layout.addWidget(self.btn_min)
 
         self.btn_max = QPushButton("□")
         self.btn_max.setObjectName("titleBtnMax")
         self.btn_max.setFixedSize(36, 28)
         self.btn_max.setStyleSheet(btn_style)
-        self.btn_max.clicked.connect(self.toggle_maximize)
+        self.btn_max.setToolTip("Maximize / Restore"); self.btn_max.clicked.connect(self.toggle_maximize)
         title_layout.addWidget(self.btn_max)
 
         self.btn_close = QPushButton("✕")
         self.btn_close.setObjectName("titleBtnClose")
         self.btn_close.setFixedSize(36, 28)
         self.btn_close.setStyleSheet(close_style)
-        self.btn_close.clicked.connect(self.close)
+        self.btn_close.setToolTip("Close"); self.btn_close.clicked.connect(self.close)
         title_layout.addWidget(self.btn_close)
 
         # Central content
@@ -1110,8 +1110,9 @@ class MainWindow(QMainWindow):
         self.add_page_header(l, "Employees", "Manage employee records, roles, and contact details.")
         row=QHBoxLayout(); l.addLayout(row)
         self.emp_search=QLineEdit(); self.emp_search.setPlaceholderText("Search employee name, ID or department"); self.emp_search.textChanged.connect(self.refresh_employees); row.addWidget(self.emp_search)
+        emp_tips = {"Add": "Add a new employee", "Edit": "Edit the selected employee", "Activate / Deactivate": "Toggle active status", "Delete": "Permanently delete the selected employee"}
         for label,slot in [("Add",self.add_employee),("Edit",self.edit_employee),("Activate / Deactivate",self.toggle_employee),("Delete",self.delete_employee)]:
-            b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(emp_tips.get(label, "")); row.addWidget(b)
         self.emp_table=QTableWidget(0,8); self.emp_table.setHorizontalHeaderLabels(["ID","Employee ID","Name","Department","Role","Phone","Email","Status"])
         self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.emp_table)
 
@@ -1125,8 +1126,9 @@ class MainWindow(QMainWindow):
         self.task_filter=QComboBox(); self.task_filter.addItem("All employees",None)
         row.addWidget(self.task_filter)
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
+        task_tips = {"Add Task": "Create a new task for the selected date", "Edit Selected": "Edit the selected task", "Delete Selected": "Delete the selected task", "Open Proof": "Open proof/evidence link in browser"}
         for label,slot in [("Add Task",self.add_task),("Edit Selected",self.edit_task),("Delete Selected",self.delete_task),("Open Proof",self.open_proof)]:
-            b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(task_tips.get(label, "")); row.addWidget(b)
         self.task_table=QTableWidget(0,9); self.task_table.setHorizontalHeaderLabels(["ID","Employee","Task","Priority","Status","Progress","Due","Proof","Manager remarks"])
         self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
 
@@ -1319,6 +1321,12 @@ class MainWindow(QMainWindow):
         # Action buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
+        tooltips = {
+            "Preview Report": "Preview the report content before generating",
+            "Generate / Save": "Create and save the report to your documents folder",
+            "Print Selected Report": "Send the selected report to the printer",
+            "Open reports folder": "Open the folder where reports are saved",
+        }
         for label, slot, primary in [
             ("Preview Report", self.preview_report, False),
             ("Generate / Save", self.generate_report, True),
@@ -1327,6 +1335,7 @@ class MainWindow(QMainWindow):
         ]:
             b = QPushButton(label)
             b.clicked.connect(slot)
+            b.setToolTip(tooltips.get(label, ""))
             if primary:
                 b.setDefault(True)
                 b.setProperty("primary", True)
@@ -1388,8 +1397,9 @@ class MainWindow(QMainWindow):
             storage_form.addRow(label,path_label)
         l.addWidget(storage_box)
         row=QHBoxLayout(); l.addLayout(row)
+        set_tips = {"Create backup": "Create a backup of the local database", "Restore backup": "Restore database from a backup file", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
         for label,slot in [("Create backup",self.backup_db),("Restore backup",self.restore_backup),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
-            b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); row.addWidget(b)
             if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
                 b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
         days_box=QGroupBox("Working days")
@@ -2696,7 +2706,7 @@ QTabBar::tab:hover:!selected { background: #1A2A4A; color: #ffffff; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #1A2A4A; color: #ffffff; border: 1px solid #3B4F75; border-radius: 4px; }
 QPushButton, QToolButton { padding: 8px 14px; min-height: 28px; min-width: 96px; border: 1px solid #94A3B8; border-radius: 8px; background: #F1F5F9; color: #1E293B; font-weight: 600; text-align: center; }
-QPushButton:hover, QToolButton:hover { background: #E2E8F0; border-color: #64748B; color: #0F172A; }
+QPushButton:hover, QToolButton:hover { background: #DDD6FE; border-color: #7C5CFC; color: #5B21B6; }
 QPushButton:pressed, QToolButton:pressed { background: #CBD5E1; }
 QPushButton:disabled, QToolButton:disabled { background: #F1F5F9; color: #94A3B8; border-color: #E2E8F0; }
 QPushButton:default, QPushButton[primary="true"] { background: #7C5CFC; border-color: #7C5CFC; color: #ffffff; }
@@ -2805,7 +2815,7 @@ QPushButton, QToolButton {
     padding: 8px 14px; min-height: 28px; min-width: 96px; border: 1px solid #334155;
     border-radius: 10px; background: #1E293B; color: #F1F5F9; font-weight: 600; text-align: center;
 }
-QPushButton:hover, QToolButton:hover { background: #334155; border-color: #64748B; color: #FFFFFF; }
+QPushButton:hover, QToolButton:hover { background: #312E81; border-color: #A78BFA; color: #FFFFFF; }
 QPushButton:pressed, QToolButton:pressed { background: #0F172A; }
 QPushButton:disabled, QToolButton:disabled { background: #111827; color: #64748B; border-color: #1F2937; }
 QPushButton:default, QPushButton[primary="true"] { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #7C5CFC, stop:1 #DB2777); border: 0; color: #ffffff; }
