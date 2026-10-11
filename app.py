@@ -650,7 +650,7 @@ class MainWindow(QMainWindow):
         self.tabs.tabBar().setExpanding(False)
         self.setCentralWidget(self.tabs)
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
-        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings & Backup")]:
+        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings && Backup")]:
             self.tabs.addTab(widget,title)
         self._tab_animation = None
         self._animated_page = None
@@ -702,6 +702,7 @@ class MainWindow(QMainWindow):
         self.home_scroll.setWidgetResizable(True)
         self.home_scroll.setObjectName("homeScroll")
         content = QWidget()
+        content.setObjectName("homeContent")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(18, 18, 18, 18)
         content_layout.setSpacing(16)
@@ -729,20 +730,31 @@ class MainWindow(QMainWindow):
         welcome_layout.addLayout(welcome_copy, 1)
         content_layout.addWidget(welcome)
 
-        session_box = QGroupBox("Signed-in session")
-        session_layout = QHBoxLayout(session_box)
-        session_layout.addWidget(QLabel(f"Account: {self.current_user.get('username', 'N/A')}"))
-        session_layout.addWidget(QLabel(f"Access: {self.user_role}"))
+        session_strip = QWidget()
+        session_strip.setObjectName("sessionStrip")
+        session_layout = QHBoxLayout(session_strip)
+        session_layout.setContentsMargins(14, 9, 14, 9)
+        session_layout.setSpacing(12)
+        session_label = QLabel("SIGNED IN")
+        session_label.setProperty("sessionLabel", True)
+        session_layout.addWidget(session_label)
+        session_layout.addWidget(QLabel(self.current_user.get("username", "N/A")))
+        role_label = QLabel(self.user_role)
+        role_label.setProperty("roleBadge", True)
+        session_layout.addWidget(role_label)
         session_layout.addStretch(1)
         session_layout.addWidget(QLabel("Local database · Offline"))
-        content_layout.addWidget(session_box)
+        content_layout.addWidget(session_strip)
 
-        guide_box = QGroupBox("Workspace guide")
-        guide_grid = QGridLayout(guide_box)
+        guide_heading = QLabel("Workspace guide")
+        guide_heading.setProperty("sectionHeading", True)
+        content_layout.addWidget(guide_heading)
+        guide_grid = QGridLayout()
+        guide_grid.setContentsMargins(0, 0, 0, 0)
         guide_grid.setHorizontalSpacing(12)
         guide_grid.setVerticalSpacing(10)
         guide_items = [
-            ("Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Use the shortcuts to add an employee, assign a task, or open attendance."),
+            ("Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
             ("Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
             ("Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
             ("Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
@@ -752,11 +764,14 @@ class MainWindow(QMainWindow):
             ("Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
         ]
         for index, (section, guidance, example) in enumerate(guide_items):
-            guide_card = QGroupBox(section)
-            guide_card.setObjectName("guideCard")
+            guide_card = QWidget()
+            guide_card.setObjectName("guideItem")
             card_layout = QVBoxLayout(guide_card)
-            card_layout.setContentsMargins(12, 12, 12, 10)
-            card_layout.setSpacing(6)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(5)
+            section_label = QLabel(section)
+            section_label.setProperty("guideTitle", True)
+            card_layout.addWidget(section_label)
             guidance_label = QLabel(guidance)
             guidance_label.setWordWrap(True)
             card_layout.addWidget(guidance_label)
@@ -765,14 +780,14 @@ class MainWindow(QMainWindow):
             example_label.setProperty("mutedText", True)
             card_layout.addWidget(example_label)
             guide_grid.addWidget(guide_card, index // 2, index % 2)
-        content_layout.addWidget(guide_box)
+        content_layout.addLayout(guide_grid)
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
         page_layout.addWidget(self.home_scroll)
 
     def build_dashboard(self):
         l=QVBoxLayout(self.dashboard)
-        hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero")
+        hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero"); hero_widget.setFixedHeight(112)
         hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
         logo=QLabel()
         logo_path = resource_path("assets/raw_strength_brand.png")
@@ -2196,21 +2211,22 @@ def main():
     app.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
     app.setStyleSheet("""
             * { font-family: "DejaVu Sans"; font-size: 9pt; color: #27344b; }
-            QMainWindow { background: #f1f3f8; }
-            QWidget { background-color: transparent; }
+            QMainWindow { background: #f2f4f8; }
+            QWidget { background-color: #f2f4f8; }
             QMenuBar { background: #ffffff; border-bottom: 1px solid #dce2ed; padding: 4px 8px; }
             QMenuBar::item { padding: 7px 11px; border-radius: 4px; background: transparent; }
             QMenuBar::item:selected { background: #f0eaff; color: #6d28d9; }
             QMenu { background: #ffffff; border: 1px solid #d7deea; padding: 4px; }
             QMenu::item { padding: 8px 22px; border-radius: 3px; }
             QMenu::item:selected { background: #f0eaff; color: #6d28d9; }
-            QTabWidget::pane { border: 1px solid #d9e0ea; border-radius: 5px; background: #ffffff; top: -1px; }
-            QTabWidget, QTabBar { background: transparent; }
-            QTabBar::tab { background: #e9edf6; color: #53627c; padding: 10px 13px; margin: 3px 2px 0 2px; border: 1px solid transparent; border-bottom: 2px solid transparent; border-top-left-radius: 4px; border-top-right-radius: 4px; font-weight: 600; min-width: 64px; min-height: 21px; }
-            QTabBar::tab:selected { background: #ffffff; color: #6d28d9; border: 1px solid #d9e0ea; border-bottom: 2px solid #8b35e6; }
-            QTabBar::tab:hover:!selected { background: #f4f1fc; color: #28354d; border-bottom: 2px solid #c5a7f5; }
+            QTabWidget::pane { border: 0; background: #f2f4f8; top: 0; }
+            QTabWidget { background: #f2f4f8; }
+            QTabBar { background: #17264b; }
+            QTabBar::tab { background: transparent; color: #c8d2e8; padding: 11px 13px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 64px; min-height: 22px; }
+            QTabBar::tab:selected { background: #26385f; color: #ffffff; border-bottom: 3px solid #a88be8; }
+            QTabBar::tab:hover:!selected { background: #22345b; color: #ffffff; }
             QTabBar::scroller { width: 22px; }
-            QTabBar QToolButton { background: #ffffff; color: #27344b; border: 1px solid #d7deea; border-radius: 4px; }
+            QTabBar QToolButton { background: #22345b; color: #ffffff; border: 1px solid #42547a; border-radius: 3px; }
             QPushButton { padding: 7px 12px; min-height: 18px; border: 1px solid #cbd5e5; border-radius: 4px; background: #ffffff; color: #27344b; font-weight: 600; }
             QPushButton:hover { background: #edf4ff; border-color: #6c9ce0; color: #174a91; }
             QPushButton:pressed { background: #e3ebfb; }
@@ -2233,8 +2249,8 @@ def main():
             QTableWidget::item { padding: 7px; border-bottom: 1px solid #edf0f5; }
             QTableWidget::item:selected { background: #e7eefe; color: #1d3971; }
             QHeaderView::section { background: #edf2fa; color: #40516f; padding: 8px 7px; border: none; border-bottom: 1px solid #d9e0ea; font-weight: 650; }
-            QGroupBox { font-weight: 650; color: #33425e; border: 1px solid #d9e0ea; border-radius: 5px; margin-top: 15px; padding: 13px 12px 11px 12px; background: #ffffff; }
-            QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; top: -2px; left: 10px; padding: 0 5px; background: #ffffff; color: #40516f; }
+            QGroupBox { font-weight: 650; color: #33425e; border: 1px solid #d9e0ea; border-radius: 5px; margin-top: 0; padding: 29px 12px 11px 12px; background: #ffffff; }
+            QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; top: 7px; left: 10px; padding: 0; background: transparent; color: #40516f; }
             QLabel { background: transparent; color: #27344b; }
             QLabel[pageTitle="true"] { font-size: 18pt; font-weight: 700; color: #202e49; padding: 2px 0; }
             QLabel[pageSubtitle="true"] { font-size: 9pt; color: #64728a; }
@@ -2246,8 +2262,13 @@ def main():
             QLabel#brandLogo, QLabel#welcomeLogo { background: #271050; border: 1px solid #7145ba; border-radius: 4px; }
             QWidget#dashboardHero { background: #17366c; border-radius: 5px; }
             QWidget#welcomeHero { background: #4a2085; border-radius: 5px; }
-            QWidget#homeScroll { background: transparent; border: 0; }
-            QGroupBox#guideCard { border-top: 2px solid #728ee0; }
+            QWidget#homeScroll, QWidget#homeContent { background: #f2f4f8; border: 0; }
+            QWidget#sessionStrip { background: #ffffff; border: 1px solid #d9e0ea; border-radius: 4px; }
+            QLabel[sessionLabel="true"] { color: #68758d; font-size: 8pt; font-weight: 700; }
+            QLabel[roleBadge="true"] { background: #ece7f8; color: #5b3b99; border-radius: 3px; padding: 4px 8px; font-weight: 700; }
+            QLabel[sectionHeading="true"] { color: #253451; font-size: 12pt; font-weight: 700; padding: 3px 0; }
+            QWidget#guideItem { background: #ffffff; border: 1px solid #d9e0ea; border-left: 3px solid #6c70c8; border-radius: 4px; }
+            QLabel[guideTitle="true"] { color: #263957; font-size: 10pt; font-weight: 700; }
             QLabel[metricValue="true"] { font-size: 25pt; font-weight: 700; color: #7538cf; padding: 2px 0; }
             QLabel[statusSummary="true"] { background: #eff4ff; border: 1px solid #d4def4; border-radius: 4px; color: #294268; font-weight: 600; padding: 10px 12px; }
             QLabel[warningBanner="true"] { background: #fff6df; border: 1px solid #eedca9; border-radius: 4px; color: #71551a; font-weight: 600; padding: 8px 11px; }
