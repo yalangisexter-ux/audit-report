@@ -2,7 +2,7 @@ import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal
+from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -732,16 +732,62 @@ class ProductivityChart(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
-        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico"))); self.resize(1380, 860); self.setMinimumSize(1080, 700)
-        self.tabs=QTabWidget()
-        # Keep navigation as a compact horizontal bar above the content rather than a side rail.
+        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        self.resize(1380, 860); self.setMinimumSize(1080, 700)
+        self._drag_pos = None
+
+        # Custom title bar
+        self.title_bar = QWidget()
+        self.title_bar.setObjectName("titleBar")
+        self.title_bar.setFixedHeight(36)
+        title_layout = QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(10, 0, 6, 0)
+        title_layout.setSpacing(8)
+
+        title_icon = QLabel()
+        title_icon.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(18, 18))
+        title_layout.addWidget(title_icon)
+        title_label = QLabel(APP_NAME)
+        title_label.setObjectName("titleLabel")
+        title_layout.addWidget(title_label)
+        title_layout.addStretch(1)
+
+        self.btn_min = QPushButton("—")
+        self.btn_min.setObjectName("titleBtnMin")
+        self.btn_min.setFixedSize(32, 28)
+        self.btn_min.clicked.connect(self.showMinimized)
+        title_layout.addWidget(self.btn_min)
+
+        self.btn_max = QPushButton("□")
+        self.btn_max.setObjectName("titleBtnMax")
+        self.btn_max.setFixedSize(32, 28)
+        self.btn_max.clicked.connect(self.toggle_maximize)
+        title_layout.addWidget(self.btn_max)
+
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setObjectName("titleBtnClose")
+        self.btn_close.setFixedSize(32, 28)
+        self.btn_close.clicked.connect(self.close)
+        title_layout.addWidget(self.btn_close)
+
+        # Central content
+        central = QWidget()
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.title_bar)
+
+        self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(False)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.tabs.setUsesScrollButtons(True)
         self.tabs.tabBar().setExpanding(False)
-        self.setCentralWidget(self.tabs)
+        central_layout.addWidget(self.tabs)
+        self.setCentralWidget(central)
+
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings && Backup")]:
             self.tabs.addTab(widget,title)
@@ -755,6 +801,28 @@ class MainWindow(QMainWindow):
         bar=self.menuBar()
         file_menu=bar.addMenu("File")
         exit_action=QAction("Exit",self); exit_action.triggered.connect(self.close); file_menu.addAction(exit_action)
+
+    def toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self.btn_max.setText("□")
+        else:
+            self.showMaximized()
+            self.btn_max.setText("❐")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 36:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        event.accept()
 
     def animate_tab_transition(self, index):
         page = self.tabs.widget(index)
@@ -2588,6 +2656,13 @@ def light_stylesheet():
     return """
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
 QMainWindow { background: #E2E8F0; }
+QWidget#titleBar { background: #15233F; border-bottom: 1px solid #1E2F52; }
+QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
+QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+    background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
+}
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E2F52; color: #FFFFFF; }
+QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
 QTabWidget::pane { border: 0; background: #E2E8F0; top: 0; }
 QTabWidget { background: #E2E8F0; }
 QMenuBar { background: #F1F5F9; border-bottom: 1px solid #CBD5E1; padding: 5px 10px; color: #1E293B; }
@@ -2687,6 +2762,13 @@ def dark_stylesheet():
     return """
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #E2E8F0; }
 QMainWindow { background: #0B1220; }
+QWidget#titleBar { background: #070B14; border-bottom: 1px solid #111827; }
+QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
+QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+    background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
+}
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E293B; color: #FFFFFF; }
+QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
 QTabWidget::pane { border: 0; background: #0B1220; top: 0; }
 QTabWidget { background: #0B1220; }
 QMenuBar { background: #111827; border-bottom: 1px solid #1F2937; padding: 5px 10px; color: #E2E8F0; }
