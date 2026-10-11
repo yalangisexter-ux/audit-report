@@ -297,10 +297,22 @@ class Database:
         """)
         # Safe additive migrations for databases created by earlier app versions.
         employee_columns = {r["name"] for r in c.execute("PRAGMA table_info(employees)").fetchall()}
-        for column, declaration in (("phone", "TEXT DEFAULT ''"), ("email", "TEXT DEFAULT ''"), ("active", "INTEGER DEFAULT 1")):
-            if column not in employee_columns:
-                c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
-                self.conn.commit()
+        required = {"name", "employee_code", "department", "designation", "joining_date", "active", "notes", "created_at"}
+        if not required.issubset(employee_columns):
+            # Table is missing critical columns (corrupt or partial create). Recreate it.
+            c.execute("DROP TABLE IF EXISTS employees")
+            c.execute("""CREATE TABLE employees(
+              id INTEGER PRIMARY KEY AUTOINCREMENT, employee_code TEXT UNIQUE,
+              name TEXT NOT NULL, department TEXT DEFAULT '', designation TEXT DEFAULT '',
+              phone TEXT DEFAULT '', email TEXT DEFAULT '', joining_date TEXT DEFAULT '',
+              active INTEGER DEFAULT 1, notes TEXT DEFAULT '', created_at TEXT NOT NULL
+            )""")
+            self.conn.commit()
+        else:
+            for column, declaration in (("phone", "TEXT DEFAULT ''"), ("email", "TEXT DEFAULT ''"), ("active", "INTEGER DEFAULT 1")):
+                if column not in employee_columns:
+                    c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
+                    self.conn.commit()
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
         if "attendance_status" not in attendance_columns:
             c.execute("ALTER TABLE attendance ADD COLUMN attendance_status TEXT DEFAULT 'Unmarked'")
