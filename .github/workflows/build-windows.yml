@@ -18,7 +18,7 @@ jobs:
       - name: Set release version
         shell: pwsh
         run: |
-          $version = "1.0.$env:GITHUB_RUN_NUMBER"
+          $version = "1.1.$env:GITHUB_RUN_NUMBER"
           "APP_VERSION = `"$version`"" | Set-Content -Encoding ascii build_info.py
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -84,8 +84,8 @@ jobs:
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: Raw Strength Employee Audit Manager 1.0.${{ github.run_number }}
+          tag_name: v1.1.${{ github.run_number }}
+          name: Raw Strength Employee Audit Manager 1.1.${{ github.run_number }}
           generate_release_notes: true
           make_latest: true
           files: |
