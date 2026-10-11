@@ -313,6 +313,21 @@ class Database:
                 if column not in employee_columns:
                     c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
                     self.conn.commit()
+        # Ensure tasks table has required columns
+        task_columns = {r["name"] for r in c.execute("PRAGMA table_info(tasks)").fetchall()}
+        task_required = {"employee_id", "task_date", "title", "status", "progress"}
+        if not task_required.issubset(task_columns):
+            c.execute("DROP TABLE IF EXISTS tasks")
+            c.execute("""CREATE TABLE tasks(
+              id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
+              task_date TEXT NOT NULL, title TEXT NOT NULL, details TEXT DEFAULT '',
+              due_time TEXT DEFAULT '', priority TEXT DEFAULT 'Normal',
+              status TEXT DEFAULT 'Not started', progress INTEGER DEFAULT 0,
+              proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
+              manager_note TEXT DEFAULT '', FOREIGN KEY(employee_id) REFERENCES employees(id)
+            )""")
+            self.conn.commit()
+
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
         if "attendance_status" not in attendance_columns:
             c.execute("ALTER TABLE attendance ADD COLUMN attendance_status TEXT DEFAULT 'Unmarked'")
