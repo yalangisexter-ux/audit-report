@@ -218,6 +218,47 @@ def hash_pin(pin, salt=None):
     digest = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt.encode(), 200_000).hex()
     return salt, digest
 
+
+def migrate_legacy_task_employee_links(conn):
+    """Restore task links only when a unique employee match exists."""
+    task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    employee_columns = {row["name"] for row in conn.execute("PRAGMA table_info(employees)").fetchall()}
+    if "employee_id" not in task_columns:
+        conn.execute("ALTER TABLE tasks ADD COLUMN employee_id INTEGER")
+    name_columns = [col for col in ("employee_name", "full_name", "employee", "assigned_to") if col in task_columns]
+    has_code = "employee_code" in task_columns and "employee_code" in employee_columns
+    task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    rows = conn.execute("""
+        SELECT * FROM tasks
+        WHERE employee_id IS NULL
+           OR NOT EXISTS (SELECT 1 FROM employees WHERE employees.id = tasks.employee_id)
+    """).fetchall()
+    for task in rows:
+        matches = []
+        if has_code:
+            code = str(task["employee_code"] or "").strip()
+            if code:
+                matches = conn.execute("""
+                    SELECT id FROM employees
+                    WHERE LOWER(TRIM(COALESCE(employee_code, ''))) = LOWER(?)
+                """, (code,)).fetchall()
+        if not matches:
+            for column in name_columns:
+                value = str(task[column] or "").strip()
+                if not value:
+                    continue
+                candidates = conn.execute("""
+                    SELECT id FROM employees
+                    WHERE LOWER(TRIM(COALESCE(name, ''))) = LOWER(?)
+                """, (value,)).fetchall()
+                if len(candidates) == 1:
+                    matches = candidates
+                    break
+        if len(matches) == 1:
+            conn.execute("UPDATE tasks SET employee_id = ? WHERE id = ?", (matches[0]["id"], task["id"]))
+    conn.commit()
+
+
 class Database:
     def __init__(self):
         self.conn = sqlite3.connect(DB_PATH)
@@ -343,6 +384,8 @@ class Database:
             c.execute("UPDATE attendance SET attendance_status='Present' WHERE COALESCE(check_in, '') <> ''")
         if not self.get_setting("working_weekdays"):
             self.set_setting("working_weekdays", "0,1,2,3,4")
+        # Restore task-employee links only when unambiguous
+        migrate_legacy_task_employee_links(self.conn)
         # Do not create a known/default credential. Authentication is handled by
         # the first-run Admin account and per-user password/recovery records.
         self.conn.commit()
