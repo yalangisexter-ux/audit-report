@@ -1237,7 +1237,7 @@ class MainWindow(QMainWindow):
         self.emp_search=QLineEdit(); self.emp_search.setPlaceholderText("Search employee name, ID or department"); self.emp_search.textChanged.connect(self.refresh_employees); row.addWidget(self.emp_search)
         emp_tips = {"Add": "Add a new employee", "Edit": "Edit the selected employee", "Activate / Deactivate": "Toggle active status", "Delete": "Permanently delete the selected employee"}
         for label,slot in [("Add",self.add_employee),("Edit",self.edit_employee),("Activate / Deactivate",self.toggle_employee),("Delete",self.delete_employee)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(emp_tips.get(label, "")); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(emp_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
         self.emp_table=QTableWidget(0,8); self.emp_table.setHorizontalHeaderLabels(["ID","Employee ID","Name","Department","Role","Phone","Email","Status"])
         self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.emp_table)
 
@@ -1252,7 +1252,7 @@ class MainWindow(QMainWindow):
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
         task_tips = {"Add Task": "Create a new task for the selected date", "Edit Selected": "Edit the selected task", "Delete Selected": "Delete the selected task", "Open Proof": "Open proof/evidence link in browser"}
         for label,slot in [("Add Task",self.add_task),("Edit Selected",self.edit_task),("Delete Selected",self.delete_task),("Open Proof",self.open_proof)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(task_tips.get(label, "")); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(task_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
         self.task_table=QTableWidget(0,9); self.task_table.setHorizontalHeaderLabels(["ID","Employee","Task","Priority","Status","Progress","Due","Proof","Manager remarks"])
         self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
 
@@ -1460,7 +1460,7 @@ class MainWindow(QMainWindow):
             if primary:
                 b.setDefault(True)
                 b.setProperty("primary", True)
-            btn_row.addWidget(b)
+            b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); btn_row.addWidget(b)
         btn_row.addStretch(1)
         l.addLayout(btn_row)
 
@@ -1496,7 +1496,7 @@ class MainWindow(QMainWindow):
         self._wrap_page_in_scroll(self.archive_tab, l, "Historical EOD Archive", "Store and retrieve uploaded EOD PDFs.")
         row=QHBoxLayout(); l.addLayout(row)
         for label,slot in [("Upload PDF(s)",self.upload_eod_pdfs),("View Selected",self.open_archived_pdf),("Export Selected",self.export_archived_pdf),("Delete Selected",self.delete_archived_pdf),("Refresh",self.refresh_archive)]:
-            b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
         self.archive_table=QTableWidget(0,7)
         self.archive_table.setHorizontalHeaderLabels(["ID","File name","Employee","Report date","Uploaded","Notes","Size"])
         self.archive_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -1522,7 +1522,7 @@ class MainWindow(QMainWindow):
         row=QHBoxLayout(); l.addLayout(row)
         set_tips = {"Create backup": "Create a backup of the local database", "Restore backup": "Restore database from a backup file", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
         for label,slot in [("Create backup",self.backup_db),("Restore backup",self.restore_backup),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setMinimumWidth(0); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
             if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
                 b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
         days_box=QGroupBox("Working days")
