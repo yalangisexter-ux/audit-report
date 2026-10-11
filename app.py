@@ -761,6 +761,50 @@ class ProductivityChart(QWidget):
             painter.drawText(int(left + slot * i), top + h + 18, int(slot), 22, Qt.AlignHCenter | Qt.TextSingleLine, name[:13])
 
 
+
+class AnimatedBackground(QWidget):
+    """Animated particle background (bubbles or stars)."""
+    def __init__(self, parent=None, mode="bubbles"):
+        super().__init__(parent)
+        self.mode = mode
+        self.particles = []
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_particles)
+        self.timer.start(40)
+        self.init_particles()
+
+    def init_particles(self):
+        import random
+        w, h = max(self.width(), 800), max(self.height(), 600)
+        self.particles = []
+        for _ in range(30):
+            self.particles.append({
+                "x": random.randint(0, w),
+                "y": random.randint(0, h),
+                "r": random.randint(4, 12),
+                "speed": random.uniform(0.3, 1.2),
+                "opacity": random.uniform(0.15, 0.45),
+            })
+
+    def update_particles(self):
+        for p in self.particles:
+            p["y"] -= p["speed"]
+            if p["y"] < -20:
+                p["y"] = self.height() + 10
+                p["x"] = __import__("random").randint(0, self.width())
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        for p in self.particles:
+            color = QColor(124, 92, 252, int(p["opacity"] * 255)) if self.mode == "bubbles" else QColor(255, 255, 255, int(p["opacity"] * 200))
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
+        painter.end()
+
+
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
@@ -809,6 +853,10 @@ class MainWindow(QMainWindow):
         self.btn_close.setToolTip("Close"); self.btn_close.clicked.connect(self.close)
         title_layout.addWidget(self.btn_close)
 
+        # Animated background
+        self.bg_anim = AnimatedBackground(mode="bubbles")
+        self.bg_anim.setObjectName("animatedBg")
+
         # Central content
         central = QWidget()
         central_layout = QVBoxLayout(central)
@@ -825,6 +873,10 @@ class MainWindow(QMainWindow):
         self.tabs.tabBar().setExpanding(False)
         central_layout.addWidget(self.tabs)
         self.setCentralWidget(central)
+        # Resize background with window
+        self.bg_anim.setParent(central)
+        self.bg_anim.lower()
+        self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
 
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings && Backup")]:
@@ -870,6 +922,12 @@ class MainWindow(QMainWindow):
     def mouseReleaseEvent(self, event):
         self._drag_pos = None
         event.accept()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "bg_anim"):
+            self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
+            self.bg_anim.init_particles()
 
     def animate_tab_transition(self, index):
         page = self.tabs.widget(index)
