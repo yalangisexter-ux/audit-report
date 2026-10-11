@@ -1023,11 +1023,28 @@ class MainWindow(QMainWindow):
     def build_attendance(self):
         l=QVBoxLayout(self.attendance_tab)
         self.add_page_header(l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
-        row=QHBoxLayout(); l.addLayout(row)
+        row=QHBoxLayout(); row.setSpacing(8); l.addLayout(row)
         self.att_date=QDateEdit(); configure_date_edit(self.att_date); self.att_date.setDisplayFormat("yyyy-MM-dd"); self.att_date.setDate(QDate.currentDate()); self.att_date.dateChanged.connect(self.refresh_attendance)
         row.addWidget(QLabel("Selected date")); row.addWidget(self.att_date)
-        for label,slot in [("Mark Present",lambda:self.set_attendance_status("Present")),("Mark Absent",lambda:self.set_attendance_status("Absent")),("Mark Leave",lambda:self.set_attendance_status("Leave")),("Check In",self.check_in),("Check Out",self.check_out),("Edit Note",self.attendance_note),("Declare Holiday",self.declare_holiday),("Remove Holiday",self.remove_holiday)]:
-            b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
+        row.addStretch(1)
+        row2=QHBoxLayout(); row2.setSpacing(8); l.addLayout(row2)
+        for label,slot in [
+            ("Mark Present", lambda: self.set_attendance_status("Present")),
+            ("Mark Absent", lambda: self.set_attendance_status("Absent")),
+            ("Mark Leave", lambda: self.set_attendance_status("Leave")),
+            ("Check In", self.check_in),
+            ("Check Out", self.check_out),
+            ("Edit Note", self.attendance_note),
+            ("Declare Holiday", self.declare_holiday),
+            ("Remove Holiday", self.remove_holiday),
+        ]:
+            b=QPushButton(label)
+            b.setMinimumWidth(118)
+            b.setMinimumHeight(32)
+            b.setSizePolicy(b.sizePolicy().horizontalPolicy(), b.sizePolicy().verticalPolicy())
+            b.clicked.connect(slot)
+            row2.addWidget(b)
+        row2.addStretch(1)
         self.holiday_banner=QLabel("")
         self.holiday_banner.setProperty("warningBanner", True)
         l.addWidget(self.holiday_banner)
@@ -2423,7 +2440,7 @@ def main():
             QTabBar::scroller { width: 24px; }
             QTabBar QToolButton { background: #1A2A4A; color: #ffffff; border: 1px solid #3B4F75; border-radius: 4px; }
 
-            QPushButton { padding: 8px 14px; min-height: 20px; border: 1px solid #CBD5E1; border-radius: 6px; background: #ffffff; color: #1E293B; font-weight: 600; }
+            QPushButton { padding: 8px 14px; min-height: 28px; min-width: 96px; border: 1px solid #CBD5E1; border-radius: 6px; background: #ffffff; color: #1E293B; font-weight: 600; text-align: center; }
             QPushButton:hover { background: #F1F5F9; border-color: #94A3B8; color: #0F172A; }
             QPushButton:pressed { background: #E2E8F0; }
             QPushButton:disabled { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }
