@@ -2918,11 +2918,12 @@ QWidget#settingsContent QComboBox { background: #0F172A; color: #F8FAFC; }
 QMainWindow { background: #0F172A; }
 QWidget#titleBar { background: #070B14; border-bottom: 1px solid #111827; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
-QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose { min-width: 0 !important; max-width: 40px; padding: 0; margin: 0;
-    background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 12pt; font-weight: 600;
+QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
+    background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700;
 }
-QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #1E293B; color: #FFFFFF; }
-QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #E2E8F0; color: #0F172A; }
+QPushButton#titleBtnClose:hover { background: #FEE2E2; color: #DC2626; }
 QTabWidget::pane { border: 0; background: transparent; top: 0; margin-top: 0; }
 QTabWidget { background: transparent; }
 QMenuBar { background: #111827; border-bottom: 1px solid #1F2937; padding: 5px 10px; color: #E2E8F0; }
