@@ -829,8 +829,8 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(title_label)
         title_layout.addStretch(1)
 
-        btn_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 6px; font-size: 16pt; font-weight: 700; min-width: 0; padding: 0; } QPushButton:hover { background: #334155; color: #FFFFFF; }"
-        close_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 6px; font-size: 16pt; font-weight: 700; min-width: 0; padding: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+        btn_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 4px; font-size: 14pt; font-weight: 700; min-width: 0; max-width: 40px; padding: 0; margin: 0; } QPushButton:hover { background: #334155; color: #FFFFFF; }"
+        close_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 4px; font-size: 14pt; font-weight: 700; min-width: 0; max-width: 40px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
 
         self.btn_min = QPushButton("—")
         self.btn_min.setObjectName("titleBtnMin")
@@ -1005,8 +1005,8 @@ class MainWindow(QMainWindow):
             self.theme_toggle_btn.setText("Switch to Night mode" if theme_name == "day" else "Switch to Day mode")
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
-            btn_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 6px; font-size: 16pt; font-weight: 700; min-width: 0; padding: 0; } QPushButton:hover { background: #334155; color: #FFFFFF; }"
-            close_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 6px; font-size: 16pt; font-weight: 700; min-width: 0; padding: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+            btn_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 4px; font-size: 14pt; font-weight: 700; min-width: 0; max-width: 40px; padding: 0; margin: 0; } QPushButton:hover { background: #334155; color: #FFFFFF; }"
+            close_style = "QPushButton { background: #1E2F52; color: #FFFFFF; border: 0; border-radius: 4px; font-size: 14pt; font-weight: 700; min-width: 0; max-width: 40px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
             self.btn_min.setStyleSheet(btn_style)
             self.btn_max.setStyleSheet(btn_style)
             self.btn_close.setStyleSheet(close_style)
@@ -1508,7 +1508,7 @@ class MainWindow(QMainWindow):
         row=QHBoxLayout(); l.addLayout(row)
         set_tips = {"Create backup": "Create a backup of the local database", "Restore backup": "Restore database from a backup file", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
         for label,slot in [("Create backup",self.backup_db),("Restore backup",self.restore_backup),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); row.addWidget(b)
+            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setMinimumWidth(0); row.addWidget(b)
             if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
                 b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
         days_box=QGroupBox("Working days")
@@ -2834,7 +2834,7 @@ QTabBar::tab:selected { background: #1E2F52; color: #ffffff; border-bottom: 3px 
 QTabBar::tab:hover:!selected { background: #1A2A4A; color: #ffffff; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #1A2A4A; color: #ffffff; border: 1px solid #3B4F75; border-radius: 4px; }
-QPushButton, QToolButton { padding: 8px 14px; min-height: 28px; min-width: 80px; border: 1px solid rgba(255,255,255,0.35); border-radius: 10px; background: rgba(255,255,255,0.28); color: #1E293B; font-weight: 600; text-align: center; }
+QPushButton, QToolButton { padding: 8px 14px; min-height: 28px; min-width: 60px; border: 1px solid rgba(255,255,255,0.35); border-radius: 10px; background: rgba(255,255,255,0.28); color: #1E293B; font-weight: 600; text-align: center; }
 QPushButton:hover, QToolButton:hover { background: #C7D2FE; color: #3730A3; }
 QPushButton:pressed, QToolButton:pressed { background: #CBD5E1; }
 QPushButton:disabled, QToolButton:disabled { background: #F1F5F9; color: #94A3B8; border-color: #E2E8F0; }
@@ -2946,7 +2946,7 @@ QTabBar::tab:hover:!selected { background: #0F172A; color: #F8FAFC; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #111827; color: #E2E8F0; border: 1px solid #334155; border-radius: 4px; }
 QPushButton, QToolButton {
-    padding: 8px 14px; min-height: 28px; min-width: 80px; border: 1px solid rgba(255,255,255,0.12);
+    padding: 8px 14px; min-height: 28px; min-width: 60px; border: 1px solid rgba(255,255,255,0.12);
     border-radius: 10px; background: rgba(30,41,59,0.4); color: #F1F5F9; font-weight: 600; text-align: center;
 }
 QPushButton:hover, QToolButton:hover { background: #6366F1; color: #FFFFFF; }
