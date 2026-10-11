@@ -776,6 +776,22 @@ class MainWindow(QMainWindow):
         self._tab_animation = animation
         animation.start()
 
+    def _wrap_page_in_scroll(self, page_widget, content_layout):
+        """Helper: put page content inside a scroll area so every section has a scrollbar."""
+        outer = QVBoxLayout(page_widget)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setObjectName("pageScroll")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content.setObjectName("pageContent")
+        content.setLayout(content_layout)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        return outer
+
     @staticmethod
     def add_page_header(layout, title, subtitle):
         header_row = QHBoxLayout()
@@ -960,7 +976,8 @@ class MainWindow(QMainWindow):
         self.update_button.setEnabled(True)
 
     def build_dashboard(self):
-        l=QVBoxLayout(self.dashboard)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.dashboard, l)
         hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero"); hero_widget.setFixedHeight(112)
         hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
         brand_mark=QLabel()
@@ -1003,7 +1020,9 @@ class MainWindow(QMainWindow):
         l.addWidget(self.productivity_table)
 
     def build_employees(self):
-        l=QVBoxLayout(self.employees_tab); row=QHBoxLayout(); l.addLayout(row)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.employees_tab, l)
+        row=QHBoxLayout(); l.addLayout(row)
         self.emp_search=QLineEdit(); self.emp_search.setPlaceholderText("Search employee name, ID or department"); self.emp_search.textChanged.connect(self.refresh_employees); row.addWidget(self.emp_search)
         for label,slot in [("Add",self.add_employee),("Edit",self.edit_employee),("Activate / Deactivate",self.toggle_employee),("Delete",self.delete_employee)]:
             b=QPushButton(label); b.clicked.connect(slot); row.addWidget(b)
@@ -1011,7 +1030,9 @@ class MainWindow(QMainWindow):
         self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.emp_table)
 
     def build_tasks(self):
-        l=QVBoxLayout(self.tasks_tab); row=QHBoxLayout(); l.addLayout(row)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.tasks_tab, l)
+        row=QHBoxLayout(); l.addLayout(row)
         self.task_date=QDateEdit(); configure_date_edit(self.task_date); self.task_date.setDisplayFormat("yyyy-MM-dd"); self.task_date.setDate(QDate.currentDate()); self.task_date.dateChanged.connect(self.refresh_tasks)
         row.addWidget(QLabel("Date")); row.addWidget(self.task_date)
         self.task_filter=QComboBox(); self.task_filter.addItem("All employees",None)
@@ -1023,7 +1044,8 @@ class MainWindow(QMainWindow):
         self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
 
     def build_tracker(self):
-        l=QVBoxLayout(self.tracker_tab)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.tracker_tab, l)
         self.add_page_header(l, "Employee Task Tracker", "Review assigned work and evidence.")
         filters=QHBoxLayout(); l.addLayout(filters)
         self.tracker_employee=QComboBox(); self.tracker_employee.addItem("Select employee", None)
@@ -1050,7 +1072,8 @@ class MainWindow(QMainWindow):
         l.addWidget(self.tracker_table)
 
     def build_attendance(self):
-        l=QVBoxLayout(self.attendance_tab)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.attendance_tab, l)
         self.add_page_header(l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
 
         # Date row
@@ -1231,8 +1254,11 @@ class MainWindow(QMainWindow):
         self.report_summary = QTextEdit()
         self.report_summary.setReadOnly(True)
         self.report_summary.setPlaceholderText("Report preview summary appears here. Select options and click Preview Report.")
-        self.report_summary.setMinimumHeight(160)
-        self.report_summary.setMaximumHeight(280)
+        self.report_summary.setMinimumHeight(140)
+        self.report_summary.setMaximumHeight(220)
+        self.report_summary.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.report_summary.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.report_summary.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.report_summary.setObjectName("reportPreview")
         l.addWidget(self.report_summary)
 
@@ -1249,7 +1275,8 @@ class MainWindow(QMainWindow):
         self._report_type_changed()
 
     def build_archive(self):
-        l=QVBoxLayout(self.archive_tab)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.archive_tab, l)
         self.add_page_header(l, "Historical EOD Archive", "Store and retrieve uploaded EOD PDFs.")
         row=QHBoxLayout(); l.addLayout(row)
         for label,slot in [("Upload PDF(s)",self.upload_eod_pdfs),("View Selected",self.open_archived_pdf),("Export Selected",self.export_archived_pdf),("Delete Selected",self.delete_archived_pdf),("Refresh",self.refresh_archive)]:
@@ -1265,7 +1292,8 @@ class MainWindow(QMainWindow):
         l.addWidget(note)
 
     def build_settings(self):
-        l=QVBoxLayout(self.settings_tab)
+        l=QVBoxLayout()
+        self._wrap_page_in_scroll(self.settings_tab, l)
         self.add_page_header(l, "Settings & Backup", "Manage local storage, account security, and working days.")
         storage_box=QGroupBox("Storage locations"); storage_form=QFormLayout(storage_box)
         for label,path in [("Database",DB_PATH),("Backups",BACKUP_DIR),("Reports",EXPORT_DIR)]:
@@ -2561,7 +2589,7 @@ QTabWidget { background: #E8EEF6; }
 QMenuBar { background: #F1F5F9; border-bottom: 1px solid #CBD5E1; padding: 5px 10px; color: #1E293B; }
 QMenuBar::item { padding: 7px 12px; border-radius: 6px; background: transparent; color: #1E293B; }
 QMenuBar::item:selected { background: #E0E7FF; color: #5B21B6; }
-QMenu { background: #F8FAFC; border: 1px solid #CBD5E1; padding: 6px; border-radius: 8px; color: #1E293B; }
+QMenu { background: #F1F5F9; border: 1px solid #CBD5E1; padding: 6px; border-radius: 8px; color: #1E293B; }
 QMenu::item { padding: 8px 22px; border-radius: 5px; color: #1E293B; }
 QMenu::item:selected { background: #E0E7FF; color: #5B21B6; }
 QTabBar { background: #15233F; }
@@ -2579,25 +2607,25 @@ QPushButton:default:hover, QPushButton[primary="true"]:hover { background: #6D28
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-    background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
+    background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
     padding: 8px 10px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox, QDateEdit {
-    background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
+    background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
     padding: 8px 10px; min-height: 20px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
-QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #F8FAFC; color: #0F172A; }
-QComboBox QLineEdit { background-color: #F8FAFC; color: #0F172A; border: 0; padding: 0; }
+QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #F1F5F9; color: #0F172A; }
+QComboBox QLineEdit { background-color: #F1F5F9; color: #0F172A; border: 0; padding: 0; }
 QDateEdit { min-width: 142px; padding-right: 30px; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {
-    border: 2px solid #7C5CFC; background-color: #F8FAFC; color: #0F172A;
+    border: 2px solid #7C5CFC; background-color: #F1F5F9; color: #0F172A;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-QComboBox QAbstractItemView { background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
-QComboBox QAbstractItemView::item { color: #0F172A; background-color: #F8FAFC; padding: 6px 10px; min-height: 22px; }
+QComboBox QAbstractItemView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
+QComboBox QAbstractItemView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
 QHeaderView::section { background: #E2E8F0; color: #334155; padding: 10px; border: 0; border-bottom: 1px solid #CBD5E1; font-weight: 700; }
-QTableWidget { background: #F8FAFC; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 12px; gridline-color: #E2E8F0; selection-background-color: #EEF2FF; selection-color: #312E81; outline: 0; }
+QTableWidget { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 12px; gridline-color: #E2E8F0; selection-background-color: #EEF2FF; selection-color: #312E81; outline: 0; }
 QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #E2E8F0; color: #0F172A; }
 QTableWidget::item:selected { background: #EEF2FF; color: #312E81; }
 QTableWidget::item:hover { background: #F5F3FF; }
@@ -2621,7 +2649,7 @@ QWidget#sessionStrip { background: #F1F5F9; border: 1px solid #CBD5E1; border-ra
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: #F8FAFC; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 12px; }
+QWidget#guideItem { background: #F1F5F9; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 12px; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 10px; color: #312E81; font-weight: 600; padding: 11px 14px; }
@@ -2629,7 +2657,7 @@ QLabel[warningBanner="true"] { background: #FFFBEB; border: 1px solid #FDE68A; b
 QProgressBar { border: 1px solid #CBD5E1; border-radius: 8px; text-align: center; color: #1E293B; background: #E2E8F0; min-height: 15px; }
 QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #7C5CFC, stop:1 #DB2777); border-radius: 7px; }
 QCheckBox { spacing: 8px; padding: 3px; color: #334155; background: transparent; }
-QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #94A3B8; border-radius: 4px; background: #F8FAFC; }
+QCheckBox::indicator { width: 18px; height: 18px; border: 1px solid #94A3B8; border-radius: 4px; background: #F1F5F9; }
 QCheckBox::indicator:checked { background: #7C5CFC; border-color: #7C5CFC; }
 QCheckBox::indicator:checked:hover { background: #6D28D9; }
 QRadioButton { spacing: 8px; color: #334155; background: transparent; }
@@ -2641,12 +2669,12 @@ QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { backgro
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QDialog { background: #E8EEF6; color: #1E293B; }
 QFormLayout QLabel { color: #334155; background: transparent; }
-QToolTip { background: #F8FAFC; color: #1E293B; border: 1px solid #CBD5E1; padding: 6px 8px; border-radius: 6px; }
+QToolTip { background: #F1F5F9; color: #1E293B; border: 1px solid #CBD5E1; padding: 6px 8px; border-radius: 6px; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #15233F; }
 QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 4px; padding: 6px 8px; font-weight: 600; }
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
-QCalendarWidget QAbstractItemView { background: #F8FAFC; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
+QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 """
 
 def dark_stylesheet():
