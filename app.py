@@ -120,9 +120,9 @@ def seed_initial_audit(db):
         db.conn.execute("INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)",
                         (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Initial historical audit imported", f"Imported {len(EMPLOYEES)} employees and {len(TASKS)} task records from {SOURCE_FILENAME} ({SOURCE_DATE_DISPLAY})."))
         db.conn.commit()
-    except Exception:
+    except Exception as exc:
         db.conn.rollback()
-        raise
+        raise RuntimeError(f"Initial audit seed failed: {exc}") from exc
 
 
 APP_NAME = "Raw Strength Calisthenics — Employee Audit Manager"
@@ -261,10 +261,19 @@ def migrate_legacy_task_employee_links(conn):
 
 class Database:
     def __init__(self):
-        self.conn = sqlite3.connect(DB_PATH)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys=ON")
-        self.setup()
+        try:
+            self.conn = sqlite3.connect(DB_PATH)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA foreign_keys=ON")
+            self.setup()
+        except Exception as exc:
+            # Attempt to close and re-raise with context
+            if hasattr(self, "conn") and self.conn:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
+            raise RuntimeError(f"Database initialization failed: {exc}") from exc
 
     def setup(self):
         c = self.conn.cursor()
@@ -422,7 +431,11 @@ class Database:
         if not self.get_setting("working_weekdays"):
             self.set_setting("working_weekdays", "0,1,2,3,4")
         # Restore task-employee links only when unambiguous
-        migrate_legacy_task_employee_links(self.conn)
+        try:
+            migrate_legacy_task_employee_links(self.conn)
+        except Exception:
+            self.conn.rollback()
+            raise
         # Do not create a known/default credential. Authentication is handled by
         # the first-run Admin account and per-user password/recovery records.
         self.conn.commit()
@@ -3221,8 +3234,12 @@ def main():
     app.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
     apply_app_theme(app, "day")
 
-    db=Database()
-    seed_initial_audit(db)
+    try:
+        db=Database()
+        seed_initial_audit(db)
+    except Exception as exc:
+        QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
+        return 1
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
         setup_dialog = AccountSetupDialog(db)
         if setup_dialog.exec() != QDialog.Accepted:
