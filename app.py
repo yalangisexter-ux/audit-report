@@ -1168,6 +1168,53 @@ class MainWindow(QMainWindow):
         item=table.item(rows[0].row(),col)
         return int(item.text()) if item else None
 
+    def status_item(self, value):
+        """Create a table cell styled as a colored status pill."""
+        text = str(value or "").strip() or "—"
+        item = QTableWidgetItem(text)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        key = text.lower()
+        # (bg, fg)
+        palette = {
+            "submitted": ("#DCFCE7", "#166534"),
+            "completed": ("#DCFCE7", "#166534"),
+            "active": ("#DCFCE7", "#166534"),
+            "present": ("#DCFCE7", "#166534"),
+            "provided": ("#DCFCE7", "#166534"),
+            "pending": ("#FEF3C7", "#92400E"),
+            "pending review": ("#FEF3C7", "#92400E"),
+            "in progress": ("#DBEAFE", "#1E40AF"),
+            "not started": ("#F1F5F9", "#475569"),
+            "unmarked": ("#F1F5F9", "#475569"),
+            "inactive": ("#F1F5F9", "#475569"),
+            "disabled": ("#F1F5F9", "#475569"),
+            "blocked": ("#FEE2E2", "#991B1B"),
+            "cancelled": ("#FEE2E2", "#991B1B"),
+            "absent": ("#FEE2E2", "#991B1B"),
+            "leave": ("#EDE9FE", "#5B21B6"),
+            "holiday": ("#E0E7FF", "#3730A3"),
+            "missing": ("#FEE2E2", "#991B1B"),
+            "high": ("#FEE2E2", "#991B1B"),
+            "normal": ("#F1F5F9", "#475569"),
+            "low": ("#DBEAFE", "#1E40AF"),
+        }
+        bg, fg = palette.get(key, ("#F1F5F9", "#475569"))
+        item.setBackground(QColor(bg))
+        item.setForeground(QColor(fg))
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+        return item
+
+    def set_row_items(self, table, row, values, status_cols=None):
+        """Fill a table row; status_cols get colored pill styling."""
+        status_cols = set(status_cols or [])
+        for c, v in enumerate(values):
+            if c in status_cols:
+                table.setItem(row, c, self.status_item(v))
+            else:
+                table.setItem(row, c, QTableWidgetItem(str(v or "")))
+
     def refresh_all(self):
         self.refresh_employees(); self.refresh_task_filter(); self.refresh_tracker_employees(); self.refresh_tasks(); self.refresh_tracker(); self.refresh_attendance(); self.refresh_report_employees(); self.refresh_dashboard(); self.refresh_archive()
 
@@ -1179,7 +1226,7 @@ class MainWindow(QMainWindow):
         for e in rows:
             r=self.emp_table.rowCount(); self.emp_table.insertRow(r)
             vals=[e["id"],e["employee_code"] or "",e["name"],e["department"],e["designation"],e["phone"] or "",e["email"] or "","Active" if e["active"] else "Inactive"]
-            for c,v in enumerate(vals): self.emp_table.setItem(r,c,QTableWidgetItem(str(v)))
+            self.set_row_items(self.emp_table, r, vals, status_cols={7})
         self.refresh_task_filter(); self.refresh_report_employees()
 
     def refresh_task_filter(self):
@@ -1215,7 +1262,7 @@ class MainWindow(QMainWindow):
         for t in rows:
             r=self.tracker_table.rowCount(); self.tracker_table.insertRow(r)
             vals=[t["id"],t["title"],t["priority"],t["status"],f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
-            for c,v in enumerate(vals): self.tracker_table.setItem(r,c,QTableWidgetItem(str(v or "")))
+            self.set_row_items(self.tracker_table, r, vals, status_cols={2, 3})
 
     def add_tracker_task(self):
         eid=self.tracker_employee.currentData()
@@ -1470,7 +1517,7 @@ class MainWindow(QMainWindow):
         for t in rows:
             r=self.task_table.rowCount(); self.task_table.insertRow(r)
             vals=[t["id"],t["employee_name"],t["title"],t["priority"],t["status"],f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
-            for c,v in enumerate(vals): self.task_table.setItem(r,c,QTableWidgetItem(str(v or "")))
+            self.set_row_items(self.task_table, r, vals, status_cols={3, 4})
         self.refresh_dashboard()
 
     def tracking_start_date(self, employee):
@@ -1532,7 +1579,11 @@ class MainWindow(QMainWindow):
                     hours=f"{mins/60:.2f}"
                 except Exception: pass
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
-            for c,v in enumerate(vals,1): self.att_table.setItem(r,c,QTableWidgetItem(str(v or "")))
+            for c,v in enumerate(vals,1):
+                if c == 2:
+                    self.att_table.setItem(r, c, self.status_item(v))
+                else:
+                    self.att_table.setItem(r, c, QTableWidgetItem(str(v or "")))
         self.refresh_attendance_summary()
         self.refresh_dashboard()
 
@@ -1573,7 +1624,7 @@ class MainWindow(QMainWindow):
         for t in tasks:
             r=self.dashboard_tasks.rowCount(); self.dashboard_tasks.insertRow(r)
             vals=[t["employee_name"],t["title"],t["status"],f'{t["progress"]}%',t["due_time"],"Missing" if not t["proof_url"] else "Provided"]
-            for c,v in enumerate(vals): self.dashboard_tasks.setItem(r,c,QTableWidgetItem(str(v or "")))
+            self.set_row_items(self.dashboard_tasks, r, vals, status_cols={2, 5})
         metrics=[]
         self.productivity_table.setRowCount(0)
         for e in self.db.employees(False):
@@ -2298,7 +2349,10 @@ class MainWindow(QMainWindow):
         for row in self.db.conn.execute("SELECT username,display_name,role,active,created_at FROM auth_users ORDER BY username COLLATE NOCASE").fetchall():
             idx=table.rowCount(); table.insertRow(idx)
             for col,val in enumerate([row["username"],row["display_name"],row["role"],"Active" if row["active"] else "Disabled",row["created_at"]]):
-                table.setItem(idx,col,QTableWidgetItem(str(val)))
+                if col == 3:
+                    table.setItem(idx, col, self.status_item(val))
+                else:
+                    table.setItem(idx, col, QTableWidgetItem(str(val)))
         layout.addWidget(table)
         formbox=QGroupBox("Create account"); form=QFormLayout(formbox)
         username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["HR","Admin"])
