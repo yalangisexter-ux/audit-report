@@ -955,13 +955,15 @@ class MainWindow(QMainWindow):
         self._tab_animation = animation
         animation.start()
 
-    def _wrap_page_in_scroll(self, page_widget, content_layout, page_title=None, page_subtitle=""):
+    def _wrap_page_in_scroll(self, page_widget, content_layout, page_title=None, page_subtitle="", fixed_header=None):
         """Helper: put page content inside a scroll area so every section has a scrollbar."""
         outer = QVBoxLayout(page_widget)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         if page_title:
             self._add_fixed_page_header(outer, page_title, page_subtitle)
+        elif fixed_header is not None:
+            outer.addWidget(fixed_header)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setObjectName("pageScroll")
@@ -1036,6 +1038,8 @@ class MainWindow(QMainWindow):
     def build_home(self):
 
         page_layout = QVBoxLayout(self.home_tab)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
         self.home_scroll = QScrollArea()
         self.home_scroll.setWidgetResizable(True)
         self.home_scroll.setObjectName("homeScroll")
@@ -1064,7 +1068,6 @@ class MainWindow(QMainWindow):
         welcome_subtitle.setProperty("welcomeSubtitle", True)
         welcome_copy.addWidget(welcome_subtitle)
         welcome_layout.addLayout(welcome_copy, 1)
-        content_layout.addWidget(welcome)
 
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
@@ -1130,6 +1133,7 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(guide_grid)
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
+        page_layout.addWidget(welcome)
         page_layout.addWidget(self.home_scroll)
 
     def check_for_updates(self):
@@ -1184,7 +1188,6 @@ class MainWindow(QMainWindow):
         l=QVBoxLayout()
         l.setContentsMargins(20, 16, 20, 16)
         l.setSpacing(14)
-        self._wrap_page_in_scroll(self.dashboard, l)
         hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero"); hero_widget.setFixedHeight(112)
         hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
         brand_mark=QLabel()
@@ -1202,7 +1205,7 @@ class MainWindow(QMainWindow):
         heading.addWidget(subtitle)
         heading.addStretch(1)
         hero.addLayout(heading, 1)
-        l.addWidget(hero_widget)
+        self._wrap_page_in_scroll(self.dashboard, l, fixed_header=hero_widget)
         self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
         self.kpi_labels=[]
         for title in ["Active employees","Tasks today","Completed today","Pending or blocked","Proof missing"]:
