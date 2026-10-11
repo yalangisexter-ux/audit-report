@@ -810,7 +810,14 @@ class MainWindow(QMainWindow):
         super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
         self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
-        self.resize(1380, 860); self.setMinimumSize(1080, 700)
+        screen = QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else None
+        if available:
+            self.setMinimumSize(min(1080, available.width()), min(700, available.height()))
+            self.resize(min(1380, available.width()), min(860, available.height()))
+            self.move(available.center() - self.rect().center())
+        else:
+            self.resize(1380, 860); self.setMinimumSize(1080, 700)
         self._drag_pos = None
 
         # Custom title bar
@@ -824,9 +831,11 @@ class MainWindow(QMainWindow):
         title_icon = QLabel()
         title_icon.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(18, 18))
         title_layout.addWidget(title_icon)
-        title_label = QLabel(APP_NAME)
-        title_label.setObjectName("titleLabel")
-        title_layout.addWidget(title_label)
+        self.title_label = QLabel(APP_NAME)
+        self.title_label.setObjectName("titleLabel")
+        self.title_label.setMinimumWidth(0)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        title_layout.addWidget(self.title_label)
         title_layout.addStretch(1)
 
         btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
@@ -919,6 +928,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, "bg_anim"):
             self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
             self.bg_anim.init_particles()
+        if hasattr(self, "title_label"):
+            QTimer.singleShot(0, self.update_title_label)
+
+    def update_title_label(self):
+        self.title_label.setText(self.title_label.fontMetrics().elidedText(
+            APP_NAME, Qt.TextElideMode.ElideRight, self.title_label.width()))
 
     def animate_tab_transition(self, index):
         page = self.tabs.widget(index)
