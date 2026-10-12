@@ -862,7 +862,12 @@ class TaskDialog(QDialog):
         if self.employee.count()==0: return None
         status=self.status.currentData(); progress=self.progress.value()
         if status=="Completed": progress=100
-        submitted=now_text() if status in ("Submitted","Completed") else (self.row["submitted_at"] if self.row else "")
+        # Preserve original submission time; only set it on first transition to Submitted/Completed
+        if status in ("Submitted","Completed"):
+            existing = (self.row["submitted_at"] if self.row else "") or ""
+            submitted = existing if existing else now_text()
+        else:
+            submitted = (self.row["submitted_at"] if self.row else "") or ""
         return (self.employee.currentData(), self.date.date().toString("yyyy-MM-dd"), self.title.text().strip(),
                 self.details.toPlainText().strip(), self.due.time().toString("HH:mm"), self.priority.currentText(),
                 status, progress, self.proof.toPlainText().strip(), self.proof_note.text().strip(), submitted,
@@ -1824,9 +1829,10 @@ class MainWindow(QMainWindow):
         rows=self.db.tasks(d,eid)
         completed=sum(1 for t in rows if t["status"] in ("Completed", "Submitted"))
         avg=round(sum(t["progress"] for t in rows)/len(rows)) if rows else 0
-        pending=sum(1 for t in rows if t["status"] not in ("Completed", "Submitted", "Cancelled"))
         blocked=sum(1 for t in rows if t["status"]=="Blocked")
         in_progress=sum(1 for t in rows if t["status"]=="In progress")
+        # Pending excludes completed/submitted, cancelled, blocked, and in-progress
+        pending=sum(1 for t in rows if t["status"] not in ("Completed", "Submitted", "Cancelled", "Blocked", "In progress"))
         self.tracker_summary.setText(f"{len(rows)} tasks  •  {completed} completed/submitted  •  {in_progress} in progress  •  {pending} pending  •  {blocked} blocked")
         self.tracker_progress.setValue(avg)
         for t in rows:
@@ -2757,7 +2763,8 @@ class MainWindow(QMainWindow):
 
     def backup_db(self, silent=False):
         """Create a backup. Returns True on success, False on failure."""
-        target=BACKUP_DIR/f"employee_audit_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target = BACKUP_DIR / f"employee_audit_backup_{stamp}_{secrets.token_hex(4)}.db"
         try:
             self.db.conn.commit()
             dest=sqlite3.connect(target)
@@ -2777,11 +2784,18 @@ class MainWindow(QMainWindow):
         # Safety backup first
         if not self.backup_db(silent=True):
             return error(self, "Safety backup failed. Restore cancelled.")
-        # Validate the selected file is a readable SQLite database
+        # Validate the selected file is a readable SQLite database with required tables
         try:
             test = sqlite3.connect(path)
-            test.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+            integrity = test.execute("PRAGMA integrity_check").fetchone()
+            if integrity and integrity[0] != "ok":
+                test.close()
+                return error(self, "The selected database failed integrity check.")
+            tables = {r[0] for r in test.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             test.close()
+            required = {"employees", "tasks", "attendance"}
+            if not required.issubset(tables):
+                return error(self, "The selected file is missing required tables.")
         except Exception as ex:
             return error(self, f"The selected file is not a valid database:\n{ex}")
         try:
