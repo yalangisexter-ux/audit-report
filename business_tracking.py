@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QFormLayout,
     QDialog, QDialogButtonBox, QGroupBox, QHeaderView, QAbstractItemView,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt
 
@@ -372,7 +373,6 @@ class BusinessTrackingTab(QWidget):
             open_qty = float(opening.text() or 0)
             recv_qty = float(received.text() or 0)
         except ValueError:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid quantity", "Opening and received quantities must be numbers.")
             return
         try:
@@ -382,7 +382,6 @@ class BusinessTrackingTab(QWidget):
             )
             self.db.conn.commit()
         except sqlite3.IntegrityError:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Duplicate SKU", "A product with that SKU already exists.")
             return
         self.refresh_all()
@@ -481,7 +480,6 @@ class BusinessTrackingTab(QWidget):
         try:
             quantity = float(qty.text() or 0)
         except ValueError:
-            from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid quantity", "Quantity must be a number.")
             return
         self.db.conn.execute(
