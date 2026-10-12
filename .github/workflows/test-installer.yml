@@ -1,0 +1,49 @@
+name: Test Windows Installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      installer_url:
+        description: "Installer URL"
+        required: true
+        default: "https://github.com/yalangisexter-ux/audit-report/releases/download/v1.1.92/RawStrengthEmployeeAuditManager-Setup.exe"
+
+jobs:
+  test-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Download installer
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "${{ inputs.installer_url }}" -OutFile "setup.exe"
+          Get-Item setup.exe | Select-Object Name, Length
+
+      - name: Verify PE header
+        shell: pwsh
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes("setup.exe")[0..1]
+          if ($bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw "Not a valid MZ executable" }
+          Write-Host "PE header OK"
+
+      - name: Silent install to disposable path
+        shell: pwsh
+        run: |
+          $installDir = "$env:TEMP\audit-test-install"
+          New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+          Start-Process -FilePath "setup.exe" -ArgumentList "/VERYSILENT /DIR=$installDir /NORESTART" -Wait -NoNewWindow
+          Get-ChildItem $installDir -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
+
+      - name: Launch app and capture exit
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "$env:TEMP\audit-test-install" -Filter "*.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "No EXE found after install" }
+          Write-Host "Launching $($exe.FullName)"
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 8
+          if ($proc.HasExited) {
+            Write-Host "Exit code: $($proc.ExitCode)"
+          } else {
+            Write-Host "Process still running (GUI likely opened)"
+            Stop-Process -Id $proc.Id -Force
+          }
