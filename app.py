@@ -263,6 +263,15 @@ def migrate_legacy_task_employee_links(conn):
 class Database:
     def __init__(self):
         try:
+            # Backup existing database before migrations if it has data
+            if DB_PATH.exists() and DB_PATH.stat().st_size > 0:
+                BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                pre_backup = BACKUP_DIR / f"pre_upgrade_{stamp}.db"
+                try:
+                    shutil.copy2(DB_PATH, pre_backup)
+                except Exception:
+                    pass
             self.conn = sqlite3.connect(DB_PATH)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
