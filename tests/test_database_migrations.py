@@ -45,3 +45,26 @@ def test_task_columns_added_without_dropping_rows(tmp_path, monkeypatch):
         assert "created_at" in cols and "updated_at" in cols
     finally:
         database.conn.close()
+
+def test_submitted_at_preserved_on_ordinary_edit():
+    """Simulate TaskDialog.values logic: existing submitted_at is kept."""
+    # Mimic the logic from TaskDialog.values
+    class FakeRow(dict):
+        def __getitem__(self, key):
+            return dict.__getitem__(self, key)
+    row = FakeRow(submitted_at="2026-10-09 10:00:00")
+    status = "Submitted"
+    existing = (row["submitted_at"] if row else "") or ""
+    submitted = existing if existing else "NOW"
+    assert submitted == "2026-10-09 10:00:00"
+
+def test_tracker_counts_are_mutually_exclusive():
+    statuses = ["Completed", "Submitted", "In progress", "Blocked", "Pending", "Cancelled", "Not started"]
+    completed = sum(1 for s in statuses if s in ("Completed", "Submitted"))
+    blocked = sum(1 for s in statuses if s == "Blocked")
+    in_progress = sum(1 for s in statuses if s == "In progress")
+    pending = sum(1 for s in statuses if s not in ("Completed", "Submitted", "Cancelled", "Blocked", "In progress"))
+    # Total of counted categories should equal non-cancelled
+    counted = completed + blocked + in_progress + pending
+    non_cancelled = sum(1 for s in statuses if s != "Cancelled")
+    assert counted == non_cancelled

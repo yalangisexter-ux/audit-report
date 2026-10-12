@@ -2781,10 +2781,10 @@ class MainWindow(QMainWindow):
         path,_=QFileDialog.getOpenFileName(self,"Select database backup",str(BACKUP_DIR),"SQLite database (*.db)")
         if not path: return
         if not ask(self,"Restore backup","This replaces current data. A backup of the current database will be created first. Continue?"): return
-        # Safety backup first
+        # Safety backup of current database
         if not self.backup_db(silent=True):
             return error(self, "Safety backup failed. Restore cancelled.")
-        # Validate the selected file is a readable SQLite database with required tables
+        # Validate selected file
         try:
             test = sqlite3.connect(path)
             integrity = test.execute("PRAGMA integrity_check").fetchone()
@@ -2798,14 +2798,27 @@ class MainWindow(QMainWindow):
                 return error(self, "The selected file is missing required tables.")
         except Exception as ex:
             return error(self, f"The selected file is not a valid database:\n{ex}")
+        # Restore via temporary file so the live database is only replaced after validation
+        temp_path = DB_PATH.with_suffix(".restore.tmp")
         try:
+            shutil.copy2(path, temp_path)
+            # Re-validate the copy
+            check = sqlite3.connect(temp_path)
+            check.execute("SELECT 1 FROM employees LIMIT 1")
+            check.close()
             self.db.conn.close()
-            shutil.copy2(path, DB_PATH)
+            os.replace(temp_path, DB_PATH)
             self.db = Database()
             info(self, "Backup restored. Restart the application if any screen does not refresh.")
             self.close()
         except Exception as ex:
-            error(self, f"Restore failed:\n{ex}")
+            # Clean up temp file; live database is untouched if replace failed
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            error(self, f"Restore failed. The original database was not replaced.\n{ex}")
 
     def save_working_week(self):
         days=[str(i) for i,cb in enumerate(self.workday_checks) if cb.isChecked()]
