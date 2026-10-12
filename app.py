@@ -2798,27 +2798,43 @@ class MainWindow(QMainWindow):
                 return error(self, "The selected file is missing required tables.")
         except Exception as ex:
             return error(self, f"The selected file is not a valid database:\n{ex}")
-        # Restore via temporary file so the live database is only replaced after validation
+        # Keep a recoverable copy of the original, fully validate the temp file,
+        # then replace. On reopen failure, restore the original.
         temp_path = DB_PATH.with_suffix(".restore.tmp")
+        original_copy = DB_PATH.with_suffix(".pre-restore.bak")
         try:
             shutil.copy2(path, temp_path)
-            # Re-validate the copy
+            # Full validation of the temporary copy
             check = sqlite3.connect(temp_path)
-            check.execute("SELECT 1 FROM employees LIMIT 1")
+            integrity = check.execute("PRAGMA integrity_check").fetchone()
+            if integrity and integrity[0] != "ok":
+                check.close()
+                raise ValueError("Temporary restore copy failed integrity check.")
+            tables = {r[0] for r in check.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
             check.close()
+            if not {"employees", "tasks", "attendance"}.issubset(tables):
+                raise ValueError("Temporary restore copy is missing required tables.")
+            # Preserve original for recovery
+            shutil.copy2(DB_PATH, original_copy)
             self.db.conn.close()
             os.replace(temp_path, DB_PATH)
-            self.db = Database()
+            try:
+                self.db = Database()
+            except Exception:
+                # Reopen failed — restore the original
+                shutil.copy2(original_copy, DB_PATH)
+                self.db = Database()
+                raise RuntimeError("Restore reopened unsuccessfully; original database was restored.")
             info(self, "Backup restored. Restart the application if any screen does not refresh.")
             self.close()
         except Exception as ex:
-            # Clean up temp file; live database is untouched if replace failed
-            if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except Exception:
-                    pass
-            error(self, f"Restore failed. The original database was not replaced.\n{ex}")
+            for p in (temp_path,):
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
+            error(self, f"Restore failed.\n{ex}")
 
     def save_working_week(self):
         days=[str(i) for i,cb in enumerate(self.workday_checks) if cb.isChecked()]
