@@ -264,12 +264,13 @@ class Database:
     def __init__(self):
         try:
             # Backup existing database before migrations if it has data
-            if DB_PATH.exists() and DB_PATH.stat().st_size > 0:
+            db_path = Path(DB_PATH) if not isinstance(DB_PATH, Path) else DB_PATH
+            if db_path.exists() and db_path.stat().st_size > 0:
                 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
                 stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 pre_backup = BACKUP_DIR / f"pre_upgrade_{stamp}.db"
                 try:
-                    shutil.copy2(DB_PATH, pre_backup)
+                    shutil.copy2(db_path, pre_backup)
                 except Exception:
                     pass
             self.conn = sqlite3.connect(DB_PATH)
