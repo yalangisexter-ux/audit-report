@@ -16,6 +16,16 @@ from PySide6.QtCore import Qt
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def parse_quantity(text):
+    """Return a finite non-negative float, or None if invalid."""
+    try:
+        value = float(text or 0)
+    except ValueError:
+        return None
+    if value != value or value == float("inf") or value == float("-inf") or value < 0:
+        return None
+    return value
+
 
 def setup_business_tables(conn):
     """Create business tracking tables if they do not exist. Additive only."""
@@ -369,11 +379,10 @@ class BusinessTrackingTab(QWidget):
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted or not name.text().strip():
             return
-        try:
-            open_qty = float(opening.text() or 0)
-            recv_qty = float(received.text() or 0)
-        except ValueError:
-            QMessageBox.warning(self, "Invalid quantity", "Opening and received quantities must be numbers.")
+        open_qty = parse_quantity(opening.text())
+        recv_qty = parse_quantity(received.text())
+        if open_qty is None or recv_qty is None:
+            QMessageBox.warning(self, "Invalid quantity", "Opening and received quantities must be non-negative numbers.")
             return
         try:
             self.db.conn.execute(
@@ -406,11 +415,15 @@ class BusinessTrackingTab(QWidget):
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted:
             return
-        self.db.conn.execute(
-            "INSERT INTO bt_orders(external_order_id,order_date,sales_channel,customer_name,order_status,updated_at) VALUES(?,?,?,?,?,?)",
-            (external.text().strip(), datetime.now().strftime("%Y-%m-%d"), channel.currentText(), customer.text().strip(), status.currentText(), now_text()),
-        )
-        self.db.conn.commit()
+        try:
+            self.db.conn.execute(
+                "INSERT INTO bt_orders(external_order_id,order_date,sales_channel,customer_name,order_status,updated_at) VALUES(?,?,?,?,?,?)",
+                (external.text().strip(), datetime.now().strftime("%Y-%m-%d"), channel.currentText(), customer.text().strip(), status.currentText(), now_text()),
+            )
+            self.db.conn.commit()
+        except sqlite3.Error as ex:
+            QMessageBox.warning(self, "Could not save order", str(ex))
+            return
         self.refresh_all()
 
     def add_service(self):
@@ -428,11 +441,15 @@ class BusinessTrackingTab(QWidget):
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted or not name.text().strip():
             return
-        self.db.conn.execute(
-            "INSERT INTO bt_services(name,training_mode,updated_at) VALUES(?,?,?)",
-            (name.text().strip(), mode.currentText(), now_text()),
-        )
-        self.db.conn.commit()
+        try:
+            self.db.conn.execute(
+                "INSERT INTO bt_services(name,training_mode,updated_at) VALUES(?,?,?)",
+                (name.text().strip(), mode.currentText(), now_text()),
+            )
+            self.db.conn.commit()
+        except sqlite3.Error as ex:
+            QMessageBox.warning(self, "Could not save service", str(ex))
+            return
         self.refresh_all()
 
     def add_member(self):
@@ -477,10 +494,9 @@ class BusinessTrackingTab(QWidget):
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted or emp.count() == 0:
             return
-        try:
-            quantity = float(qty.text() or 0)
-        except ValueError:
-            QMessageBox.warning(self, "Invalid quantity", "Quantity must be a number.")
+        quantity = parse_quantity(qty.text())
+        if quantity is None:
+            QMessageBox.warning(self, "Invalid quantity", "Quantity must be a non-negative number.")
             return
         self.db.conn.execute(
             "INSERT INTO bt_activities(employee_id,task_type,quantity,remarks,created_at) VALUES(?,?,?,?,?)",

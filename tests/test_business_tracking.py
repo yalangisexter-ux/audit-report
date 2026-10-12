@@ -62,3 +62,21 @@ def test_duplicate_sku_is_rejected():
     assert raised
     conn.close()
     os.unlink(path)
+
+def test_parse_quantity_rejects_invalid():
+    import sys
+    from types import ModuleType
+    for name in ['PySide6', 'PySide6.QtWidgets', 'PySide6.QtCore']:
+        sys.modules[name] = ModuleType(name)
+    qt = sys.modules['PySide6.QtWidgets']
+    for cls in ['QWidget', 'QVBoxLayout', 'QHBoxLayout', 'QTabWidget', 'QLabel', 'QPushButton',
+                'QTableWidget', 'QTableWidgetItem', 'QLineEdit', 'QComboBox', 'QFormLayout',
+                'QDialog', 'QDialogButtonBox', 'QGroupBox', 'QHeaderView', 'QAbstractItemView', 'QMessageBox']:
+        setattr(qt, cls, type(cls, (), {}))
+    sys.modules['PySide6.QtCore'].Qt = type('Qt', (), {})()
+    import business_tracking
+    assert business_tracking.parse_quantity("10") == 10
+    assert business_tracking.parse_quantity("-1") is None
+    assert business_tracking.parse_quantity("nan") is None
+    assert business_tracking.parse_quantity("inf") is None
+    assert business_tracking.parse_quantity("abc") is None
