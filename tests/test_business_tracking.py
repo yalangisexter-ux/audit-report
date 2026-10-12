@@ -34,3 +34,31 @@ def test_available_stock_calculation():
             free_qty=5, returned_qty=3, damaged_qty=2, expired_qty=1, quarantined_qty=0)
     avail = business_tracking.available_stock(p)
     assert avail == 100 + 50 - 10 - 20 - 5 + 3 - 2 - 1 - 0
+
+def test_duplicate_sku_is_rejected():
+    import sqlite3, tempfile, os, sys
+    from types import ModuleType
+    for name in ['PySide6', 'PySide6.QtWidgets', 'PySide6.QtCore']:
+        sys.modules[name] = ModuleType(name)
+    qt = sys.modules['PySide6.QtWidgets']
+    for cls in ['QWidget', 'QVBoxLayout', 'QHBoxLayout', 'QTabWidget', 'QLabel', 'QPushButton',
+                'QTableWidget', 'QTableWidgetItem', 'QLineEdit', 'QComboBox', 'QFormLayout',
+                'QDialog', 'QDialogButtonBox', 'QGroupBox', 'QHeaderView', 'QAbstractItemView', 'QMessageBox']:
+        setattr(qt, cls, type(cls, (), {}))
+    sys.modules['PySide6.QtCore'].Qt = type('Qt', (), {})()
+    import business_tracking
+    fd, path = tempfile.mkstemp(suffix='.db')
+    os.close(fd)
+    conn = sqlite3.connect(path)
+    business_tracking.setup_business_tables(conn)
+    conn.execute("INSERT INTO bt_products(sku,name,updated_at) VALUES(?,?,?)", ("SKU1", "Product A", "now"))
+    conn.commit()
+    raised = False
+    try:
+        conn.execute("INSERT INTO bt_products(sku,name,updated_at) VALUES(?,?,?)", ("SKU1", "Product B", "now"))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raised = True
+    assert raised
+    conn.close()
+    os.unlink(path)

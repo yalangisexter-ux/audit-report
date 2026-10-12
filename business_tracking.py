@@ -355,20 +355,36 @@ class BusinessTrackingTab(QWidget):
         sku = QLineEdit()
         category = QComboBox()
         category.addItems(["supplements", "accessories", "apparel", "equipment"])
+        opening = QLineEdit("0")
+        received = QLineEdit("0")
         form.addRow("Name *", name)
         form.addRow("SKU", sku)
         form.addRow("Category", category)
+        form.addRow("Opening stock", opening)
+        form.addRow("Received qty", received)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted or not name.text().strip():
             return
-        self.db.conn.execute(
-            "INSERT INTO bt_products(sku,name,category,updated_at) VALUES(?,?,?,?)",
-            (sku.text().strip() or None, name.text().strip(), category.currentText(), now_text()),
-        )
-        self.db.conn.commit()
+        try:
+            open_qty = float(opening.text() or 0)
+            recv_qty = float(received.text() or 0)
+        except ValueError:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid quantity", "Opening and received quantities must be numbers.")
+            return
+        try:
+            self.db.conn.execute(
+                "INSERT INTO bt_products(sku,name,category,opening_stock,received_qty,updated_at) VALUES(?,?,?,?,?,?)",
+                (sku.text().strip() or None, name.text().strip(), category.currentText(), open_qty, recv_qty, now_text()),
+            )
+            self.db.conn.commit()
+        except sqlite3.IntegrityError:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Duplicate SKU", "A product with that SKU already exists.")
+            return
         self.refresh_all()
 
     def add_order(self):
@@ -379,9 +395,12 @@ class BusinessTrackingTab(QWidget):
         customer = QLineEdit()
         channel = QComboBox()
         channel.addItems(["Amazon", "Flipkart", "website", "WhatsApp", "gym counter", "other"])
+        status = QComboBox()
+        status.addItems(["Pending", "Confirmed", "Packed", "Dispatched", "Delivered", "Cancelled", "Returned"])
         form.addRow("External Order ID", external)
         form.addRow("Customer", customer)
         form.addRow("Channel", channel)
+        form.addRow("Status", status)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
@@ -389,8 +408,8 @@ class BusinessTrackingTab(QWidget):
         if d.exec() != QDialog.Accepted:
             return
         self.db.conn.execute(
-            "INSERT INTO bt_orders(external_order_id,order_date,sales_channel,customer_name,updated_at) VALUES(?,?,?,?,?)",
-            (external.text().strip(), datetime.now().strftime("%Y-%m-%d"), channel.currentText(), customer.text().strip(), now_text()),
+            "INSERT INTO bt_orders(external_order_id,order_date,sales_channel,customer_name,order_status,updated_at) VALUES(?,?,?,?,?,?)",
+            (external.text().strip(), datetime.now().strftime("%Y-%m-%d"), channel.currentText(), customer.text().strip(), status.currentText(), now_text()),
         )
         self.db.conn.commit()
         self.refresh_all()
@@ -447,17 +466,27 @@ class BusinessTrackingTab(QWidget):
             emp.addItem(e["name"], e["id"])
         task_type = QComboBox()
         task_type.addItems(["Picking", "Packing", "QC", "Dispatch", "Training", "Attendance", "other"])
+        qty = QLineEdit("0")
+        remarks = QLineEdit()
         form.addRow("Employee *", emp)
         form.addRow("Task type", task_type)
+        form.addRow("Quantity", qty)
+        form.addRow("Remarks", remarks)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted or emp.count() == 0:
             return
+        try:
+            quantity = float(qty.text() or 0)
+        except ValueError:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid quantity", "Quantity must be a number.")
+            return
         self.db.conn.execute(
-            "INSERT INTO bt_activities(employee_id,task_type,created_at) VALUES(?,?,?)",
-            (emp.currentData(), task_type.currentText(), now_text()),
+            "INSERT INTO bt_activities(employee_id,task_type,quantity,remarks,created_at) VALUES(?,?,?,?,?)",
+            (emp.currentData(), task_type.currentText(), quantity, remarks.text().strip(), now_text()),
         )
         self.db.conn.commit()
         self.refresh_all()
