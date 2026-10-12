@@ -23,6 +23,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from build_info import APP_VERSION
+from business_tracking import BusinessTrackingTab
 
 # Embedded historical audit seed data (combined from audit_seed.py).
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
@@ -1048,7 +1049,8 @@ class MainWindow(QMainWindow):
         self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
 
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
-        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.settings_tab,"Settings && Backup")]:
+        self.business_tab = BusinessTrackingTab(self.db)
+        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.business_tab,"Business Tracking"),(self.settings_tab,"Settings && Backup")]:
             self.tabs.addTab(widget,title)
         self._tab_animation = None
         self._animated_page = None
