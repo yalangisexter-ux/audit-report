@@ -1490,7 +1490,7 @@ class MainWindow(QMainWindow):
         holiday_menu.addAction(act_declare)
         holiday_menu.addAction(act_remove)
         holiday_btn.setMenu(holiday_menu)
-        holiday_btn.setDefaultAction(act_declare)
+        holiday_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         row2.addWidget(holiday_btn)
         row2.addStretch(1)
 
@@ -1978,7 +1978,7 @@ class MainWindow(QMainWindow):
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
-        self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=? WHERE id=?""",(*vals,tid))
+        self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
         self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
 
     def delete_task(self, table=None):
@@ -2128,14 +2128,19 @@ class MainWindow(QMainWindow):
 
     def refresh_attendance(self):
         if not hasattr(self,"att_table"): return
+        # Remember selected employee so check-in/out stay on the same row
+        selected_eid = self.attendance_selected_employee()
         d=self.att_date.date().toString("yyyy-MM-dd")
         holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(d,)).fetchone()
         self.holiday_banner.setText(f"HOLIDAY: {holiday['holiday_name']} — excluded from all working-day counts" if holiday else "No holiday declared for the selected date.")
         rows={a["employee_id"]:a for a in self.db.attendance(d)}
         emps=self.db.employees(False); self.att_table.setRowCount(0)
+        restore_row = -1
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
             name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); self.att_table.setItem(r,0,name)
+            if selected_eid is not None and e["id"] == selected_eid:
+                restore_row = r
             ci=a["check_in"] if a else ""; co=a["check_out"] if a else ""
             status="Holiday" if holiday else (a["attendance_status"] if a else "Unmarked")
             if a and status=="Unmarked" and ci: status="Present"
@@ -2154,6 +2159,8 @@ class MainWindow(QMainWindow):
                     self.att_table.setItem(r, c, self.status_item(v))
                 else:
                     self.att_table.setItem(r, c, QTableWidgetItem(str(v or "")))
+        if restore_row >= 0:
+            self.att_table.selectRow(restore_row)
         self.refresh_attendance_summary()
         self.refresh_dashboard()
 
@@ -2748,27 +2755,43 @@ class MainWindow(QMainWindow):
         if sys.platform=="win32": os.startfile(str(EXPORT_DIR))
         else: webbrowser.open(EXPORT_DIR.as_uri())
 
-    def backup_db(self):
+    def backup_db(self, silent=False):
+        """Create a backup. Returns True on success, False on failure."""
         target=BACKUP_DIR/f"employee_audit_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
         try:
             self.db.conn.commit()
             dest=sqlite3.connect(target)
             self.db.conn.backup(dest); dest.close()
-            self.db.log("Database backup created",str(target)); info(self,f"Backup created:\n{target}")
-        except Exception as ex: error(self,f"Backup failed:\n{ex}")
+            self.db.log("Database backup created",str(target))
+            if not silent:
+                info(self,f"Backup created:\n{target}")
+            return True
+        except Exception as ex:
+            error(self,f"Backup failed:\n{ex}")
+            return False
 
     def restore_backup(self):
         path,_=QFileDialog.getOpenFileName(self,"Select database backup",str(BACKUP_DIR),"SQLite database (*.db)")
         if not path: return
         if not ask(self,"Restore backup","This replaces current data. A backup of the current database will be created first. Continue?"): return
+        # Safety backup first
+        if not self.backup_db(silent=True):
+            return error(self, "Safety backup failed. Restore cancelled.")
+        # Validate the selected file is a readable SQLite database
         try:
-            self.backup_db()
+            test = sqlite3.connect(path)
+            test.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+            test.close()
+        except Exception as ex:
+            return error(self, f"The selected file is not a valid database:\n{ex}")
+        try:
             self.db.conn.close()
-            shutil.copy2(path,DB_PATH)
-            self.db=Database()
-            info(self,"Backup restored. Restart the application if any screen does not refresh.")
+            shutil.copy2(path, DB_PATH)
+            self.db = Database()
+            info(self, "Backup restored. Restart the application if any screen does not refresh.")
             self.close()
-        except Exception as ex: error(self,f"Restore failed:\n{ex}")
+        except Exception as ex:
+            error(self, f"Restore failed:\n{ex}")
 
     def save_working_week(self):
         days=[str(i) for i,cb in enumerate(self.workday_checks) if cb.isChecked()]
