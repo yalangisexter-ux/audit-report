@@ -1478,15 +1478,16 @@ class MainWindow(QMainWindow):
         row2.setSpacing(8)
 
         for label, slot in [
-            ("Mark Present", lambda: self.set_attendance_status("Present")),
-            ("Mark Absent", lambda: self.set_attendance_status("Absent")),
-            ("Mark Leave", lambda: self.set_attendance_status("Leave")),
+            ("Present", lambda: self.set_attendance_status("Present")),
+            ("Absent", lambda: self.set_attendance_status("Absent")),
+            ("Leave", lambda: self.set_attendance_status("Leave")),
             ("Check In", self.check_in),
             ("Check Out", self.check_out),
-            ("Edit Note", self.attendance_note),
+            ("Edit Times", self.edit_attendance_times),
+            ("Note", self.attendance_note),
         ]:
             b = QPushButton(label)
-            b.setMinimumWidth(110)
+            b.setMinimumWidth(90)
             b.setMinimumHeight(32)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.clicked.connect(slot)
@@ -1517,6 +1518,16 @@ class MainWindow(QMainWindow):
         self.holiday_banner=QLabel("")
         self.holiday_banner.setProperty("warningBanner", True)
         l.addWidget(self.holiday_banner)
+        emp_row = QHBoxLayout()
+        emp_row.addWidget(QLabel("Filter employee:"))
+        self.att_employee_filter = QComboBox()
+        self.att_employee_filter.addItem("All employees", None)
+        for e in self.db.employees(False):
+            self.att_employee_filter.addItem(e["name"], e["id"])
+        self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
+        emp_row.addWidget(self.att_employee_filter)
+        emp_row.addStretch(1)
+        l.addLayout(emp_row)
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
         self.att_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
@@ -2067,6 +2078,20 @@ class MainWindow(QMainWindow):
         self.db.upsert_attendance(eid,d,check_out=datetime.now().strftime("%H:%M"),status="Present")
         self.db.log("Attendance check-out",f"employee={eid}, date={d}"); self.refresh_all()
 
+    def edit_attendance_times(self):
+        eid = self.attendance_selected_employee()
+        if not eid: return error(self, "Select an employee row first.")
+        d = self.att_date.date().toString("yyyy-MM-dd")
+        if self.db.is_holiday(d): return error(self, "This date is declared as a holiday.")
+        old = self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)).fetchone()
+        ci, ok = QInputDialog.getText(self, "Edit check-in", "Check-in time (HH:MM):", text=old["check_in"] if old else "")
+        if not ok: return
+        co, ok = QInputDialog.getText(self, "Edit check-out", "Check-out time (HH:MM):", text=old["check_out"] if old else "")
+        if not ok: return
+        self.db.upsert_attendance(eid, d, check_in=ci.strip(), check_out=co.strip(), status="Present")
+        self.db.log("Attendance times edited", f"employee={eid}, date={d}, in={ci}, out={co}")
+        self.refresh_all()
+
     def attendance_note(self):
         eid=self.attendance_selected_employee()
         if not eid: return error(self,"Select an employee row first.")
@@ -2152,7 +2177,11 @@ class MainWindow(QMainWindow):
         holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(d,)).fetchone()
         self.holiday_banner.setText(f"HOLIDAY: {holiday['holiday_name']} — excluded from all working-day counts" if holiday else "No holiday declared for the selected date.")
         rows={a["employee_id"]:a for a in self.db.attendance(d)}
-        emps=self.db.employees(False); self.att_table.setRowCount(0)
+        emps=self.db.employees(False)
+        if hasattr(self, "att_employee_filter") and self.att_employee_filter.currentData() is not None:
+            filter_id = self.att_employee_filter.currentData()
+            emps = [e for e in emps if e["id"] == filter_id]
+        self.att_table.setRowCount(0)
         restore_row = -1
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
