@@ -1981,6 +1981,7 @@ class MainWindow(QMainWindow):
 
     def refresh_all(self):
         self.refresh_employees(); self.refresh_task_filter(); self.refresh_tracker_employees(); self.refresh_tasks(); self.refresh_tracker(); self.refresh_attendance(); self.refresh_report_employees(); self.refresh_dashboard(); self.refresh_archive()
+        self.polish_tables()
 
     def refresh_employees(self):
         if not hasattr(self,"emp_table"): return
