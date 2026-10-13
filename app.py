@@ -986,7 +986,7 @@ class ProductivityChart(QWidget):
 
 class AnimatedBackground(QWidget):
     """Selectable, low-cost animated wallpaper behind the main application tabs."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift")
+    STYLES = ("Galaxy", "Milky Way", "Love & Couples", "Gym Energy", "Lord Shiva", "Funny", "Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift")
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
@@ -1358,7 +1358,7 @@ class MainWindow(QMainWindow):
         QApplication.instance().style().unpolish(self)
         QApplication.instance().style().polish(self)
         if hasattr(self, "theme_toggle_btn"):
-            self.theme_toggle_btn.setText("Switch to Night mode" if theme_name == "day" else "Switch to Day mode")
+            self.theme_toggle_btn.setText("🌙 Switch to Night" if theme_name == "day" else "☀️ Switch to Day")
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
@@ -1367,6 +1367,10 @@ class MainWindow(QMainWindow):
             self.btn_max.setStyleSheet(btn_style)
             self.btn_close.setStyleSheet(close_style)
         return theme_name
+
+    def _update_home_clock(self):
+        if hasattr(self, "home_clock"):
+            self.home_clock.setText("🕒 " + datetime.now().strftime("%a, %d %b  %I:%M:%S %p"))
 
     def toggle_theme(self):
         nxt = "night" if self.current_theme() == "day" else "day"
@@ -1445,9 +1449,9 @@ class MainWindow(QMainWindow):
         self.update_button.setMinimumWidth(150)
         self.update_button.clicked.connect(self.check_for_updates)
         session_layout.addWidget(self.update_button, 1, 1)
-        self.theme_toggle_btn = QPushButton("Switch theme")
-        self.theme_toggle_btn.setToolTip("Toggle day / night appearance")
-        self.theme_toggle_btn.setMinimumWidth(120)
+        self.theme_toggle_btn = QPushButton("☀️ Day / 🌙 Night")
+        self.theme_toggle_btn.setToolTip("Toggle between Day and Night appearance")
+        self.theme_toggle_btn.setMinimumWidth(160)
         self.theme_toggle_btn.clicked.connect(self.toggle_theme)
         session_layout.addWidget(self.theme_toggle_btn, 1, 2)
         database_label = QLabel("Local database · Offline")
@@ -1455,6 +1459,32 @@ class MainWindow(QMainWindow):
         database_label.setWordWrap(True)
         session_layout.addWidget(database_label, 1, 3)
         content_layout.addWidget(session_strip)
+
+        # Live wallpaper controls belong on Home, not buried in Settings.
+        appearance_row = QHBoxLayout()
+        wallpaper_label = QLabel("🎞 Live wallpaper")
+        wallpaper_label.setProperty("sectionHeading", True)
+        appearance_row.addWidget(wallpaper_label)
+        self.home_wallpaper_combo = QComboBox()
+        self.home_wallpaper_combo.setMinimumWidth(220)
+        self.home_wallpaper_combo.addItems(list(AnimatedBackground.STYLES))
+        saved_wallpaper = self.db.get_setting("animation_style", "Galaxy") or "Galaxy"
+        if self.home_wallpaper_combo.findText(saved_wallpaper) < 0:
+            saved_wallpaper = "Galaxy"
+        self.home_wallpaper_combo.setCurrentText(saved_wallpaper)
+        self.home_wallpaper_combo.currentTextChanged.connect(self.set_animation_style)
+        appearance_row.addWidget(self.home_wallpaper_combo)
+        self.home_clock = QLabel()
+        self.home_clock.setObjectName("homeClock")
+        self.home_clock.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.home_clock.setMinimumWidth(170)
+        appearance_row.addStretch(1)
+        appearance_row.addWidget(self.home_clock)
+        content_layout.addLayout(appearance_row)
+        self._update_home_clock()
+        self.home_clock_timer = QTimer(self)
+        self.home_clock_timer.timeout.connect(self._update_home_clock)
+        self.home_clock_timer.start(1000)
 
         guide_heading = QLabel("Workspace guide")
         guide_heading.setProperty("sectionHeading", True)
@@ -2039,28 +2069,15 @@ class MainWindow(QMainWindow):
         theme_row = QHBoxLayout()
         theme_label = QLabel("Theme")
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
+        self.theme_combo.addItems(["☀️ Day", "🌙 Night"])
         current = self.current_theme().capitalize()
-        if current in ["Day", "Night", "Ocean", "Sunset"]:
-            self.theme_combo.setCurrentText(current)
-        self.theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
+        self.theme_combo.setCurrentText("☀️ Day" if current == "Day" else "🌙 Night")
+        self.theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme("day" if "Day" in theme else "night"))
         theme_row.addWidget(theme_label)
         theme_row.addWidget(self.theme_combo, 1)
         appearance_layout.addLayout(theme_row)
 
-        animation_row = QHBoxLayout()
-        animation_label = QLabel("Live wallpaper")
-        self.animation_combo = QComboBox()
-        self.animation_combo.addItems(["Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift"])
-        saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
-        if self.animation_combo.findText(saved_animation) >= 0:
-            self.animation_combo.setCurrentText(saved_animation)
-        self.animation_combo.currentTextChanged.connect(self.set_animation_style)
-        animation_row.addWidget(animation_label)
-        animation_row.addWidget(self.animation_combo, 1)
-        appearance_layout.addLayout(animation_row)
-
-        note = QLabel("Choose a color theme and animated wallpaper. Changes apply immediately across the main app screens.")
+        note = QLabel("Choose Day or Night appearance here. Select live wallpapers from the Home screen.")
         note.setWordWrap(True)
         note.setMinimumWidth(0)
         note.setProperty("mutedText", True)
