@@ -1230,6 +1230,9 @@ class MainWindow(QMainWindow):
         self.polish_tables()
         self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
+        # Automatically detect newer published releases after the UI is ready.
+        # Delay avoids competing with startup/login dialogs and initial rendering.
+        QTimer.singleShot(2500, self._automatic_update_check)
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
 
@@ -1541,6 +1544,15 @@ class MainWindow(QMainWindow):
         self.home_scroll.setWidget(content)
         page_layout.addWidget(welcome)
         page_layout.addWidget(self.home_scroll)
+
+    def _automatic_update_check(self):
+        """Run the existing trusted-release check automatically after startup."""
+        if getattr(self, "_automatic_update_check_started", False):
+            return
+        self._automatic_update_check_started = True
+        # The existing updater validates the official repository release and
+        # installer asset before offering/installing an update.
+        self.check_for_updates()
 
     def check_for_updates(self):
         if getattr(self, "_update_thread", None) is not None:
