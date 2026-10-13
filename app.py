@@ -1570,15 +1570,15 @@ class MainWindow(QMainWindow):
         guide_grid.setHorizontalSpacing(12)
         guide_grid.setVerticalSpacing(10)
         guide_items = [
-            ("▦  Dashboard", "Review today's totals, recent tasks, attendance, and employee productivity.", "Jump directly to the dashboard overview."),
-            ("♙  Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
-            ("✓  Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
-            ("↗  Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
-            ("◷  Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
-            ("▤  Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
-            ("▣  EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
-            ("♜  Business Tracking", "Track products, services, packing, dispatch, and employee handling.", "Use the Business Tracking tab for operational records."),
-            ("⚙  Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
+            ("📊  Dashboard", "Review today's totals, recent tasks, attendance, and employee productivity.", "Jump directly to the dashboard overview."),
+            ("👥  Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
+            ("📝  Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
+            ("📈  Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
+            ("🗓️  Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
+            ("🖨️  Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
+            ("🗂️  EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
+            ("🏋️  Business Tracking", "Track products, services, packing, dispatch, and employee handling.", "Use the Business Tracking tab for operational records."),
+            ("⚙️  Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
         ]
         for index, (section, guidance, example) in enumerate(guide_items):
             guide_card = QWidget()
@@ -3686,6 +3686,8 @@ QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #EAF2FF, s
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QLabel#homeClock { color: #FFFFFF; background: rgba(17,24,39,0.90); border: 1px solid #64748B; border-radius: 10px; padding: 8px 12px; font-weight: 700; font-size: 10pt; }
+QGroupBox#dashboardKpi { background: rgba(15,23,42,0.92); border: 1px solid #475569; border-top: 3px solid #8B5CF6; border-radius: 12px; color: #F8FAFC; font-weight: 700; }
+QLabel[metricValue="true"] { color: #F8FAFC; font-size: 22pt; font-weight: 900; }
 QWidget#guideItem { background: rgba(15,23,42,0.82); border: 1px solid rgba(148,163,184,0.34); border-radius: 14px; }
 QWidget#guideItem:hover { background: rgba(30,41,59,0.96); border: 1px solid #8B5CF6; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
@@ -3956,6 +3958,8 @@ QWidget#sessionStrip { border: 1px solid #CBD5E1; border-radius: 12px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #DBEAFE, stop:0.55 #EDE9FE, stop:1 #FCE7F3); border: 1px solid #C7D2FE; border-radius: 16px; }
 QWidget#guideItem { border: 1px solid #CBD5E1; border-radius: 12px; }
 QWidget#dashboardHero { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px; }
+QGroupBox#dashboardKpi { background: #FFFFFF; border: 1px solid #CBD5E1; border-top: 3px solid #6366F1; border-radius: 12px; color: #172033; font-weight: 700; }
+QLabel[metricValue="true"] { color: #312E81; font-size: 22pt; font-weight: 900; }
 QLabel { color: #172033; background: transparent; }
 QLabel[sessionLabel="true"] { color: #4338CA; font-weight: 800; }
 QLabel[heroTitle="true"] { color: #0F172A; font-size: 17pt; font-weight: 800; }
