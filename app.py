@@ -1171,31 +1171,16 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        self.tabs.setUsesScrollButtons(True)
+        # Avoid Windows/Qt native scroller buttons: they render as empty double boxes
+        # on some customer machines. The explicit Go to tab menu below is the reliable
+        # cross-platform navigation control for all sections.
+        self.tabs.setUsesScrollButtons(False)
         self.tabs.tabBar().setExpanding(False)
-        # Make overflow navigation obvious and provide a direct tab picker.
+        self.tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.tabBar().setStyleSheet(
-            "QTabBar::scroller { width: 38px; }"
-            "QTabBar QToolButton { min-width: 34px; max-width: 38px; min-height: 34px; "
-            "background: #111827; color: #FFFFFF; border: 1px solid #A78BFA; "
-            "border-radius: 6px; font-size: 16pt; font-weight: 900; padding: 0px; }"
-            "QTabBar QToolButton:hover { background: #4C1D95; border-color: #FFFFFF; }"
+            "QTabBar::tab { padding: 10px 14px; min-height: 34px; }"
+            "QTabBar::tab:selected { border-bottom: 3px solid #A78BFA; }"
         )
-        # Qt creates the two native scroll buttons internally; force visible,
-        # readable glyphs instead of relying on platform-specific arrow icons.
-        tab_scroll_buttons = self.tabs.tabBar().findChildren(QToolButton)
-        for button, glyph, hint in zip(tab_scroll_buttons, ("‹", "›"), ("Scroll tabs left", "Scroll tabs right")):
-            button.setText(glyph)
-            button.setToolTip(hint)
-            button.setArrowType(Qt.ArrowType.NoArrow)
-            button.setAutoRaise(False)
-            button.setMinimumSize(34, 34)
-            button.setMaximumWidth(38)
-            button.setStyleSheet(
-                "QToolButton { background: #111827; color: #FFFFFF; border: 1px solid #A78BFA; "
-                "border-radius: 6px; font-size: 18pt; font-weight: 900; padding: 0px; }"
-                "QToolButton:hover { background: #4C1D95; }"
-            )
         self.tab_navigator = QToolButton()
         self.tab_navigator.setText("☰ Go to tab")
         self.tab_navigator.setToolTip("Show all sections and jump directly to one")
