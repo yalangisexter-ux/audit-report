@@ -3632,7 +3632,7 @@ QMenu::item { padding: 8px 22px; border-radius: 5px; color: #E2E8F0; }
 QMenu::item:selected { background: #1E1B4B; color: #C4B5FD; }
 QTabBar { background: #070B14; }
 QTabBar::tab { background: transparent; color: #94A3B8; padding: 12px 15px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 68px; min-height: 24px; }
-QTabBar::tab:selected { background: #111827; color: #FFFFFF; border-bottom: 3px solid #A78BFA; }
+QTabBar::tab:selected { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0755B8, stop:1 #312E81); color: #FFFFFF; border: 1px solid #22D3EE; border-bottom: 3px solid #22D3EE; border-top-left-radius: 8px; border-top-right-radius: 8px; }
 QTabBar::tab:hover:!selected { background: #0F172A; color: #F8FAFC; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #111827; color: #E2E8F0; border: 1px solid #334155; border-radius: 4px; }
@@ -3679,20 +3679,20 @@ QLabel[mutedText="true"] { color: #94A3B8; }
 QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-size: 16pt; font-weight: 700; }
 QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
-QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:1 #4C1D95); border-radius: 16px; }
-QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
+QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #03132D, stop:0.48 #063B83, stop:1 #45106E); border: 1px solid #168BFF; border-radius: 16px; }
+QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #03152E, stop:0.38 #0755B8, stop:0.72 #312E81, stop:1 #A21CAF); border: 1px solid #22D3EE; border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(15,23,42,0.94); border: 1px solid rgba(148,163,184,0.30); border-radius: 18px; }
+QWidget#homeContent { background: rgba(3,12,31,0.88); border: 1px solid rgba(34,211,238,0.55); border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(15,23,42,0.94); color: #F8FAFC; border: 1px solid rgba(148,163,184,0.42); border-radius: 18px; }
+QWidget#pageContent { background: rgba(3,12,31,0.92); color: #F8FAFC; border: 1px solid rgba(34,211,238,0.38); border-radius: 18px; }
 QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
-QWidget#sessionStrip { background: #0B1220; border: 1px solid #334155; border-radius: 12px; }
+QWidget#sessionStrip { background: rgba(3,16,42,0.96); border: 1px solid #2563EB; border-radius: 12px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #312E81; color: #DDD6FE; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #F8FAFC; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: #111827; border: 1px solid #1F2937; border-left: 4px solid #A78BFA; border-radius: 14px; }
+QWidget#guideItem { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #10294B, stop:0.62 #0B1B38, stop:1 #24154B); border: 1px solid #3B82F6; border-left: 4px solid #22D3EE; border-radius: 14px; }
 QLabel[guideTitle="true"] { color: #F8FAFC; font-size: 10.5pt; font-weight: 700; }
-QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #A78BFA; }
+QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #67E8F9; }
 QLabel[statusSummary="true"] { background: #1E1B4B; border: 1px solid #4C1D95; border-radius: 12px; color: #DDD6FE; font-weight: 600; padding: 11px 14px; }
 QLabel[warningBanner="true"] { background: #422006; border: 1px solid #A16207; border-radius: 12px; color: #FDE68A; font-weight: 600; padding: 9px 12px; }
 QProgressBar { border: 1px solid #1F2937; border-radius: 8px; text-align: center; color: #E2E8F0; background: #0F172A; min-height: 15px; }
