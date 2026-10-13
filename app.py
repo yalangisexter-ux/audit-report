@@ -1148,7 +1148,18 @@ class MainWindow(QMainWindow):
             page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             page.setAutoFillBackground(False)
         self.business_tab = BusinessTrackingTab(self.db)
-        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.business_tab,"Business Tracking"),(self.settings_tab,"Settings && Backup")]:
+        for widget,title in [
+            (self.home_tab,"⌂ Home"),
+            (self.dashboard,"▦ Dashboard"),
+            (self.employees_tab,"♙ Employees"),
+            (self.tasks_tab,"✓ Task Manager"),
+            (self.tracker_tab,"↗ Employee Tracker"),
+            (self.attendance_tab,"◷ Attendance"),
+            (self.reports_tab,"▤ Print Center"),
+            (self.archive_tab,"▣ EOD Archive"),
+            (self.business_tab,"♜ Business Tracking"),
+            (self.settings_tab,"⚙ Settings & Backup"),
+        ]:
             self.tabs.addTab(widget,title)
         self._tab_animation = None
         self._animated_page = None
@@ -1999,6 +2010,7 @@ class MainWindow(QMainWindow):
         """Apply shared table styling without overriding per-screen layout rules."""
         for table in self.findChildren(QTableWidget):
             table.setAlternatingRowColors(True)
+            table.setWordWrap(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
             table.verticalHeader().setDefaultSectionSize(36)
