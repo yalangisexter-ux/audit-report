@@ -1494,14 +1494,15 @@ class MainWindow(QMainWindow):
         guide_grid.setHorizontalSpacing(12)
         guide_grid.setVerticalSpacing(10)
         guide_items = [
-            ("Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
-            ("Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
-            ("Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
-            ("Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
-            ("Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
-            ("Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
-            ("EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
-            ("Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
+            ("▦  Dashboard", "Review today's totals, recent tasks, attendance, and employee productivity.", "Jump directly to the dashboard overview."),
+            ("♙  Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
+            ("✓  Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
+            ("↗  Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
+            ("◷  Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
+            ("▤  Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
+            ("▣  EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
+            ("♜  Business Tracking", "Track products, services, packing, dispatch, and employee handling.", "Use the Business Tracking tab for operational records."),
+            ("⚙  Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
         ]
         for index, (section, guidance, example) in enumerate(guide_items):
             guide_card = QWidget()
@@ -3591,6 +3592,9 @@ QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #EAF2FF, stop:0.48 #F4F0FF, stop:1 #E0F7FA); }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
+QLabel#homeClock { color: #FFFFFF; background: rgba(17,24,39,0.90); border: 1px solid #64748B; border-radius: 10px; padding: 8px 12px; font-weight: 700; font-size: 10pt; }
+QWidget#guideItem { background: rgba(15,23,42,0.82); border: 1px solid rgba(148,163,184,0.34); border-radius: 14px; }
+QWidget#guideItem:hover { background: rgba(30,41,59,0.96); border: 1px solid #8B5CF6; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
     min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
     background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700;
