@@ -1878,61 +1878,108 @@ class MainWindow(QMainWindow):
         l.addWidget(note)
 
     def build_settings(self):
-        l=QVBoxLayout()
+        l = QVBoxLayout()
         self._wrap_page_in_scroll(self.settings_tab, l, "Settings & Backup", "Manage local storage, account security, and working days.")
-        if hasattr(self, "settings_tab"):
-            page = self.settings_tab.findChild(QWidget, "pageContent")
-            if page is not None:
-                page.setObjectName("settingsContent")
-        storage_box=QGroupBox("Storage locations"); storage_form=QFormLayout(storage_box)
-        for label,path in [("Database",DB_PATH),("Backups",BACKUP_DIR),("Reports",EXPORT_DIR)]:
-            path_label=QLabel(str(path)); path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); path_label.setProperty("mutedText", True)
-            storage_form.addRow(label,path_label)
+        page = self.settings_tab.findChild(QWidget, "pageContent")
+        if page is not None:
+            page.setObjectName("settingsContent")
+
+        storage_box = QGroupBox("Storage locations")
+        storage_form = QFormLayout(storage_box)
+        storage_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        storage_form.setHorizontalSpacing(14)
+        storage_form.setVerticalSpacing(8)
+        for label, path in [("Database", DB_PATH), ("Backups", BACKUP_DIR), ("Reports", EXPORT_DIR)]:
+            path_label = QLabel(str(path))
+            path_label.setWordWrap(True)
+            path_label.setMinimumWidth(0)
+            path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            path_label.setProperty("mutedText", True)
+            storage_form.addRow(label, path_label)
         l.addWidget(storage_box)
-        row=QHBoxLayout(); l.addLayout(row)
-        set_tips = {"Create backup": "Create a backup of the local database", "Rollback database": "Restore a database backup without changing the application version", "Rollback application": "Install a previous application version without reverting the database", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
-        for label,slot in [("Create backup",self.backup_db),("Rollback database",self.restore_backup),("Rollback application",self.rollback_application),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
-            if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
-                b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
-        days_box=QGroupBox("Working days")
-        days_layout=QHBoxLayout(days_box)
-        self.workday_checks=[]
-        for day_name in ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]:
-            cb=QCheckBox(day_name); cb.setChecked(day_name in ["Monday","Tuesday","Wednesday","Thursday","Friday"])
-            self.workday_checks.append(cb); days_layout.addWidget(cb)
-        saved_days=self.db.working_weekdays()
-        for idx,cb in enumerate(self.workday_checks): cb.setChecked(idx in saved_days)
+
+        actions_box = QGroupBox("Data & account actions")
+        actions_grid = QGridLayout(actions_box)
+        actions_grid.setContentsMargins(12, 18, 12, 12)
+        actions_grid.setHorizontalSpacing(10)
+        actions_grid.setVerticalSpacing(10)
+        actions = [
+            ("Create backup", self.backup_db, "Create a backup of the local database"),
+            ("Restore database", self.restore_backup, "Restore a database backup without changing the application version"),
+            ("Rollback app", self.rollback_application, "Install a previous application version without reverting the database"),
+            ("Change password", self.change_password, "Change your login password"),
+            ("Recovery question", self.update_recovery_question, "Update your password recovery question"),
+            ("Manage accounts", self.manage_accounts, "Create or manage HR and Admin accounts"),
+            ("Export employees CSV", self.export_employees_csv, "Export employee list to CSV"),
+        ]
+        for index, (label, slot, tip) in enumerate(actions):
+            button = QPushButton(label)
+            button.clicked.connect(slot)
+            button.setToolTip(tip)
+            button.setMinimumWidth(0)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            button.setMinimumHeight(38)
+            actions_grid.addWidget(button, index // 3, index % 3)
+            if label == "Manage accounts" and self.user_role != "Admin":
+                button.setEnabled(False)
+                button.setToolTip("Only an Admin account can manage user accounts.")
+        for col in range(3):
+            actions_grid.setColumnStretch(col, 1)
+        l.addWidget(actions_box)
+
+        days_box = QGroupBox("Working days")
+        days_layout = QGridLayout(days_box)
+        days_layout.setHorizontalSpacing(12)
+        days_layout.setVerticalSpacing(8)
+        self.workday_checks = []
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        saved_days = self.db.working_weekdays()
+        for idx, day_name in enumerate(day_names):
+            checkbox = QCheckBox(day_name)
+            checkbox.setChecked(idx in saved_days)
+            self.workday_checks.append(checkbox)
+            days_layout.addWidget(checkbox, idx // 4, idx % 4)
+        for col in range(4):
+            days_layout.setColumnStretch(col, 1)
         l.addWidget(days_box)
-        save_days=QPushButton("Save working days")
+
+        save_days = QPushButton("Save working days")
+        save_days.setMinimumHeight(38)
+        save_days.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         save_days.clicked.connect(self.save_working_week)
-        l.addWidget(save_days)
-        appearance_box=QGroupBox("Appearance")
-        appearance_layout=QVBoxLayout(appearance_box)
-        appearance_layout.setSpacing(12)
-        theme_row=QHBoxLayout()
-        theme_row.addWidget(QLabel("Theme"))
-        self.theme_combo=QComboBox()
+        l.addWidget(save_days, 0, Qt.AlignmentFlag.AlignLeft)
+
+        appearance_box = QGroupBox("Appearance")
+        appearance_layout = QVBoxLayout(appearance_box)
+        appearance_layout.setSpacing(10)
+        theme_row = QHBoxLayout()
+        theme_label = QLabel("Theme")
+        self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
         current = self.current_theme().capitalize()
         if current in ["Day", "Night", "Ocean", "Sunset"]:
             self.theme_combo.setCurrentText(current)
-        self.theme_combo.currentTextChanged.connect(lambda t: self.apply_theme(t.lower()))
-        theme_row.addWidget(self.theme_combo)
-        theme_row.addStretch(1)
+        self.theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
+        theme_row.addWidget(theme_label)
+        theme_row.addWidget(self.theme_combo, 1)
         appearance_layout.addLayout(theme_row)
+
         animation_row = QHBoxLayout()
-        animation_row.addWidget(QLabel("Live wallpaper"))
+        animation_label = QLabel("Live wallpaper")
         self.animation_combo = QComboBox()
         self.animation_combo.addItems(["Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift"])
         saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
         if self.animation_combo.findText(saved_animation) >= 0:
             self.animation_combo.setCurrentText(saved_animation)
         self.animation_combo.currentTextChanged.connect(self.set_animation_style)
+        animation_row.addWidget(animation_label)
         animation_row.addWidget(self.animation_combo, 1)
         appearance_layout.addLayout(animation_row)
-        note=QLabel("Choose a color theme and animated wallpaper. Changes apply immediately across the main app screens.")
+
+        note = QLabel("Choose a color theme and animated wallpaper. Changes apply immediately across the main app screens.")
         note.setWordWrap(True)
+        note.setMinimumWidth(0)
         note.setProperty("mutedText", True)
         appearance_layout.addWidget(note)
         l.addWidget(appearance_box)
