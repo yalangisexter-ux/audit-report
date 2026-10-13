@@ -2007,7 +2007,35 @@ class MainWindow(QMainWindow):
         l.addStretch()
 
     def polish_tables(self):
-        """Apply shared table styling without overriding per-screen layout rules."""
+        """Apply shared table and dropdown styling, including Windows popup viewports."""
+        # Windows native combo popups can ignore the application stylesheet and
+        # render a white list over the dark app. Style the popup and its viewport
+        # explicitly so every dropdown remains readable on customer machines.
+        for combo in self.findChildren(QComboBox):
+            combo.setStyleSheet(
+                "QComboBox { background-color: rgba(15,23,42,0.96); color: #F8FAFC; "
+                "border: 1px solid #64748B; padding: 6px 10px; }"
+                "QComboBox QAbstractItemView { background-color: #111827; color: #F8FAFC; "
+                "selection-background-color: #4C1D95; selection-color: #FFFFFF; "
+                "border: 1px solid #64748B; outline: 0; }"
+                "QComboBox QAbstractItemView::item { background-color: #111827; color: #F8FAFC; "
+                "padding: 6px 10px; min-height: 24px; }"
+                "QComboBox QAbstractItemView::item:selected { background-color: #4C1D95; color: #FFFFFF; }"
+            )
+            try:
+                popup_view = combo.view()
+                popup_view.setStyleSheet(
+                    "QAbstractItemView { background-color: #111827; color: #F8FAFC; "
+                    "selection-background-color: #4C1D95; selection-color: #FFFFFF; "
+                    "border: 1px solid #64748B; outline: 0; }"
+                    "QAbstractItemView::item { background-color: #111827; color: #F8FAFC; "
+                    "padding: 6px 10px; min-height: 24px; }"
+                    "QAbstractItemView::item:selected { background-color: #4C1D95; color: #FFFFFF; }"
+                )
+                popup_view.viewport().setStyleSheet("background-color: #111827;")
+                popup_view.setAutoFillBackground(True)
+            except (AttributeError, RuntimeError):
+                pass
         for table in self.findChildren(QTableWidget):
             table.setAlternatingRowColors(True)
             table.setWordWrap(True)
