@@ -1537,12 +1537,12 @@ class MainWindow(QMainWindow):
         summary_note.setProperty("mutedText", True)
         l.addWidget(summary_note)
         self.attendance_summary_table=QTableWidget(0,8)
-        headers = ["Employee","Join / tracking start","Working days (month)","Present (month)","Absent","Leave","Holidays excluded","Present since start"]
+        headers = ["Employee","Start date","Work days","Present","Absent","Leave","Holidays","Total present"]
         self.attendance_summary_table.setHorizontalHeaderLabels(headers)
         header = self.attendance_summary_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        header.setMinimumSectionSize(80)
+        header.setMinimumSectionSize(70)
         for i, h in enumerate(headers):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
