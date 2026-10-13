@@ -1200,6 +1200,7 @@ class MainWindow(QMainWindow):
 
         # Animated background
         self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow")
+        self.bg_anim.light_mode = self.current_theme().strip().lower() in ("day", "light")
         self.bg_anim.setObjectName("animatedBg")
 
         # Central content
@@ -1737,8 +1738,16 @@ class MainWindow(QMainWindow):
         self._wrap_page_in_scroll(self.dashboard, l, fixed_header=hero_widget)
         self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
         self.kpi_labels=[]
-        for title in ["Active employees","Tasks today","Completed today","Pending or blocked","Proof missing"]:
-            box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setProperty("metricValue", True); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
+        for title in ["👥 Active employees","📝 Tasks today","✅ Completed today","⏳ Pending or blocked","🔎 Proof missing"]:
+            box=QGroupBox(title)
+            box.setObjectName("dashboardKpi")
+            v=QVBoxLayout(box)
+            label=QLabel("0")
+            label.setProperty("metricValue", True)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            v.addWidget(label)
+            self.kpis.addWidget(box)
+            self.kpi_labels.append(label)
         row=QHBoxLayout(); l.addLayout(row)
         self.dashboard_tasks=QTableWidget(0,6); self.dashboard_tasks.setHorizontalHeaderLabels(["Employee","Task","Status","Progress","Due","Proof"])
         self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
