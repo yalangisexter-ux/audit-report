@@ -541,6 +541,24 @@ def normalized_answer(value):
 def password_is_strong(value):
     return len(value) >= 8 and any(c.isalpha() for c in value) and any(c.isdigit() for c in value)
 
+def add_theme_selector(dialog, db, layout):
+    """Expose the saved application theme on entry dialogs as well as Settings."""
+    row = QHBoxLayout()
+    label = QLabel("Appearance")
+    selector = QComboBox()
+    selector.addItems(["Day", "Night", "Ocean", "Sunset"])
+    saved = (db.get_setting("ui_theme", "night") or "night").capitalize()
+    if saved in ("Day", "Night", "Ocean", "Sunset"):
+        selector.setCurrentText(saved)
+    def change_theme(value):
+        chosen = (value or "Night").lower()
+        apply_app_theme(QApplication.instance(), chosen)
+        db.set_setting("ui_theme", chosen)
+    selector.currentTextChanged.connect(change_theme)
+    row.addWidget(label)
+    row.addWidget(selector, 1)
+    layout.addLayout(row)
+
 class AccountSetupDialog(QDialog):
     """First-run setup: create the first administrator and recovery question."""
     def __init__(self, db):
@@ -578,6 +596,7 @@ class AccountSetupDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Save)
         buttons.accepted.connect(self.create_admin)
         layout.addWidget(buttons)
+        add_theme_selector(self, self.db, layout)
 
     def create_admin(self):
         username = self.username.text().strip()
@@ -753,6 +772,7 @@ class LoginDialog(QDialog):
         links.addWidget(change)
         links.addStretch(1)
         layout.addLayout(links)
+        add_theme_selector(self, self.db, layout)
         self.password.returnPressed.connect(self.check)
 
     def check(self):
@@ -3510,11 +3530,10 @@ def main():
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
     app.setFont(QFont("DejaVu Sans", 9))
     app.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
-    apply_app_theme(app, "night")
-
     try:
         db=Database()
         seed_initial_audit(db)
+        apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
