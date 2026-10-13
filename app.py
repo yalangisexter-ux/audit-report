@@ -3880,35 +3880,43 @@ QStatusBar { background: rgba(17,24,39,0.90); color: #F1F5F9; }
 """
 
 def apply_app_theme(app, theme_name):
-    """Apply visibly distinct Day and Night themes across all app widgets."""
+    """Apply a genuinely readable light or dark palette across the full application."""
     theme_name = (theme_name or "night").strip().lower()
-    base = dark_stylesheet()
     if theme_name in ("day", "light"):
-        day = base
-        replacements = {
-            "#080F20": "#F1F5F9", "#11152E": "#E2E8F0", "#082F49": "#DBEAFE",
-            "#070B14": "#FFFFFF", "#0F172A": "#FFFFFF", "#111827": "#F8FAFC",
-            "#1E293B": "#E2E8F0", "#1A2A4A": "#E2E8F0", "#1E2F52": "#DBEAFE",
-            "#15233F": "#FFFFFF", "#374151": "#CBD5E1", "#334155": "#CBD5E1",
-            "#64748B": "#475569", "#CBD5E1": "#CBD5E1", "#E2E8F0": "#1E293B",
-            "#F8FAFC": "#0F172A", "#F1F5F9": "#1E293B", "#C7D2E8": "#334155",
-            "#FFFFFF": "#0F172A"
-        }
-        # Avoid conflicting sequential replacements by using a temporary token pass.
-        tokens = {}
-        for idx, (source, target) in enumerate(replacements.items()):
-            token = f"__DAY_COLOR_{idx}__"
-            day = day.replace(source, token)
-            tokens[token] = target
-        for token, target in tokens.items():
-            day = day.replace(token, target)
-        day = day.replace("QMainWindow {", "QMainWindow { color: #1E293B;")
-        app.setStyleSheet(day)
+        app.setStyleSheet("""
+* { font-family: "DejaVu Sans"; font-size: 9pt; color: #172033; }
+QMainWindow, QDialog, QWidget { color: #172033; }
+QMainWindow { background: #F1F5F9; }
+QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #CBD5E1; }
+QLabel#titleLabel { color: #0F172A; font-weight: 700; }
+QWidget#homeContent, QWidget#settingsContent, QWidget#sessionStrip,
+QWidget#guideItem, QGroupBox, QFrame { background-color: #FFFFFF; color: #172033; }
+QLabel { color: #172033; background: transparent; }
+QLabel[mutedText="true"], QLabel[welcomeSubtitle="true"] { color: #475569; }
+QLabel[welcomeTitle="true"] { color: #0F172A; font-size: 16pt; font-weight: 800; }
+QLabel[guideTitle="true"], QLabel[sectionHeading="true"] { color: #4338CA; font-weight: 800; }
+QLabel#homeClock { color: #0F172A; background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 10px; padding: 8px 12px; font-weight: 700; }
+QPushButton, QToolButton { background: #E2E8F0; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 7px; padding: 7px 10px; }
+QPushButton:hover, QToolButton:hover { background: #DBEAFE; border-color: #6366F1; }
+QPushButton:disabled { color: #94A3B8; background: #F1F5F9; }
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QDateEdit, QTimeEdit, QSpinBox, QDoubleSpinBox {
+ background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 6px; padding: 6px; selection-background-color: #C7D2FE; selection-color: #0F172A;
+}
+QComboBox QAbstractItemView { background: #FFFFFF; color: #0F172A; selection-background-color: #C7D2FE; selection-color: #0F172A; border: 1px solid #94A3B8; }
+QTableWidget, QTableView, QTreeWidget, QListWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #172033; gridline-color: #CBD5E1; selection-background-color: #C7D2FE; selection-color: #0F172A; }
+QHeaderView::section { background: #E2E8F0; color: #0F172A; border: 1px solid #CBD5E1; padding: 6px; font-weight: 700; }
+QTabWidget::pane { background: #F8FAFC; border: 1px solid #CBD5E1; }
+QTabBar::tab { background: #E2E8F0; color: #334155; padding: 10px 12px; border: 1px solid #CBD5E1; }
+QTabBar::tab:selected { background: #FFFFFF; color: #312E81; border-bottom: 3px solid #6366F1; font-weight: 800; }
+QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }
+QGroupBox { border: 1px solid #CBD5E1; border-radius: 10px; margin-top: 10px; padding: 12px; }
+QCheckBox, QRadioButton { color: #172033; background: transparent; }
+QStatusBar { background: #FFFFFF; color: #334155; border-top: 1px solid #CBD5E1; }
+QMenu { background: #FFFFFF; color: #172033; border: 1px solid #CBD5E1; }
+QMenu::item:selected { background: #C7D2FE; color: #0F172A; }
+""")
         return "day"
-    if theme_name in ("ocean", "sunset"):
-        # Legacy saved values are normalized to the supported Night theme.
-        theme_name = "night"
-    app.setStyleSheet(base)
+    app.setStyleSheet(dark_stylesheet())
     return "night"
 
 def ocean_stylesheet():
