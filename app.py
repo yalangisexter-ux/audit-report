@@ -1888,26 +1888,43 @@ class MainWindow(QMainWindow):
         l.addStretch()
 
     def polish_tables(self):
-        """Apply consistent, readable table behavior across the application."""
+        """Normalize table sizing, alignment, and overflow handling across every module."""
         for page in (self.dashboard, self.employees_tab, self.tasks_tab, self.tracker_tab, self.attendance_tab, self.reports_tab, self.archive_tab, self.settings_tab):
             page_layout = page.layout()
             if page_layout:
-                page_layout.setContentsMargins(26, 22, 26, 22)
-                page_layout.setSpacing(18)
-        for table in (self.dashboard_tasks, self.emp_table, self.task_table, self.tracker_table, self.att_table, self.productivity_table, self.attendance_summary_table, self.archive_table):
+                page_layout.setContentsMargins(20, 18, 20, 18)
+                page_layout.setSpacing(14)
+        # Include tables created by the separate Business Tracking module too.
+        for table in self.findChildren(QTableWidget):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
-            table.verticalHeader().setDefaultSectionSize(40)
-            table.setWordWrap(True)
+            table.verticalHeader().setDefaultSectionSize(36)
+            table.setWordWrap(False)
+            table.setTextElideMode(Qt.TextElideMode.ElideRight)
+            table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             table.setCornerButtonEnabled(False)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setSelectionMode(QAbstractItemView.SingleSelection)
-            table.setFocusPolicy(Qt.StrongFocus)
-            table.horizontalHeader().setMinimumHeight(42)
-            table.horizontalHeader().setMinimumSectionSize(80)
-            table.horizontalHeader().setHighlightSections(False)
-            table.horizontalHeader().setStretchLastSection(True)
+            table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            header = table.horizontalHeader()
+            header.setMinimumHeight(38)
+            header.setMinimumSectionSize(64)
+            header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+            header.setHighlightSections(False)
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(QHeaderView.ResizeToContents)
+            if table.columnCount():
+                header.setSectionResizeMode(table.columnCount() - 1, QHeaderView.Stretch)
+            for row in range(table.rowCount()):
+                for col in range(table.columnCount()):
+                    item = table.item(row, col)
+                    if item is None:
+                        continue
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if col == 0 else Qt.AlignmentFlag.AlignCenter))
+                    if item.text():
+                        item.setToolTip(item.text())
 
     def selected_id(self, table, col=0):
         rows=table.selectionModel().selectedRows()
@@ -3376,7 +3393,7 @@ QTabBar::tab:selected { background: #1E2F52; color: #ffffff; border-bottom: 3px 
 QTabBar::tab:hover:!selected { background: #1A2A4A; color: #ffffff; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #1A2A4A; color: #ffffff; border: 1px solid #3B4F75; border-radius: 4px; }
-QPushButton, QToolButton { padding: 8px 12px; min-height: 30px; min-width: 0; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; color: #1E293B; font-weight: 600; text-align: center; }
+QPushButton, QToolButton { padding: 7px 11px; min-height: 28px; min-width: 0; border: 1px solid #CBD5E1; border-radius: 8px; background: #FFFFFF; color: #1E293B; font-weight: 600; text-align: center; }
 QPushButton:hover, QToolButton:hover { background: #E2E8F0; color: #0F172A; }
 QPushButton:pressed, QToolButton:pressed { background: #CBD5E1; }
 QPushButton:disabled, QToolButton:disabled { background: #F1F5F9; color: #94A3B8; border-color: #E2E8F0; }
@@ -3402,9 +3419,9 @@ QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top righ
 QComboBox QAbstractItemView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
-QHeaderView::section { background: #E2E8F0; color: #334155; padding: 10px; border: 0; border-bottom: 1px solid #CBD5E1; font-weight: 700; }
+QHeaderView::section { background: #E2E8F0; color: #334155; padding: 7px 8px; border: 0; border-bottom: 2px solid #CBD5E1; font-weight: 700; }
 QTableWidget { background: rgba(255,255,255,0.68); alternate-background-color: rgba(241,245,249,0.66); color: #0F172A; border: 1px solid rgba(255,255,255,0.82); border-radius: 16px; gridline-color: rgba(226,232,240,0.65); selection-background-color: #DDE7FF; selection-color: #312E81; outline: 0; }
-QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #E2E8F0; color: #0F172A; }
+QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #E2E8F0; color: #0F172A; }
 QTableWidget::item:selected { background: #EEF2FF; color: #312E81; }
 QTableWidget::item:hover { background: #F5F3FF; }
 QGroupBox { font-weight: 650; color: #1E293B; border: 1px solid rgba(255,255,255,0.78); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(255,255,255,0.72); }
@@ -3489,7 +3506,7 @@ QTabBar::tab:hover:!selected { background: #0F172A; color: #F8FAFC; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #111827; color: #E2E8F0; border: 1px solid #334155; border-radius: 4px; }
 QPushButton, QToolButton {
-    padding: 8px 12px; min-height: 30px; min-width: 0; border: 1px solid #334155;
+    padding: 7px 11px; min-height: 28px; min-width: 0; border: 1px solid #334155;
     border-radius: 8px; background: #1E293B; color: #F1F5F9; font-weight: 600; text-align: center;
 }
 QPushButton:hover, QToolButton:hover { background: #334155; color: #FFFFFF; }
@@ -3517,9 +3534,9 @@ QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top righ
 QComboBox QAbstractItemView { background-color: #111827; color: #F8FAFC; border: 1px solid #334155; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
-QHeaderView::section { background: #111827; color: #CBD5E1; padding: 10px; border: 0; border-bottom: 1px solid #1F2937; font-weight: 700; }
+QHeaderView::section { background: #111827; color: #CBD5E1; padding: 7px 8px; border: 0; border-bottom: 2px solid #374151; font-weight: 700; }
 QTableWidget { background: rgba(15,23,42,0.76); alternate-background-color: rgba(30,41,59,0.60); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.20); border-radius: 20px; gridline-color: rgba(71,85,105,0.50); selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
-QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #1F2937; color: #E2E8F0; }
+QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #1F2937; color: #E2E8F0; }
 QTableWidget::item:selected { background: #312E81; color: #FFFFFF; }
 QTableWidget::item:hover { background: #1E1B4B; }
 QGroupBox { font-weight: 650; color: #E2E8F0; border: 1px solid rgba(148,163,184,0.22); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(17,24,39,0.78); }
