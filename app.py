@@ -271,8 +271,8 @@ class Database:
                 pre_backup = BACKUP_DIR / f"pre_upgrade_{stamp}.db"
                 try:
                     shutil.copy2(db_path, pre_backup)
-                except Exception:
-                    pass
+                except Exception as backup_err:
+                    print(f"Pre-upgrade backup failed: {backup_err}")
             self.conn = sqlite3.connect(DB_PATH)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
