@@ -966,95 +966,112 @@ class ProductivityChart(QWidget):
 
 
 class AnimatedBackground(QWidget):
-    """Selectable, low-cost animated wallpaper behind the main application tabs."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift")
+    """Offline animated wallpaper backgrounds drawn with Qt."""
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Love", "Lord Shiva", "Gym Energy", "Funny")
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
-        self.particles = []
         self.phase = 0.0
+        self.particles = []
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_particles)
-        self.timer.start(45)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(40)
         self.init_particles()
-
     def init_particles(self):
         import random
-        w, h = max(self.width(), 800), max(self.height(), 600)
-        self.particles = []
-        count = 48 if self.mode in ("Starfield", "Rainfall", "Matrix Drift") else 34
-        for _ in range(count):
-            self.particles.append({"x": random.randint(0, w), "y": random.randint(0, h), "r": random.randint(1, 4), "speed": random.uniform(0.6, 2.2) if self.mode in ("Rainfall", "Matrix Drift") else random.uniform(0.25, 0.9), "drift": random.uniform(-0.3, 0.3), "opacity": random.uniform(0.12, 0.42), "length": random.randint(8, 22)})
-
-    def update_particles(self):
+        w,h=max(self.width(),800),max(self.height(),600)
+        counts={"Galaxy":100,"Milky Way":125,"Love":32,"Lord Shiva":44,"Gym Energy":52,"Funny":38,"Starfield":70}
+        self.particles=[{"x":random.uniform(0,w),"y":random.uniform(0,h),"r":random.uniform(1,3.5),"speed":random.uniform(.35,1.5),"drift":random.uniform(-.6,.6),"angle":random.uniform(0,6.28),"opacity":random.uniform(.25,.9),"size":random.uniform(.7,1.5),"length":random.randint(8,22)} for _ in range(counts.get(self.mode,34))]
+    def tick(self):
         import math
-        self.phase = (self.phase + 0.018) % (2 * math.pi)
-        width, height = max(self.width(), 1), max(self.height(), 1)
+        self.phase=(self.phase+.025)%(2*math.pi)
+        w,h=max(self.width(),1),max(self.height(),1)
         for p in self.particles:
-            p["y"] += p["speed"] if self.mode in ("Rainfall", "Matrix Drift") else -p["speed"]
-            if self.mode == "Aurora Waves": p["x"] += math.sin(self.phase + p["y"] * 0.008) * 0.55
-            else: p["x"] += p["drift"]
-            if p["y"] < -24: p["y"] = height + 12
-            elif p["y"] > height + 24: p["y"] = -12
-            if p["x"] < -12: p["x"] = width + 8
-            elif p["x"] > width + 12: p["x"] = -8
-        self.update()
-
-    def paintEvent(self, event):
-        import math
-        from PySide6.QtGui import QLinearGradient, QRadialGradient
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect()
-        w, h = max(rect.width(), 1), max(rect.height(), 1)
-        base = QLinearGradient(0, 0, w, h)
-        base.setColorAt(0.0, QColor("#050811"))
-        base.setColorAt(0.52, QColor("#0B1020"))
-        base.setColorAt(1.0, QColor("#100A1D"))
-        painter.fillRect(rect, base)
-        if self.mode in ("Ambient Glow", "Aurora Waves"):
-            colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
-            for i, color in enumerate(colors):
-                x = int(w * (0.18 + i * 0.30 + 0.08 * math.sin(self.phase * (0.7 + i * 0.12))))
-                y = int(h * (0.25 + i * 0.24 + 0.10 * math.cos(self.phase * (0.6 + i * 0.15))))
-                radius = max(180, int(min(w, h) * (0.55 if self.mode == "Ambient Glow" else 0.72)))
-                glow = QRadialGradient(x, y, radius)
-                glow.setColorAt(0.0, QColor(*color))
-                glow.setColorAt(1.0, QColor(color[0], color[1], color[2], 0))
-                painter.fillRect(rect, glow)
-            if self.mode == "Aurora Waves":
-                painter.setPen(QPen(QColor(45, 212, 191, 30), 2.0))
-                for band in range(5):
-                    path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
-                    for x in range(0, w + 12, 12):
-                        y = int(h * (0.18 + band * 0.13) + math.sin(x * 0.009 + self.phase + band) * 26 + math.sin(x * 0.003 - self.phase) * 18)
-                        if x == 0: path.moveTo(x, y)
-                        else: path.lineTo(x, y)
-                    painter.drawPath(path)
-        painter.setPen(Qt.PenStyle.NoPen)
-        for p in self.particles:
-            alpha = max(0, min(255, int(p["opacity"] * 255)))
-            if self.mode == "Starfield":
-                painter.setBrush(QColor(226, 232, 240, alpha))
-                painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
-            elif self.mode == "Floating Bubbles":
-                painter.setBrush(QColor(124, 92, 252, int(alpha * 0.42)))
-                painter.setPen(QPen(QColor(167, 139, 250, int(alpha * 0.55)), 1))
-                painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"] * 3, p["r"] * 3)
-                painter.setPen(Qt.PenStyle.NoPen)
-            elif self.mode == "Rainfall":
-                painter.setPen(QPen(QColor(56, 189, 248, alpha), 1.2))
-                painter.drawLine(int(p["x"]), int(p["y"]), int(p["x"] - 3), int(p["y"] + p["length"]))
-                painter.setPen(Qt.PenStyle.NoPen)
-            elif self.mode == "Matrix Drift":
-                painter.setPen(QPen(QColor(74, 222, 128, alpha), 1.2))
-                painter.drawLine(int(p["x"]), int(p["y"]), int(p["x"]), int(p["y"] + p["length"]))
-                painter.setPen(Qt.PenStyle.NoPen)
+            if self.mode in ("Galaxy","Milky Way"):
+                p["angle"]+=.003;p["x"]+=p["drift"]*.25;p["y"]+=math.sin(self.phase+p["angle"])*.25
+            elif self.mode=="Love":
+                p["y"]-=p["speed"]*.6;p["x"]+=math.sin(self.phase+p["angle"])*.6
+            elif self.mode=="Lord Shiva":
+                p["angle"]+=.01;p["x"]+=math.sin(p["angle"]+self.phase)*.5;p["y"]-=p["speed"]*.25
+            elif self.mode=="Gym Energy":
+                p["x"]+=p["drift"]*1.8;p["y"]+=math.sin(self.phase*2+p["angle"])*.7
+            elif self.mode=="Funny":
+                p["x"]+=math.sin(self.phase*1.8+p["angle"])*.8;p["y"]+=math.cos(self.phase+p["angle"])*.5
             else:
-                painter.setBrush(QColor(167, 139, 250, alpha))
-                painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
-        painter.end()
+                p["y"]+=p["speed"]*1.5 if self.mode in ("Rainfall","Matrix Drift") else -p["speed"]
+                p["x"]+=math.sin(self.phase+p["y"]*.008)*.4 if self.mode=="Aurora Waves" else p["drift"]
+            if p["y"] < -25:p["y"]=h+15
+            elif p["y"]>h+25:p["y"]=-15
+            if p["x"] < -20:p["x"]=w+15
+            elif p["x"]>w+20:p["x"]=-15
+        self.update()
+    def paintEvent(self,event):
+        import math
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QLinearGradient, QRadialGradient, QPainterPath
+        p=QPainter(self);p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect=self.rect();w,h=max(rect.width(),1),max(rect.height(),1)
+        palettes={"Galaxy":("#02030D","#100A2B","#241047"),"Milky Way":("#050819","#15264A","#39285C"),"Love":("#190817","#42102F","#741B50"),"Lord Shiva":("#020B19","#071D3A","#173A58"),"Gym Energy":("#080D16","#15251F","#3B1A16"),"Funny":("#10102B","#23143A","#123447"),"Matrix Drift":("#020A08","#061B12","#0B2A1B"),"Starfield":("#030611","#0B1020","#17122E"),"Floating Bubbles":("#080B1D","#151333","#25143A"),"Aurora Waves":("#031018","#08252F","#11132B"),"Rainfall":("#050811","#0B1020","#100A1D"),"Ambient Glow":("#050811","#0B1020","#100A1D")}
+        cols=palettes.get(self.mode,palettes["Ambient Glow"]);g=QLinearGradient(0,0,w,h)
+        for i,c in enumerate(cols):g.setColorAt(i/2,QColor(c))
+        p.fillRect(rect,g)
+        glows={"Galaxy":(110,70,255,65),"Milky Way":(130,165,255,70),"Love":(244,63,128,60),"Lord Shiva":(14,165,233,48),"Gym Energy":(34,197,94,42),"Funny":(168,85,247,50),"Ambient Glow":(124,92,252,42),"Aurora Waves":(45,212,191,42)}
+        if self.mode in glows:
+            c=glows[self.mode];x=int(w*(.5+.12*math.sin(self.phase)));y=int(h*(.5+.12*math.cos(self.phase*.8)))
+            glow=QRadialGradient(x,y,max(120,int(min(w,h)*.5)));glow.setColorAt(0,QColor(*c));glow.setColorAt(1,QColor(c[0],c[1],c[2],0));p.fillRect(rect,glow)
+        if self.mode in ("Galaxy","Milky Way"):
+            cx,cy=w*.52,h*.5;p.save();p.translate(cx,cy);p.rotate(math.sin(self.phase*.2)*4)
+            arms=3 if self.mode=="Milky Way" else 2
+            for arm in range(arms):
+                path=QPainterPath()
+                for i in range(170):
+                    t=i/169;ang=t*5.5*math.pi+arm*2*math.pi/arms+self.phase*.15;r=8+t*min(w,h)*(.43 if arms==3 else .38);pt=QPointF(math.cos(ang)*r,math.sin(ang)*r*.48)
+                    if i==0:path.moveTo(pt)
+                    else:path.lineTo(pt)
+                p.setPen(QPen(QColor(154,132,255,42),15 if arms==3 else 10,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap));p.drawPath(path)
+            p.restore()
+            core=QRadialGradient(cx,cy,max(70,min(w,h)*.18));core.setColorAt(0,QColor(255,245,220,180));core.setColorAt(.25,QColor(186,169,255,85));core.setColorAt(1,QColor(125,110,255,0));p.fillRect(rect,core)
+        if self.mode=="Aurora Waves":
+            p.setPen(QPen(QColor(45,212,191,45),2))
+            for band in range(5):
+                path=QPainterPath()
+                for x in range(0,w+12,12):
+                    y=int(h*(.18+band*.13)+math.sin(x*.009+self.phase+band)*26+math.sin(x*.003-self.phase)*18)
+                    if x==0:path.moveTo(x,y)
+                    else:path.lineTo(x,y)
+                p.drawPath(path)
+        for dot in self.particles:
+            x,y,r=int(dot["x"]),int(dot["y"]),dot["r"];alpha=max(20,min(220,int(dot["opacity"]*220)));p.setPen(Qt.PenStyle.NoPen)
+            if self.mode in ("Galaxy","Milky Way","Starfield"):
+                p.setBrush(QColor(225,231,255,alpha));p.drawEllipse(QPointF(x,y),r,r)
+                if self.mode!="Starfield" and r>2.7:
+                    p.setPen(QPen(QColor(180,190,255,int(alpha*.4)),1));p.drawLine(x-4,y,x+4,y);p.drawLine(x,y-4,x,y+4)
+            elif self.mode=="Love":
+                p.save();p.translate(x,y);p.scale(dot["size"]*1.5,dot["size"]*1.5);p.setBrush(QColor(255,91,156,alpha));path=QPainterPath();path.moveTo(0,3);path.cubicTo(-9,-4,-5,-10,0,-5);path.cubicTo(5,-10,9,-4,0,3);p.drawPath(path);p.restore()
+            elif self.mode=="Lord Shiva":
+                p.setBrush(QColor(103,232,249,alpha));p.drawEllipse(QPointF(x,y),r,r);p.setPen(QPen(QColor(56,189,248,int(alpha*.45)),1));p.drawLine(x,y,int(x+math.cos(dot["angle"])*10),int(y+math.sin(dot["angle"])*10))
+            elif self.mode=="Gym Energy":
+                p.setPen(QPen(QColor(74,222,128,alpha),2));p.drawLine(x-7,y,x+7,y);p.drawLine(x-7,y-4,x-7,y+4);p.drawLine(x+7,y-4,x+7,y+4)
+            elif self.mode=="Funny":
+                p.setPen(QColor(255,226,120,alpha));p.setFont(QFont("DejaVu Sans",max(8,int(r*4))));p.drawText(x,y,["★","✦","☺","✿"][int(abs(dot["angle"]*10))%4])
+            elif self.mode=="Rainfall":
+                p.setPen(QPen(QColor(56,189,248,alpha),1.2));p.drawLine(x,y,x-3,y+dot["length"])
+            elif self.mode=="Matrix Drift":
+                p.setPen(QPen(QColor(74,222,128,alpha),1.2));p.drawLine(x,y,x,y+dot["length"])
+            elif self.mode=="Floating Bubbles":
+                p.setBrush(QColor(124,139,252,int(alpha*.45)));p.setPen(QPen(QColor(167,179,250,int(alpha*.55)),1));p.drawEllipse(x,y,int(r*3),int(r*3))
+            else:
+                p.setBrush(QColor(167,139,250,alpha));p.drawEllipse(x,y,int(r),int(r))
+        if self.mode=="Lord Shiva":
+            cx,cy=int(w*.82),int(h*.48+math.sin(self.phase)*5);p.setPen(QPen(QColor(103,232,249,125),3,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap))
+            p.drawLine(cx,cy-55,cx,cy+48);p.drawLine(cx-22,cy-35,cx,cy-52);p.drawLine(cx+22,cy-35,cx,cy-52);p.drawLine(cx-22,cy-35,cx-22,cy-12);p.drawLine(cx+22,cy-35,cx+22,cy-12)
+        if self.mode=="Gym Energy":
+            p.setPen(QPen(QColor(34,197,94,35),2))
+            for band in range(7):
+                x=int((band*157+self.phase*95)%(w+100))-50;p.drawLine(x,0,x+140,h)
+        p.end()
 
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
@@ -1978,7 +1995,7 @@ class MainWindow(QMainWindow):
         animation_row = QHBoxLayout()
         animation_label = QLabel("Live wallpaper")
         self.animation_combo = QComboBox()
-        self.animation_combo.addItems(["Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift"])
+        self.animation_combo.addItems(list(AnimatedBackground.STYLES))
         saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
         if self.animation_combo.findText(saved_animation) >= 0:
             self.animation_combo.setCurrentText(saved_animation)
