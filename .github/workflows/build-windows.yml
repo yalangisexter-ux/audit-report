@@ -31,11 +31,15 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
+          python -m pip install -r requirements.txt pyinstaller pillow
 
       - name: Install test dependency
         shell: pwsh
         run: python -m pip install pytest
+
+      - name: Generate branded Windows application icon
+        shell: pwsh
+        run: python scripts/generate_app_icon.py
 
       - name: Run database migration tests
         shell: pwsh
