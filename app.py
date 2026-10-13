@@ -3568,6 +3568,15 @@ QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
+/* Force readable text on all backgrounds */
+QLabel { color: #1E293B; }
+QGroupBox QLabel { color: #1E293B; }
+QTableWidget { color: #1E293B; background: #FFFFFF; }
+QTableWidget::item { color: #1E293B; }
+QHeaderView::section { color: #334155; background: #F1F5F9; }
+QLineEdit, QTextEdit, QComboBox { color: #1E293B; background: #FFFFFF; }
+QPushButton { color: #1E293B; }
+QPushButton:default, QPushButton[primary="true"] { color: #FFFFFF; }
 QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #CBD5E1; }
 QWidget#guideItem { background: #F1F5F9; border: 1px solid #CBD5E1; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
