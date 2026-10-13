@@ -62,7 +62,17 @@ jobs:
         run: |
           $exe = "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe"
           if (!(Test-Path $exe)) { throw "Build failed: $exe was not created." }
-          if (!(Test-Path "dist/RawStrengthEmployeeAuditManager/_internal/python312.dll")) { throw "Build failed: python312.dll is missing from the app bundle." }
+          $bundle = "dist/RawStrengthEmployeeAuditManager"
+          $requiredRuntimeFiles = @(
+            "$bundle/_internal/python312.dll",
+            "$bundle/_internal/base_library.zip"
+          )
+          foreach ($file in $requiredRuntimeFiles) {
+            if (!(Test-Path $file)) { throw "Build failed: required PyInstaller runtime file is missing: $file" }
+          }
+          $zip = "$bundle/_internal/base_library.zip"
+          if ((Get-Item $zip).Length -lt 100000) { throw "Build failed: base_library.zip is unexpectedly small or incomplete." }
+          Write-Host "Verified required PyInstaller runtime files."
 
       - name: Download and verify Visual C++ runtime
         shell: pwsh
