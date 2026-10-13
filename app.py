@@ -1031,8 +1031,28 @@ class AnimatedBackground(QWidget):
         base.setColorAt(0.0, QColor("#050811"))
         base.setColorAt(0.52, QColor("#0B1020"))
         base.setColorAt(1.0, QColor("#100A1D"))
+        # Distinct base palettes ensure every wallpaper choice is visibly different.
+        palettes = {
+            "Galaxy": ("#020617", "#111827", "#312E81"),
+            "Milky Way": ("#09090B", "#312E81", "#7C3AED"),
+            "Love & Couples": ("#2B0A20", "#701A3D", "#BE185D"),
+            "Gym Energy": ("#111827", "#7C2D12", "#B91C1C"),
+            "Lord Shiva": ("#020617", "#172554", "#0E7490"),
+            "Funny": ("#1F1147", "#6D28D9", "#BE185D"),
+            "Ambient Glow": ("#050811", "#0B1020", "#100A1D"),
+            "Aurora Waves": ("#042F2E", "#0B1020", "#164E63"),
+            "Starfield": ("#020617", "#0F172A", "#111827"),
+            "Floating Bubbles": ("#1E1B4B", "#312E81", "#0F172A"),
+            "Rainfall": ("#082F49", "#0F172A", "#020617"),
+            "Matrix Drift": ("#022C22", "#052E16", "#020617")
+        }
+        c0, c1, c2 = palettes.get(self.mode, palettes["Galaxy"])
+        base = QLinearGradient(0, 0, w, h)
+        base.setColorAt(0.0, QColor(c0))
+        base.setColorAt(0.52, QColor(c1))
+        base.setColorAt(1.0, QColor(c2))
         painter.fillRect(rect, base)
-        if self.mode in ("Ambient Glow", "Aurora Waves"):
+        if self.mode in ("Ambient Glow", "Aurora Waves", "Galaxy", "Milky Way", "Love & Couples", "Gym Energy", "Lord Shiva", "Funny"):
             colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
             for i, color in enumerate(colors):
                 x = int(w * (0.18 + i * 0.30 + 0.08 * math.sin(self.phase * (0.7 + i * 0.12))))
@@ -3874,20 +3894,36 @@ QStatusBar { background: rgba(17,24,39,0.90); color: #F1F5F9; }
 """
 
 def apply_app_theme(app, theme_name):
-    """Apply a consistent high-contrast glass theme across every application tab."""
-    theme_name = (theme_name or "day").strip().lower()
+    """Apply visibly distinct Day and Night themes across all app widgets."""
+    theme_name = (theme_name or "night").strip().lower()
     base = dark_stylesheet()
-    if theme_name in ("night", "dark"):
-        app.setStyleSheet(base)
-        return "night"
-    if theme_name == "ocean":
-        app.setStyleSheet(base.replace("#A78BFA", "#38BDF8").replace("#7C5CFC", "#0284C7").replace("#6D28D9", "#0369A1"))
-        return "ocean"
-    if theme_name == "sunset":
-        app.setStyleSheet(base.replace("#A78BFA", "#FDBA74").replace("#7C5CFC", "#F97316").replace("#6D28D9", "#C2410C"))
-        return "sunset"
-    app.setStyleSheet(base.replace("#A78BFA", "#C4B5FD"))
-    return "day"
+    if theme_name in ("day", "light"):
+        day = base
+        replacements = {
+            "#080F20": "#F1F5F9", "#11152E": "#E2E8F0", "#082F49": "#DBEAFE",
+            "#070B14": "#FFFFFF", "#0F172A": "#FFFFFF", "#111827": "#F8FAFC",
+            "#1E293B": "#E2E8F0", "#1A2A4A": "#E2E8F0", "#1E2F52": "#DBEAFE",
+            "#15233F": "#FFFFFF", "#374151": "#CBD5E1", "#334155": "#CBD5E1",
+            "#64748B": "#475569", "#CBD5E1": "#CBD5E1", "#E2E8F0": "#1E293B",
+            "#F8FAFC": "#0F172A", "#F1F5F9": "#1E293B", "#C7D2E8": "#334155",
+            "#FFFFFF": "#0F172A"
+        }
+        # Avoid conflicting sequential replacements by using a temporary token pass.
+        tokens = {}
+        for idx, (source, target) in enumerate(replacements.items()):
+            token = f"__DAY_COLOR_{idx}__"
+            day = day.replace(source, token)
+            tokens[token] = target
+        for token, target in tokens.items():
+            day = day.replace(token, target)
+        day = day.replace("QMainWindow {", "QMainWindow { color: #1E293B;")
+        app.setStyleSheet(day)
+        return "day"
+    if theme_name in ("ocean", "sunset"):
+        # Legacy saved values are normalized to the supported Night theme.
+        theme_name = "night"
+    app.setStyleSheet(base)
+    return "night"
 
 def ocean_stylesheet():
     return dark_stylesheet().replace("#A78BFA", "#38BDF8").replace("#7C5CFC", "#0284C7").replace("#6D28D9", "#0369A1")
