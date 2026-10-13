@@ -1153,6 +1153,34 @@ class MainWindow(QMainWindow):
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.tabs.setUsesScrollButtons(True)
         self.tabs.tabBar().setExpanding(False)
+        # Make overflow navigation obvious and provide a direct tab picker.
+        self.tabs.tabBar().setStyleSheet(
+            "QTabBar::scroller { width: 34px; }"
+            "QTabBar QToolButton { min-width: 28px; min-height: 28px; "
+            "background: #1A2A4A; color: #FFFFFF; border: 1px solid #7C8DB5; "
+            "border-radius: 6px; font-size: 13pt; font-weight: 700; }"
+            "QTabBar QToolButton:hover { background: #4C1D95; border-color: #A78BFA; }"
+        )
+        self.tab_navigator = QToolButton()
+        self.tab_navigator.setText("☰ Go to tab")
+        self.tab_navigator.setToolTip("Show all sections and jump directly to one")
+        self.tab_navigator.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.tab_navigator.setMinimumHeight(34)
+        self.tab_navigator.setStyleSheet(
+            "QToolButton { background: #1A2A4A; color: #FFFFFF; border: 1px solid #7C8DB5; "
+            "border-radius: 6px; padding: 5px 10px; font-weight: 700; }"
+            "QToolButton:hover { background: #4C1D95; }"
+            "QToolButton::menu-indicator { image: none; }"
+        )
+        self.tab_navigator_menu = QMenu(self.tab_navigator)
+        self.tab_navigator_menu.setStyleSheet(
+            "QMenu { background: #111827; color: #F8FAFC; border: 1px solid #64748B; padding: 5px; }"
+            "QMenu::item { color: #F8FAFC; padding: 8px 20px; }"
+            "QMenu::item:selected { background: #4C1D95; color: #FFFFFF; }"
+        )
+        self.tab_navigator.setMenu(self.tab_navigator_menu)
+        self.tabs.currentChanged.connect(self._sync_tab_navigator)
+        central_layout.addWidget(self.tab_navigator)
         central_layout.addWidget(self.tabs)
         central.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         central.setAutoFillBackground(False)
@@ -1223,6 +1251,21 @@ class MainWindow(QMainWindow):
     def update_title_label(self):
         self.title_label.setText(self.title_label.fontMetrics().elidedText(
             APP_NAME, Qt.TextElideMode.ElideRight, self.title_label.width()))
+
+    def _sync_tab_navigator(self, index):
+        """Keep the header jump menu synchronized with the selected section."""
+        if not hasattr(self, "tab_navigator_menu"):
+            return
+        self.tab_navigator_menu.clear()
+        for tab_index in range(self.tabs.count()):
+            action = self.tab_navigator_menu.addAction(self.tabs.tabText(tab_index))
+            action.setCheckable(True)
+            action.setChecked(tab_index == index)
+            action.triggered.connect(
+                lambda checked=False, target=tab_index: self.tabs.setCurrentIndex(target)
+            )
+        if hasattr(self, "tab_navigator"):
+            self.tab_navigator.setText("☰ " + (self.tabs.tabText(index) if index >= 0 else "Go to tab"))
 
     def animate_tab_transition(self, index):
         page = self.tabs.widget(index)
