@@ -391,7 +391,12 @@ class BusinessTrackingTab(QWidget):
             )
             self.db.conn.commit()
         except sqlite3.IntegrityError:
+            self.db.conn.rollback()
             QMessageBox.warning(self, "Duplicate SKU", "A product with that SKU already exists.")
+            return
+        except sqlite3.Error as ex:
+            self.db.conn.rollback()
+            QMessageBox.warning(self, "Could not save product", str(ex))
             return
         self.refresh_all()
 
@@ -422,6 +427,7 @@ class BusinessTrackingTab(QWidget):
             )
             self.db.conn.commit()
         except sqlite3.Error as ex:
+            self.db.conn.rollback()
             QMessageBox.warning(self, "Could not save order", str(ex))
             return
         self.refresh_all()
@@ -448,6 +454,7 @@ class BusinessTrackingTab(QWidget):
             )
             self.db.conn.commit()
         except sqlite3.Error as ex:
+            self.db.conn.rollback()
             QMessageBox.warning(self, "Could not save service", str(ex))
             return
         self.refresh_all()
@@ -473,6 +480,7 @@ class BusinessTrackingTab(QWidget):
             )
             self.db.conn.commit()
         except sqlite3.Error as ex:
+            self.db.conn.rollback()
             QMessageBox.warning(self, "Could not save member", str(ex))
             return
         self.refresh_all()
@@ -509,6 +517,7 @@ class BusinessTrackingTab(QWidget):
             )
             self.db.conn.commit()
         except sqlite3.Error as ex:
+            self.db.conn.rollback()
             QMessageBox.warning(self, "Could not save activity", str(ex))
             return
         self.refresh_all()
