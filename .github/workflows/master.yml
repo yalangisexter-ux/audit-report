@@ -1,0 +1,41 @@
+name: Master Build and Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build EXE
+        run: pyinstaller --noconfirm --onedir --windowed --name RawStrengthEmployeeAuditManager app.py
+
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter "*.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "No EXE found" }
+          Write-Host "EXE: $($exe.FullName)"
+
+      - name: Launch test
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist -Filter "*.exe" -Recurse | Select-Object -First 1
+          $proc = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) { throw "App exited early" }
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "PASS: App launched"
