@@ -1137,7 +1137,8 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(self.btn_close)
 
         # Animated background
-        self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow")
+        # Prefer a bundled image wallpaper on first launch; preserve saved user choices.
+        self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Galaxy") or "Galaxy")
         self.bg_anim.setObjectName("animatedBg")
 
         # Central content
@@ -1412,24 +1413,33 @@ class MainWindow(QMainWindow):
         guide_grid.setHorizontalSpacing(12)
         guide_grid.setVerticalSpacing(10)
         guide_items = [
-            ("Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
-            ("Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
-            ("Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
-            ("Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
-            ("Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
-            ("Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
-            ("EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
-            ("Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
+            ("▦", "Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
+            ("♙", "Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
+            ("✓", "Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
+            ("◷", "Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
+            ("◉", "Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
+            ("▤", "Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
+            ("▣", "EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
+            ("⚙", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
         ]
-        for index, (section, guidance, example) in enumerate(guide_items):
+        for index, (symbol, section, guidance, example) in enumerate(guide_items):
             guide_card = QWidget()
             guide_card.setObjectName("guideItem")
             card_layout = QVBoxLayout(guide_card)
             card_layout.setContentsMargins(16, 14, 16, 14)
             card_layout.setSpacing(6)
+            heading_row = QHBoxLayout()
+            heading_row.setSpacing(10)
+            icon_label = QLabel(symbol)
+            icon_label.setObjectName("guideIcon")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setFixedSize(34, 34)
+            icon_label.setStyleSheet("QLabel#guideIcon { background: rgba(124,92,252,0.16); color: #7C5CFC; border: 1px solid rgba(124,92,252,0.30); border-radius: 10px; font-size: 17px; font-weight: 700; }")
+            heading_row.addWidget(icon_label)
             section_label = QLabel(section)
             section_label.setProperty("guideTitle", True)
-            card_layout.addWidget(section_label)
+            heading_row.addWidget(section_label, 1)
+            card_layout.addLayout(heading_row)
             guidance_label = QLabel(guidance)
             guidance_label.setWordWrap(True)
             card_layout.addWidget(guidance_label)
@@ -2011,7 +2021,7 @@ class MainWindow(QMainWindow):
         animation_label = QLabel("Live wallpaper")
         self.animation_combo = QComboBox()
         self.animation_combo.addItems(list(AnimatedBackground.STYLES))
-        saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
+        saved_animation = self.db.get_setting("animation_style", "Galaxy") or "Galaxy"
         if self.animation_combo.findText(saved_animation) >= 0:
             self.animation_combo.setCurrentText(saved_animation)
         self.animation_combo.currentTextChanged.connect(self.set_animation_style)
