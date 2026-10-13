@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QGroupBox, QHeaderView, QAbstractItemView,
     QMessageBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEasingCurve, QPropertyAnimation
+from PySide6.QtWidgets import QGraphicsOpacityEffect
 
 
 def now_text():
@@ -183,13 +184,40 @@ class BusinessTrackingTab(QWidget):
         layout.addWidget(subtitle)
 
         self.sub_tabs = QTabWidget()
-        self.sub_tabs.addTab(self._build_dashboard(), "Dashboard")
-        self.sub_tabs.addTab(self._build_products(), "Products & Inventory")
-        self.sub_tabs.addTab(self._build_orders(), "Orders")
-        self.sub_tabs.addTab(self._build_services(), "Services & Members")
-        self.sub_tabs.addTab(self._build_activities(), "Employee Activities")
+        self.sub_tabs.setObjectName("businessSubTabs")
+        self.sub_tabs.setDocumentMode(True)
+        self.sub_tabs.addTab(self._build_dashboard(), "◈  Dashboard")
+        self.sub_tabs.addTab(self._build_products(), "▦  Products & Inventory")
+        self.sub_tabs.addTab(self._build_orders(), "▤  Orders")
+        self.sub_tabs.addTab(self._build_services(), "♧  Services & Members")
+        self.sub_tabs.addTab(self._build_activities(), "✓  Employee Activities")
+        self._tab_fade = None
+        self._tab_fade_page = None
+        self.sub_tabs.currentChanged.connect(self._animate_subtab)
         layout.addWidget(self.sub_tabs)
         self.refresh_all()
+
+    def _animate_subtab(self, index):
+        """Short fade transition for business sub-tabs; safe for repeated rapid clicks."""
+        page = self.sub_tabs.widget(index)
+        if page is None:
+            return
+        if self._tab_fade is not None:
+            self._tab_fade.stop()
+        if self._tab_fade_page is not None:
+            self._tab_fade_page.setGraphicsEffect(None)
+        effect = QGraphicsOpacityEffect(page)
+        effect.setOpacity(0.88)
+        page.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(180)
+        animation.setStartValue(0.88)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(lambda p=page, e=effect: p.setGraphicsEffect(None) if p.graphicsEffect() is e else None)
+        self._tab_fade_page = page
+        self._tab_fade = animation
+        animation.start()
 
     def _build_dashboard(self):
         w = QWidget()
@@ -215,7 +243,7 @@ class BusinessTrackingTab(QWidget):
         self.prod_table = QTableWidget(0, 6)
         self.prod_table.setHorizontalHeaderLabels(["ID", "SKU", "Name", "Category", "Available", "Reorder"])
         self.prod_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.prod_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.prod_table.setWordWrap(True)\n        self.prod_table.setAlternatingRowColors(True)\n        self.prod_table.verticalHeader().setDefaultSectionSize(34)\n        self.prod_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.prod_table)
         return w
 
@@ -234,7 +262,7 @@ class BusinessTrackingTab(QWidget):
         self.order_table = QTableWidget(0, 6)
         self.order_table.setHorizontalHeaderLabels(["ID", "External ID", "Date", "Channel", "Customer", "Status"])
         self.order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.order_table.setWordWrap(True)\n        self.order_table.setAlternatingRowColors(True)\n        self.order_table.verticalHeader().setDefaultSectionSize(34)\n        self.order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.order_table)
         return w
 
@@ -253,12 +281,12 @@ class BusinessTrackingTab(QWidget):
         self.svc_table = QTableWidget(0, 4)
         self.svc_table.setHorizontalHeaderLabels(["ID", "Service", "Mode", "Price"])
         self.svc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.svc_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.svc_table.setWordWrap(True)\n        self.svc_table.setAlternatingRowColors(True)\n        self.svc_table.verticalHeader().setDefaultSectionSize(34)\n        self.svc_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.svc_table)
         self.mem_table = QTableWidget(0, 5)
         self.mem_table.setHorizontalHeaderLabels(["ID", "Member", "Service", "Status", "Sessions left"])
         self.mem_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.mem_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.mem_table.setWordWrap(True)\n        self.mem_table.setAlternatingRowColors(True)\n        self.mem_table.verticalHeader().setDefaultSectionSize(34)\n        self.mem_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.mem_table)
         return w
 
@@ -274,7 +302,7 @@ class BusinessTrackingTab(QWidget):
         self.act_table = QTableWidget(0, 6)
         self.act_table.setHorizontalHeaderLabels(["ID", "Employee", "Type", "Status", "Start", "Remarks"])
         self.act_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.act_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.act_table.setWordWrap(True)\n        self.act_table.setAlternatingRowColors(True)\n        self.act_table.verticalHeader().setDefaultSectionSize(34)\n        self.act_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.act_table)
         return w
 
