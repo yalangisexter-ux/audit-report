@@ -1585,6 +1585,8 @@ class MainWindow(QMainWindow):
         self.report_scope.addItems(["Consolidated — all employees", "Individual — selected employee"])
         self.report_employee = QComboBox()
         self.report_employee.addItem("All employees", None)
+        self.report_exclude_employee = QComboBox()
+        self.report_exclude_employee.addItem("Exclude none", None)
         self.report_format = QComboBox()
         self.report_format.addItems(["Word (.docx)", "PDF (.pdf)", "CSV (.csv)"])
         self.archived_report = QComboBox()
@@ -1594,6 +1596,7 @@ class MainWindow(QMainWindow):
         form.addRow("Report date", self.report_date)
         form.addRow("Report scope", self.report_scope)
         form.addRow("Employee", self.report_employee)
+        form.addRow("Exclude employee (consolidated only)", self.report_exclude_employee)
         form.addRow("Output format", self.report_format)
         form.addRow("Historical archived PDF (optional)", self.archived_report)
         l.addWidget(form_group)
@@ -1630,6 +1633,7 @@ class MainWindow(QMainWindow):
         l.addWidget(self.eod_options_group)
 
         self.report_scope.currentIndexChanged.connect(self._report_scope_changed)
+        self.report_exclude_employee.currentIndexChanged.connect(lambda _value: self.preview_report())
         self.archived_report.currentIndexChanged.connect(self._archived_report_changed)
 
         # Action buttons
@@ -1948,6 +1952,8 @@ class MainWindow(QMainWindow):
             return
         individual = self.report_scope.currentIndex() == 1
         self.report_employee.setEnabled(individual)
+        if hasattr(self, "report_exclude_employee"):
+            self.report_exclude_employee.setEnabled(not individual)
         if individual and self.report_employee.currentData() is None and self.report_employee.count() > 1:
             self.report_employee.setCurrentIndex(1)
         self.preview_report()
@@ -1955,9 +1961,24 @@ class MainWindow(QMainWindow):
     def refresh_report_employees(self):
         if not hasattr(self,"report_employee"): return
         current=self.report_employee.currentData()
-        self.report_employee.blockSignals(True); self.report_employee.clear(); self.report_employee.addItem("All employees",None)
-        for e in self.db.employees(): self.report_employee.addItem(f'{e["name"]} ({e["employee_code"] or "No ID"})',e["id"])
-        idx=self.report_employee.findData(current); self.report_employee.setCurrentIndex(max(idx,0)); self.report_employee.blockSignals(False)
+        excluded=self.report_exclude_employee.currentData() if hasattr(self,"report_exclude_employee") else None
+        employees=self.db.employees()
+        for combo in (self.report_employee, self.report_exclude_employee):
+            if combo is not None:
+                combo.blockSignals(True)
+        self.report_employee.clear(); self.report_employee.addItem("All employees",None)
+        for e in employees: self.report_employee.addItem(f'{e["name"]} ({e["employee_code"] or "No ID"})',e["id"])
+        idx=self.report_employee.findData(current); self.report_employee.setCurrentIndex(max(idx,0))
+        if hasattr(self, "report_exclude_employee"):
+            self.report_exclude_employee.clear()
+            self.report_exclude_employee.addItem("Exclude none", None)
+            for e in employees:
+                self.report_exclude_employee.addItem(f'{e["name"]} ({e["employee_code"] or "No ID"})', e["id"])
+            ex_idx=self.report_exclude_employee.findData(excluded)
+            self.report_exclude_employee.setCurrentIndex(max(ex_idx,0))
+        self.report_employee.blockSignals(False)
+        if hasattr(self, "report_exclude_employee"):
+            self.report_exclude_employee.blockSignals(False)
 
     def add_employee(self):
         d=EmployeeDialog(self)
@@ -2292,7 +2313,7 @@ class MainWindow(QMainWindow):
         self.productivity_chart.set_values(metrics)
 
     def report_data(self, report_date, employee_id=None):
-        emps=[self.db.employee(employee_id)] if employee_id else self.db.employees()
+        emps=self._report_employees(employee_id)
         data=[]
         for e in emps:
             if not e: continue
@@ -2335,7 +2356,13 @@ class MainWindow(QMainWindow):
         return "Not provided"
 
     def _report_employees(self, employee_id=None):
-        return [self.db.employee(employee_id)] if employee_id else self.db.employees()
+        # Exclusion is report-only: it never deletes or changes employee records.
+        if employee_id:
+            employee = self.db.employee(employee_id)
+            return [employee] if employee else []
+        employees = self.db.employees()
+        excluded_id = self.report_exclude_employee.currentData() if hasattr(self, "report_exclude_employee") else None
+        return [employee for employee in employees if employee["id"] != excluded_id]
 
     def _attendance_report_rows(self, report_date, employee_id=None):
         rows=[]
