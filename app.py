@@ -3806,7 +3806,7 @@ def main():
     try:
         db=Database()
         seed_initial_audit(db)
-        apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
+        apply_app_theme(app, "night")  # Always start with premium theme
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
