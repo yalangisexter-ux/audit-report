@@ -1537,8 +1537,17 @@ class MainWindow(QMainWindow):
         summary_note.setProperty("mutedText", True)
         l.addWidget(summary_note)
         self.attendance_summary_table=QTableWidget(0,8)
-        self.attendance_summary_table.setHorizontalHeaderLabels(["Employee","Join / tracking start","Working days (month)","Present (month)","Absent","Leave","Holidays excluded","Present since start"])
-        self.attendance_summary_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.attendance_summary_table, 2)
+        headers = ["Employee","Join / tracking start","Working days (month)","Present (month)","Absent","Leave","Holidays excluded","Present since start"]
+        self.attendance_summary_table.setHorizontalHeaderLabels(headers)
+        header = self.attendance_summary_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(True)
+        header.setMinimumSectionSize(80)
+        for i, h in enumerate(headers):
+            self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
+        self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        l.addWidget(self.attendance_summary_table, 2)
 
     def build_reports(self):
         outer = QVBoxLayout(self.reports_tab)
