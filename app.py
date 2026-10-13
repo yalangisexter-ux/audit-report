@@ -3530,7 +3530,10 @@ QWidget#sessionStrip { background: #F1F5F9; border: 0; border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: #F1F5F9; border: 0; border-left: 4px solid #7C5CFC; border-radius: 16px; }
+QWidget#guideItem { background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid #7C5CFC; border-radius: 16px; }
+QWidget#sessionStrip { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 16px; }
+QLabel { color: #1E293B; }
+QGroupBox { background: #FFFFFF; color: #1E293B; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 0; border-radius: 14px; color: #312E81; font-weight: 600; padding: 11px 14px; }
