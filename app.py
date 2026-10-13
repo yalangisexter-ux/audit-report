@@ -2349,19 +2349,35 @@ class MainWindow(QMainWindow):
         return item.data(Qt.UserRole) if item else None
 
     def set_attendance_status(self, status):
-        eid=self.attendance_selected_employee()
-        if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
-        d=self.att_date.date().toString("yyyy-MM-dd")
-        if self.db.is_holiday(d): return error(self,"This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
-        if status in ("Absent", "Leave"):
-            self.db.conn.execute("UPDATE attendance SET attendance_status=?,check_in='',check_out='',updated_at=? WHERE employee_id=? AND work_date=?",(status,now_text(),eid,d))
-            if not self.db.conn.execute("SELECT 1 FROM attendance WHERE employee_id=? AND work_date=?",(eid,d)).fetchone():
-                self.db.upsert_attendance(eid,d,status=status)
-        else:
-            self.db.upsert_attendance(eid,d,status=status)
-        e=self.db.employee(eid)
-        self.db.log("Attendance status updated",f"{e['name']}: {status} on {d}")
-        self.refresh_all()
+        """Persist the selected attendance status, then verify it before refreshing the UI."""
+        status = str(status or "").strip().title()
+        if status not in ("Present", "Absent", "Leave"):
+            return error(self, "Choose Present, Absent, or Leave.")
+        eid = self.attendance_selected_employee()
+        if not eid:
+            return error(self, "Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
+        d = self.att_date.date().toString("yyyy-MM-dd")
+        if self.db.is_holiday(d):
+            return error(self, "This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
+        try:
+            if status in ("Absent", "Leave"):
+                # Use the same upsert/commit path as all other attendance changes.
+                self.db.upsert_attendance(eid, d, check_in="", check_out="", status=status)
+            else:
+                self.db.upsert_attendance(eid, d, status=status)
+            saved = self.db.conn.execute(
+                "SELECT attendance_status FROM attendance WHERE employee_id=? AND work_date=?",
+                (eid, d),
+            ).fetchone()
+            if not saved or str(saved["attendance_status"] or "").strip().casefold() != status.casefold():
+                raise RuntimeError("The saved attendance status could not be verified.")
+            employee = self.db.employee(eid)
+            self.db.log("Attendance status updated", f"{employee['name']}: {status} on {d}")
+            self.refresh_all()
+            return
+        except Exception as exc:
+            self.db.conn.rollback()
+            return error(self, f"Could not save attendance status. Please try again.\\n{exc}")
 
     def check_in(self):
         eid=self.attendance_selected_employee()
