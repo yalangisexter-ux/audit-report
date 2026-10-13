@@ -700,7 +700,7 @@ class LoginDialog(QDialog):
         self.setModal(True)
         self.setObjectName("loginDialog")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(36, 32, 36, 28)
+        layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
 
         # Logo
@@ -711,10 +711,12 @@ class LoginDialog(QDialog):
 
         title = QLabel("Raw Strength Calisthenics")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title.setWordWrap(True)
         title.setProperty("pageTitle", True)
         layout.addWidget(title)
         subtitle = QLabel("HR / Admin workspace • Offline and secure")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setWordWrap(True)
         subtitle.setProperty("pageSubtitle", True)
         layout.addWidget(subtitle)
 
@@ -2037,6 +2039,9 @@ class MainWindow(QMainWindow):
         else: info(self,"Proof path does not exist on this computer.")
 
     def attendance_selected_employee(self):
+        # Prefer dropdown filter if a specific employee is selected
+        if hasattr(self, "att_employee_filter") and self.att_employee_filter.currentData() is not None:
+            return self.att_employee_filter.currentData()
         rows=self.att_table.selectionModel().selectedRows()
         if not rows: return None
         item=self.att_table.item(rows[0].row(),0)
@@ -2059,24 +2064,23 @@ class MainWindow(QMainWindow):
 
     def check_in(self):
         eid=self.attendance_selected_employee()
-        if not eid: return error(self, "Select an employee row first.")
+        if not eid: return error(self, "Select an employee first.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         if self.db.is_holiday(d): return error(self,"This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
-        old=self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?",(eid,d)).fetchone()
-        if old and old["check_in"]: return info(self,"Check-in is already recorded. Use the existing record or correct it through the attendance note workflow.")
-        self.db.upsert_attendance(eid,d,check_in=datetime.now().strftime("%H:%M"),status="Present")
-        self.db.log("Attendance check-in",f"employee={eid}, date={d}"); self.refresh_all()
+        time, ok = QInputDialog.getText(self, "Check In", "Check-in time (HH:MM):", text=datetime.now().strftime("%H:%M"))
+        if not ok or not time.strip(): return
+        self.db.upsert_attendance(eid,d,check_in=time.strip(),status="Present")
+        self.db.log("Attendance check-in",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
     def check_out(self):
         eid=self.attendance_selected_employee()
-        if not eid: return error(self, "Select an employee row first.")
+        if not eid: return error(self, "Select an employee first.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         if self.db.is_holiday(d): return error(self,"This date is declared as a holiday.")
-        old=self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?",(eid,d)).fetchone()
-        if not old or not old["check_in"]: return error(self,"Record check-in before check-out.")
-        if old["check_out"]: return info(self,"Check-out is already recorded.")
-        self.db.upsert_attendance(eid,d,check_out=datetime.now().strftime("%H:%M"),status="Present")
-        self.db.log("Attendance check-out",f"employee={eid}, date={d}"); self.refresh_all()
+        time, ok = QInputDialog.getText(self, "Check Out", "Check-out time (HH:MM):", text=datetime.now().strftime("%H:%M"))
+        if not ok or not time.strip(): return
+        self.db.upsert_attendance(eid,d,check_out=time.strip(),status="Present")
+        self.db.log("Attendance check-out",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
     def edit_attendance_times(self):
         eid = self.attendance_selected_employee()
