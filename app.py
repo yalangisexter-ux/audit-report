@@ -3558,6 +3558,22 @@ QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
+/* High contrast: opaque panels keep live wallpapers from washing out text. */
+QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1; }
+QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
+QGroupBox::title { color: #334155; }
+QLabel { color: #1E293B; }
+QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
+QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
+QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #CBD5E1; }
+QWidget#guideItem { background: #F1F5F9; border: 1px solid #CBD5E1; }
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
+QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
+QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
+QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
+QTableWidget::item:selected { background: #DDE7FF; color: #1E1B4B; }
+QCheckBox, QRadioButton { color: #1E293B; }
+QStatusBar { background: #E2E8F0; color: #1E293B; }
 """
 
 def dark_stylesheet():
@@ -3673,6 +3689,22 @@ QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
+/* High contrast: opaque panels keep live wallpapers from washing out text. */
+QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
+QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
+QGroupBox::title { color: #CBD5E1; }
+QLabel { color: #E2E8F0; }
+QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #F8FAFC; }
+QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #CBD5E1; }
+QWidget#sessionStrip { background: #0B1220; border: 1px solid #475569; }
+QWidget#guideItem { background: #0F172A; border: 1px solid #334155; }
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #475569; }
+QHeaderView::section { background: #1E293B; color: #F8FAFC; border-bottom: 2px solid #64748B; }
+QTableWidget { background: #0F172A; alternate-background-color: #172033; color: #F8FAFC; border: 1px solid #475569; gridline-color: #334155; }
+QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
+QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
+QCheckBox, QRadioButton { color: #E2E8F0; }
+QStatusBar { background: #111827; color: #E2E8F0; }
 """
 
 def apply_app_theme(app, theme_name):
