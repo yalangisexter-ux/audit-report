@@ -1619,9 +1619,9 @@ class MainWindow(QMainWindow):
         for label, slot in [
             ("＋  Add Employee", self.add_employee),
             ("✓  Assign Task", self.add_task),
-            ("▦  Mark Attendance", self.add_attendance),
-            ("▤  Generate Report", self.open_print_center),
-            ("⇩  Print / Export", self.open_print_center),
+            ("▦  Mark Attendance", lambda: self.tabs.setCurrentWidget(self.attendance_tab)),
+            ("▤  Generate Report", lambda: self.tabs.setCurrentWidget(self.reports_tab)),
+            ("⇩  Print / Export", lambda: self.tabs.setCurrentWidget(self.reports_tab)),
         ]:
             action = QPushButton(label)
             action.setMinimumHeight(38)
@@ -3957,6 +3957,16 @@ QLabel[mutedText="true"] { color: #A9BDCE; }
 QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-size: 20pt; font-weight: 700; }
 QLabel[heroSubtitle="true"], QLabel[welcomeSubtitle="true"] { color: #C5D8E6; font-size: 9pt; }
 QWidget#dashboardHero, QWidget#welcomeHero { background: #0D2A3D; border: 1px solid #17617A; border-radius: 14px; }
+QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #03132D, stop:0.45 #064A9E, stop:0.75 #312E81, stop:1 #86198F); border: 1px solid #168BFF; }
+QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #10294B, stop:0.58 #091A36, stop:1 #17123B); border: 1px solid #2563EB; border-radius: 13px; padding: 12px; margin-top: 8px; }
+QLabel#kpiIcon { background: #0755B8; color: #FFFFFF; border: 1px solid #22D3EE; border-radius: 10px; font-size: 20pt; font-weight: 700; }
+QGroupBox#dashboardPanel { background: rgba(3,16,42,0.97); border: 1px solid #2457A6; border-radius: 14px; color: #F8FAFC; padding: 18px 10px 10px 10px; margin-top: 10px; }
+QGroupBox#dashboardPanel::title { color: #DDEBFF; }
+QPushButton[dashboardAction="true"] { text-align: left; background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #073A78, stop:1 #172B55); border: 1px solid #2563EB; border-radius: 9px; color: #FFFFFF; padding: 9px 12px; }
+QPushButton[dashboardAction="true"]:hover { background: #0755B8; border-color: #22D3EE; }
+QLabel#attendanceSummary { color: #67E8F9; font-size: 16pt; font-weight: 700; padding: 12px; background: #071B36; border: 1px solid #1D4ED8; border-radius: 12px; }
+QTableWidget#dashboard_recent, QTableWidget#dashboard_tasks { background: #06152D; alternate-background-color: #0A2040; border: 1px solid #1E3A5F; gridline-color: #163456; }
+
 QScrollArea#homeScroll, QScrollArea#pageScroll { border: 0; background: transparent; }
 QWidget#homeContent, QWidget#pageContent { background: #091725; color: #F8FAFC; border: 1px solid #29465A; border-radius: 14px; }
 QTextEdit#reportPreview { background: #0A1928; border: 1px solid #345269; border-radius: 9px; }
