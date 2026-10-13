@@ -3722,8 +3722,9 @@ QToolTip { background-color: #0B2444; color: #FFFFFF; border: 1px solid #22D3EE;
 """
 
 def apply_app_theme(app, theme_name):
-    theme_name = (theme_name or "day").lower()
-    if theme_name in ("night", "dark"):
+    """Apply a high-contrast glass theme consistently to the entire widget tree."""
+    theme_name = (theme_name or "night").lower()
+    if theme_name in ("dark", "night"):
         app.setStyleSheet(dark_stylesheet())
         return "night"
     if theme_name == "ocean":
@@ -3732,14 +3733,21 @@ def apply_app_theme(app, theme_name):
     if theme_name == "sunset":
         app.setStyleSheet(sunset_stylesheet())
         return "sunset"
-    app.setStyleSheet(light_stylesheet())
+    # Day remains a named preset, but keeps the requested readable white-on-glass UI.
+    app.setStyleSheet(day_glass_stylesheet())
     return "day"
 
+
+def day_glass_stylesheet():
+    return dark_stylesheet().replace("#7C5CFC", "#64748B").replace("#6D28D9", "#475569").replace("#A78BFA", "#CBD5E1").replace("#DB2777", "#334155").replace("#E879F9", "#94A3B8")
+
+
 def ocean_stylesheet():
-    return light_stylesheet().replace("#7C5CFC", "#0EA5E9").replace("#6D28D9", "#0284C7").replace("#15233F", "#0C4A6E").replace("#E2E8F0", "#E0F2FE").replace("#F1F5F9", "#F0F9FF")
+    return dark_stylesheet().replace("#7C5CFC", "#0284C7").replace("#6D28D9", "#0369A1").replace("#A78BFA", "#22D3EE").replace("#DB2777", "#0E7490").replace("#E879F9", "#38BDF8").replace("#4C1D95", "#0C4A6E")
+
 
 def sunset_stylesheet():
-    return light_stylesheet().replace("#7C5CFC", "#F97316").replace("#6D28D9", "#EA580C").replace("#15233F", "#7C2D12").replace("#E2E8F0", "#FFF7ED").replace("#F1F5F9", "#FFEDD5")
+    return dark_stylesheet().replace("#7C5CFC", "#EA580C").replace("#6D28D9", "#C2410C").replace("#A78BFA", "#FDBA74").replace("#DB2777", "#9D174D").replace("#E879F9", "#FB7185").replace("#4C1D95", "#7C2D12")
 
 
 def resource_path(relative_path):
