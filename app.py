@@ -3648,6 +3648,14 @@ QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-siz
 QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F3E8FF; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:1 #312E81); border-radius: 14px; }
+QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #10294B, stop:0.58 #091A36, stop:1 #17123B); color: #F8FAFC; border: 1px solid #2563EB; border-radius: 13px; padding: 12px; margin-top: 8px; }
+QLabel#kpiIcon { background: #0755B8; color: #FFFFFF; border: 1px solid #22D3EE; border-radius: 10px; font-size: 20pt; font-weight: 700; }
+QGroupBox#dashboardPanel { background: rgba(3,16,42,0.97); color: #F8FAFC; border: 1px solid #2457A6; border-radius: 14px; padding: 18px 10px 10px 10px; margin-top: 10px; }
+QGroupBox#dashboardPanel::title { color: #DDEBFF; }
+QPushButton[dashboardAction="true"] { text-align: left; background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #073A78, stop:1 #172B55); border: 1px solid #2563EB; border-radius: 9px; color: #FFFFFF; padding: 9px 12px; }
+QPushButton[dashboardAction="true"]:hover { background: #0755B8; border-color: #22D3EE; }
+QLabel#attendanceSummary { color: #67E8F9; font-size: 16pt; font-weight: 700; padding: 12px; background: #071B36; border: 1px solid #1D4ED8; border-radius: 12px; }
+
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
 QWidget#homeContent { background: rgba(255,255,255,0.58); border: 1px solid rgba(255,255,255,0.75); border-radius: 18px; }
