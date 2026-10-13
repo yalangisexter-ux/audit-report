@@ -33,7 +33,7 @@ jobs:
       - name: Syntax check
         run: python -m py_compile app.py business_tracking.py build_info.py
       - name: Run regression tests
-        run: pytest -q
+        run: python -m pytest -q
       - name: Prepare installer dependencies
         shell: pwsh
         run: |
