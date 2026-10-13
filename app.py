@@ -3689,43 +3689,45 @@ QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
-/* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
-QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
-QGroupBox::title { color: #CBD5E1; }
-QLabel { color: #E2E8F0; }
-QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #F8FAFC; }
+/* Translucent glass surfaces with explicit high-contrast text. */
+QWidget#homeContent, QWidget#pageContent { background: rgba(15,23,42,0.70); color: #F8FAFC; border: 1px solid rgba(148,163,184,0.34); }
+QGroupBox { background: rgba(15,23,42,0.66); color: #F8FAFC; border: 1px solid rgba(148,163,184,0.30); }
+QGroupBox::title { color: #E2E8F0; }
+QLabel { color: #F1F5F9; }
+QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #FFFFFF; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #CBD5E1; }
-QWidget#sessionStrip { background: #0B1220; border: 1px solid #475569; }
-QWidget#guideItem { background: #0F172A; border: 1px solid #334155; }
-QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #475569; }
-QHeaderView::section { background: #1E293B; color: #F8FAFC; border-bottom: 2px solid #64748B; }
-QTableWidget { background: #0F172A; alternate-background-color: #172033; color: #F8FAFC; border: 1px solid #475569; gridline-color: #334155; }
-QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
+QWidget#sessionStrip { background: rgba(11,18,32,0.78); border: 1px solid rgba(148,163,184,0.28); }
+QWidget#guideItem { background: rgba(15,23,42,0.58); border: 1px solid rgba(148,163,184,0.24); }
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid rgba(148,163,184,0.42); color: #F8FAFC; }
+QHeaderView::section { background: rgba(30,41,59,0.92); color: #FFFFFF; border-bottom: 2px solid #64748B; }
+QTableWidget { background: rgba(15,23,42,0.78); alternate-background-color: rgba(30,41,59,0.62); color: #F8FAFC; border: 1px solid rgba(148,163,184,0.34); gridline-color: rgba(148,163,184,0.22); }
+QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid rgba(148,163,184,0.18); }
 QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
-QCheckBox, QRadioButton { color: #E2E8F0; }
-QStatusBar { background: #111827; color: #E2E8F0; }
+QCheckBox, QRadioButton { color: #F1F5F9; }
+QStatusBar { background: rgba(17,24,39,0.90); color: #F1F5F9; }
 """
 
 def apply_app_theme(app, theme_name):
-    theme_name = (theme_name or "day").lower()
+    """Apply a consistent high-contrast glass theme across every application tab."""
+    theme_name = (theme_name or "day").strip().lower()
+    base = dark_stylesheet()
     if theme_name in ("night", "dark"):
-        app.setStyleSheet(dark_stylesheet())
+        app.setStyleSheet(base)
         return "night"
     if theme_name == "ocean":
-        app.setStyleSheet(ocean_stylesheet())
+        app.setStyleSheet(base.replace("#A78BFA", "#38BDF8").replace("#7C5CFC", "#0284C7").replace("#6D28D9", "#0369A1"))
         return "ocean"
     if theme_name == "sunset":
-        app.setStyleSheet(sunset_stylesheet())
+        app.setStyleSheet(base.replace("#A78BFA", "#FDBA74").replace("#7C5CFC", "#F97316").replace("#6D28D9", "#C2410C"))
         return "sunset"
-    app.setStyleSheet(light_stylesheet())
+    app.setStyleSheet(base.replace("#A78BFA", "#C4B5FD"))
     return "day"
 
 def ocean_stylesheet():
-    return light_stylesheet().replace("#7C5CFC", "#0EA5E9").replace("#6D28D9", "#0284C7").replace("#15233F", "#0C4A6E").replace("#E2E8F0", "#E0F2FE").replace("#F1F5F9", "#F0F9FF")
+    return dark_stylesheet().replace("#A78BFA", "#38BDF8").replace("#7C5CFC", "#0284C7").replace("#6D28D9", "#0369A1")
 
 def sunset_stylesheet():
-    return light_stylesheet().replace("#7C5CFC", "#F97316").replace("#6D28D9", "#EA580C").replace("#15233F", "#7C2D12").replace("#E2E8F0", "#FFF7ED").replace("#F1F5F9", "#FFEDD5")
+    return dark_stylesheet().replace("#A78BFA", "#FDBA74").replace("#7C5CFC", "#F97316").replace("#6D28D9", "#C2410C")
 
 
 def resource_path(relative_path):
