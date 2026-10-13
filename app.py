@@ -138,6 +138,25 @@ APP_DIR.mkdir(parents=True, exist_ok=True)
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
+def cleanup_obsolete_update_data():
+    """Remove stale updater downloads only; never touch customer records or exports."""
+    updates_dir = APP_DIR / "updates"
+    if not updates_dir.exists():
+        return
+    current_update_dir = updates_dir / ".".join(str(part) for part in release_version_tuple(APP_VERSION))
+    for path in updates_dir.iterdir():
+        try:
+            # Interrupted downloads are safe to remove; they are never valid installers.
+            if path.is_file() and (path.name.endswith(".part") or path.name.endswith(".tmp")):
+                path.unlink(missing_ok=True)
+            elif path.is_dir() and path != current_update_dir:
+                # Retain the current version's installer for recovery; remove older cached installers.
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            # Cleanup is best-effort and must never prevent the app from starting.
+            pass
+
+
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -3793,6 +3812,7 @@ def resource_path(relative_path):
 
 
 def main():
+    cleanup_obsolete_update_data()
     app=QApplication(sys.argv); app.setStyle("Fusion")
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
