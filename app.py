@@ -990,6 +990,7 @@ class AnimatedBackground(QWidget):
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self.light_mode = False
         self.particles = []
         self.phase = 0.0
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -1047,6 +1048,22 @@ class AnimatedBackground(QWidget):
             "Matrix Drift": ("#022C22", "#052E16", "#020617")
         }
         c0, c1, c2 = palettes.get(self.mode, palettes["Galaxy"])
+        if self.light_mode:
+            light_palettes = {
+                "Galaxy": ("#E0F2FE", "#DBEAFE", "#EDE9FE"),
+                "Milky Way": ("#F5F3FF", "#EDE9FE", "#DDD6FE"),
+                "Love & Couples": ("#FFF1F2", "#FFE4E6", "#FCE7F3"),
+                "Gym Energy": ("#FFF7ED", "#FFEDD5", "#FECACA"),
+                "Lord Shiva": ("#EFF6FF", "#DBEAFE", "#CCFBF1"),
+                "Funny": ("#FDF4FF", "#F3E8FF", "#FCE7F3"),
+                "Ambient Glow": ("#F8FAFC", "#E2E8F0", "#EDE9FE"),
+                "Aurora Waves": ("#ECFDF5", "#CCFBF1", "#E0F2FE"),
+                "Starfield": ("#F8FAFC", "#E2E8F0", "#DBEAFE"),
+                "Floating Bubbles": ("#F5F3FF", "#EDE9FE", "#DBEAFE"),
+                "Rainfall": ("#F0F9FF", "#E0F2FE", "#F8FAFC"),
+                "Matrix Drift": ("#F0FDF4", "#DCFCE7", "#F8FAFC"),
+            }
+            c0, c1, c2 = light_palettes.get(self.mode, light_palettes["Galaxy"])
         base = QLinearGradient(0, 0, w, h)
         base.setColorAt(0.0, QColor(c0))
         base.setColorAt(0.52, QColor(c1))
@@ -1382,6 +1399,11 @@ class MainWindow(QMainWindow):
         QApplication.instance().style().polish(self)
         if hasattr(self, "theme_toggle_btn"):
             self.theme_toggle_btn.setText("🌙 Switch to Night" if theme_name == "day" else "☀️ Switch to Day")
+        # Keep the animated background, but change its luminance with the UI theme
+        # so dark Day-mode text never sits on a dark wallpaper.
+        if hasattr(self, "bg_anim"):
+            self.bg_anim.light_mode = (theme_name == "day")
+            self.bg_anim.update()
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
