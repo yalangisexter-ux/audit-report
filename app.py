@@ -936,47 +936,61 @@ class ProductivityChart(QWidget):
 
 
 class AnimatedBackground(QWidget):
-    """Animated particle background (bubbles or stars)."""
+    """Low-cost dark-premium animated wallpaper behind all main application tabs."""
     def __init__(self, parent=None, mode="bubbles"):
         super().__init__(parent)
         self.mode = mode
         self.particles = []
+        self.phase = 0.0
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_particles)
-        self.timer.start(40)
+        self.timer.start(45)
         self.init_particles()
 
     def init_particles(self):
         import random
         w, h = max(self.width(), 800), max(self.height(), 600)
         self.particles = []
-        for _ in range(30):
-            self.particles.append({
-                "x": random.randint(0, w),
-                "y": random.randint(0, h),
-                "r": random.randint(4, 12),
-                "speed": random.uniform(0.3, 1.2),
-                "opacity": random.uniform(0.15, 0.45),
-            })
+        for _ in range(34):
+            self.particles.append({"x": random.randint(0, w), "y": random.randint(0, h), "r": random.randint(2, 5), "speed": random.uniform(0.25, 0.8), "drift": random.uniform(-0.25, 0.25), "opacity": random.uniform(0.10, 0.28)})
 
     def update_particles(self):
+        import math
+        self.phase = (self.phase + 0.012) % (2 * math.pi)
+        width, height = max(self.width(), 1), max(self.height(), 1)
         for p in self.particles:
             p["y"] -= p["speed"]
-            if p["y"] < -20:
-                p["y"] = self.height() + 10
-                p["x"] = __import__("random").randint(0, self.width())
+            p["x"] += p["drift"]
+            if p["y"] < -12: p["y"] = height + 8
+            if p["x"] < -12: p["x"] = width + 8
+            elif p["x"] > width + 12: p["x"] = -8
         self.update()
 
     def paintEvent(self, event):
+        import math
+        from PySide6.QtGui import QLinearGradient, QRadialGradient
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect()
+        base = QLinearGradient(0, 0, rect.width(), rect.height())
+        base.setColorAt(0.0, QColor("#050811"))
+        base.setColorAt(0.52, QColor("#0B1020"))
+        base.setColorAt(1.0, QColor("#100A1D"))
+        painter.fillRect(rect, base)
+        w, h = max(rect.width(), 1), max(rect.height(), 1)
+        glows = [(0.18 + 0.10 * math.sin(self.phase), 0.25 + 0.08 * math.cos(self.phase * 0.8), QColor(124, 92, 252, 38), 0.55), (0.78 + 0.08 * math.cos(self.phase * 0.7), 0.62 + 0.10 * math.sin(self.phase * 0.6), QColor(34, 211, 238, 25), 0.48), (0.52 + 0.06 * math.sin(self.phase * 0.5), 0.92 + 0.025 * math.cos(self.phase), QColor(232, 121, 249, 18), 0.40)]
+        for gx, gy, color, scale in glows:
+            radius = max(180, int(min(w, h) * scale))
+            glow = QRadialGradient(int(gx * w), int(gy * h), radius)
+            glow.setColorAt(0.0, color)
+            glow.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+            painter.fillRect(rect, glow)
+        painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
-            color = QColor(124, 92, 252, int(p["opacity"] * 255)) if self.mode == "bubbles" else QColor(255, 255, 255, int(p["opacity"] * 200))
-            painter.setBrush(color)
-            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(167, 139, 250, max(0, min(255, int(p["opacity"] * 255)))))
             painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
         painter.end()
-
 
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
@@ -1185,7 +1199,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_row)
 
     def current_theme(self):
-        return self.db.get_setting("ui_theme", "day") or "day"
+        return self.db.get_setting("ui_theme", "night") or "night"
 
     def apply_theme(self, theme_name=None):
         theme_name = theme_name or self.current_theme()
@@ -3496,7 +3510,7 @@ def main():
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
     app.setFont(QFont("DejaVu Sans", 9))
     app.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
-    apply_app_theme(app, "day")
+    apply_app_theme(app, "night")
 
     try:
         db=Database()
