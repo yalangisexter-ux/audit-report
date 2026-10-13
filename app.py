@@ -3136,7 +3136,35 @@ class MainWindow(QMainWindow):
             return False
 
     def rollback_application(self):
-        """Install a previous published build without changing database data."""
+        """Require an active Admin account password before installing an older build."""
+        # Rollback changes executable files, so HR accounts must never authorize it.
+        username = str(self.current_user.get("username", "")).strip()
+        if str(self.current_user.get("role", self.user_role)).casefold() != "admin":
+            return error(self, "Administrator access is required to roll back the application.")
+
+        admin_row = self.db.conn.execute(
+            "SELECT id, username, role, password_salt, password_hash "
+            "FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+            (username,),
+        ).fetchone()
+        if not admin_row or str(admin_row["role"]).casefold() != "admin":
+            return error(self, "An active Administrator account is required for rollback.")
+
+        admin_password, ok = QInputDialog.getText(
+            self, "Administrator authentication",
+            "Enter the Administrator password to continue with rollback:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        if not admin_password:
+            return error(self, "Administrator password is required.")
+        _, password_digest = hash_pin(admin_password, admin_row["password_salt"])
+        if not secrets.compare_digest(password_digest, admin_row["password_hash"]):
+            self.db.log("Application rollback denied", f"Incorrect administrator password for {username}")
+            return error(self, "Incorrect Administrator password. Rollback was cancelled.")
+
+        self.db.log("Application rollback authorized", f"Administrator {username} requested rollback")
         progress = QProgressDialog("Loading previous versions...", "", 0, 0, self)
         progress.setWindowTitle("Application Rollback")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
