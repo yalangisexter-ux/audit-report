@@ -1144,6 +1144,9 @@ class MainWindow(QMainWindow):
         self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
 
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
+        for page in (self.home_tab, self.dashboard, self.employees_tab, self.tasks_tab, self.tracker_tab, self.attendance_tab, self.reports_tab, self.archive_tab, self.settings_tab):
+            page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            page.setAutoFillBackground(False)
         self.business_tab = BusinessTrackingTab(self.db)
         for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.business_tab,"Business Tracking"),(self.settings_tab,"Settings && Backup")]:
             self.tabs.addTab(widget,title)
