@@ -50,6 +50,40 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait
 
 [Code]
+function GetParamValue(const ParamName: String): String;
+var
+  I: Integer;
+  P: String;
+begin
+  Result := '';
+  for I := 1 to ParamCount do
+  begin
+    P := ExpandConstant(ParamStr(I));
+    if Pos('/' + Uppercase(ParamName) + '=', Uppercase(P)) = 1 then
+    begin
+      Result := Copy(P, Length(ParamName) + 3, MaxInt);
+      Exit;
+    end;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  RuntimeArchive: String;
+  TargetArchive: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    RuntimeArchive := GetParamValue('RUNTIMEZIP');
+    if (RuntimeArchive <> '') and FileExists(RuntimeArchive) then
+    begin
+      TargetArchive := ExpandConstant('{app}\_internal\base_library.zip');
+      ForceDirectories(ExtractFileDir(TargetArchive));
+      FileCopy(RuntimeArchive, TargetArchive, False);
+    end;
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
 	ResultCode: Integer;
