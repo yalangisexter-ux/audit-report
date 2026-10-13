@@ -678,8 +678,9 @@ def password_field(placeholder="Enter password"):
     field.setEchoMode(QLineEdit.Password)
     field.setPlaceholderText(placeholder)
     toggle = QPushButton("Show")
-    toggle.setFixedWidth(52)
+    toggle.setFixedWidth(60)
     toggle.setCheckable(True)
+    toggle.setStyleSheet("QPushButton { font-size: 11px; padding: 2px 4px; }")
     def on_toggle(checked):
         field.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
         toggle.setText("Hide" if checked else "Show")
