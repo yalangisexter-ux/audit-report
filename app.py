@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
-    QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog,
+    QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QProgressDialog,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
     QToolButton, QMenu, QSizePolicy, QFrame
 )
@@ -1747,8 +1747,8 @@ class MainWindow(QMainWindow):
             storage_form.addRow(label,path_label)
         l.addWidget(storage_box)
         row=QHBoxLayout(); l.addLayout(row)
-        set_tips = {"Create backup": "Create a backup of the local database", "Restore backup": "Restore database from a backup file", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
-        for label,slot in [("Create backup",self.backup_db),("Restore backup",self.restore_backup),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
+        set_tips = {"Create backup": "Create a backup of the local database", "Rollback database": "Restore a database backup without changing the application version", "Rollback application": "Install a previous application version without reverting the database", "Change password": "Change your login password", "Update recovery question": "Update your password recovery question", "Manage HR/Admin accounts": "Create or manage HR and Admin accounts", "Export employees CSV": "Export employee list to CSV"}
+        for label,slot in [("Create backup",self.backup_db),("Rollback database",self.restore_backup),("Rollback application",self.rollback_application),("Change password",self.change_password),("Update recovery question",self.update_recovery_question),("Manage HR/Admin accounts",self.manage_accounts),("Export employees CSV",self.export_employees_csv)]:
             b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(set_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
             if label == "Manage HR/Admin accounts" and self.user_role != "Admin":
                 b.setEnabled(False); b.setToolTip("Only an Admin account can manage user accounts.")
@@ -2911,6 +2911,69 @@ class MainWindow(QMainWindow):
         except Exception as ex:
             error(self,f"Backup failed:\n{ex}")
             return False
+
+    def rollback_application(self):
+        """Install a previous published build without changing database data."""
+        progress = QProgressDialog("Loading previous versions...", "", 0, 0, self)
+        progress.setWindowTitle("Application Rollback")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+        try:
+            request = Request("https://api.github.com/repos/" + GITHUB_REPOSITORY + "/releases?per_page=20", headers={"Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager"})
+            with urlopen(request, timeout=20) as response:
+                releases = json.loads(response.read().decode("utf-8"))
+            choices = []
+            for release in releases:
+                tag = str(release.get("tag_name", ""))
+                try:
+                    version = release_version_tuple(tag)
+                except ValueError:
+                    continue
+                if version < release_version_tuple(APP_VERSION):
+                    assets = {item.get("name"): item.get("browser_download_url", "") for item in release.get("assets", [])}
+                    url = assets.get("RawStrengthEmployeeAuditManager-Setup.exe", "")
+                    if url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
+                        choices.append((tag, url))
+            progress.close()
+            if not choices:
+                return error(self, "No previous published application version is available.")
+            labels = [item[0] + " (previous version)" for item in choices]
+            selected, ok = QInputDialog.getItem(self, "Rollback application", "Choose a version. Database data will remain unchanged:", labels, 0, False)
+            if not ok or not selected:
+                return
+            tag, url = choices[labels.index(selected)]
+            version = ".".join(str(part) for part in release_version_tuple(tag))
+            target_dir = APP_DIR / "updates" / version
+            target_dir.mkdir(parents=True, exist_ok=True)
+            installer = target_dir / "RawStrengthEmployeeAuditManager-Setup.exe"
+            progress = QProgressDialog("Downloading rollback installer...", "", 0, 0, self)
+            progress.setWindowTitle("Application Rollback")
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.setCancelButton(None)
+            progress.setMinimumDuration(0)
+            progress.show()
+            QApplication.processEvents()
+            with urlopen(Request(url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"}), timeout=60) as response:
+                data = response.read()
+            if not data:
+                raise ValueError("Downloaded installer is empty.")
+            installer.write_bytes(data)
+            progress.setLabelText("Starting silent rollback...")
+            QApplication.processEvents()
+            if sys.platform == "win32":
+                result = ctypes.windll.shell32.ShellExecuteW(None, "runas", str(installer), "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-", None, 1)
+                if result <= 32:
+                    raise OSError("Windows could not launch rollback installer (error " + str(result) + ").")
+            else:
+                subprocess.Popen([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], close_fds=True)
+            progress.close()
+            self.close()
+        except Exception as exc:
+            progress.close()
+            error(self, "Application rollback failed. Database data was not intentionally changed.\n" + str(exc))
 
     def restore_backup(self):
         path,_=QFileDialog.getOpenFileName(self,"Select database backup",str(BACKUP_DIR),"SQLite database (*.db)")
