@@ -1549,7 +1549,7 @@ class MainWindow(QMainWindow):
         self._wrap_page_in_scroll(self.dashboard, l, fixed_header=hero_widget)
         self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
         self.kpi_labels=[]
-        for title in ["Active employees","Tasks today","Completed today","Pending or blocked","Proof missing"]:
+        for title in ["Total Employees","Tasks Today","Completed","Pending","Proof Missing"]:
             box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setProperty("metricValue", True); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
         row=QHBoxLayout(); l.addLayout(row)
         self.dashboard_tasks=QTableWidget(0,6); self.dashboard_tasks.setHorizontalHeaderLabels(["Employee","Task","Status","Progress","Due","Proof"])
@@ -3757,6 +3757,8 @@ QLabel[guideTitle="true"] { color: #FFFFFF; font-size: 12pt; font-weight: 600; }
 QLabel[mutedText="true"] { color: #94A3B8; }
 QLabel { color: #E2E8F0; }
 QGroupBox { background: #0F172A; border: 1px solid #1E293B; border-radius: 12px; color: #E2E8F0; padding: 12px; margin-top: 8px; }
+QLabel[metricValue="true"] { color: #FFFFFF; font-size: 28pt; font-weight: 700; }
+QGroupBox:hover { border-color: #3B82F6; }
 QGroupBox::title { color: #94A3B8; subcontrol-origin: margin; left: 12px; }
 QTableWidget { background: #0F172A; color: #E2E8F0; border: 1px solid #1E293B; border-radius: 8px; gridline-color: #1E293B; }
 QTableWidget::item { padding: 6px; }
