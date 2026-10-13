@@ -2,8 +2,8 @@ name: Test Windows Installer
 
 on:
   workflow_dispatch:
-    push:
-      branches: [main]
+  push:
+    branches: [main]
 
 jobs:
   test:
@@ -12,7 +12,7 @@ jobs:
       - name: Download installer
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri "https://github.com/yalangisexter-ux/audit-report/releases/download/v1.1.137/RawStrengthEmployeeAuditManager-Setup.exe" -OutFile "setup.exe"
+          Invoke-WebRequest -Uri "https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe" -OutFile "setup.exe"
           Write-Host "Downloaded"
 
       - name: Install
