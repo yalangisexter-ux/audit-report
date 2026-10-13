@@ -33,7 +33,7 @@ jobs:
       - name: Stamp build version into the application
         shell: pwsh
         run: |
-          $version = "1.1.${{ github.run_number }}"
+          $version = "1.2.${{ github.run_number }}"
           Set-Content -Path "build_info.py" -Value "APP_VERSION = `"$version`"" -Encoding ascii
           Write-Host "Building application version $version"
       - name: Syntax check
@@ -67,7 +67,7 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          $env:APP_VERSION = "1.1.${{ github.run_number }}"
+          $env:APP_VERSION = "1.2.${{ github.run_number }}"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Installer output missing" }
       - name: Test fresh install and in-place upgrade preserve data
@@ -116,8 +116,8 @@ jobs:
       - name: Publish versioned release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: Raw Strength Employee Audit Manager v1.1.${{ github.run_number }}
+          tag_name: v1.2.${{ github.run_number }}
+          name: Raw Strength Employee Audit Manager v1.2.${{ github.run_number }}
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           generate_release_notes: false
           make_latest: true
