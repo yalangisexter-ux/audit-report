@@ -2048,6 +2048,19 @@ class MainWindow(QMainWindow):
         elif os.path.exists(target): webbrowser.open(Path(target).resolve().as_uri())
         else: info(self,"Proof path does not exist on this computer.")
 
+    def refresh_employee_filter(self):
+        if not hasattr(self, "att_employee_filter"): return
+        current = self.att_employee_filter.currentData()
+        self.att_employee_filter.blockSignals(True)
+        self.att_employee_filter.clear()
+        self.att_employee_filter.addItem("All employees", None)
+        for e in self.db.employees(False):
+            self.att_employee_filter.addItem(e["name"], e["id"])
+        idx = self.att_employee_filter.findData(current)
+        if idx >= 0:
+            self.att_employee_filter.setCurrentIndex(idx)
+        self.att_employee_filter.blockSignals(False)
+
     def attendance_selected_employee(self):
         # Prefer dropdown filter if a specific employee is selected
         if hasattr(self, "att_employee_filter") and self.att_employee_filter.currentData() is not None:
@@ -2185,6 +2198,7 @@ class MainWindow(QMainWindow):
 
     def refresh_attendance(self):
         if not hasattr(self,"att_table"): return
+        self.refresh_employee_filter()
         # Remember selected employee so check-in/out stay on the same row
         selected_eid = self.attendance_selected_employee()
         d=self.att_date.date().toString("yyyy-MM-dd")
