@@ -30,6 +30,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller pytest
+      - name: Stamp build version into the application
+        shell: pwsh
+        run: |
+          $version = "1.1.${{ github.run_number }}"
+          Set-Content -Path "build_info.py" -Value "APP_VERSION = `"$version`"" -Encoding ascii
+          Write-Host "Building application version $version"
       - name: Syntax check
         run: python -m py_compile app.py business_tracking.py build_info.py
       - name: Run regression tests
