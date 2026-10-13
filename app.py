@@ -2098,7 +2098,7 @@ class MainWindow(QMainWindow):
 
     def set_attendance_status(self, status):
         eid=self.attendance_selected_employee()
-        if not eid: return error(self,"Select an employee row first.")
+        if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         if self.db.is_holiday(d): return error(self,"This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
         if status in ("Absent", "Leave"):
@@ -2133,7 +2133,7 @@ class MainWindow(QMainWindow):
 
     def edit_attendance_times(self):
         eid = self.attendance_selected_employee()
-        if not eid: return error(self, "Select an employee row first.")
+        if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
         d = self.att_date.date().toString("yyyy-MM-dd")
         if self.db.is_holiday(d): return error(self, "This date is declared as a holiday.")
         old = self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)).fetchone()
@@ -2147,7 +2147,7 @@ class MainWindow(QMainWindow):
 
     def attendance_note(self):
         eid=self.attendance_selected_employee()
-        if not eid: return error(self,"Select an employee row first.")
+        if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         old=self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?",(eid,d)).fetchone()
         note,ok=QInputDialog.getText(self,"Attendance note","Note / correction reason:",text=old["attendance_note"] if old else "")
