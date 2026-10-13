@@ -35,6 +35,8 @@ RestartApplications=no
 
 [Files]
 Source: "dist\RawStrengthEmployeeAuditManager\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Explicitly include the Python standard-library archive used by the PyInstaller runtime.
+Source: "dist\RawStrengthEmployeeAuditManager\_internal\base_library.zip"; DestDir: "{app}\_internal"; Flags: ignoreversion
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
