@@ -156,6 +156,7 @@ class UpdateWorker(QObject):
     ready = Signal(str, str)
     current = Signal(str)
     failed = Signal(str)
+    progress = Signal(int, str)
     completed = Signal()
 
     def __init__(self, current_version):
@@ -195,11 +196,20 @@ class UpdateWorker(QObject):
             try:
                 request = Request(installer_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
                 with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
+                    total_bytes = int(response.headers.get("Content-Length") or 0)
+                    downloaded = 0
+                    self.progress.emit(0, "Downloading update installer...")
                     while True:
-                        chunk = response.read(1024 * 1024)
+                        chunk = response.read(256 * 1024)
                         if not chunk:
                             break
                         output.write(chunk)
+                        downloaded += len(chunk)
+                        if total_bytes > 0:
+                            percent = min(99, int(downloaded * 100 / total_bytes))
+                            self.progress.emit(percent, f"Downloading update installer... {percent}%")
+                        else:
+                            self.progress.emit(0, f"Downloading update installer... ({downloaded // 1024} KB)")
                 if partial_path.stat().st_size == 0:
                     raise ValueError("The downloaded installer is empty.")
                 os.replace(partial_path, installer_path)
@@ -1406,11 +1416,21 @@ class MainWindow(QMainWindow):
         worker.current.connect(self._update_is_current)
         worker.ready.connect(self._update_is_ready)
         worker.failed.connect(self._update_failed)
+        worker.progress.connect(self._update_download_progress)
+        self._update_progress.setRange(0, 100)
         worker.completed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(self._finish_update_check)
         thread.finished.connect(thread.deleteLater)
         thread.start()
+
+    def _update_download_progress(self, percent, message):
+        progress = getattr(self, "_update_progress", None)
+        if progress is not None:
+            progress.setRange(0, 100 if percent > 0 else 0)
+            if percent > 0:
+                progress.setValue(percent)
+            progress.setLabelText(message)
 
     def _update_is_current(self, version):
         if getattr(self, "_update_progress", None):
@@ -1424,12 +1444,26 @@ class MainWindow(QMainWindow):
             self._update_progress.setRange(0, 0)
             self._update_progress.repaint()
         try:
-            # Preserve a separate application rollback point before applying
-            # the update. The database is intentionally not rolled back here.
+            # Save a short-lived, one-use resume marker so the updater can reopen
+            # the same user's last page after a successful in-app update.
             app_backup_dir = APP_DIR / "app_rollback"
             app_backup_dir.mkdir(parents=True, exist_ok=True)
             (app_backup_dir / "previous_version.txt").write_text(str(APP_VERSION), encoding="utf-8")
             if sys.platform == "win32":
+                resume = {
+                    "user_id": int(self.current_user.get("id", 0)),
+                    "tab_index": int(self.tabs.currentIndex()),
+                    "created_at": datetime.now().timestamp(),
+                    "target_version": str(version),
+                }
+                resume_path = APP_DIR / "update_resume.json"
+                resume_tmp = resume_path.with_suffix(".tmp")
+                resume_tmp.write_text(json.dumps(resume), encoding="utf-8")
+                os.replace(resume_tmp, resume_path)
+                if getattr(self, "_update_progress", None):
+                    self._update_progress.setRange(0, 0)
+                    self._update_progress.setLabelText("Installing update... Please wait; the app will reopen automatically.")
+                    self._update_progress.repaint()
                 args = f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None, "runas", installer_path, args, None, 1
@@ -1444,7 +1478,7 @@ class MainWindow(QMainWindow):
                 self._update_progress = None
             return error(self, f"Could not start the silent update:\n{exc}")
         if getattr(self, "_update_progress", None):
-            self._update_progress.setLabelText("Installer launched. Windows may request administrator approval.")
+            self._update_progress.setLabelText("Installer launched. The app will reopen automatically after installation.")
             self._update_progress.close()
             self._update_progress = None
         self.close()
@@ -3634,12 +3668,37 @@ def main():
         setup_dialog = AccountSetupDialog(db)
         if setup_dialog.exec() != QDialog.Accepted:
             return 0
-    login=LoginDialog(db)
-    if login.exec()!=QDialog.Accepted: return 0
+    resume_user = None
+    resume_tab = 0
+    resume_path = APP_DIR / "update_resume.json"
+    try:
+        if resume_path.exists():
+            resume = json.loads(resume_path.read_text(encoding="utf-8"))
+            # Consume the marker immediately; it cannot be reused on later launches.
+            resume_path.unlink(missing_ok=True)
+            age = datetime.now().timestamp() - float(resume.get("created_at", 0))
+            if 0 <= age <= 600 and int(resume.get("target_version", "0.0.0").split(".")[0]) <= 999:
+                row = db.conn.execute("SELECT id,username,display_name,role,active FROM auth_users WHERE id=? AND active=1", (int(resume.get("user_id", 0)),)).fetchone()
+                if row:
+                    resume_user = dict(row)
+                    resume_tab = max(0, int(resume.get("tab_index", 0)))
+    except Exception:
+        try:
+            resume_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    if resume_user is None:
+        login=LoginDialog(db)
+        if login.exec()!=QDialog.Accepted: return 0
+        active_user = login.user
+    else:
+        active_user = resume_user
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
         info(login, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
-    win=MainWindow(db, login.user); win.apply_theme(); win.show()
+    win=MainWindow(db, active_user); win.apply_theme(); win.show()
+    if resume_user is not None and resume_tab < win.tabs.count():
+        win.tabs.setCurrentIndex(resume_tab)
     return app.exec()
 
 if __name__=="__main__":
