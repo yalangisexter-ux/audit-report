@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets
+import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
@@ -1344,9 +1344,20 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
-            subprocess.Popen([installer_path], close_fds=True)
-        except OSError as exc:
+            if sys.platform == "win32":
+                # The installer targets Program Files and requires elevation.
+                # ShellExecuteW with the "runas" verb requests the Windows UAC
+                # prompt; plain subprocess.Popen does not reliably elevate it.
+                result = ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", installer_path, None, None, 1
+                )
+                if result <= 32:
+                    raise OSError(f"Windows could not launch the installer (ShellExecute error {result}).")
+            else:
+                subprocess.Popen([installer_path], close_fds=True)
+        except (OSError, AttributeError) as exc:
             return error(self, f"Could not start the update installer:\n{exc}")
+        # Close only after Windows accepted the elevated installer launch.
         self.close()
 
     def _update_failed(self, message):
