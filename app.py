@@ -1970,6 +1970,7 @@ class MainWindow(QMainWindow):
             self.db.conn.execute("INSERT INTO employees(employee_code,name,department,designation,phone,email,joining_date,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(*vals,now_text()))
             self.db.conn.commit(); self.db.log("Employee added",vals[1]); self.refresh_all()
         except sqlite3.IntegrityError: error(self,"That employee code already exists.")
+        except sqlite3.Error as ex: error(self, f"Could not save employee: {ex}")
 
     def edit_employee(self):
         eid=self.selected_id(self.emp_table)
@@ -1983,6 +1984,7 @@ class MainWindow(QMainWindow):
             self.db.conn.execute("UPDATE employees SET employee_code=?,name=?,department=?,designation=?,phone=?,email=?,joining_date=?,notes=? WHERE id=?",(*vals,eid))
             self.db.conn.commit(); self.db.log("Employee edited",vals[1]); self.refresh_all()
         except sqlite3.IntegrityError: error(self,"That employee code already exists.")
+        except sqlite3.Error as ex: error(self, f"Could not update employee: {ex}")
 
     def toggle_employee(self):
         eid=self.selected_id(self.emp_table)
@@ -2007,8 +2009,11 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
-        self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text())); self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
+        try:
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
+        except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
     def edit_task(self, table=None):
         table=table or self.task_table
