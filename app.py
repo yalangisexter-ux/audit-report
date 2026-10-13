@@ -1032,8 +1032,9 @@ class AnimatedBackground(QWidget):
         if self.wallpaper_renderer and self.wallpaper_renderer.isValid():
             self.wallpaper_renderer.render(painter, QRectF(rect))
             veil = QLinearGradient(0, 0, 0, h)
-            veil.setColorAt(0.0, QColor(4, 8, 20, 34))
-            veil.setColorAt(1.0, QColor(4, 8, 20, 82))
+            # Keep bundled artwork visible instead of burying it under a dark overlay.
+            veil.setColorAt(0.0, QColor(4, 8, 20, 8))
+            veil.setColorAt(1.0, QColor(4, 8, 20, 24))
             painter.fillRect(rect, veil)
         if self.mode in ("Ambient Glow", "Aurora Waves"):
             colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
@@ -3657,15 +3658,15 @@ QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
-/* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.74); color: #0F172A; border: 1px solid rgba(203,213,225,0.92); }
-QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
+/* Day mode: frosted-glass surfaces let the wallpaper show through without hurting readability. */
+QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.66); color: #0F172A; border: 1px solid rgba(255,255,255,0.88); border-radius: 16px; }
+QGroupBox { background: rgba(255,255,255,0.66); color: #0F172A; border: 1px solid rgba(255,255,255,0.88); border-radius: 16px; }
 QGroupBox::title { color: #334155; }
-QLabel { color: #1E293B; }
+QLabel { color: #1E293B; background: transparent; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
-QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #CBD5E1; }
-QWidget#guideItem { background: #F1F5F9; border: 1px solid #CBD5E1; }
+QWidget#sessionStrip { background: rgba(226,232,240,0.64); border: 1px solid rgba(255,255,255,0.82); border-radius: 14px; }
+QWidget#guideItem { background: rgba(241,245,249,0.62); border: 1px solid rgba(255,255,255,0.82); border-radius: 12px; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
 QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
 QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
