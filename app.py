@@ -1126,6 +1126,8 @@ class MainWindow(QMainWindow):
         self.title_bar.raise_()
 
         self.tabs = QTabWidget()
+        self.tabs.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.tabs.setAutoFillBackground(False)
         self.tabs.setTabPosition(QTabWidget.TabPosition.North)
         self.tabs.setMovable(False)
         self.tabs.setDocumentMode(True)
@@ -1133,8 +1135,10 @@ class MainWindow(QMainWindow):
         self.tabs.setUsesScrollButtons(True)
         self.tabs.tabBar().setExpanding(False)
         central_layout.addWidget(self.tabs)
+        central.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        central.setAutoFillBackground(False)
         self.setCentralWidget(central)
-        # Resize background with window
+        # Keep page containers translucent so the animated wallpaper is visible.
         self.bg_anim.setParent(central)
         self.bg_anim.lower()
         self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
@@ -1220,7 +1224,12 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setObjectName("pageScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setStyleSheet("background: transparent;")
         content = QWidget()
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        content.setAutoFillBackground(False)
         content.setObjectName("pageContent")
         content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
         content_layout.setSpacing(12)
@@ -1303,7 +1312,12 @@ class MainWindow(QMainWindow):
         self.home_scroll = QScrollArea()
         self.home_scroll.setWidgetResizable(True)
         self.home_scroll.setObjectName("homeScroll")
+        self.home_scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.home_scroll.setAutoFillBackground(False)
+        self.home_scroll.viewport().setStyleSheet("background: transparent;")
         content = QWidget()
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        content.setAutoFillBackground(False)
         content.setObjectName("homeContent")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(26, 22, 26, 22)
@@ -1922,43 +1936,20 @@ class MainWindow(QMainWindow):
         l.addStretch()
 
     def polish_tables(self):
-        """Normalize table sizing, alignment, and overflow handling across every module."""
-        for page in (self.dashboard, self.employees_tab, self.tasks_tab, self.tracker_tab, self.attendance_tab, self.reports_tab, self.archive_tab, self.settings_tab):
-            page_layout = page.layout()
-            if page_layout:
-                page_layout.setContentsMargins(20, 18, 20, 18)
-                page_layout.setSpacing(14)
-        # Include tables created by the separate Business Tracking module too.
+        """Apply shared table styling without overriding per-screen layout rules."""
         for table in self.findChildren(QTableWidget):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
             table.verticalHeader().setDefaultSectionSize(36)
-            table.setWordWrap(False)
-            table.setTextElideMode(Qt.TextElideMode.ElideRight)
-            table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-            table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             table.setCornerButtonEnabled(False)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setSelectionMode(QAbstractItemView.SingleSelection)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            header = table.horizontalHeader()
-            header.setMinimumHeight(38)
-            header.setMinimumSectionSize(64)
-            header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-            header.setHighlightSections(False)
-            header.setStretchLastSection(False)
-            header.setSectionResizeMode(QHeaderView.ResizeToContents)
-            if table.columnCount():
-                header.setSectionResizeMode(table.columnCount() - 1, QHeaderView.Stretch)
-            for row in range(table.rowCount()):
-                for col in range(table.columnCount()):
-                    item = table.item(row, col)
-                    if item is None:
-                        continue
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if col == 0 else Qt.AlignmentFlag.AlignCenter))
-                    if item.text():
-                        item.setToolTip(item.text())
+            table.horizontalHeader().setMinimumHeight(38)
+            table.horizontalHeader().setMinimumSectionSize(64)
+            table.horizontalHeader().setHighlightSections(False)
+            # Keep each table's own column sizing and cell alignment.
 
     def selected_id(self, table, col=0):
         rows=table.selectionModel().selectedRows()
