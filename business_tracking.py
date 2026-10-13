@@ -466,11 +466,15 @@ class BusinessTrackingTab(QWidget):
         form.addRow(buttons)
         if d.exec() != QDialog.Accepted or not name.text().strip():
             return
-        self.db.conn.execute(
-            "INSERT INTO bt_members(name,contact) VALUES(?,?)",
-            (name.text().strip(), contact.text().strip()),
-        )
-        self.db.conn.commit()
+        try:
+            self.db.conn.execute(
+                "INSERT INTO bt_members(name,contact) VALUES(?,?)",
+                (name.text().strip(), contact.text().strip()),
+            )
+            self.db.conn.commit()
+        except sqlite3.Error as ex:
+            QMessageBox.warning(self, "Could not save member", str(ex))
+            return
         self.refresh_all()
 
     def add_activity(self):
@@ -498,9 +502,13 @@ class BusinessTrackingTab(QWidget):
         if quantity is None:
             QMessageBox.warning(self, "Invalid quantity", "Quantity must be a non-negative number.")
             return
-        self.db.conn.execute(
-            "INSERT INTO bt_activities(employee_id,task_type,quantity,remarks,created_at) VALUES(?,?,?,?,?)",
-            (emp.currentData(), task_type.currentText(), quantity, remarks.text().strip(), now_text()),
-        )
-        self.db.conn.commit()
+        try:
+            self.db.conn.execute(
+                "INSERT INTO bt_activities(employee_id,task_type,quantity,remarks,created_at) VALUES(?,?,?,?,?)",
+                (emp.currentData(), task_type.currentText(), quantity, remarks.text().strip(), now_text()),
+            )
+            self.db.conn.commit()
+        except sqlite3.Error as ex:
+            QMessageBox.warning(self, "Could not save activity", str(ex))
+            return
         self.refresh_all()
