@@ -2662,26 +2662,88 @@ class MainWindow(QMainWindow):
                 self.attendance_summary_table.setItem(r,c,item)
 
     def refresh_dashboard(self):
-        if not hasattr(self,"kpi_labels"): return
-        d=date.today().isoformat()
-        active=len(self.db.employees(False)); tasks=self.db.tasks(d)
-        completed=sum(1 for t in tasks if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100)
-        pending=sum(1 for t in tasks if t["status"] in ("Not started","In progress","Blocked","Pending review","Pending"))
-        missing=sum(1 for t in tasks if not t["proof_url"] and t["status"] in ("Submitted","Completed"))
-        for lab,val in zip(self.kpi_labels,[active,len(tasks),completed,pending,missing]): lab.setText(str(val))
+        if not hasattr(self, "kpi_labels"):
+            return
+        report_date = date.today().isoformat()
+        employees = self.db.employees(False)
+        tasks = self.db.tasks(report_date)
+        attendance_rows = []
+        present = 0
+        absent = 0
+        checked_in = 0
+        for employee in employees:
+            record = self.db.conn.execute(
+                "SELECT attendance_status, check_in FROM attendance WHERE employee_id=? AND work_date=?",
+                (employee["id"], report_date),
+            ).fetchone()
+            status = record["attendance_status"] if record and record["attendance_status"] else "Not checked"
+            check_in = record["check_in"] if record and record["check_in"] else "—"
+            if status.lower() == "present" or (record and record["check_in"]):
+                present += 1
+                if record and record["check_in"]:
+                    checked_in += 1
+                status = "Present"
+            elif status.lower() == "absent":
+                absent += 1
+            attendance_rows.append((employee["name"], status, check_in))
+        open_tasks = sum(1 for task in tasks if task["status"] not in ("Completed", "Submitted") and int(task["progress"] or 0) < 100)
+        values = [len(employees), present, absent, open_tasks, checked_in]
+        for label, value in zip(self.kpi_labels, values):
+            label.setText(str(value))
+        if hasattr(self, "dashboard_clock"):
+            self.dashboard_clock.setText(datetime.now().strftime("%d %B %Y  ·  %I:%M %p"))
+
+        if hasattr(self, "dashboard_recent"):
+            self.dashboard_recent.setRowCount(0)
+            for index, employee in enumerate(reversed(employees[-8:]), 1):
+                row = self.dashboard_recent.rowCount()
+                self.dashboard_recent.insertRow(row)
+                values = [
+                    str(index),
+                    employee["employee_code"] or "",
+                    employee["name"] or "",
+                    employee["designation"] or "",
+                    "Active" if employee["active"] else "Inactive",
+                ]
+                for column, value in enumerate(values):
+                    self.dashboard_recent.setItem(row, column, QTableWidgetItem(str(value)))
+
         self.dashboard_tasks.setRowCount(0)
-        for t in tasks:
-            r=self.dashboard_tasks.rowCount(); self.dashboard_tasks.insertRow(r)
-            vals=[t["employee_name"],t["title"],t["status"],f'{t["progress"]}%',t["due_time"],"Missing" if not t["proof_url"] else "Provided"]
-            self.set_row_items(self.dashboard_tasks, r, vals, status_cols={2, 5})
-        metrics=[]
-        self.productivity_table.setRowCount(0)
-        for e in self.db.employees(False):
-            m=self.employee_productivity(e); metrics.append((e["name"],m["score"]))
-            vals=[e["name"],m["start"].isoformat(),m["working_days"],m["present"],m["tasks"],m["completed"],f"{m['score']}%"]
-            r=self.productivity_table.rowCount(); self.productivity_table.insertRow(r)
-            for c,v in enumerate(vals): self.productivity_table.setItem(r,c,QTableWidgetItem(str(v)))
-        self.productivity_chart.set_values(metrics)
+        for task in tasks[:12]:
+            row = self.dashboard_tasks.rowCount()
+            self.dashboard_tasks.insertRow(row)
+            values = [task["employee_name"], task["title"], task["status"], f'{task["progress"]}%', task["due_time"] or "—"]
+            for column, value in enumerate(values):
+                self.dashboard_tasks.setItem(row, column, QTableWidgetItem(str(value)))
+
+        if hasattr(self, "dashboard_attendance_table"):
+            self.dashboard_attendance_table.setRowCount(0)
+            for name, status, check_in in attendance_rows[:8]:
+                row = self.dashboard_attendance_table.rowCount()
+                self.dashboard_attendance_table.insertRow(row)
+                for column, value in enumerate((name, status, check_in)):
+                    self.dashboard_attendance_table.setItem(row, column, QTableWidgetItem(str(value)))
+            total = len(employees)
+            percent = round((present / total) * 100) if total else 0
+            self.dashboard_attendance_summary.setText(
+                f"{percent}% checked in\n{present} Present   ·   {absent} Absent   ·   {max(0, total-present-absent)} Not checked"
+            )
+
+        if hasattr(self, "productivity_table"):
+            self.productivity_table.setRowCount(0)
+            metrics = []
+            for employee in employees:
+                metric = self.employee_productivity(employee)
+                metrics.append((employee["name"], metric["score"]))
+                values = [
+                    employee["name"], metric["start"].isoformat(), metric["working_days"],
+                    metric["present"], metric["tasks"], metric["completed"], f'{metric["score"]}%',
+                ]
+                row = self.productivity_table.rowCount()
+                self.productivity_table.insertRow(row)
+                for column, value in enumerate(values):
+                    self.productivity_table.setItem(row, column, QTableWidgetItem(str(value)))
+            self.productivity_chart.set_values(metrics)
 
     def report_data(self, report_date, employee_id=None):
         emps=self._report_employees(employee_id)
