@@ -1371,29 +1371,39 @@ class MainWindow(QMainWindow):
 
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
-        session_layout = QHBoxLayout(session_strip)
-        session_layout.setContentsMargins(14, 9, 14, 9)
-        session_layout.setSpacing(8)
+        session_layout = QGridLayout(session_strip)
+        session_layout.setContentsMargins(16, 12, 16, 12)
+        session_layout.setHorizontalSpacing(12)
+        session_layout.setVerticalSpacing(8)
         session_label = QLabel("SIGNED IN")
         session_label.setProperty("sessionLabel", True)
-        session_layout.addWidget(session_label)
-        session_layout.addWidget(QLabel(self.current_user.get("username", "N/A")))
+        session_layout.addWidget(session_label, 0, 0)
+        username_label = QLabel(self.current_user.get("username", "N/A"))
+        username_label.setMinimumWidth(70)
+        session_layout.addWidget(username_label, 0, 1)
         role_label = QLabel(self.user_role)
         role_label.setProperty("roleBadge", True)
-        session_layout.addWidget(role_label)
-        session_layout.addStretch(1)
+        role_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        session_layout.addWidget(role_label, 0, 2)
+        session_layout.setColumnStretch(3, 1)
+
         version_label = QLabel(f"Version {APP_VERSION}")
         version_label.setProperty("mutedText", True)
-        session_layout.addWidget(version_label)
-        self.update_button = QPushButton("Update application")
+        session_layout.addWidget(version_label, 1, 0)
+        self.update_button = QPushButton("Check for updates")
         self.update_button.setToolTip("Check GitHub for the latest application installer")
+        self.update_button.setMinimumWidth(150)
         self.update_button.clicked.connect(self.check_for_updates)
-        session_layout.addWidget(self.update_button)
-        self.theme_toggle_btn = QPushButton("Switch to Night mode")
+        session_layout.addWidget(self.update_button, 1, 1)
+        self.theme_toggle_btn = QPushButton("Switch theme")
         self.theme_toggle_btn.setToolTip("Toggle day / night appearance")
+        self.theme_toggle_btn.setMinimumWidth(120)
         self.theme_toggle_btn.clicked.connect(self.toggle_theme)
-        session_layout.addWidget(self.theme_toggle_btn)
-        session_layout.addWidget(QLabel("Local database · Offline"))
+        session_layout.addWidget(self.theme_toggle_btn, 1, 2)
+        database_label = QLabel("Local database · Offline")
+        database_label.setProperty("mutedText", True)
+        database_label.setWordWrap(True)
+        session_layout.addWidget(database_label, 1, 3)
         content_layout.addWidget(session_strip)
 
         guide_heading = QLabel("Workspace guide")
@@ -3653,11 +3663,11 @@ QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:1 #4C1D95); border-radius: 16px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.20); border-radius: 18px; }
+QWidget#homeContent { background: rgba(15,23,42,0.94); border: 1px solid rgba(148,163,184,0.30); border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
 QWidget#pageContent { background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.20); border-radius: 18px; }
 QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
-QWidget#sessionStrip { background: #111827; border: 0; border-radius: 16px; }
+QWidget#sessionStrip { background: #0B1220; border: 1px solid #334155; border-radius: 12px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #312E81; color: #DDD6FE; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #F8FAFC; font-size: 12.5pt; font-weight: 700; }
