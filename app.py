@@ -1638,7 +1638,17 @@ class MainWindow(QMainWindow):
         emp_row.addStretch(1)
         l.addLayout(emp_row)
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
-        self.att_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.att_table, 3)
+        att_header = self.att_table.horizontalHeader()
+        att_header.setSectionResizeMode(QHeaderView.Interactive)
+        att_header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        att_header.setMinimumSectionSize(82)
+        for col in range(6):
+            att_header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        att_header.setSectionResizeMode(6, QHeaderView.Stretch)
+        self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.att_table.setWordWrap(False)
+        l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
         l.addWidget(summary_note)
@@ -1646,9 +1656,15 @@ class MainWindow(QMainWindow):
         headers = ["Employee","Start date","Work days","Present","Absent","Leave","Holidays","Total present"]
         self.attendance_summary_table.setHorizontalHeaderLabels(headers)
         header = self.attendance_summary_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        header.setStretchLastSection(True)
-        header.setMinimumSectionSize(70)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setMinimumSectionSize(82)
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        for col in range(2, len(headers)):
+            header.setSectionResizeMode(col, QHeaderView.Stretch)
+        self.attendance_summary_table.setWordWrap(False)
+        self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         for i, h in enumerate(headers):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -2378,9 +2394,12 @@ class MainWindow(QMainWindow):
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
             for c,v in enumerate(vals,1):
                 if c == 2:
-                    self.att_table.setItem(r, c, self.status_item(v))
+                    item = self.status_item(v)
                 else:
-                    self.att_table.setItem(r, c, QTableWidgetItem(str(v or "")))
+                    item = QTableWidgetItem(str(v or ""))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.att_table.setItem(r, c, item)
+            name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         if restore_row >= 0:
             self.att_table.selectRow(restore_row)
         self.refresh_attendance_summary()
@@ -2409,7 +2428,10 @@ class MainWindow(QMainWindow):
             since=sum(1 for a in since_rows if not self.db.is_holiday(a["work_date"]) and (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])))
             vals=[e["name"],start.isoformat(),working,present,absent,leave,holidays,since]
             r=self.attendance_summary_table.rowCount(); self.attendance_summary_table.insertRow(r)
-            for c,v in enumerate(vals): self.attendance_summary_table.setItem(r,c,QTableWidgetItem(str(v)))
+            for c,v in enumerate(vals):
+                item = QTableWidgetItem(str(v))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if c == 0 else Qt.AlignmentFlag.AlignCenter))
+                self.attendance_summary_table.setItem(r,c,item)
 
     def refresh_dashboard(self):
         if not hasattr(self,"kpi_labels"): return
