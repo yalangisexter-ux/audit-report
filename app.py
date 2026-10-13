@@ -956,10 +956,11 @@ class ProductivityChart(QWidget):
 
 
 class AnimatedBackground(QWidget):
-    """Low-cost dark-premium animated wallpaper behind all main application tabs."""
-    def __init__(self, parent=None, mode="bubbles"):
+    """Selectable, low-cost animated wallpaper behind the main application tabs."""
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift")
+    def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
-        self.mode = mode
+        self.mode = mode if mode in self.STYLES else "Ambient Glow"
         self.particles = []
         self.phase = 0.0
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -972,17 +973,20 @@ class AnimatedBackground(QWidget):
         import random
         w, h = max(self.width(), 800), max(self.height(), 600)
         self.particles = []
-        for _ in range(34):
-            self.particles.append({"x": random.randint(0, w), "y": random.randint(0, h), "r": random.randint(2, 5), "speed": random.uniform(0.25, 0.8), "drift": random.uniform(-0.25, 0.25), "opacity": random.uniform(0.10, 0.28)})
+        count = 48 if self.mode in ("Starfield", "Rainfall", "Matrix Drift") else 34
+        for _ in range(count):
+            self.particles.append({"x": random.randint(0, w), "y": random.randint(0, h), "r": random.randint(1, 4), "speed": random.uniform(0.6, 2.2) if self.mode in ("Rainfall", "Matrix Drift") else random.uniform(0.25, 0.9), "drift": random.uniform(-0.3, 0.3), "opacity": random.uniform(0.12, 0.42), "length": random.randint(8, 22)})
 
     def update_particles(self):
         import math
-        self.phase = (self.phase + 0.012) % (2 * math.pi)
+        self.phase = (self.phase + 0.018) % (2 * math.pi)
         width, height = max(self.width(), 1), max(self.height(), 1)
         for p in self.particles:
-            p["y"] -= p["speed"]
-            p["x"] += p["drift"]
-            if p["y"] < -12: p["y"] = height + 8
+            p["y"] += p["speed"] if self.mode in ("Rainfall", "Matrix Drift") else -p["speed"]
+            if self.mode == "Aurora Waves": p["x"] += math.sin(self.phase + p["y"] * 0.008) * 0.55
+            else: p["x"] += p["drift"]
+            if p["y"] < -24: p["y"] = height + 12
+            elif p["y"] > height + 24: p["y"] = -12
             if p["x"] < -12: p["x"] = width + 8
             elif p["x"] > width + 12: p["x"] = -8
         self.update()
@@ -993,23 +997,53 @@ class AnimatedBackground(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
-        base = QLinearGradient(0, 0, rect.width(), rect.height())
+        w, h = max(rect.width(), 1), max(rect.height(), 1)
+        base = QLinearGradient(0, 0, w, h)
         base.setColorAt(0.0, QColor("#050811"))
         base.setColorAt(0.52, QColor("#0B1020"))
         base.setColorAt(1.0, QColor("#100A1D"))
         painter.fillRect(rect, base)
-        w, h = max(rect.width(), 1), max(rect.height(), 1)
-        glows = [(0.18 + 0.10 * math.sin(self.phase), 0.25 + 0.08 * math.cos(self.phase * 0.8), QColor(124, 92, 252, 38), 0.55), (0.78 + 0.08 * math.cos(self.phase * 0.7), 0.62 + 0.10 * math.sin(self.phase * 0.6), QColor(34, 211, 238, 25), 0.48), (0.52 + 0.06 * math.sin(self.phase * 0.5), 0.92 + 0.025 * math.cos(self.phase), QColor(232, 121, 249, 18), 0.40)]
-        for gx, gy, color, scale in glows:
-            radius = max(180, int(min(w, h) * scale))
-            glow = QRadialGradient(int(gx * w), int(gy * h), radius)
-            glow.setColorAt(0.0, color)
-            glow.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
-            painter.fillRect(rect, glow)
+        if self.mode in ("Ambient Glow", "Aurora Waves"):
+            colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
+            for i, color in enumerate(colors):
+                x = int(w * (0.18 + i * 0.30 + 0.08 * math.sin(self.phase * (0.7 + i * 0.12))))
+                y = int(h * (0.25 + i * 0.24 + 0.10 * math.cos(self.phase * (0.6 + i * 0.15))))
+                radius = max(180, int(min(w, h) * (0.55 if self.mode == "Ambient Glow" else 0.72)))
+                glow = QRadialGradient(x, y, radius)
+                glow.setColorAt(0.0, QColor(*color))
+                glow.setColorAt(1.0, QColor(color[0], color[1], color[2], 0))
+                painter.fillRect(rect, glow)
+            if self.mode == "Aurora Waves":
+                painter.setPen(QPen(QColor(45, 212, 191, 30), 2.0))
+                for band in range(5):
+                    path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
+                    for x in range(0, w + 12, 12):
+                        y = int(h * (0.18 + band * 0.13) + math.sin(x * 0.009 + self.phase + band) * 26 + math.sin(x * 0.003 - self.phase) * 18)
+                        if x == 0: path.moveTo(x, y)
+                        else: path.lineTo(x, y)
+                    painter.drawPath(path)
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
-            painter.setBrush(QColor(167, 139, 250, max(0, min(255, int(p["opacity"] * 255)))))
-            painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
+            alpha = max(0, min(255, int(p["opacity"] * 255)))
+            if self.mode == "Starfield":
+                painter.setBrush(QColor(226, 232, 240, alpha))
+                painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
+            elif self.mode == "Floating Bubbles":
+                painter.setBrush(QColor(124, 92, 252, int(alpha * 0.42)))
+                painter.setPen(QPen(QColor(167, 139, 250, int(alpha * 0.55)), 1))
+                painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"] * 3, p["r"] * 3)
+                painter.setPen(Qt.PenStyle.NoPen)
+            elif self.mode == "Rainfall":
+                painter.setPen(QPen(QColor(56, 189, 248, alpha), 1.2))
+                painter.drawLine(int(p["x"]), int(p["y"]), int(p["x"] - 3), int(p["y"] + p["length"]))
+                painter.setPen(Qt.PenStyle.NoPen)
+            elif self.mode == "Matrix Drift":
+                painter.setPen(QPen(QColor(74, 222, 128, alpha), 1.2))
+                painter.drawLine(int(p["x"]), int(p["y"]), int(p["x"]), int(p["y"] + p["length"]))
+                painter.setPen(Qt.PenStyle.NoPen)
+            else:
+                painter.setBrush(QColor(167, 139, 250, alpha))
+                painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
         painter.end()
 
 class MainWindow(QMainWindow):
@@ -1070,7 +1104,7 @@ class MainWindow(QMainWindow):
         title_layout.addWidget(self.btn_close)
 
         # Animated background
-        self.bg_anim = AnimatedBackground(mode="bubbles")
+        self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow")
         self.bg_anim.setObjectName("animatedBg")
 
         # Central content
@@ -1242,6 +1276,14 @@ class MainWindow(QMainWindow):
     def toggle_theme(self):
         nxt = "night" if self.current_theme() == "day" else "day"
         self.apply_theme(nxt)
+
+    def set_animation_style(self, style_name):
+        style_name = style_name or "Ambient Glow"
+        self.db.set_setting("animation_style", style_name)
+        if hasattr(self, "bg_anim"):
+            self.bg_anim.mode = style_name
+            self.bg_anim.init_particles()
+            self.bg_anim.update()
 
     def build_home(self):
 
@@ -1812,7 +1854,18 @@ class MainWindow(QMainWindow):
         theme_row.addWidget(self.theme_combo)
         theme_row.addStretch(1)
         appearance_layout.addLayout(theme_row)
-        note=QLabel("Choose a color theme. Changes apply immediately.")
+        animation_row = QHBoxLayout()
+        animation_row.addWidget(QLabel("Live wallpaper"))
+        self.animation_combo = QComboBox()
+        self.animation_combo.addItems(["Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift"])
+        saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
+        if self.animation_combo.findText(saved_animation) >= 0:
+            self.animation_combo.setCurrentText(saved_animation)
+        self.animation_combo.currentTextChanged.connect(self.set_animation_style)
+        animation_row.addWidget(self.animation_combo, 1)
+        appearance_layout.addLayout(animation_row)
+        note=QLabel("Choose a color theme and animated wallpaper. Changes apply immediately across the main app screens.")
+        note.setWordWrap(True)
         note.setProperty("mutedText", True)
         appearance_layout.addWidget(note)
         l.addWidget(appearance_box)
