@@ -2088,12 +2088,16 @@ class MainWindow(QMainWindow):
         self.att_employee_filter.blockSignals(False)
 
     def attendance_selected_employee(self):
-        # Prefer dropdown filter if a specific employee is selected
-        if hasattr(self, "att_employee_filter") and self.att_employee_filter.currentData() is not None:
-            return self.att_employee_filter.currentData()
-        rows=self.att_table.selectionModel().selectedRows()
-        if not rows: return None
-        item=self.att_table.item(rows[0].row(),0)
+        # A specific employee in the filter is the source of truth for attendance actions.
+        # Only require a table-row choice when the filter is set to All employees.
+        if hasattr(self, "att_employee_filter"):
+            employee_id = self.att_employee_filter.currentData()
+            if employee_id is not None:
+                return employee_id
+        rows = self.att_table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        item = self.att_table.item(rows[0].row(), 0)
         return item.data(Qt.UserRole) if item else None
 
     def set_attendance_status(self, status):
