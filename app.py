@@ -1421,6 +1421,18 @@ class MainWindow(QMainWindow):
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
         page_layout.addWidget(welcome)
+
+        # Keep application rollback discoverable from Home, not buried in Settings.
+        rollback_row = QHBoxLayout()
+        rollback_row.setContentsMargins(26, 0, 26, 4)
+        rollback_row.addStretch(1)
+        self.home_rollback_button = QPushButton("↶  Roll Back Version")
+        self.home_rollback_button.setToolTip("Install a previous published application version without reverting customer database data.")
+        self.home_rollback_button.setMinimumHeight(38)
+        self.home_rollback_button.setMinimumWidth(180)
+        self.home_rollback_button.clicked.connect(self.rollback_application)
+        rollback_row.addWidget(self.home_rollback_button)
+        page_layout.addLayout(rollback_row)
         page_layout.addWidget(self.home_scroll)
 
     def check_for_updates(self):
@@ -1917,7 +1929,6 @@ class MainWindow(QMainWindow):
         actions = [
             ("Create backup", self.backup_db, "Create a backup of the local database"),
             ("Restore database", self.restore_backup, "Restore a database backup without changing the application version"),
-            ("Rollback app", self.rollback_application, "Install a previous application version without reverting the database"),
             ("Change password", self.change_password, "Change your login password"),
             ("Recovery question", self.update_recovery_question, "Update your password recovery question"),
             ("Manage accounts", self.manage_accounts, "Create or manage HR and Admin accounts"),
@@ -3453,7 +3464,7 @@ QDialog#loginDialog QPushButton[flat="true"] { background: transparent; color: #
 QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
-QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #EAF2FF, stop:0.48 #F4F0FF, stop:1 #E0F7FA); }
+QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #EAF2FF, stop:0.48 #F4F0FF, stop:1 #E0F7FA); }\nQWidget#homeContent, QWidget#pageContent { background: transparent; }\nQWidget#welcomeHero, QWidget#sessionStrip, QWidget#guideItem { background: rgba(255,255,255,0.74); border: 1px solid rgba(255,255,255,0.92); border-radius: 18px; }\nQGroupBox { background: rgba(255,255,255,0.72); border: 1px solid rgba(148,163,184,0.38); border-radius: 14px; margin-top: 12px; padding: 12px 8px 8px 8px; }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
