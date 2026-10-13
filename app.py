@@ -3677,7 +3677,8 @@ def main():
             # Consume the marker immediately; it cannot be reused on later launches.
             resume_path.unlink(missing_ok=True)
             age = datetime.now().timestamp() - float(resume.get("created_at", 0))
-            if 0 <= age <= 600 and int(resume.get("target_version", "0.0.0").split(".")[0]) <= 999:
+            target_version = str(resume.get("target_version", "0.0.0"))
+            if 0 <= age <= 600 and release_version_tuple(APP_VERSION) >= release_version_tuple(target_version):
                 row = db.conn.execute("SELECT id,username,display_name,role,active FROM auth_users WHERE id=? AND active=1", (int(resume.get("user_id", 0)),)).fetchone()
                 if row:
                     resume_user = dict(row)
@@ -3694,7 +3695,7 @@ def main():
     else:
         active_user = resume_user
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
-        info(login, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
+        info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
     win=MainWindow(db, active_user); win.apply_theme(); win.show()
     if resume_user is not None and resume_tab < win.tabs.count():
