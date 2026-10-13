@@ -3705,6 +3705,20 @@ QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
 QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
 QCheckBox, QRadioButton { color: #E2E8F0; }
 QStatusBar { background: #111827; color: #E2E8F0; }
+/* Consistent high-contrast controls across nested tabs and business-tracking pages. */
+QDialog, QMessageBox, QInputDialog { background-color: #071329; color: #FFFFFF; }
+QDialog QLabel, QMessageBox QLabel, QInputDialog QLabel { color: #FFFFFF; }
+QDialog QGroupBox, QTabWidget QGroupBox { background-color: rgba(10, 30, 58, 245); color: #FFFFFF; border: 1px solid #31547E; border-radius: 12px; }
+QDialog QLineEdit, QDialog QTextEdit, QDialog QComboBox, QDialog QSpinBox, QDialog QDoubleSpinBox, QDialog QDateEdit, QDialog QTimeEdit,
+QTabWidget QLineEdit, QTabWidget QTextEdit, QTabWidget QComboBox, QTabWidget QSpinBox, QTabWidget QDoubleSpinBox, QTabWidget QDateEdit, QTabWidget QTimeEdit {
+    background-color: #06152D; color: #FFFFFF; border: 1px solid #31547E; border-radius: 8px; selection-background-color: #1D4ED8; selection-color: #FFFFFF;
+}
+QTabWidget QTableWidget, QTabWidget QTableView { background-color: #06152D; alternate-background-color: #0A2040; color: #FFFFFF; gridline-color: #163456; }
+QTabWidget QHeaderView::section { background-color: #0B2444; color: #FFFFFF; border-bottom: 2px solid #22D3EE; }
+QTabWidget QCheckBox, QTabWidget QRadioButton { color: #FFFFFF; }
+QTabWidget QScrollArea, QTabWidget QStackedWidget { background-color: transparent; border: 0; }
+QTabBar::tab:!selected { color: #D7E5F7; }
+QToolTip { background-color: #0B2444; color: #FFFFFF; border: 1px solid #22D3EE; padding: 6px 8px; }
 """
 
 def apply_app_theme(app, theme_name):
