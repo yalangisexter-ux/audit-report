@@ -1155,12 +1155,27 @@ class MainWindow(QMainWindow):
         self.tabs.tabBar().setExpanding(False)
         # Make overflow navigation obvious and provide a direct tab picker.
         self.tabs.tabBar().setStyleSheet(
-            "QTabBar::scroller { width: 34px; }"
-            "QTabBar QToolButton { min-width: 28px; min-height: 28px; "
-            "background: #1A2A4A; color: #FFFFFF; border: 1px solid #7C8DB5; "
-            "border-radius: 6px; font-size: 13pt; font-weight: 700; }"
-            "QTabBar QToolButton:hover { background: #4C1D95; border-color: #A78BFA; }"
+            "QTabBar::scroller { width: 38px; }"
+            "QTabBar QToolButton { min-width: 34px; max-width: 38px; min-height: 34px; "
+            "background: #111827; color: #FFFFFF; border: 1px solid #A78BFA; "
+            "border-radius: 6px; font-size: 16pt; font-weight: 900; padding: 0px; }"
+            "QTabBar QToolButton:hover { background: #4C1D95; border-color: #FFFFFF; }"
         )
+        # Qt creates the two native scroll buttons internally; force visible,
+        # readable glyphs instead of relying on platform-specific arrow icons.
+        tab_scroll_buttons = self.tabs.tabBar().findChildren(QToolButton)
+        for button, glyph, hint in zip(tab_scroll_buttons, ("‹", "›"), ("Scroll tabs left", "Scroll tabs right")):
+            button.setText(glyph)
+            button.setToolTip(hint)
+            button.setArrowType(Qt.ArrowType.NoArrow)
+            button.setAutoRaise(False)
+            button.setMinimumSize(34, 34)
+            button.setMaximumWidth(38)
+            button.setStyleSheet(
+                "QToolButton { background: #111827; color: #FFFFFF; border: 1px solid #A78BFA; "
+                "border-radius: 6px; font-size: 18pt; font-weight: 900; padding: 0px; }"
+                "QToolButton:hover { background: #4C1D95; }"
+            )
         self.tab_navigator = QToolButton()
         self.tab_navigator.setText("☰ Go to tab")
         self.tab_navigator.setToolTip("Show all sections and jump directly to one")
