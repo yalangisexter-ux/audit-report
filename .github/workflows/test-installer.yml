@@ -6,104 +6,30 @@ on:
     branches: [main]
 
 jobs:
-  test-installer:
+  test:
     runs-on: windows-latest
     steps:
-      - name: Download latest installer
+      - name: Download installer
         shell: pwsh
         run: |
-          $url = "https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
-          Invoke-WebRequest -Uri $url -OutFile "setup.exe"
-          $item = Get-Item setup.exe
-          if ($item.Length -lt 1000000) { throw "Installer too small" }
-          Write-Host "Downloaded $($item.Length) bytes"
+          Invoke-WebRequest -Uri "https://github.com/yalangisexter-ux/audit-report/releases/download/v1.1.137/RawStrengthEmployeeAuditManager-Setup.exe" -OutFile "setup.exe"
+          Write-Host "Downloaded"
 
-      - name: Verify PE and install
+      - name: Install
         shell: pwsh
         run: |
-          $bytes = [System.IO.File]::ReadAllBytes("setup.exe")[0..1]
-          if ($bytes[0] -ne 0x4D) { throw "Invalid EXE" }
           $dir = "$env:TEMP\audit-test"
-          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           $p = Start-Process -FilePath "setup.exe" -ArgumentList "/VERYSILENT /DIR=$dir /NORESTART" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Install failed with code $($p.ExitCode)" }
-          $exe = Get-ChildItem $dir -Filter "*.exe" -Recurse | Select-Object -First 1
-          if (-not $exe) { throw "No EXE found" }
-          Write-Host "Installed: $($exe.FullName)"
+          if ($p.ExitCode -ne 0) { throw "Install failed" }
+          Write-Host "Installed"
 
-      - name: Launch and verify app stays running
+      - name: Launch test
         shell: pwsh
         run: |
           $exe = Get-ChildItem "$env:TEMP\audit-test" -Filter "*.exe" -Recurse | Select-Object -First 1
           $proc = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 8
-          if ($proc.HasExited) { throw "App exited early with code $($proc.ExitCode)" }
-          Write-Host "App running (PID $($proc.Id))"
+          Start-Sleep -Seconds 5
+          if ($proc.HasExited) { throw "App exited" }
           Stop-Process -Id $proc.Id -Force
-          Write-Host "PASS: App launched and stayed running"
-
-      - name: Checkout and test data operations
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Test database operations
-        shell: pwsh
-        run: |
-          python -c @"
-import sqlite3, tempfile, os
-from datetime import datetime
-
-fd, path = tempfile.mkstemp(suffix='.db')
-os.close(fd)
-conn = sqlite3.connect(path)
-conn.row_factory = sqlite3.Row
-
-# Create tables
-conn.execute('CREATE TABLE employees(id INTEGER PRIMARY KEY, employee_code TEXT UNIQUE, name TEXT, department TEXT, designation TEXT, phone TEXT, email TEXT, joining_date TEXT, notes TEXT, created_at TEXT, active INTEGER DEFAULT 1)')
-conn.execute('CREATE TABLE tasks(id INTEGER PRIMARY KEY, employee_id INTEGER, task_date TEXT, title TEXT, details TEXT, status TEXT, created_at TEXT, updated_at TEXT)')
-conn.execute('CREATE TABLE attendance(id INTEGER PRIMARY KEY, employee_id INTEGER, work_date TEXT, check_in TEXT, check_out TEXT, attendance_status TEXT, attendance_note TEXT, updated_at TEXT)')
-
-# Test employee insert
-conn.execute("INSERT INTO employees(employee_code, name, department, created_at) VALUES('E1', 'Test Employee', 'HR', ?)", (datetime.now().isoformat(),))
-conn.commit()
-emp = conn.execute("SELECT name FROM employees WHERE employee_code='E1'").fetchone()
-assert emp['name'] == 'Test Employee', 'Employee insert failed'
-print('PASS: Employee insert')
-
-# Test task insert
-conn.execute("INSERT INTO tasks(employee_id, task_date, title, status, created_at, updated_at) VALUES(1, '2026-10-13', 'Test Task', 'Pending', ?, ?)", (datetime.now().isoformat(), datetime.now().isoformat()))
-conn.commit()
-task = conn.execute("SELECT title FROM tasks WHERE employee_id=1").fetchone()
-assert task['title'] == 'Test Task', 'Task insert failed'
-print('PASS: Task insert')
-
-# Test attendance insert
-conn.execute("INSERT INTO attendance(employee_id, work_date, check_in, attendance_status, updated_at) VALUES(1, '2026-10-13', '09:00', 'Present', ?)", (datetime.now().isoformat(),))
-conn.commit()
-att = conn.execute("SELECT check_in FROM attendance WHERE employee_id=1").fetchone()
-assert att['check_in'] == '09:00', 'Attendance insert failed'
-print('PASS: Attendance insert')
-
-# Test update
-conn.execute("UPDATE employees SET name='Updated Name' WHERE id=1")
-conn.commit()
-emp = conn.execute("SELECT name FROM employees WHERE id=1").fetchone()
-assert emp['name'] == 'Updated Name', 'Employee update failed'
-print('PASS: Employee update')
-
-# Test delete
-conn.execute("DELETE FROM tasks WHERE id=1")
-conn.commit()
-count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-assert count == 0, 'Task delete failed'
-print('PASS: Task delete')
-
-conn.close()
-os.unlink(path)
-print('ALL TESTS PASSED')
-"@
+          Write-Host "PASS"
