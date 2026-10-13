@@ -1655,48 +1655,34 @@ class MainWindow(QMainWindow):
         info(self, f"You are already using the latest version ({version}).")
 
     def _update_is_ready(self, installer_path, version):
+        """Offer the installer visibly; never silently replace the customer's app."""
         if getattr(self, "_update_progress", None):
-            self._update_progress.setLabelText("Preparing silent installation...")
-            self._update_progress.setRange(0, 0)
-            self._update_progress.repaint()
+            self._update_progress.close()
+            self._update_progress = None
+        answer = QMessageBox.question(
+            self, "Update available",
+            f"Version {version} is available. Start the installer now?\n\n"
+            "Your employee database and backups will be kept. The installer will be shown "
+            "so you can see whether installation succeeds.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            info(self, "Update downloaded. You can install it later from the update prompt.")
+            return
         try:
-            # Save a short-lived, one-use resume marker so the updater can reopen
-            # the same user's last page after a successful in-app update.
-            app_backup_dir = APP_DIR / "app_rollback"
-            app_backup_dir.mkdir(parents=True, exist_ok=True)
-            (app_backup_dir / "previous_version.txt").write_text(str(APP_VERSION), encoding="utf-8")
             if sys.platform == "win32":
-                resume = {
-                    "user_id": int(self.current_user.get("id", 0)),
-                    "tab_index": int(self.tabs.currentIndex()),
-                    "created_at": datetime.now().timestamp(),
-                    "target_version": str(version),
-                }
-                resume_path = APP_DIR / "update_resume.json"
-                resume_tmp = resume_path.with_suffix(".tmp")
-                resume_tmp.write_text(json.dumps(resume), encoding="utf-8")
-                os.replace(resume_tmp, resume_path)
-                if getattr(self, "_update_progress", None):
-                    self._update_progress.setRange(0, 0)
-                    self._update_progress.setLabelText("Installing update... Please wait; the app will reopen automatically.")
-                    self._update_progress.repaint()
-                args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
+                # Interactive installer avoids a silent handoff that can leave the
+                # app closed while the user cannot see an installation failure.
                 result = ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", installer_path, args, None, 1
+                    None, "runas", installer_path, "", None, 1
                 )
                 if result <= 32:
                     raise OSError(f"Windows could not launch the installer (ShellExecute error {result}).")
             else:
-                subprocess.Popen([installer_path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], close_fds=True)
+                subprocess.Popen([installer_path], close_fds=True)
         except (OSError, AttributeError) as exc:
-            if getattr(self, "_update_progress", None):
-                self._update_progress.close()
-                self._update_progress = None
-            return error(self, f"Could not start the silent update:\n{exc}")
-        if getattr(self, "_update_progress", None):
-            self._update_progress.setLabelText("Installer launched. The app will reopen automatically after installation.")
-            self._update_progress.close()
-            self._update_progress = None
+            return error(self, f"Could not start the installer. The current app has not been closed.\n{exc}")
         self.close()
 
     def _update_failed(self, message):
