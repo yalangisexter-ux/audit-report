@@ -3690,18 +3690,18 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
-QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
-QGroupBox::title { color: #CBD5E1; }
-QLabel { color: #E2E8F0; }
-QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #F8FAFC; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(11, 25, 47, 218); color: #FFFFFF; border: 1px solid rgba(125, 211, 252, 105); border-radius: 18px; }
+QGroupBox { background: rgba(15, 23, 42, 210); color: #FFFFFF; border: 1px solid rgba(148, 163, 184, 100); border-radius: 16px; }
+QGroupBox::title { color: #F1F5F9; }
+QLabel { color: #F8FAFC; }
+QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #FFFFFF; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #CBD5E1; }
-QWidget#sessionStrip { background: #0B1220; border: 1px solid #475569; }
-QWidget#guideItem { background: #0F172A; border: 1px solid #334155; }
+QWidget#sessionStrip { background: rgba(8, 20, 38, 220); border: 1px solid rgba(125, 211, 252, 90); border-radius: 12px; }
+QWidget#guideItem { background: rgba(15, 35, 62, 220); border: 1px solid rgba(148, 163, 184, 90); border-radius: 14px; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #475569; }
-QHeaderView::section { background: #1E293B; color: #F8FAFC; border-bottom: 2px solid #64748B; }
-QTableWidget { background: #0F172A; alternate-background-color: #172033; color: #F8FAFC; border: 1px solid #475569; gridline-color: #334155; }
-QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
+QHeaderView::section { background: rgba(11, 36, 68, 235); color: #FFFFFF; border-bottom: 2px solid #22D3EE; }
+QTableWidget { background: rgba(6, 21, 45, 220); alternate-background-color: rgba(10, 32, 64, 210); color: #FFFFFF; border: 1px solid rgba(125, 211, 252, 100); gridline-color: rgba(22, 52, 86, 220); }
+QTableWidget::item { color: #FFFFFF; border-bottom: 1px solid rgba(51, 65, 85, 200); }
 QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
 QCheckBox, QRadioButton { color: #E2E8F0; }
 QStatusBar { background: #111827; color: #E2E8F0; }
