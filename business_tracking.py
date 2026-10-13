@@ -243,7 +243,10 @@ class BusinessTrackingTab(QWidget):
         self.prod_table = QTableWidget(0, 6)
         self.prod_table.setHorizontalHeaderLabels(["ID", "SKU", "Name", "Category", "Available", "Reorder"])
         self.prod_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.prod_table.setWordWrap(True)\n        self.prod_table.setAlternatingRowColors(True)\n        self.prod_table.verticalHeader().setDefaultSectionSize(34)\n        self.prod_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.prod_table.setWordWrap(True)
+        self.prod_table.setAlternatingRowColors(True)
+        self.prod_table.verticalHeader().setDefaultSectionSize(34)
+        self.prod_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.prod_table)
         return w
 
@@ -262,7 +265,10 @@ class BusinessTrackingTab(QWidget):
         self.order_table = QTableWidget(0, 6)
         self.order_table.setHorizontalHeaderLabels(["ID", "External ID", "Date", "Channel", "Customer", "Status"])
         self.order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.order_table.setWordWrap(True)\n        self.order_table.setAlternatingRowColors(True)\n        self.order_table.verticalHeader().setDefaultSectionSize(34)\n        self.order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.order_table.setWordWrap(True)
+        self.order_table.setAlternatingRowColors(True)
+        self.order_table.verticalHeader().setDefaultSectionSize(34)
+        self.order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.order_table)
         return w
 
@@ -281,12 +287,18 @@ class BusinessTrackingTab(QWidget):
         self.svc_table = QTableWidget(0, 4)
         self.svc_table.setHorizontalHeaderLabels(["ID", "Service", "Mode", "Price"])
         self.svc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.svc_table.setWordWrap(True)\n        self.svc_table.setAlternatingRowColors(True)\n        self.svc_table.verticalHeader().setDefaultSectionSize(34)\n        self.svc_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.svc_table.setWordWrap(True)
+        self.svc_table.setAlternatingRowColors(True)
+        self.svc_table.verticalHeader().setDefaultSectionSize(34)
+        self.svc_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.svc_table)
         self.mem_table = QTableWidget(0, 5)
         self.mem_table.setHorizontalHeaderLabels(["ID", "Member", "Service", "Status", "Sessions left"])
         self.mem_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.mem_table.setWordWrap(True)\n        self.mem_table.setAlternatingRowColors(True)\n        self.mem_table.verticalHeader().setDefaultSectionSize(34)\n        self.mem_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.mem_table.setWordWrap(True)
+        self.mem_table.setAlternatingRowColors(True)
+        self.mem_table.verticalHeader().setDefaultSectionSize(34)
+        self.mem_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.mem_table)
         return w
 
@@ -302,7 +314,10 @@ class BusinessTrackingTab(QWidget):
         self.act_table = QTableWidget(0, 6)
         self.act_table.setHorizontalHeaderLabels(["ID", "Employee", "Type", "Status", "Start", "Remarks"])
         self.act_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.act_table.setWordWrap(True)\n        self.act_table.setAlternatingRowColors(True)\n        self.act_table.verticalHeader().setDefaultSectionSize(34)\n        self.act_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.act_table.setWordWrap(True)
+        self.act_table.setAlternatingRowColors(True)
+        self.act_table.verticalHeader().setDefaultSectionSize(34)
+        self.act_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.act_table)
         return w
 
