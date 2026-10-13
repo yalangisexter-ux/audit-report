@@ -45,7 +45,7 @@ Name: "{autodesktop}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#My
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
