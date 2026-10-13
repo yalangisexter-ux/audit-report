@@ -185,37 +185,15 @@ class UpdateWorker(QObject):
                       for asset in release.get("assets", [])}
             installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
             installer_url = assets.get(installer_name, "")
-            runtime_name = "base_library.zip"
-            runtime_url = assets.get(runtime_name, "")
             if not installer_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
                 raise ValueError("The latest release is missing a trusted installer.")
-            if not runtime_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
-                raise ValueError("The latest release is missing the Python runtime recovery archive.")
 
             version_text = ".".join(str(part) for part in latest_parts)
             update_dir = APP_DIR / "updates" / version_text
             update_dir.mkdir(parents=True, exist_ok=True)
             installer_path = update_dir / installer_name
-            runtime_path = update_dir / runtime_name
             partial_path = update_dir / (installer_name + ".part")
-            runtime_partial = update_dir / (runtime_name + ".part")
             try:
-                request = Request(runtime_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
-                with urlopen(request, timeout=60) as response, runtime_partial.open("wb") as output:
-                    total_bytes = int(response.headers.get("Content-Length") or 0)
-                    downloaded = 0
-                    while True:
-                        chunk = response.read(256 * 1024)
-                        if not chunk:
-                            break
-                        output.write(chunk)
-                        downloaded += len(chunk)
-                        if total_bytes > 0:
-                            percent = min(25, int(downloaded * 25 / total_bytes))
-                            self.progress.emit(percent, f"Downloading Python runtime recovery file... {int(downloaded * 100 / total_bytes)}%")
-                if runtime_partial.stat().st_size < 100000:
-                    raise ValueError("The downloaded Python runtime recovery archive is missing or incomplete.")
-                os.replace(runtime_partial, runtime_path)
                 request = Request(installer_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
                 with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
                     total_bytes = int(response.headers.get("Content-Length") or 0)
@@ -232,12 +210,11 @@ class UpdateWorker(QObject):
                             self.progress.emit(percent, f"Downloading update installer... {percent}%")
                         else:
                             self.progress.emit(0, f"Downloading update installer... ({downloaded // 1024} KB)")
-                if partial_path.stat().st_size == 0:
-                    raise ValueError("The downloaded installer is empty.")
+                if partial_path.stat().st_size < 1000000:
+                    raise ValueError("The downloaded installer is missing or incomplete.")
                 os.replace(partial_path, installer_path)
             except Exception:
                 partial_path.unlink(missing_ok=True)
-                runtime_partial.unlink(missing_ok=True)
                 raise
 
             self.ready.emit(str(installer_path), version_text)
@@ -1514,10 +1491,7 @@ class MainWindow(QMainWindow):
                     self._update_progress.setRange(0, 0)
                     self._update_progress.setLabelText("Installing update... Please wait; the app will reopen automatically.")
                     self._update_progress.repaint()
-                runtime_path = Path(installer_path).with_name("base_library.zip")
-                if not runtime_path.exists() or runtime_path.stat().st_size < 100000:
-                    raise OSError("The updater did not retain the Python runtime recovery archive.")
-                args = f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /RUNTIMEZIP="{runtime_path}"'
+                args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None, "runas", installer_path, args, None, 1
                 )
