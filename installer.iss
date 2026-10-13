@@ -45,7 +45,7 @@ Name: "{autodesktop}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#My
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -54,12 +54,9 @@ var
 	InstallDir: String;
 begin
 	Result := '';
-	// Clean old app files in the install directory (not the user database)
-	InstallDir := ExpandConstant('{app}');
-	if DirExists(InstallDir) then
-	begin
-		DelTree(InstallDir + '\*', False, True, True);
-	end;
+	// Preserve the previous installation during upgrades. Inno Setup replaces
+	// files listed in [Files]; deleting the whole folder could destroy a working
+	// version if setup is interrupted.
 	ExtractTemporaryFile('vc_redist.x64.exe');
 	if not Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
 	begin

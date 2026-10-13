@@ -1,41 +1,118 @@
-name: Master Build and Test
-
+name: Master Build, Regression Tests and Installer
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: raw-strength-master-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
+  build-test-installer:
     runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
+          cache: pip
       - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
-
-      - name: Build EXE
-        run: pyinstaller --noconfirm --onedir --windowed --name RawStrengthEmployeeAuditManager app.py
-
-      - name: Verify EXE
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller pytest
+      - name: Syntax check
+        run: python -m py_compile app.py business_tracking.py build_info.py
+      - name: Run regression tests
+        run: pytest -q
+      - name: Prepare installer dependencies
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Filter "*.exe" -Recurse | Select-Object -First 1
-          if (-not $exe) { throw "No EXE found" }
-          Write-Host "EXE: $($exe.FullName)"
-
-      - name: Launch test
+          Invoke-WebRequest "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "vc_redist.x64.exe"
+          choco install innosetup --no-progress -y
+      - name: Build application bundle
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Filter "*.exe" -Recurse | Select-Object -First 1
-          $proc = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 5
-          if ($proc.HasExited) { throw "App exited early" }
-          Stop-Process -Id $proc.Id -Force
-          Write-Host "PASS: App launched"
+          pyinstaller --noconfirm --clean --onedir --windowed --name RawStrengthEmployeeAuditManager --add-data "assets;assets" --hidden-import PySide6.QtSvg app.py
+          $exe = "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe"
+          if (-not (Test-Path $exe)) { throw "Main executable missing: $exe" }
+          if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/_internal/base_library.zip")) { throw "PyInstaller base_library.zip missing" }
+          foreach ($asset in @("assets/wallpapers/lord_shiva.svg","assets/wallpapers/love_couples.svg","assets/wallpapers/galaxy.svg","assets/wallpapers/milky_way_waves.svg","assets/wallpapers/ocean_waves.svg")) {
+            if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/_internal/$asset")) { throw "Bundled asset missing: $asset" }
+          }
+      - name: Smoke test executable
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe").Path
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 7
+          $proc.Refresh()
+          if ($proc.HasExited) { throw "App exited during startup" }
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $env:APP_VERSION = "1.1.${{ github.run_number }}"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Installer output missing" }
+      - name: Test fresh install and in-place upgrade preserve data
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:TEMP "RawStrength-Audit-Install-Test"
+          $dbDir = Join-Path $env:LOCALAPPDATA "EmployeeAuditManager"
+          New-Item -ItemType Directory -Force -Path $dbDir | Out-Null
+          $seed = @'
+          import sqlite3, os
+          p = os.path.join(os.environ["LOCALAPPDATA"], "EmployeeAuditManager", "employee_audit.db")
+          c = sqlite3.connect(p)
+          c.execute("CREATE TABLE IF NOT EXISTS installer_sentinel (value TEXT NOT NULL)")
+          c.execute("DELETE FROM installer_sentinel")
+          c.execute("INSERT INTO installer_sentinel(value) VALUES (?)", ("customer-data-must-survive",))
+          c.commit()
+          c.close()
+          '@
+          Set-Content -Path "$env:TEMP/seed_audit_db.py" -Value $seed -Encoding utf8
+          python "$env:TEMP/seed_audit_db.py"
+          $setup = (Resolve-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Path
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$installDir`"" -Wait
+          if (-not (Test-Path (Join-Path $installDir "RawStrengthEmployeeAuditManager.exe"))) { throw "Fresh install executable missing" }
+          Set-Content -Path (Join-Path $installDir "customer-old-install-marker.txt") -Value "keep-this-file" -Encoding ascii
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR=`"$installDir`"" -Wait
+          if (-not (Test-Path (Join-Path $installDir "customer-old-install-marker.txt"))) { throw "Upgrade removed an existing installation file" }
+          $check = @'
+          import sqlite3, os, sys
+          p = os.path.join(os.environ["LOCALAPPDATA"], "EmployeeAuditManager", "employee_audit.db")
+          c = sqlite3.connect(p)
+          row = c.execute("SELECT value FROM installer_sentinel").fetchone()
+          c.close()
+          if not row or row[0] != "customer-data-must-survive":
+              raise SystemExit("Customer database sentinel was lost")
+          print("PASS: customer database survived installation and in-place upgrade")
+          '@
+          Set-Content -Path "$env:TEMP/check_audit_db.py" -Value $check -Encoding utf8
+          python "$env:TEMP/check_audit_db.py"
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RawStrengthEmployeeAuditManager-Setup
+          path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish versioned release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.1.${{ github.run_number }}
+          name: Raw Strength Employee Audit Manager v1.1.${{ github.run_number }}
+          files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          generate_release_notes: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

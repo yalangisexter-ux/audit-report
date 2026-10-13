@@ -2,16 +2,17 @@ import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets,
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QTimer
+from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QProgressDialog,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
-    QToolButton, QMenu, QSizePolicy, QFrame
+    QToolButton, QMenu, QSizePolicy, QFrame, QAbstractSlider
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
@@ -967,10 +968,13 @@ class ProductivityChart(QWidget):
 
 class AnimatedBackground(QWidget):
     """Selectable, low-cost animated wallpaper behind the main application tabs."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Lord Shiva", "Love & Couples", "Galaxy", "Milky Way Waves", "Ocean Waves")
+    WALLPAPERS = {"Lord Shiva": "assets/wallpapers/lord_shiva.svg", "Love & Couples": "assets/wallpapers/love_couples.svg", "Galaxy": "assets/wallpapers/galaxy.svg", "Milky Way Waves": "assets/wallpapers/milky_way_waves.svg", "Ocean Waves": "assets/wallpapers/ocean_waves.svg"}
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self.wallpaper_renderer = None
+        self._load_wallpaper_renderer()
         self.particles = []
         self.phase = 0.0
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -978,6 +982,18 @@ class AnimatedBackground(QWidget):
         self.timer.timeout.connect(self.update_particles)
         self.timer.start(45)
         self.init_particles()
+
+    def _load_wallpaper_renderer(self):
+        """Load bundled vector art; wallpaper rendering does not require internet."""
+        relative = self.WALLPAPERS.get(self.mode)
+        path = resource_path(relative) if relative else None
+        self.wallpaper_renderer = QSvgRenderer(path) if path and os.path.isfile(path) else None
+
+    def set_mode(self, mode):
+        self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self._load_wallpaper_renderer()
+        self.init_particles()
+        self.update()
 
     def init_particles(self):
         import random
@@ -1013,6 +1029,12 @@ class AnimatedBackground(QWidget):
         base.setColorAt(0.52, QColor("#0B1020"))
         base.setColorAt(1.0, QColor("#100A1D"))
         painter.fillRect(rect, base)
+        if self.wallpaper_renderer and self.wallpaper_renderer.isValid():
+            self.wallpaper_renderer.render(painter, QRectF(rect))
+            veil = QLinearGradient(0, 0, 0, h)
+            veil.setColorAt(0.0, QColor(4, 8, 20, 34))
+            veil.setColorAt(1.0, QColor(4, 8, 20, 82))
+            painter.fillRect(rect, veil)
         if self.mode in ("Ambient Glow", "Aurora Waves"):
             colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
             for i, color in enumerate(colors):
@@ -1303,9 +1325,7 @@ class MainWindow(QMainWindow):
         style_name = style_name or "Ambient Glow"
         self.db.set_setting("animation_style", style_name)
         if hasattr(self, "bg_anim"):
-            self.bg_anim.mode = style_name
-            self.bg_anim.init_particles()
-            self.bg_anim.update()
+            self.bg_anim.set_mode(style_name)
 
     def build_home(self):
 
@@ -1989,7 +2009,7 @@ class MainWindow(QMainWindow):
         animation_row = QHBoxLayout()
         animation_label = QLabel("Live wallpaper")
         self.animation_combo = QComboBox()
-        self.animation_combo.addItems(["Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift"])
+        self.animation_combo.addItems(list(AnimatedBackground.STYLES))
         saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
         if self.animation_combo.findText(saved_animation) >= 0:
             self.animation_combo.setCurrentText(saved_animation)
@@ -2017,10 +2037,50 @@ class MainWindow(QMainWindow):
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setSelectionMode(QAbstractItemView.SingleSelection)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            table.setWordWrap(False)
+            table.setTextElideMode(Qt.TextElideMode.ElideRight)
+            table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
             table.horizontalHeader().setMinimumHeight(38)
             table.horizontalHeader().setMinimumSectionSize(64)
             table.horizontalHeader().setHighlightSections(False)
             # Keep each table's own column sizing and cell alignment.
+            # Explicit arrows work consistently across Windows themes and narrow screens.
+            if not table.property("hasScrollControls"):
+                parent = table.parentWidget()
+                parent_layout = parent.layout() if parent else None
+                index = parent_layout.indexOf(table) if parent_layout else -1
+                if index >= 0:
+                    stretch = parent_layout.stretch(index)
+                    wrapper = QWidget(parent)
+                    wrapper.setObjectName("tableWithScrollControls")
+                    wrapper_layout = QVBoxLayout(wrapper)
+                    wrapper_layout.setContentsMargins(0, 0, 0, 0)
+                    wrapper_layout.setSpacing(2)
+                    controls = QHBoxLayout()
+                    controls.setContentsMargins(0, 0, 2, 0)
+                    controls.setSpacing(4)
+                    controls.addStretch(1)
+                    left_button = QToolButton(wrapper)
+                    left_button.setText("◀")
+                    left_button.setToolTip("Scroll table left")
+                    left_button.setAccessibleName("Scroll table left")
+                    left_button.setFixedSize(30, 24)
+                    right_button = QToolButton(wrapper)
+                    right_button.setText("▶")
+                    right_button.setToolTip("Scroll table right")
+                    right_button.setAccessibleName("Scroll table right")
+                    right_button.setFixedSize(30, 24)
+                    left_button.clicked.connect(lambda checked=False, t=table: t.horizontalScrollBar().triggerAction(QAbstractSlider.SliderAction.SliderSingleStepSub))
+                    right_button.clicked.connect(lambda checked=False, t=table: t.horizontalScrollBar().triggerAction(QAbstractSlider.SliderAction.SliderSingleStepAdd))
+                    controls.addWidget(left_button)
+                    controls.addWidget(right_button)
+                    parent_layout.replaceWidget(table, wrapper)
+                    parent_layout.setStretch(index, stretch)
+                    wrapper_layout.addLayout(controls)
+                    wrapper_layout.addWidget(table, 1)
+                    table.setProperty("hasScrollControls", True)
+                    table.setMinimumHeight(120)
 
     def selected_id(self, table, col=0):
         rows=table.selectionModel().selectedRows()
@@ -3598,7 +3658,7 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.74); color: #0F172A; border: 1px solid rgba(203,213,225,0.92); }
 QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
@@ -3729,7 +3789,7 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.68); color: #F8FAFC; border: 1px solid rgba(71,85,105,0.92); }
 QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
 QGroupBox::title { color: #CBD5E1; }
 QLabel { color: #E2E8F0; }
