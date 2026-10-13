@@ -182,6 +182,33 @@ class UpdateWorker(QObject):
             payload = json.loads(cls.request_bytes(GITHUB_RELEASES_API).decode("utf-8"))
             if not isinstance(payload, dict) or not payload.get("tag_name"):
                 raise ValueError("GitHub returned an invalid latest-release response.")
+            # Cross-check the API against GitHub's public latest-tag redirect.
+            # A cached API response must not incorrectly tell older clients that
+            # their installed version is already current.
+            try:
+                latest_page = "https://github.com/" + GITHUB_REPOSITORY + "/releases/latest?nocache=" + str(datetime.now().timestamp())
+                page_request = Request(latest_page, headers={
+                    "User-Agent": "RawStrengthEmployeeAuditManager",
+                    "Accept": "text/html",
+                    "Cache-Control": "no-cache, no-store",
+                    "Pragma": "no-cache",
+                })
+                with urlopen(page_request, timeout=20) as response:
+                    final_url = response.geturl()
+                marker = "/releases/tag/"
+                if marker in final_url:
+                    tag = final_url.split(marker, 1)[1].split("?", 1)[0].split("#", 1)[0].strip("/")
+                    if tag and "/" not in tag and release_version_tuple(tag) > release_version_tuple(payload["tag_name"]):
+                        return {
+                            "tag_name": tag,
+                            "assets": [{
+                                "name": "RawStrengthEmployeeAuditManager-Setup.exe",
+                                "browser_download_url": GITHUB_RELEASE_DOWNLOAD_PREFIX + tag + "/RawStrengthEmployeeAuditManager-Setup.exe",
+                            }],
+                        }
+            except Exception:
+                # Keep working offline when the independent check cannot complete.
+                pass
             return payload
         except Exception as exc:
             api_error = exc
