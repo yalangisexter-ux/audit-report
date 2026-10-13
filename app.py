@@ -169,13 +169,56 @@ class UpdateWorker(QObject):
         request = Request(url, headers={
             "Accept": accept,
             "User-Agent": "RawStrengthEmployeeAuditManager",
+            "Cache-Control": "no-cache",
         })
         with urlopen(request, timeout=30) as response:
             return response.read()
 
+    @classmethod
+    def latest_release(cls):
+        """Prefer the API, but fall back to GitHub's public release redirect when rate-limited."""
+        api_error = None
+        try:
+            payload = json.loads(cls.request_bytes(GITHUB_RELEASES_API).decode("utf-8"))
+            if not isinstance(payload, dict) or not payload.get("tag_name"):
+                raise ValueError("GitHub returned an invalid latest-release response.")
+            return payload
+        except Exception as exc:
+            api_error = exc
+
+        # This public web endpoint redirects to /releases/tag/<tag> and does not
+        # consume the REST API quota that caused HTTP 403 rate-limit failures.
+        try:
+            latest_page = "https://github.com/" + GITHUB_REPOSITORY + "/releases/latest"
+            request = Request(latest_page, headers={
+                "User-Agent": "RawStrengthEmployeeAuditManager",
+                "Accept": "text/html",
+                "Cache-Control": "no-cache",
+            })
+            with urlopen(request, timeout=25) as response:
+                final_url = response.geturl()
+            marker = "/releases/tag/"
+            if marker not in final_url:
+                raise ValueError("GitHub did not redirect to a published release tag.")
+            tag = final_url.split(marker, 1)[1].split("?", 1)[0].split("#", 1)[0].strip("/")
+            if not tag or "/" in tag:
+                raise ValueError("Could not determine the latest release version from GitHub.")
+            return {
+                "tag_name": tag,
+                "assets": [{
+                    "name": "RawStrengthEmployeeAuditManager-Setup.exe",
+                    "browser_download_url": GITHUB_RELEASE_DOWNLOAD_PREFIX + tag + "/RawStrengthEmployeeAuditManager-Setup.exe",
+                }],
+            }
+        except Exception as fallback_error:
+            raise RuntimeError(
+                "GitHub update lookup failed through both the API and release-page fallback. "
+                f"API: {api_error}; fallback: {fallback_error}"
+            ) from fallback_error
+
     def run(self):
         try:
-            release = json.loads(self.request_bytes(GITHUB_RELEASES_API).decode("utf-8"))
+            release = self.latest_release()
             latest_version = release.get("tag_name", "")
             latest_parts = release_version_tuple(latest_version)
             if latest_parts <= release_version_tuple(self.current_version):
