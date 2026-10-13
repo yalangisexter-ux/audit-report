@@ -1088,6 +1088,35 @@ class AnimatedBackground(QWidget):
                         if x == 0: path.moveTo(x, y)
                         else: path.lineTo(x, y)
                     painter.drawPath(path)
+        # Large, subtle themed motifs make each wallpaper recognizably different,
+        # while keeping the content area readable in both light and dark modes.
+        motif_alpha = 28 if self.light_mode else 42
+        motif_color = QColor(71, 85, 105, motif_alpha) if self.light_mode else QColor(226, 232, 240, motif_alpha)
+        painter.setPen(QPen(motif_color, 3))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        cx, cy = int(w * 0.78), int(h * 0.30)
+        if self.mode in ("Galaxy", "Milky Way"):
+            painter.drawEllipse(cx - 115, cy - 52, 230, 104)
+            painter.drawEllipse(cx - 78, cy - 85, 156, 170)
+            painter.drawEllipse(cx - 48, cy - 48, 96, 96)
+            painter.setBrush(motif_color)
+            painter.drawEllipse(cx - 7, cy - 7, 14, 14)
+        elif self.mode == "Love & Couples":
+            painter.setFont(QFont("Segoe UI Symbol", max(40, min(w, h) // 5), QFont.Weight.Bold))
+            painter.drawText(cx - 125, cy - 70, 250, 150, Qt.AlignmentFlag.AlignCenter, "♥")
+            painter.setFont(QFont("DejaVu Sans", 9))
+        elif self.mode == "Gym Energy":
+            painter.drawLine(cx - 100, cy, cx + 100, cy)
+            for x, radius in ((cx - 100, 28), (cx - 72, 18), (cx + 72, 18), (cx + 100, 28)):
+                painter.drawEllipse(x - radius // 2, cy - radius, radius, radius * 2)
+        elif self.mode == "Lord Shiva":
+            painter.drawLine(cx, cy - 95, cx, cy + 88)
+            painter.drawLine(cx, cy - 95, cx - 30, cy - 55)
+            painter.drawLine(cx, cy - 95, cx + 30, cy - 55)
+            painter.drawLine(cx - 30, cy - 55, cx - 30, cy - 25)
+            painter.drawLine(cx + 30, cy - 55, cx + 30, cy - 25)
+            painter.drawLine(cx - 36, cy - 20, cx + 36, cy - 20)
+            painter.drawEllipse(cx - 16, cy + 10, 32, 32)
         painter.setPen(Qt.PenStyle.NoPen)
         for p in self.particles:
             alpha = max(0, min(255, int(p["opacity"] * 255)))
@@ -3912,8 +3941,16 @@ QMainWindow { background: #F1F5F9; }
 QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #CBD5E1; }
 QLabel#titleLabel { color: #0F172A; font-weight: 700; }
 QWidget#homeContent, QWidget#settingsContent, QWidget#sessionStrip,
-QWidget#guideItem, QGroupBox, QFrame { background-color: #FFFFFF; color: #172033; }
+QWidget#guideItem, QWidget#pageContent, QWidget#dashboardHero, QWidget#welcomeHero,
+QGroupBox, QFrame { background-color: rgba(255,255,255,238); color: #172033; }
+QWidget#sessionStrip { border: 1px solid #CBD5E1; border-radius: 12px; }
+QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #DBEAFE, stop:0.55 #EDE9FE, stop:1 #FCE7F3); border: 1px solid #C7D2FE; border-radius: 16px; }
+QWidget#guideItem { border: 1px solid #CBD5E1; border-radius: 12px; }
+QWidget#dashboardHero { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px; }
 QLabel { color: #172033; background: transparent; }
+QLabel[sessionLabel="true"] { color: #4338CA; font-weight: 800; }
+QLabel[heroTitle="true"] { color: #0F172A; font-size: 17pt; font-weight: 800; }
+QLabel[heroSubtitle="true"] { color: #475569; }
 QLabel[mutedText="true"], QLabel[welcomeSubtitle="true"] { color: #475569; }
 QLabel[welcomeTitle="true"] { color: #0F172A; font-size: 16pt; font-weight: 800; }
 QLabel[guideTitle="true"], QLabel[sectionHeading="true"] { color: #4338CA; font-weight: 800; }
