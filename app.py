@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
-    QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView,
+    QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
     QToolButton, QMenu, QSizePolicy, QFrame
 )
@@ -1315,6 +1315,12 @@ class MainWindow(QMainWindow):
             return
         self.update_button.setEnabled(False)
         self.update_button.setText("Checking for updates...")
+        self._update_progress = QProgressDialog("Checking for an update...", "", 0, 0, self)
+        self._update_progress.setWindowTitle("Application Update")
+        self._update_progress.setWindowModality(Qt.WindowModality.WindowModal)
+        self._update_progress.setCancelButton(None)
+        self._update_progress.setMinimumDuration(0)
+        self._update_progress.show()
         thread = QThread(self)
         worker = UpdateWorker(APP_VERSION)
         worker.moveToThread(thread)
@@ -1331,39 +1337,52 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _update_is_current(self, version):
+        if getattr(self, "_update_progress", None):
+            self._update_progress.close()
+            self._update_progress = None
         info(self, f"You are already using the latest version ({version}).")
 
     def _update_is_ready(self, installer_path, version):
-        answer = QMessageBox.question(
-            self,
-            "Update ready",
-            f"Version {version} has been downloaded and verified. Close the app and start the installer now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
+        if getattr(self, "_update_progress", None):
+            self._update_progress.setLabelText("Preparing silent installation...")
+            self._update_progress.setRange(0, 0)
+            self._update_progress.repaint()
         try:
+            # Preserve a separate application rollback point before applying
+            # the update. The database is intentionally not rolled back here.
+            app_backup_dir = APP_DIR / "app_rollback"
+            app_backup_dir.mkdir(parents=True, exist_ok=True)
+            (app_backup_dir / "previous_version.txt").write_text(str(APP_VERSION), encoding="utf-8")
             if sys.platform == "win32":
-                # The installer targets Program Files and requires elevation.
-                # ShellExecuteW with the "runas" verb requests the Windows UAC
-                # prompt; plain subprocess.Popen does not reliably elevate it.
+                args = f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'
                 result = ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", installer_path, None, None, 1
+                    None, "runas", installer_path, args, None, 1
                 )
                 if result <= 32:
                     raise OSError(f"Windows could not launch the installer (ShellExecute error {result}).")
             else:
-                subprocess.Popen([installer_path], close_fds=True)
+                subprocess.Popen([installer_path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], close_fds=True)
         except (OSError, AttributeError) as exc:
-            return error(self, f"Could not start the update installer:\n{exc}")
-        # Close only after Windows accepted the elevated installer launch.
+            if getattr(self, "_update_progress", None):
+                self._update_progress.close()
+                self._update_progress = None
+            return error(self, f"Could not start the silent update:\n{exc}")
+        if getattr(self, "_update_progress", None):
+            self._update_progress.setLabelText("Installer launched. Windows may request administrator approval.")
+            self._update_progress.close()
+            self._update_progress = None
         self.close()
 
     def _update_failed(self, message):
+        if getattr(self, "_update_progress", None):
+            self._update_progress.close()
+            self._update_progress = None
         error(self, f"Could not check for or install updates:\n{message}")
 
     def _finish_update_check(self):
+        if getattr(self, "_update_progress", None):
+            self._update_progress.close()
+            self._update_progress = None
         self._update_worker = None
         self._update_thread = None
         self.update_button.setText("Update application")
