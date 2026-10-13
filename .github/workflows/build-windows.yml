@@ -74,6 +74,16 @@ jobs:
           if ((Get-Item $zip).Length -lt 100000) { throw "Build failed: base_library.zip is unexpectedly small or incomplete." }
           Write-Host "Verified required PyInstaller runtime files."
 
+      # Keep a compatibility asset for older installed app versions whose updater
+      # still expects base_library.zip as a separate release download.
+      - name: Prepare legacy updater compatibility asset
+        shell: pwsh
+        run: |
+          $runtime = "dist/RawStrengthEmployeeAuditManager/_internal/base_library.zip"
+          if (!(Test-Path $runtime)) { throw "Compatibility runtime asset missing: $runtime" }
+          Copy-Item $runtime "base_library.zip" -Force
+          if ((Get-Item "base_library.zip").Length -lt 100000) { throw "Compatibility runtime asset is incomplete." }
+
       - name: Download and verify Visual C++ runtime
         shell: pwsh
         run: |
@@ -103,12 +113,16 @@ jobs:
           name: Raw Strength Employee Audit Manager 1.1.${{ github.run_number }}
           generate_release_notes: true
           make_latest: true
-          files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          files: |
+            installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+            base_library.zip
 
       - name: Upload Windows EXE and Setup installer
         uses: actions/upload-artifact@v4
         with:
           name: RawStrengthEmployeeAuditManager-Windows-Release
-          path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          path: |
+            installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+            base_library.zip
           if-no-files-found: error
           retention-days: 14
