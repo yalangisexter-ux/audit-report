@@ -1557,7 +1557,7 @@ class MainWindow(QMainWindow):
         self.kpis.setSpacing(10)
         root.addLayout(self.kpis)
         self.kpi_labels = []
-        specs = [("TOTAL EMPLOYEES", "👥"), ("PRESENT TODAY", "✓"), ("ABSENT TODAY", "×"), ("OPEN TASKS", "▣"), ("TODAY'S CHECK-INS", "▥")]
+        specs = [("TOTAL EMPLOYEES", "EMP"), ("PRESENT TODAY", "OK"), ("ABSENT TODAY", "ABS"), ("OPEN TASKS", "TASK"), ("TODAY'S CHECK-INS", "IN")]
         for heading, symbol in specs:
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
@@ -1581,15 +1581,15 @@ class MainWindow(QMainWindow):
         grid.setColumnStretch(2, 3)
         root.addLayout(grid, 1)
 
-        quick = QGroupBox("⚡  Quick Actions")
+        quick = QGroupBox("QUICK ACTIONS")
         quick.setObjectName("dashboardPanel")
         quick_layout = QVBoxLayout(quick)
         for text, target in [
-            ("＋  Add Employee", self.employees_tab),
-            ("✓  Assign Task", self.tasks_tab),
-            ("▦  Mark Attendance", self.attendance_tab),
-            ("▤  Generate Report", self.reports_tab),
-            ("⇩  Print / Export", self.reports_tab),
+            ("+  Add Employee", self.employees_tab),
+            ("Assign Task", self.tasks_tab),
+            ("Mark Attendance", self.attendance_tab),
+            ("Generate Report", self.reports_tab),
+            ("Print / Export", self.reports_tab),
         ]:
             button = QPushButton(text)
             button.setProperty("dashboardAction", True)
@@ -1599,7 +1599,7 @@ class MainWindow(QMainWindow):
         quick_layout.addStretch(1)
         grid.addWidget(quick, 0, 0)
 
-        recent = QGroupBox("👥  Recent Employees")
+        recent = QGroupBox("RECENT EMPLOYEES")
         recent.setObjectName("dashboardPanel")
         recent_layout = QVBoxLayout(recent)
         self.dashboard_recent = QTableWidget(0, 5)
@@ -1611,7 +1611,7 @@ class MainWindow(QMainWindow):
         recent_layout.addWidget(self.dashboard_recent)
         grid.addWidget(recent, 0, 1)
 
-        tasks_box = QGroupBox("☑  Today's Tasks")
+        tasks_box = QGroupBox("TODAY'S TASKS")
         tasks_box.setObjectName("dashboardPanel")
         tasks_layout = QVBoxLayout(tasks_box)
         self.dashboard_tasks = QTableWidget(0, 5)
@@ -1623,7 +1623,7 @@ class MainWindow(QMainWindow):
         tasks_layout.addWidget(self.dashboard_tasks)
         grid.addWidget(tasks_box, 0, 2)
 
-        attendance = QGroupBox("◉  Today's Attendance")
+        attendance = QGroupBox("TODAY'S ATTENDANCE")
         attendance.setObjectName("dashboardPanel")
         attendance_layout = QVBoxLayout(attendance)
         self.dashboard_attendance_summary = QLabel("Attendance summary")
@@ -3775,14 +3775,27 @@ QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top righ
 QComboBox QAbstractItemView { background-color: #111827; color: #F8FAFC; border: 1px solid #334155; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
-QHeaderView::section { background: #111827; color: #CBD5E1; padding: 7px 8px; border: 0; border-bottom: 2px solid #374151; font-weight: 700; }
-QTableWidget { background: rgba(15,23,42,0.76); alternate-background-color: rgba(30,41,59,0.60); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.20); border-radius: 20px; gridline-color: rgba(71,85,105,0.50); selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
+QHeaderView::section { background: #0B2444; color: #F8FAFC; padding: 7px 8px; border: 0; border-bottom: 2px solid #2563EB; font-weight: 700; }
+QTableWidget, QTableView { background-color: #06152D; alternate-background-color: #0A2040; color: #F8FAFC; border: 1px solid #1E3A5F; border-radius: 10px; gridline-color: #163456; selection-background-color: #1D4ED8; selection-color: #FFFFFF; outline: 0; }
+QTableWidget QWidget, QTableView QWidget { background-color: #06152D; color: #F8FAFC; }
+QTableWidget::item, QTableView::item { background-color: #06152D; color: #F8FAFC; padding: 6px 8px; border-bottom: 1px solid #163456; }
+QTableWidget::item:alternate, QTableView::item:alternate { background-color: #0A2040; color: #F8FAFC; }
+QTableWidget::item:selected, QTableView::item:selected { background-color: #1D4ED8; color: #FFFFFF; }
 QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #1F2937; color: #E2E8F0; }
 QTableWidget::item:selected { background: #312E81; color: #FFFFFF; }
 QTableWidget::item:hover { background: #1E1B4B; }
 QGroupBox { font-weight: 650; color: #E2E8F0; border: 1px solid rgba(148,163,184,0.22); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(17,24,39,0.78); }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; top: 8px; left: 12px; padding: 0; background: transparent; color: #94A3B8; }
-QLabel { color: #E2E8F0; background: transparent; }
+QLabel { color: #F1F5F9; background: transparent; }
+QWidget#homeContent, QWidget#pageContent { background: #030C1F; color: #F8FAFC; }
+QWidget#homeContent QLabel, QWidget#pageContent QLabel { color: #F1F5F9; }
+QWidget#homeContent QLabel[mutedText="true"], QWidget#pageContent QLabel[mutedText="true"] { color: #B6C7E2; }
+QGroupBox#dashboardPanel { background: #07162E; color: #F8FAFC; border: 1px solid #2563EB; border-radius: 14px; padding: 18px 10px 10px 10px; margin-top: 10px; }
+QGroupBox#dashboardPanel::title { color: #F8FAFC; }
+QGroupBox#kpiCard { background: #0B2040; color: #F8FAFC; border: 1px solid #2563EB; border-radius: 13px; padding: 12px; margin-top: 8px; }
+QLabel#kpiIcon { background: #0755B8; color: #FFFFFF; border: 1px solid #22D3EE; border-radius: 10px; font-size: 12pt; font-weight: 700; }
+QLabel#attendanceSummary { color: #67E8F9; background: #071B36; border: 1px solid #1D4ED8; border-radius: 12px; padding: 12px; font-weight: 700; }
+QPushButton[dashboardAction="true"] { text-align: left; background: #0B2C56; border: 1px solid #2563EB; border-radius: 9px; color: #FFFFFF; padding: 9px 12px; }
 QLabel[pageTitle="true"] { color: #F8FAFC; font-size: 15pt; font-weight: 700; }
 QLabel[pageSubtitle="true"] { color: #94A3B8; font-size: 9pt; font-weight: 500; padding-bottom: 4px; }
 QLabel[mutedText="true"] { color: #94A3B8; }
