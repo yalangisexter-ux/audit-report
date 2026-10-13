@@ -1216,16 +1216,16 @@ class MainWindow(QMainWindow):
             page.setAutoFillBackground(False)
         self.business_tab = BusinessTrackingTab(self.db)
         for widget,title in [
-            (self.home_tab,"⌂ Home"),
-            (self.dashboard,"▦ Dashboard"),
-            (self.employees_tab,"♙ Employees"),
-            (self.tasks_tab,"✓ Task Manager"),
-            (self.tracker_tab,"↗ Employee Tracker"),
-            (self.attendance_tab,"◷ Attendance"),
-            (self.reports_tab,"▤ Print Center"),
-            (self.archive_tab,"▣ EOD Archive"),
-            (self.business_tab,"♜ Business Tracking"),
-            (self.settings_tab,"⚙ Settings & Backup"),
+            (self.home_tab,"🏠 Home"),
+            (self.dashboard,"📊 Dashboard"),
+            (self.employees_tab,"👥 Employees"),
+            (self.tasks_tab,"📝 Task Manager"),
+            (self.tracker_tab,"📈 Employee Tracker"),
+            (self.attendance_tab,"🗓️ Attendance"),
+            (self.reports_tab,"🖨️ Print Center"),
+            (self.archive_tab,"🗂️ EOD Archive"),
+            (self.business_tab,"🏋️ Business Tracking"),
+            (self.settings_tab,"⚙️ Settings & Backup"),
         ]:
             self.tabs.addTab(widget,title)
         self._tab_animation = None
@@ -1472,7 +1472,7 @@ class MainWindow(QMainWindow):
         self.update_button.setMinimumWidth(150)
         self.update_button.clicked.connect(self.check_for_updates)
         session_layout.addWidget(self.update_button, 1, 1)
-        self.theme_toggle_btn = QPushButton("☀️ Day / 🌙 Night")
+        self.theme_toggle_btn = QPushButton("🌞 Day / 🌙 Night")
         self.theme_toggle_btn.setToolTip("Toggle between Day and Night appearance")
         self.theme_toggle_btn.setMinimumWidth(160)
         self.theme_toggle_btn.clicked.connect(self.toggle_theme)
@@ -1485,8 +1485,9 @@ class MainWindow(QMainWindow):
 
         # Live wallpaper controls belong on Home, not buried in Settings.
         appearance_row = QHBoxLayout()
-        wallpaper_label = QLabel("🎞 Live wallpaper")
+        wallpaper_label = QLabel("🎞️ Live wallpaper")
         wallpaper_label.setProperty("sectionHeading", True)
+        wallpaper_label.setStyleSheet("color: #A78BFA; font-weight: 800;")
         appearance_row.addWidget(wallpaper_label)
         self.home_wallpaper_combo = QComboBox()
         self.home_wallpaper_combo.setMinimumWidth(220)
