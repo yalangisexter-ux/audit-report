@@ -1526,49 +1526,132 @@ class MainWindow(QMainWindow):
         self.update_button.setEnabled(True)
 
     def build_dashboard(self):
-        l=QVBoxLayout()
-        l.setContentsMargins(20, 16, 20, 16)
-        l.setSpacing(14)
-        hero_widget=QWidget(); hero_widget.setObjectName("dashboardHero"); hero_widget.setFixedHeight(112)
-        hero=QHBoxLayout(hero_widget); hero.setContentsMargins(18,14,18,14); hero.setSpacing(18)
-        brand_mark=QLabel()
-        brand_mark.setObjectName("dashboardMark")
-        brand_mark.setFixedSize(80, 80)
-        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
-        hero.addWidget(brand_mark)
-        heading=QVBoxLayout()
-        title=QLabel("Raw Strength Calisthenics")
+        root = QVBoxLayout()
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(12)
+
+        hero = QWidget()
+        hero.setObjectName("dashboardHero")
+        hero.setMinimumHeight(112)
+        hero_layout = QHBoxLayout(hero)
+        hero_layout.setContentsMargins(18, 12, 18, 12)
+        mark = QLabel()
+        mark.setFixedSize(82, 82)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(76, 76))
+        hero_layout.addWidget(mark)
+        copy = QVBoxLayout()
+        title = QLabel("Welcome, Administrator")
         title.setProperty("heroTitle", True)
-        heading.addWidget(title)
-        subtitle=QLabel("Employee Audit Manager · Offline workforce operations")
+        copy.addWidget(title)
+        subtitle = QLabel("Raw Strength Calisthenics  ·  Employee Audit Manager")
         subtitle.setProperty("heroSubtitle", True)
-        heading.addWidget(subtitle)
-        heading.addStretch(1)
-        hero.addLayout(heading, 1)
-        self._wrap_page_in_scroll(self.dashboard, l, fixed_header=hero_widget)
-        self.kpis=QHBoxLayout(); l.addLayout(self.kpis)
-        self.kpi_labels=[]
-        for title in ["Active employees","Tasks today","Completed today","Pending or blocked","Proof missing"]:
-            box=QGroupBox(title); v=QVBoxLayout(box); label=QLabel("0"); label.setProperty("metricValue", True); v.addWidget(label); self.kpis.addWidget(box); self.kpi_labels.append(label)
-        row=QHBoxLayout(); l.addLayout(row)
-        self.dashboard_tasks=QTableWidget(0,6); self.dashboard_tasks.setHorizontalHeaderLabels(["Employee","Task","Status","Progress","Due","Proof"])
-        self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        row.addWidget(self.dashboard_tasks, 3)
-        productivity_box = QGroupBox("Productivity score")
-        productivity_layout = QVBoxLayout(productivity_box)
-        score_note = QLabel("Task progress 70% · attendance 30%. If one component is unavailable, the other is used.")
-        score_note.setProperty("mutedText", True)
-        score_note.setToolTip("For new employees, the score period starts on the joining date. Otherwise, it starts with the first recorded activity.")
-        productivity_layout.addWidget(score_note)
+        copy.addWidget(subtitle)
+        hero_layout.addLayout(copy, 1)
+        self.dashboard_clock = QLabel()
+        self.dashboard_clock.setProperty("heroSubtitle", True)
+        hero_layout.addWidget(self.dashboard_clock)
+        self._wrap_page_in_scroll(self.dashboard, root, fixed_header=hero)
+
+        self.kpis = QHBoxLayout()
+        self.kpis.setSpacing(10)
+        root.addLayout(self.kpis)
+        self.kpi_labels = []
+        specs = [("TOTAL EMPLOYEES", "👥"), ("PRESENT TODAY", "✓"), ("ABSENT TODAY", "×"), ("OPEN TASKS", "▣"), ("TODAY'S CHECK-INS", "▥")]
+        for heading, symbol in specs:
+            card = QGroupBox(heading)
+            card.setObjectName("kpiCard")
+            layout = QHBoxLayout(card)
+            icon_label = QLabel(symbol)
+            icon_label.setObjectName("kpiIcon")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setFixedSize(44, 44)
+            layout.addWidget(icon_label)
+            value = QLabel("0")
+            value.setProperty("metricValue", True)
+            layout.addWidget(value, 1)
+            self.kpis.addWidget(card, 1)
+            self.kpi_labels.append(value)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
+        root.addLayout(grid, 1)
+
+        quick = QGroupBox("⚡  Quick Actions")
+        quick.setObjectName("dashboardPanel")
+        quick_layout = QVBoxLayout(quick)
+        for text, target in [
+            ("＋  Add Employee", self.employees_tab),
+            ("✓  Assign Task", self.tasks_tab),
+            ("▦  Mark Attendance", self.attendance_tab),
+            ("▤  Generate Report", self.reports_tab),
+            ("⇩  Print / Export", self.reports_tab),
+        ]:
+            button = QPushButton(text)
+            button.setProperty("dashboardAction", True)
+            button.setMinimumHeight(38)
+            button.clicked.connect(lambda checked=False, page=target: self.tabs.setCurrentWidget(page))
+            quick_layout.addWidget(button)
+        quick_layout.addStretch(1)
+        grid.addWidget(quick, 0, 0)
+
+        recent = QGroupBox("👥  Recent Employees")
+        recent.setObjectName("dashboardPanel")
+        recent_layout = QVBoxLayout(recent)
+        self.dashboard_recent = QTableWidget(0, 5)
+        self.dashboard_recent.setHorizontalHeaderLabels(["#", "Employee ID", "Name", "Role", "Status"])
+        self.dashboard_recent.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.dashboard_recent.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.dashboard_recent.verticalHeader().setVisible(False)
+        self.dashboard_recent.setAlternatingRowColors(True)
+        recent_layout.addWidget(self.dashboard_recent)
+        grid.addWidget(recent, 0, 1)
+
+        tasks_box = QGroupBox("☑  Today's Tasks")
+        tasks_box.setObjectName("dashboardPanel")
+        tasks_layout = QVBoxLayout(tasks_box)
+        self.dashboard_tasks = QTableWidget(0, 5)
+        self.dashboard_tasks.setHorizontalHeaderLabels(["Employee", "Task", "Status", "Progress", "Due"])
+        self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.dashboard_tasks.verticalHeader().setVisible(False)
+        self.dashboard_tasks.setAlternatingRowColors(True)
+        tasks_layout.addWidget(self.dashboard_tasks)
+        grid.addWidget(tasks_box, 0, 2)
+
+        attendance = QGroupBox("◉  Today's Attendance")
+        attendance.setObjectName("dashboardPanel")
+        attendance_layout = QVBoxLayout(attendance)
+        self.dashboard_attendance_summary = QLabel("Attendance summary")
+        self.dashboard_attendance_summary.setObjectName("attendanceSummary")
+        self.dashboard_attendance_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.dashboard_attendance_summary.setWordWrap(True)
+        attendance_layout.addWidget(self.dashboard_attendance_summary)
+        self.dashboard_attendance_table = QTableWidget(0, 3)
+        self.dashboard_attendance_table.setHorizontalHeaderLabels(["Employee", "Status", "Check-in"])
+        self.dashboard_attendance_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.dashboard_attendance_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.dashboard_attendance_table.verticalHeader().setVisible(False)
+        attendance_layout.addWidget(self.dashboard_attendance_table)
+        grid.addWidget(attendance, 1, 0)
+
+        productivity = QGroupBox("Employee Productivity")
+        productivity.setObjectName("dashboardPanel")
+        productivity_layout = QVBoxLayout(productivity)
+        note = QLabel("Productivity based on task progress and recorded attendance.")
+        note.setProperty("mutedText", True)
+        productivity_layout.addWidget(note)
         self.productivity_chart = ProductivityChart()
         productivity_layout.addWidget(self.productivity_chart)
-        row.addWidget(productivity_box, 2)
+        grid.addWidget(productivity, 1, 2)
+
         self.productivity_table = QTableWidget(0, 7)
         self.productivity_table.setHorizontalHeaderLabels(["Employee", "Joined / tracking start", "Working days", "Present days", "Tasks", "Completed", "Score"])
         self.productivity_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.productivity_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        l.addWidget(self.productivity_table)
+        self.productivity_table.setVisible(False)
+        root.addWidget(self.productivity_table)
 
     def build_employees(self):
         l=QVBoxLayout()
@@ -2537,25 +2620,70 @@ class MainWindow(QMainWindow):
                 self.attendance_summary_table.setItem(r,c,item)
 
     def refresh_dashboard(self):
-        if not hasattr(self,"kpi_labels"): return
-        d=date.today().isoformat()
-        active=len(self.db.employees(False)); tasks=self.db.tasks(d)
-        completed=sum(1 for t in tasks if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100)
-        pending=sum(1 for t in tasks if t["status"] in ("Not started","In progress","Blocked","Pending review","Pending"))
-        missing=sum(1 for t in tasks if not t["proof_url"] and t["status"] in ("Submitted","Completed"))
-        for lab,val in zip(self.kpi_labels,[active,len(tasks),completed,pending,missing]): lab.setText(str(val))
+        if not hasattr(self, "kpi_labels"):
+            return
+        report_date = date.today().isoformat()
+        employees = self.db.employees(False)
+        tasks = self.db.tasks(report_date)
+        present = 0
+        absent = 0
+        checked_in = 0
+        attendance_rows = []
+        for employee in employees:
+            record = self.db.conn.execute(
+                "SELECT attendance_status, check_in FROM attendance WHERE employee_id=? AND work_date=?",
+                (employee["id"], report_date),
+            ).fetchone()
+            status = record["attendance_status"] if record and record["attendance_status"] else "Not checked"
+            check_in = record["check_in"] if record and record["check_in"] else "—"
+            if status.lower() == "present" or (record and record["check_in"]):
+                status = "Present"
+                present += 1
+                if record and record["check_in"]:
+                    checked_in += 1
+            elif status.lower() == "absent":
+                absent += 1
+            attendance_rows.append((employee["name"], status, check_in))
+        open_tasks = sum(1 for task in tasks if task["status"] not in ("Completed", "Submitted") and int(task["progress"] or 0) < 100)
+        for label, value in zip(self.kpi_labels, [len(employees), present, absent, open_tasks, checked_in]):
+            label.setText(str(value))
+        if hasattr(self, "dashboard_clock"):
+            self.dashboard_clock.setText(datetime.now().strftime("%d %B %Y  ·  %I:%M %p"))
+        if hasattr(self, "dashboard_recent"):
+            self.dashboard_recent.setRowCount(0)
+            for index, employee in enumerate(reversed(employees[-8:]), 1):
+                row = self.dashboard_recent.rowCount()
+                self.dashboard_recent.insertRow(row)
+                values = [str(index), employee["employee_code"] or "", employee["name"] or "", employee["designation"] or "", "Active" if employee["active"] else "Inactive"]
+                for column, value in enumerate(values):
+                    self.dashboard_recent.setItem(row, column, QTableWidgetItem(str(value)))
         self.dashboard_tasks.setRowCount(0)
-        for t in tasks:
-            r=self.dashboard_tasks.rowCount(); self.dashboard_tasks.insertRow(r)
-            vals=[t["employee_name"],t["title"],t["status"],f'{t["progress"]}%',t["due_time"],"Missing" if not t["proof_url"] else "Provided"]
-            self.set_row_items(self.dashboard_tasks, r, vals, status_cols={2, 5})
-        metrics=[]
+        for task in tasks[:12]:
+            row = self.dashboard_tasks.rowCount()
+            self.dashboard_tasks.insertRow(row)
+            values = [task["employee_name"], task["title"], task["status"], f'{task["progress"]}%', task["due_time"] or "—"]
+            for column, value in enumerate(values):
+                self.dashboard_tasks.setItem(row, column, QTableWidgetItem(str(value)))
+        if hasattr(self, "dashboard_attendance_table"):
+            self.dashboard_attendance_table.setRowCount(0)
+            for name, status, check_in in attendance_rows[:8]:
+                row = self.dashboard_attendance_table.rowCount()
+                self.dashboard_attendance_table.insertRow(row)
+                for column, value in enumerate((name, status, check_in)):
+                    self.dashboard_attendance_table.setItem(row, column, QTableWidgetItem(str(value)))
+            total = len(employees)
+            percent = round((present / total) * 100) if total else 0
+            self.dashboard_attendance_summary.setText(f"{percent}% checked in\n{present} Present  ·  {absent} Absent  ·  {max(0, total-present-absent)} Not checked")
+        metrics = []
         self.productivity_table.setRowCount(0)
-        for e in self.db.employees(False):
-            m=self.employee_productivity(e); metrics.append((e["name"],m["score"]))
-            vals=[e["name"],m["start"].isoformat(),m["working_days"],m["present"],m["tasks"],m["completed"],f"{m['score']}%"]
-            r=self.productivity_table.rowCount(); self.productivity_table.insertRow(r)
-            for c,v in enumerate(vals): self.productivity_table.setItem(r,c,QTableWidgetItem(str(v)))
+        for employee in employees:
+            metric = self.employee_productivity(employee)
+            metrics.append((employee["name"], metric["score"]))
+            values = [employee["name"], metric["start"].isoformat(), metric["working_days"], metric["present"], metric["tasks"], metric["completed"], f'{metric["score"]}%']
+            row = self.productivity_table.rowCount()
+            self.productivity_table.insertRow(row)
+            for column, value in enumerate(values):
+                self.productivity_table.setItem(row, column, QTableWidgetItem(str(value)))
         self.productivity_chart.set_values(metrics)
 
     def report_data(self, report_date, employee_id=None):
