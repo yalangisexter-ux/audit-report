@@ -8,9 +8,10 @@ on:
 permissions:
   contents: write
 
-# Queue main builds instead of cancelling earlier runs; each commit gets its own result.
+# Give every commit its own concurrency group. New pushes must never cancel
+# or replace queued builds for earlier commits.
 concurrency:
-  group: audit-report-main-release
+  group: audit-report-main-release-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
