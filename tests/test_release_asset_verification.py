@@ -88,7 +88,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert "homeThemeDropdown" in source
     assert "homeWallpaperDropdown" in source
     assert 'icon_label = QLabel(symbol)' in source
-    assert 'from PySide6.QtSvg import QSvgRenderer' in source
+    assert 'QPixmap' in source
     assert 'QWidget#homeContent { background: rgba(15,23,42,0.94)' in source
     assert 'QWidget#pageContent { background: rgba(15,23,42,0.92)' in source
     assert 'QWidget#sessionStrip { background: rgba(11,18,32,0.94)' in source
