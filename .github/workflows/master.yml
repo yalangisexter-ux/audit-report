@@ -8,10 +8,10 @@ on:
 permissions:
   contents: write
 
-# Keep only the newest main build active so two rapid pushes cannot race to publish one tag.
+# Queue main builds instead of cancelling earlier runs; each commit gets its own result.
 concurrency:
   group: audit-report-main-release
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
