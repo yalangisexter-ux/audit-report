@@ -1332,15 +1332,17 @@ class MainWindow(QMainWindow):
         central.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         central.setAutoFillBackground(False)
         self.setCentralWidget(central)
-        # Keep page containers translucent so the animated wallpaper is visible.
+        # The wallpaper stays behind the page surfaces; content panels remain high-contrast.
         self.bg_anim.setParent(central)
         self.bg_anim.lower()
         self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
 
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for page in (self.home_tab, self.dashboard, self.employees_tab, self.tasks_tab, self.tracker_tab, self.attendance_tab, self.reports_tab, self.archive_tab, self.settings_tab):
-            page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-            page.setAutoFillBackground(False)
+            # Do not let the animated child background paint through the page surface.
+            page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            page.setAutoFillBackground(True)
+            page.setObjectName("appPageSurface")
         self.business_tab = BusinessTrackingTab(self.db)
         tab_items = [(self.home_tab,"⌂  Home"),(self.dashboard,"▦  Dashboard"),(self.employees_tab,"♙  Employees"),(self.tasks_tab,"✓  Task Manager"),(self.tracker_tab,"◷  Employee Tracker"),(self.attendance_tab,"◉  Attendance"),(self.reports_tab,"▤  Print Center"),(self.archive_tab,"▣  EOD Archive"),(self.business_tab,"◈  Business Tracking"),(self.settings_tab,"⚙  Settings & Backup")]
         for widget, title in tab_items:
@@ -3955,7 +3957,8 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
-QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; }
+QWidget#appPageSurface { background: #F8FAFC; color: #0F172A; }
+QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
@@ -4086,7 +4089,8 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
+QWidget#appPageSurface { background: #111827; color: #F8FAFC; }
+QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #64748B; }
 QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
 QGroupBox::title { color: #CBD5E1; }
 QLabel { color: #E2E8F0; }
