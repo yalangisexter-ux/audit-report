@@ -150,7 +150,7 @@ def valid_hhmm(value):
     """Validate strict 24-hour HH:MM input, including leading zeroes."""
     import re
     text = str(value).strip() if value is not None else ""
-    if not re.fullmatch(r"(?:[01]\\d|2[0-3]):[0-5]\\d", text):
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", text):
         return False
     try:
         datetime.strptime(text, "%H:%M")
