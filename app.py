@@ -1210,20 +1210,20 @@ class WallpaperPhotoLoader(QThread):
 
 class AnimatedBackground(QWidget):
     """High-resolution photographic wallpapers with gentle Ken Burns motion and particles."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Shiva", "Lord Shiva", "Love & Couples")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Lord Shiva", "Love & Couples")
     PHOTO_WALLPAPERS = {
         "Galaxy": ("galaxy.jpg", "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Milky Way": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Milky Way Waves": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Ocean Waves": ("ocean_waves.jpg", "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
-        "Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Lord Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Love & Couples": ("love_couples.jpg", "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
     }
 
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
-        self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        # Normalize the former duplicate option for existing saved preferences.
+        self.mode = "Lord Shiva" if mode == "Shiva" else (mode if mode in self.STYLES else "Ambient Glow")
         self.wallpaper_pixmap = QPixmap()
         self.photo_loader = None
         self.phase = 0.0
@@ -1284,7 +1284,7 @@ class AnimatedBackground(QWidget):
             QTimer.singleShot(0, self._load_wallpaper_image)
 
     def set_mode(self, mode):
-        self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self.mode = "Lord Shiva" if mode == "Shiva" else (mode if mode in self.STYLES else "Ambient Glow")
         self.init_particles()
         self._load_wallpaper_image()
         self.update()
@@ -1362,9 +1362,11 @@ class AnimatedBackground(QWidget):
             # opaque/light, so moving photos never reduce text contrast.
             veil = QLinearGradient(0, 0, 0, h)
             if is_day:
-                fade = 78 + int(22 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
-                veil.setColorAt(0.0, QColor(255, 255, 255, max(62, fade - 12)))
-                veil.setColorAt(1.0, QColor(255, 255, 255, min(145, fade + 28)))
+                # Keep wallpaper motion visible only as a subtle backdrop, never
+                # as competing detail behind text and controls.
+                fade = 210 + int(10 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(198, fade - 10)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(242, fade + 18)))
             else:
                 veil.setColorAt(0.0, QColor(3, 7, 18, 52))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 92))
@@ -1443,7 +1445,9 @@ class MainWindow(QMainWindow):
         self.header_logo_menu.setFixedSize(36, 32)
         self.header_logo_menu.setToolTip("Go to Home")
         self.header_logo_menu.setAccessibleName("Application menu")
-        title_layout.addWidget(self.header_logo_menu)
+        # Keep the original icon for the Windows taskbar/window, but remove the
+        # redundant icon button from the visible title bar.
+        self.header_logo_menu.hide()
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("titleLabel")
         self.title_label.setMinimumWidth(0)
@@ -1705,7 +1709,7 @@ class MainWindow(QMainWindow):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
                 widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-                if widget.text() and (len(widget.text()) > 28 or "\n" in widget.text()):
+                if widget.text() and (len(widget.text()) > 22 or "\n" in widget.text()):
                     widget.setWordWrap(True)
                     widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for widget in self.findChildren(QLineEdit):
@@ -1714,10 +1718,24 @@ class MainWindow(QMainWindow):
             widget.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
         for widget in self.findChildren(QComboBox):
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            widget.setMinimumWidth(0)
             view = widget.view()
             if view is not None:
                 view.setMinimumWidth(max(widget.width(), widget.minimumWidth(), 180))
                 view.setUniformItemSizes(False)
+                # Explicit popup styling avoids low-contrast/solid-looking options.
+                if self.current_theme() == "night":
+                    view.setStyleSheet("""
+                        QListView { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
+                        QListView::item { background: #111827; color: #F8FAFC; padding: 7px 10px; min-height: 24px; }
+                        QListView::item:selected { background: #6D28D9; color: #FFFFFF; }
+                    """)
+                else:
+                    view.setStyleSheet("""
+                        QListView { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
+                        QListView::item { background: #FFFFFF; color: #0F172A; padding: 7px 10px; min-height: 24px; }
+                        QListView::item:selected { background: #6D28D9; color: #FFFFFF; }
+                    """)
         for widget in self.findChildren(QDateEdit):
             widget.setCalendarPopup(True)
             calendar = widget.calendarWidget()
@@ -4557,7 +4575,7 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
-QWidget#appPageSurface { background: transparent; color: #0F172A; }
+QWidget#appPageSurface { background: rgba(255, 255, 255, 238); color: #0F172A; }
 QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
 QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }
@@ -4573,7 +4591,10 @@ QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
 QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #94A3B8; }
 QWidget#guideItem { background: #F1F5F9; border: 1px solid #94A3B8; }
-QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit {
+    background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus,
+QTimeEdit:focus, QComboBox:focus, QDateEdit:focus { border: 1px solid #6D28D9; }
 QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
 QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
 QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
