@@ -35,11 +35,11 @@ def test_available_stock_calculation():
     avail = business_tracking.available_stock(p)
     assert avail == 100 + 50 - 10 - 20 - 5 + 3 - 2 - 1 - 0
 
-def test_duplicate_sku_is_rejected():
+def test_duplicate_sku_is_rejected(monkeypatch):
     import sqlite3, tempfile, os, sys
     from types import ModuleType
     for name in ['PySide6', 'PySide6.QtWidgets', 'PySide6.QtCore']:
-        sys.modules[name] = ModuleType(name)
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
     qt = sys.modules['PySide6.QtWidgets']
     for cls in ['QWidget', 'QVBoxLayout', 'QHBoxLayout', 'QTabWidget', 'QLabel', 'QPushButton',
                 'QTableWidget', 'QTableWidgetItem', 'QLineEdit', 'QComboBox', 'QFormLayout',
@@ -63,11 +63,11 @@ def test_duplicate_sku_is_rejected():
     conn.close()
     os.unlink(path)
 
-def test_parse_quantity_rejects_invalid():
+def test_parse_quantity_rejects_invalid(monkeypatch):
     import sys
     from types import ModuleType
     for name in ['PySide6', 'PySide6.QtWidgets', 'PySide6.QtCore']:
-        sys.modules[name] = ModuleType(name)
+        monkeypatch.setitem(sys.modules, name, ModuleType(name))
     qt = sys.modules['PySide6.QtWidgets']
     for cls in ['QWidget', 'QVBoxLayout', 'QHBoxLayout', 'QTabWidget', 'QLabel', 'QPushButton',
                 'QTableWidget', 'QTableWidgetItem', 'QLineEdit', 'QComboBox', 'QFormLayout',

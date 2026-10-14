@@ -134,7 +134,11 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'self.header_clock.show()' in source
     assert 'self._wrap_page_in_scroll(self.dashboard, root)' in source
     assert 'grid.addWidget(productivity, 1, 1, 1, 2)' in source
-    assert 'Qt.TextFlag.TextWordWrap, name)' in source
+    assert 'Qt.TextFlag.TextWordWrap, display_name)' in source
+    assert 'if slot >= 72:' in source and 'elif slot >= 38:' in source
+    assert 'tooltip_for_index(self, index)' in source
+    assert 'QToolTip.showText' in source
+    assert 'QProgressBar#dashboardProgress' in source
     assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
     assert "QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}" in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
@@ -199,7 +203,13 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
     assert 'label.setWordWrap(True)' in source
     assert 'dialog_width = max(240, min(500, available_width - 32))' in source
     assert 'box.setMinimumWidth(dialog_width)' in source
-    assert '"🟢"' in source and '"🔴"' in source and '"🟣"' in source
+    assert '"PRESENT TODAY", "✓", "#15803D"' in source
+    assert '"ABSENT TODAY", "×", "#BE123C"' in source
+    assert 'class AnimatedDashboardIcon(QLabel)' in source
+    assert 'self._hover_animation.start()' in source
+    assert 'not is_explicitly_completed_task_status(task["status"])' in source
+    assert 'def is_explicitly_completed_task_status(status):' in source
+    assert 'not_checked = max(0, total - present - absent - leave)' in source
     assert "Live print preview — updates when report options change" in source
     assert "self.report_summary.setMinimumHeight(220)" in source
     assert "def preview_report(self):" in source
@@ -349,3 +359,157 @@ def test_previous_release_choices_only_returns_installable_stable_versions_sorte
     ]
     choices = app.previous_release_choices(releases, "1.2.32")
     assert [choice[0] for choice in choices] == ["v1.2.31", "v1.2.10"]
+
+
+def test_dashboard_summaries_and_progress_widgets_remain_accurate(monkeypatch, tmp_path):
+    from datetime import date, datetime
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "dashboard.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    today = date.today().isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    employees = [("EMP-1", "Present Person"), ("EMP-2", "Absent Person"),
+                 ("EMP-3", "On Leave"), ("EMP-4", "Unmarked Person")]
+    for code, name in employees:
+        db.conn.execute(
+            "INSERT INTO employees(employee_code,name,joining_date,active,created_at) VALUES(?,?,?,?,?)",
+            (code, name, today, 1, timestamp),
+        )
+    employee_ids = [row["id"] for row in db.employees()]
+    for employee_id, status, check_in in (
+        (employee_ids[0], "Present", "09:00"),
+        (employee_ids[1], "Absent", ""),
+        (employee_ids[2], "Leave", ""),
+    ):
+        db.conn.execute(
+            "INSERT INTO attendance(employee_id,work_date,check_in,attendance_status,updated_at) VALUES(?,?,?,?,?)",
+            (employee_id, today, check_in, status, timestamp),
+        )
+    tasks = [(employee_ids[0], "In progress", 50), (employee_ids[1], "Cancelled", 0),
+             (employee_ids[2], "Submitted", 100), (employee_ids[3], None, 100),
+             (employee_ids[3], "N/A", 100)]
+    for employee_id, status, progress in tasks:
+        db.conn.execute(
+            "INSERT INTO tasks(employee_id,task_date,title,status,progress,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            (employee_id, today, f"{status} task", status, progress, timestamp, timestamp),
+        )
+    db.conn.commit()
+
+    window = app.MainWindow(db, {"username": "Preview", "role": "Admin"})
+    try:
+        window.apply_theme("day")
+        for _ in range(3):
+            window.refresh_dashboard()
+        qt_app.processEvents()
+
+        assert "1 Present" in window.dashboard_attendance_summary.text()
+        assert "1 Absent" in window.dashboard_attendance_summary.text()
+        assert "1 Leave" in window.dashboard_attendance_summary.text()
+        assert "1 Not checked" in window.dashboard_attendance_summary.text()
+        assert window.kpi_labels[3].text() == "3"
+        bars = [window.dashboard_tasks.cellWidget(row, 3) for row in range(window.dashboard_tasks.rowCount())]
+        assert len(bars) == len(tasks)
+        assert all(isinstance(bar, app.QProgressBar) and bar.toolTip() for bar in bars)
+    finally:
+        window.close()
+        db.conn.close()
+
+
+def test_unknown_task_status_never_counts_as_completed_from_stale_progress(monkeypatch, tmp_path):
+    from datetime import date, datetime
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "task-status.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    today = date.today().isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor = db.conn.execute(
+        "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
+        ("Status Check", today, 1, timestamp),
+    )
+    employee_id = cursor.lastrowid
+    for status in (None, "N/A", "Completed", "In progress"):
+        db.conn.execute(
+            "INSERT INTO tasks(employee_id,task_date,title,status,progress,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            (employee_id, today, f"{status} task", status, 100, timestamp, timestamp),
+        )
+    db.conn.commit()
+    window = app.MainWindow(db, {"username": "Preview", "role": "Admin"})
+    try:
+        metric = window.employee_productivity(db.employee(employee_id), date.today())
+        assert metric["completed"] == 1
+        assert metric["task_score"] == 50
+    finally:
+        window.close()
+        db.conn.close()
+    qt_app.processEvents()
+
+
+def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_path):
+    import csv
+    import zipfile
+    from datetime import date, datetime
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "report-links.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    today = date.today().isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor = db.conn.execute(
+        "INSERT INTO employees(employee_code,name,department,joining_date,active,created_at) VALUES(?,?,?,?,?,?)",
+        ("EMP-LINK", "Proof Link", "QA", today, 1, timestamp),
+    )
+    employee_id = cursor.lastrowid
+    urls = "https://example.com/proof?id=1&x=2\nhttps://example.org/second"
+    db.conn.execute(
+        "INSERT INTO tasks(employee_id,task_date,title,status,progress,proof_url,proof_note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        (employee_id, today, "Linked task", "Submitted", 100, urls, "See https://example.net/note", timestamp, timestamp),
+    )
+    db.conn.commit()
+    window = app.MainWindow(db, {"username": "Preview", "role": "Admin"})
+    try:
+        window.eod_checks["proof_notes"].setChecked(True)
+        options = window.selected_eod_options()
+        docx_path = tmp_path / "proof-links.docx"
+        pdf_path = tmp_path / "proof-links.pdf"
+        csv_path = tmp_path / "proof-links.csv"
+        window.make_docx(docx_path, today, employee_id, "Audit / EOD", options)
+        window.make_pdf(pdf_path, today, employee_id, "Audit / EOD", options)
+        window.export_report_csv(csv_path, today, employee_id, "Audit / EOD", options)
+
+        with zipfile.ZipFile(docx_path) as archive:
+            relationships = archive.read("word/_rels/document.xml.rels").decode("utf-8")
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+        assert "https://example.com/proof?id=1&amp;x=2" in relationships
+        assert "https://example.org/second" in relationships
+        assert "https://example.net/note" in relationships
+        assert "<w:hyperlink" in document_xml
+        pdf_bytes = pdf_path.read_bytes()
+        assert b"/URI" in pdf_bytes and b"https://example.com/proof" in pdf_bytes
+
+        with csv_path.open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.reader(stream))
+        proof_columns = [index for index, heading in enumerate(rows[0]) if heading.startswith("Proof URL")]
+        assert len(proof_columns) == 3
+        assert rows[1][proof_columns[0]].startswith('=HYPERLINK("https://example.com/proof?id=1&x=2"')
+        assert rows[1][proof_columns[1]].startswith('=HYPERLINK("https://example.org/second"')
+        assert rows[1][proof_columns[2]].startswith('=HYPERLINK("https://example.net/note"')
+        assert "https://example.net/note" not in rows[1][rows[0].index("Proof notes")]
+
+        window.report_type.setCurrentText("Employee Attendance")
+        window.eod_checks["attendance_times"].setChecked(False)
+        attendance_csv = tmp_path / "attendance.csv"
+        window.export_report_csv(attendance_csv, today, employee_id, "Employee Attendance", window.selected_eod_options())
+        with attendance_csv.open(encoding="utf-8-sig", newline="") as stream:
+            attendance_headers = next(csv.reader(stream))
+        assert "Check-in" not in attendance_headers and "Check-out" not in attendance_headers
+    finally:
+        window.close()
+        db.conn.close()
+    qt_app.processEvents()

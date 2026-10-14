@@ -46,6 +46,27 @@ def test_task_columns_added_without_dropping_rows(tmp_path, monkeypatch):
     finally:
         database.conn.close()
 
+def test_legacy_null_and_na_task_statuses_are_preserved_without_becoming_completed(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy_statuses.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE tasks(id INTEGER PRIMARY KEY, title TEXT, status TEXT, progress INTEGER)")
+    conn.execute("INSERT INTO tasks VALUES (1, 'No selection', NULL, 100)")
+    conn.execute("INSERT INTO tasks VALUES (2, 'Legacy NA', 'N/A', 100)")
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    database = app.Database()
+    try:
+        rows = database.conn.execute("SELECT title,status,progress FROM tasks ORDER BY id").fetchall()
+        assert [(row["title"], row["status"], row["progress"]) for row in rows] == [
+            ("No selection", None, 100), ("Legacy NA", "N/A", 100),
+        ]
+        assert app.is_explicitly_completed_task_status(rows[0]["status"]) is False
+        assert app.is_explicitly_completed_task_status(rows[1]["status"]) is False
+    finally:
+        database.conn.close()
+
 def test_submitted_at_preserved_on_ordinary_edit():
     """Simulate TaskDialog.values logic: existing submitted_at is kept."""
     # Mimic the logic from TaskDialog.values

@@ -1,13 +1,15 @@
 import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re
+from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, date
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QSize, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QDate, QTime, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
-    QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog,
+    QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QToolTip,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
     QToolButton, QMenu, QSizePolicy, QFrame, QListView
 )
@@ -181,6 +183,63 @@ EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def is_explicitly_completed_task_status(status):
+    """Only an explicit Completed or Submitted state counts as complete."""
+    return isinstance(status, str) and status.strip().casefold() in {"completed", "submitted"}
+
+
+def task_status_label(status):
+    """Display missing legacy states clearly without rewriting the stored value."""
+    if status is None or not str(status).strip():
+        return "Not selected"
+    return str(status).strip()
+
+
+def is_known_task_status(status):
+    """Return False for blank, unselected, and legacy NA task states."""
+    if not isinstance(status, str):
+        return False
+    value = status.strip().casefold()
+    return value in {
+        "not started", "in progress", "submitted", "completed", "blocked",
+        "pending review", "pending", "cancelled",
+    }
+
+
+def proof_urls(value):
+    """Extract safe web links from a proof field while ignoring non-URL text."""
+    found = []
+    for match in re.findall(r"https?://[^\s<>]+", str(value or ""), flags=re.IGNORECASE):
+        candidate = match.rstrip(".,;:!?)]}")
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            continue
+        if parsed.scheme.lower() in ("http", "https") and parsed.hostname:
+            found.append(candidate)
+    return list(dict.fromkeys(found))
+
+
+def add_docx_linkified_text(paragraph, text):
+    """Append text while formatting any embedded HTTP(S) URL as a hyperlink."""
+    raw = str(text or "")
+    matches = list(re.finditer(r"https?://[^\s<>]+", raw, flags=re.IGNORECASE))
+    position = 0
+    for match in matches:
+        url = match.group(0).rstrip(".,;:!?)]}")
+        if not proof_urls(url):
+            continue
+        trailing = match.group(0)[len(url):]
+        if match.start() > position:
+            paragraph.add_run(raw[position:match.start()])
+        add_docx_hyperlink(paragraph, url)
+        if trailing:
+            paragraph.add_run(trailing)
+        position = match.end()
+    if position < len(raw):
+        paragraph.add_run(raw[position:])
 
 def configure_date_edit(date_edit):
     date_edit.setCalendarPopup(True)
@@ -1147,6 +1206,7 @@ class TaskDialog(QDialog):
         ("Pending review", "Pending review"),
         ("Pending", "Pending"),
         ("Cancelled", "Cancelled"),
+        ("Not selected", None),
     ]
     def __init__(self, db, parent=None, row=None, employee_id=None):
         super().__init__(parent); self.setWindowTitle("Task details"); self.setMinimumWidth(520)
@@ -1174,7 +1234,8 @@ class TaskDialog(QDialog):
             self.priority.setCurrentText(row["priority"])
             status_index=self.status.findData(row["status"])
             if status_index < 0:
-                self.status.addItem(row["status"], row["status"])
+                label = "Not selected" if row["status"] is None or not str(row["status"]).strip() else row["status"]
+                self.status.addItem(label, row["status"])
                 status_index=self.status.count()-1
             self.status.setCurrentIndex(status_index); self.progress.setValue(row["progress"])
         self.layout.addRow("Employee *", self.employee); self.layout.addRow("Task date", self.date)
@@ -1202,51 +1263,187 @@ class TaskDialog(QDialog):
 
 class ProductivityChart(QWidget):
     """Lightweight native Qt bar chart; no charting dependency is required."""
+    PALETTES = {
+        "day": {
+            "background": "#FFFFFF", "grid": "#E2E8F0", "axis": "#64748B", "label": "#0F172A",
+            "strong": "#16A34A", "steady": "#2563EB", "attention": "#D97706",
+        },
+        "night": {
+            "background": "#0F172A", "grid": "#334155", "axis": "#94A3B8", "label": "#F8FAFC",
+            "strong": "#34D399", "steady": "#60A5FA", "attention": "#FBBF24",
+        },
+        "ocean": {
+            "background": "#F0F9FF", "grid": "#BAE6FD", "axis": "#0C4A6E", "label": "#075985",
+            "strong": "#059669", "steady": "#0284C7", "attention": "#D97706",
+        },
+        "sunset": {
+            "background": "#FFF7ED", "grid": "#FED7AA", "axis": "#9A3412", "label": "#7C2D12",
+            "strong": "#16A34A", "steady": "#EA580C", "attention": "#C2410C",
+        },
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.values = []
+        self._hovered_index = None
+        self.setMouseTracking(True)
         self.setMinimumHeight(210)
         self.setSizePolicy(self.sizePolicy().horizontalPolicy(), self.sizePolicy().verticalPolicy())
+        self.setToolTip("Hover over a bar for its employee and productivity score.")
+
+    @classmethod
+    def palette_for_theme(cls, theme_name):
+        return cls.PALETTES.get((theme_name or "day").lower(), cls.PALETTES["day"])
+
+    def _current_palette(self):
+        window = self.window()
+        current_theme = getattr(window, "current_theme", None)
+        theme_name = current_theme() if callable(current_theme) else "day"
+        return self.palette_for_theme(theme_name)
+
+    def _plot_bounds(self):
+        left, right, top, bottom = 44, 18, 20, 44
+        plot_width = max(1, self.width() - left - right)
+        plot_height = max(1, self.height() - top - bottom)
+        return left, top, plot_width, plot_height
+
+    def _bar_rect(self, index):
+        if not self.values:
+            return QRectF()
+        left, top, plot_width, plot_height = self._plot_bounds()
+        slot = plot_width / len(self.values)
+        bar_width = max(1, min(42, int(slot * 0.56)))
+        name, score = self.values[index]
+        x = left + slot * index + (slot - bar_width) / 2
+        bar_height = plot_height * max(0, min(100, score)) / 100
+        y = top + plot_height - bar_height
+        return QRectF(x, y, bar_width, max(2, bar_height))
+
+    def tooltip_for_index(self, index):
+        if index < 0 or index >= len(self.values):
+            return ""
+        name, score = self.values[index]
+        band = "Strong" if score >= 80 else ("On track" if score >= 60 else "Needs attention")
+        return f"{name}\nProductivity score: {score}%\nPerformance: {band}"
 
     def set_values(self, values):
-        self.values = list(values)
+        normalized = []
+        for name, score in values:
+            try:
+                numeric_score = int(round(float(score or 0)))
+            except (TypeError, ValueError, OverflowError):
+                numeric_score = 0
+            normalized.append((str(name or "Unknown employee"), max(0, min(100, numeric_score))))
+        self.values = normalized
+        self._hovered_index = None
         self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#ffffff"))
-        painter.setPen(QColor("#64748b"))
+        colors = self._current_palette()
+        painter.fillRect(self.rect(), QColor(colors["background"]))
+        painter.setPen(QColor(colors["axis"]))
         painter.setFont(QFont("Segoe UI", 9))
         if not self.values:
             painter.drawText(self.rect(), Qt.AlignCenter, "No employee productivity data yet")
             return
-        left, right, top, bottom = 44, 18, 20, 44
-        w = max(1, self.width() - left - right)
-        h = max(1, self.height() - top - bottom)
+        left, top, w, h = self._plot_bounds()
         for tick in (0, 25, 50, 75, 100):
             y = top + h - int(h * tick / 100)
-            painter.setPen(QPen(QColor("#e2e8f0"), 1))
+            painter.setPen(QPen(QColor(colors["grid"]), 1))
             painter.drawLine(left, y, left + w, y)
-            painter.setPen(QColor("#64748b"))
+            painter.setPen(QColor(colors["axis"]))
             painter.drawText(4, y + 4, f"{tick}%")
         count = len(self.values)
         slot = w / max(count, 1)
-        bar_width = max(12, min(42, int(slot * 0.56)))
         for i, (name, score) in enumerate(self.values):
-            x = int(left + slot * i + (slot - bar_width) / 2)
-            bh = int(h * max(0, min(100, score)) / 100)
-            y = top + h - bh
-            color = "#16a34a" if score >= 80 else ("#2563eb" if score >= 60 else "#f59e0b")
+            bar_rect = self._bar_rect(i)
+            color = colors["strong"] if score >= 80 else (colors["steady"] if score >= 60 else colors["attention"])
+            bar_color = QColor(color)
+            if i == self._hovered_index:
+                bar_color = bar_color.lighter(112)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(color))
-            painter.drawRoundedRect(x, y, bar_width, bh, 5, 5)
-            painter.setPen(QColor("#0f172a"))
-            painter.drawText(x - 8, max(top + 12, y - 5), f"{score}%")
-            painter.setPen(QColor("#475569"))
+            painter.setBrush(bar_color)
+            radius = min(6, max(1, bar_rect.width() / 2))
+            painter.drawRoundedRect(bar_rect, radius, radius)
+            if slot >= 44:
+                painter.setPen(QColor(colors["label"]))
+                painter.drawText(int(bar_rect.x()) - 8, max(top + 12, int(bar_rect.y()) - 5), f"{score}%")
+            painter.setPen(QColor(colors["axis"]))
             label_rect = QRectF(left + slot * i + 1, top + h + 5, max(1, slot - 2), 36)
             painter.setFont(QFont("Segoe UI", 8))
-            painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, name)
+            parts = name.split()
+            if slot >= 72:
+                display_name = name
+            elif slot >= 38:
+                display_name = parts[0] if parts else name
+            elif slot >= 22:
+                display_name = "".join(part[0] for part in parts[:2])
+            else:
+                display_name = ""
+            if display_name:
+                painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, display_name)
+
+    def mouseMoveEvent(self, event):
+        position = event.position()
+        hovered = next((i for i in range(len(self.values)) if self._bar_rect(i).adjusted(-5, -3, 5, 3).contains(position)), None)
+        if hovered != self._hovered_index:
+            self._hovered_index = hovered
+            self.update()
+        if hovered is None:
+            self.unsetCursor()
+            QToolTip.hideText()
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            QToolTip.showText(event.globalPosition().toPoint(), self.tooltip_for_index(hovered), self, self._bar_rect(hovered).toRect())
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered_index = None
+        self.update()
+        QToolTip.hideText()
+        self.unsetCursor()
+        super().leaveEvent(event)
+
+
+class AnimatedDashboardIcon(QLabel):
+    """A softly tinted KPI icon badge with a brief hover pulse."""
+    def __init__(self, symbol, accent, background, border, tooltip, parent=None):
+        super().__init__(symbol, parent)
+        self.setObjectName("kpiIcon")
+        self.setAccessibleName(tooltip)
+        self.setToolTip(tooltip)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedSize(44, 44)
+        self._icon_accent = accent
+        self._icon_background = background
+        self._icon_border = border
+        self.setStyleSheet(
+            f"QLabel#kpiIcon {{ background: {background}; color: {accent}; border: 1px solid {border}; "
+            "border-radius: 13px; font-size: 20pt; font-weight: 700; }}"
+        )
+        self._hover_animation = QVariantAnimation(self)
+        self._hover_animation.setDuration(260)
+        self._hover_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._hover_animation.valueChanged.connect(self._apply_hover_pulse)
+
+    def _apply_hover_pulse(self, value):
+        pulse = max(0.0, min(1.0, float(value)))
+        fill = QColor(self._icon_background).lighter(100 + round(12 * pulse)).name()
+        border = QColor(self._icon_border).lighter(100 + round(20 * pulse)).name()
+        self.setStyleSheet(
+            f"QLabel#kpiIcon {{ background: {fill}; color: {self._icon_accent}; border: {1 + round(pulse)}px solid {border}; "
+            f"border-radius: {13 + round(2 * pulse)}px; font-size: {20 + 2 * pulse:.1f}pt; font-weight: 700; }}"
+        )
+
+    def enterEvent(self, event):
+        self._hover_animation.stop()
+        self._hover_animation.setStartValue(0.0)
+        self._hover_animation.setKeyValueAt(0.42, 1.0)
+        self._hover_animation.setEndValue(0.0)
+        self._hover_animation.start()
+        super().enterEvent(event)
 
 
 
@@ -1711,6 +1908,7 @@ class MainWindow(QMainWindow):
         self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
         self.polish_tables()
         self.apply_global_control_polish()
+        self.apply_hover_messages()
         self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
         # Hide native menu bar (frameless window)
@@ -1785,6 +1983,21 @@ class MainWindow(QMainWindow):
                         selection-background-color: {colors['accent']}; selection-color: #FFFFFF; }}
                     QCalendarWidget QAbstractItemView:disabled {{ color: #94A3B8; }}
                 """)
+
+    def _refresh_dashboard_action_styles(self, theme_name=None):
+        colors = self._ui_chrome_palette(theme_name or self.current_theme())
+        for button in self.findChildren(QPushButton):
+            if button.property("dashboardAction") != "true":
+                continue
+            button.setStyleSheet(f"""
+                QPushButton {{ background: {colors['nav']}; color: {colors['text']};
+                    border: 1px solid {colors['border']}; border-radius: 10px;
+                    padding: 8px 12px; text-align: left; font-weight: 650; }}
+                QPushButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']};
+                    border-color: {colors['accent']}; }}
+                QPushButton:pressed {{ background: {colors['accent']}; color: #FFFFFF;
+                    border-color: {colors['accent']}; }}
+            """)
 
     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
@@ -2102,6 +2315,9 @@ class MainWindow(QMainWindow):
             self.refresh_header_clock()
         if hasattr(self, "tabs"):
             self.apply_global_control_polish()
+        self._refresh_dashboard_action_styles(theme_name)
+        if hasattr(self, "productivity_chart"):
+            self.productivity_chart.update()
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
@@ -2433,19 +2649,25 @@ class MainWindow(QMainWindow):
         self.kpis.setSpacing(10)
         root.addLayout(self.kpis)
         self.kpi_labels = []
-        specs = [("TOTAL EMPLOYEES", "👥"), ("PRESENT TODAY", "🟢"), ("ABSENT TODAY", "🔴"), ("OPEN TASKS", "🟣"), ("TODAY'S CHECK-INS", "🔵")]
-        for heading, symbol in specs:
+        specs = [
+            ("TOTAL EMPLOYEES", "👥", "#4F46E5", "#EEF2FF", "#C7D2FE"),
+            ("PRESENT TODAY", "✓", "#15803D", "#F0FDF4", "#BBF7D0"),
+            ("ABSENT TODAY", "×", "#BE123C", "#FFF1F2", "#FECDD3"),
+            ("OPEN TASKS", "◷", "#7C3AED", "#F5F3FF", "#DDD6FE"),
+            ("TODAY'S CHECK-INS", "↗", "#0369A1", "#F0F9FF", "#BAE6FD"),
+        ]
+        for heading, symbol, accent, icon_background, icon_border in specs:
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
+            card.setToolTip(f"Current {heading.lower()} summary")
             layout = QHBoxLayout(card)
-            icon_label = QLabel(symbol)
-            icon_label.setObjectName("kpiIcon")
-            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_label.setStyleSheet("font-size: 22pt; background: transparent; border: 0;")
-            icon_label.setFixedSize(44, 44)
+            icon_label = AnimatedDashboardIcon(
+                symbol, accent, icon_background, icon_border, f"{heading.title()} indicator"
+            )
             layout.addWidget(icon_label)
             value = QLabel("0")
             value.setProperty("metricValue", True)
+            value.setToolTip(f"Current {heading.lower()} count")
             layout.addWidget(value, 1)
             self.kpis.addWidget(card, 1)
             self.kpi_labels.append(value)
@@ -2458,16 +2680,17 @@ class MainWindow(QMainWindow):
         quick = QGroupBox("⚡  Quick Actions")
         quick.setObjectName("dashboardPanel")
         quick_layout = QVBoxLayout(quick)
-        for text, target in [
-            ("＋  Add Employee", self.employees_tab),
-            ("✓  Assign Task", self.tasks_tab),
-            ("▦  Mark Attendance", self.attendance_tab),
-            ("▤  Generate Report", self.reports_tab),
-            ("⇩  Print / Export", self.reports_tab),
+        for text, target, tooltip in [
+            ("＋  Add Employee", self.employees_tab, "Open Employees to add or update an employee record."),
+            ("✓  Assign Task", self.tasks_tab, "Open Task Manager to create or update an assigned task."),
+            ("▦  Mark Attendance", self.attendance_tab, "Open Attendance to record today's status and times."),
+            ("▤  Generate Report", self.reports_tab, "Open Print Center to preview or generate a report."),
+            ("⇩  Print / Export", self.reports_tab, "Open Print Center to print or export the selected report."),
         ]:
             button = QPushButton(text)
-            button.setProperty("dashboardAction", True)
+            button.setProperty("dashboardAction", "true")
             button.setMinimumHeight(38)
+            button.setToolTip(tooltip)
             button.clicked.connect(lambda checked=False, page=target: self.tabs.setCurrentWidget(page))
             quick_layout.addWidget(button)
         quick_layout.addStretch(1)
@@ -2482,6 +2705,7 @@ class MainWindow(QMainWindow):
         self.dashboard_recent.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_recent.verticalHeader().setVisible(False)
         self.dashboard_recent.setAlternatingRowColors(True)
+        self.dashboard_recent.setToolTip("Most recently added employee records. Hover a cell to see its full value.")
         recent_layout.addWidget(self.dashboard_recent)
         grid.addWidget(recent, 0, 1)
 
@@ -2494,6 +2718,7 @@ class MainWindow(QMainWindow):
         self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_tasks.verticalHeader().setVisible(False)
         self.dashboard_tasks.setAlternatingRowColors(True)
+        self.dashboard_tasks.setToolTip("Today's task assignments and progress. Hover a progress bar for task details.")
         tasks_layout.addWidget(self.dashboard_tasks)
         grid.addWidget(tasks_box, 0, 2)
 
@@ -2504,12 +2729,14 @@ class MainWindow(QMainWindow):
         self.dashboard_attendance_summary.setObjectName("attendanceSummary")
         self.dashboard_attendance_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.dashboard_attendance_summary.setWordWrap(True)
+        self.dashboard_attendance_summary.setToolTip("Summary counts follow the attendance records for today.")
         attendance_layout.addWidget(self.dashboard_attendance_summary)
         self.dashboard_attendance_table = QTableWidget(0, 3)
         self.dashboard_attendance_table.setHorizontalHeaderLabels(["Employee", "Status", "Check-in"])
         self.dashboard_attendance_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.dashboard_attendance_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_attendance_table.verticalHeader().setVisible(False)
+        self.dashboard_attendance_table.setToolTip("Today's recorded attendance. Hover a cell to see its full value.")
         attendance_layout.addWidget(self.dashboard_attendance_table)
         grid.addWidget(attendance, 1, 0)
 
@@ -2520,6 +2747,7 @@ class MainWindow(QMainWindow):
         note.setProperty("mutedText", True)
         productivity_layout.addWidget(note)
         self.productivity_chart = ProductivityChart()
+        self.productivity_chart.setToolTip("Hover over a productivity bar for the employee score and performance band.")
         productivity_layout.addWidget(self.productivity_chart)
         self.productivity_chart.setMinimumHeight(270)
         productivity_layout.setContentsMargins(14, 12, 14, 14)
@@ -2756,14 +2984,21 @@ class MainWindow(QMainWindow):
         form.addRow("Historical archived PDF (optional)", self.archived_report)
         l.addWidget(form_group)
 
-        # EOD options with proper grid
+        # Report-specific include options; the report template stays the same while
+        # users can choose which sections and fields to print or export.
         self.eod_options_group = QGroupBox("Audit / EOD content — choose sections to include")
-        eod_grid = QGridLayout(self.eod_options_group)
-        eod_grid.setContentsMargins(12, 18, 12, 12)
-        eod_grid.setHorizontalSpacing(18)
-        eod_grid.setVerticalSpacing(8)
+        self.report_options_grid = QGridLayout(self.eod_options_group)
+        self.report_options_grid.setContentsMargins(12, 18, 12, 12)
+        self.report_options_grid.setHorizontalSpacing(18)
+        self.report_options_grid.setVerticalSpacing(8)
         self.eod_checks = {}
-        eod_options = [
+        self.report_option_keys = {
+            "Audit / EOD": ("summary", "identity", "contact", "work_status", "late_links", "missing_proof", "tasks", "details", "due_time", "proof", "proof_notes", "remarks", "pending"),
+            "Employee Attendance": ("attendance_identity", "attendance_status", "attendance_times", "attendance_remarks", "attendance_summary"),
+            "Employee Details": ("details_identity", "details_contact", "details_joining", "details_status", "details_notes"),
+            "Employee Productivity": ("productivity_identity", "productivity_metrics", "productivity_explanation", "productivity_tracking", "productivity_tasks"),
+        }
+        report_options = [
             ("summary", "Daily summary", True),
             ("identity", "Employee ID / Department / Role", True),
             ("contact", "Phone / Email", False),
@@ -2777,14 +3012,27 @@ class MainWindow(QMainWindow):
             ("proof_notes", "Proof notes", False),
             ("remarks", "Manager remarks", True),
             ("pending", "Pending items", True),
+            ("attendance_identity", "Employee ID / Department", True),
+            ("attendance_status", "Attendance status", True),
+            ("attendance_times", "Check-in / out and net hours", True),
+            ("attendance_remarks", "Attendance remarks", True),
+            ("attendance_summary", "Attendance summary", True),
+            ("details_identity", "Employee ID / Department / Role", True),
+            ("details_contact", "Phone / Email", True),
+            ("details_joining", "Joining date", True),
+            ("details_status", "Active / inactive status", True),
+            ("details_notes", "Employee notes", True),
+            ("productivity_identity", "Employee ID / Department", True),
+            ("productivity_metrics", "Productivity scores", True),
+            ("productivity_explanation", "Scoring explanation", True),
+            ("productivity_tracking", "Tracking and attendance totals", True),
+            ("productivity_tasks", "Task progress details", True),
         ]
-        cols = 4
-        for index, (key, label, checked) in enumerate(eod_options):
+        for key, label, checked in report_options:
             cb = QCheckBox(label)
             cb.setChecked(checked)
             cb.stateChanged.connect(lambda _state: self.preview_report())
             self.eod_checks[key] = cb
-            eod_grid.addWidget(cb, index // cols, index % cols)
         l.addWidget(self.eod_options_group)
 
         self.report_scope.currentIndexChanged.connect(self._report_scope_changed)
@@ -2985,7 +3233,37 @@ class MainWindow(QMainWindow):
             table.horizontalHeader().setMinimumHeight(38)
             table.horizontalHeader().setMinimumSectionSize(64)
             table.horizontalHeader().setHighlightSections(False)
+            table.setMouseTracking(True)
+            for column in range(table.columnCount()):
+                header = table.horizontalHeaderItem(column)
+                if header and not header.toolTip().strip():
+                    header.setToolTip(header.text())
+            for row in range(table.rowCount()):
+                for column in range(table.columnCount()):
+                    item = table.item(row, column)
+                    if item and not item.toolTip().strip():
+                        item.setToolTip(item.text())
             # Keep each table's own column sizing and cell alignment.
+
+    def apply_hover_messages(self):
+        """Give every action button a useful hover message, keeping explicit tips."""
+        for button in self.findChildren(QPushButton):
+            if button.toolTip().strip():
+                continue
+            label = re.sub(r"^[^A-Za-z0-9]+", "", button.text()).strip()
+            if not label:
+                label = button.accessibleName() or "this action"
+            if button.objectName() == "sidebarNavButton":
+                message = f"Open the {label} page."
+            elif label.lower().startswith("delete"):
+                message = f"{label}. This removes the selected record."
+            elif label.lower().startswith("add") or label.lower().startswith("create"):
+                message = f"{label} and enter its details."
+            elif label.lower().startswith("edit"):
+                message = f"{label} using the selected record."
+            else:
+                message = f"Click to {label}."
+            button.setToolTip(message)
 
     def selected_id(self, table, col=0):
         rows=table.selectionModel().selectedRows()
@@ -3035,7 +3313,7 @@ class MainWindow(QMainWindow):
         """Fill a table row; status_cols get colored pill styling."""
         status_cols = set(status_cols or [])
         for c, v in enumerate(values):
-            text = str(v or "")
+            text = task_status_label(v) if c in status_cols and (v is None or not str(v).strip()) else str(v or "")
             if c in status_cols:
                 item = self.status_item(text)
             else:
@@ -3082,7 +3360,7 @@ class MainWindow(QMainWindow):
             self.tracker_progress.setValue(0)
             return
         rows=self.db.tasks(d,eid)
-        completed=sum(1 for t in rows if t["status"] in ("Completed", "Submitted"))
+        completed=sum(1 for t in rows if is_explicitly_completed_task_status(t["status"]))
         avg=round(sum(t["progress"] for t in rows)/len(rows)) if rows else 0
         blocked=sum(1 for t in rows if t["status"]=="Blocked")
         in_progress=sum(1 for t in rows if t["status"]=="In progress")
@@ -3092,7 +3370,7 @@ class MainWindow(QMainWindow):
         self.tracker_progress.setValue(avg)
         for t in rows:
             r=self.tracker_table.rowCount(); self.tracker_table.insertRow(r)
-            vals=[t["id"],t["title"],t["priority"],t["status"],f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
+            vals=[t["id"],t["title"],t["priority"],task_status_label(t["status"]),f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
             self.set_row_items(self.tracker_table, r, vals, status_cols={2, 3})
 
     def add_tracker_task(self):
@@ -3143,15 +3421,26 @@ class MainWindow(QMainWindow):
             widget.setEnabled(not is_archived)
         if hasattr(self, "eod_options_group"):
             self.eod_options_group.setEnabled(not is_archived)
-            self.eod_options_group.setVisible(self.report_type.currentText() == "Audit / EOD")
+            self.eod_options_group.setVisible(True)
         if is_archived:
             self.report_summary.setPlainText("Historical archived PDF selected. Use Print Selected Report to print it, or Generate / Save to export a copy.")
         else:
             self.preview_report()
 
     def _report_type_changed(self, *_args):
-        if hasattr(self, "eod_options_group"):
-            self.eod_options_group.setVisible(self.report_type.currentText() == "Audit / EOD")
+        if hasattr(self, "report_option_keys"):
+            while self.report_options_grid.count():
+                self.report_options_grid.takeAt(0)
+            for checkbox in self.eod_checks.values():
+                checkbox.hide()
+            kind = self.report_type.currentText()
+            keys = self.report_option_keys.get(kind, self.report_option_keys["Audit / EOD"])
+            self.eod_options_group.setTitle(f"{kind} content — choose sections to include")
+            for index, key in enumerate(keys):
+                checkbox = self.eod_checks[key]
+                checkbox.setVisible(True)
+                self.report_options_grid.addWidget(checkbox, index // 3, index % 3)
+            self.eod_options_group.setVisible(True)
             self.eod_options_group.setEnabled(self.archived_report.currentData() is None)
         self.preview_report()
 
@@ -3160,6 +3449,13 @@ class MainWindow(QMainWindow):
             "summary": True, "identity": True, "contact": False, "work_status": True,
             "late_links": True, "missing_proof": True, "tasks": True, "details": True,
             "due_time": True, "proof": True, "proof_notes": False, "remarks": True, "pending": True,
+            "attendance_identity": True, "attendance_status": True, "attendance_times": True,
+            "attendance_remarks": True, "attendance_summary": True,
+            "details_identity": True, "details_contact": True, "details_joining": True,
+            "details_status": True, "details_notes": True,
+            "productivity_identity": True, "productivity_metrics": True,
+            "productivity_explanation": True, "productivity_tracking": True,
+            "productivity_tasks": True,
         }
         return {key: cb.isChecked() for key, cb in getattr(self, "eod_checks", {}).items()} or defaults
 
@@ -3427,7 +3723,7 @@ class MainWindow(QMainWindow):
         self.task_table.setRowCount(0)
         for t in rows:
             r=self.task_table.rowCount(); self.task_table.insertRow(r)
-            vals=[t["id"],t["employee_name"],t["title"],t["priority"],t["status"],f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
+            vals=[t["id"],t["employee_name"],t["title"],t["priority"],task_status_label(t["status"]),f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
             self.set_row_items(self.task_table, r, vals, status_cols={3, 4})
         self.refresh_dashboard()
 
@@ -3456,7 +3752,16 @@ class MainWindow(QMainWindow):
         start=self.tracking_start_date(employee); today=date.today()
         as_of_date=min(as_of_date or today,today)
         task_rows=self.db.conn.execute("SELECT progress,status FROM tasks WHERE employee_id=? AND task_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),as_of_date.isoformat())).fetchall()
-        task_score=(sum(int(t["progress"] or 0) for t in task_rows)/len(task_rows)) if task_rows else None
+        def task_progress(t):
+            # Legacy blank/NA statuses and unselected values must never be treated
+            # as completed just because a stale progress field contains 100.
+            if not is_known_task_status(t["status"]):
+                return 0
+            try:
+                return max(0, min(100, int(float(t["progress"] or 0))))
+            except (TypeError, ValueError, OverflowError):
+                return 0
+        task_score=(sum(task_progress(t) for t in task_rows)/len(task_rows)) if task_rows else None
         att_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),as_of_date.isoformat())).fetchall()
         weekdays=self.db.working_weekdays()
         holidays={row["holiday_date"] for row in self.db.holidays_between(start.isoformat(),as_of_date.isoformat())}
@@ -3475,7 +3780,7 @@ class MainWindow(QMainWindow):
         elif task_score is not None: score=round(task_score)
         elif attendance_score is not None: score=round(attendance_score)
         else: score=0
-        return {"start":start,"working_days":working_days,"attendance_eligible_days":attendance_eligible_days,"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
+        return {"start":start,"working_days":working_days,"attendance_eligible_days":attendance_eligible_days,"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if is_explicitly_completed_task_status(t["status"])),"task_score":task_score,"attendance_score":attendance_score,"score":score}
 
     def save_attendance_inline(self, employee_id, work_date, field, value):
         """Validate and persist inline attendance edits without losing unrelated fields."""
@@ -3552,7 +3857,7 @@ class MainWindow(QMainWindow):
         restore_row = -1
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
-            name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); self.att_table.setItem(r,0,name)
+            name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"]); self.att_table.setItem(r,0,name)
             if selected_eid is not None and e["id"] == selected_eid:
                 restore_row = r
             ci=a["check_in"] if a else ""; co=a["check_out"] if a else ""
@@ -3571,6 +3876,7 @@ class MainWindow(QMainWindow):
             # Inline editors make attendance updates visible and discoverable.
             date_item = QTableWidgetItem(d)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            date_item.setToolTip(f"Attendance date: {d}")
             self.att_table.setItem(r, 1, date_item)
 
             status_combo = QComboBox()
@@ -3609,6 +3915,7 @@ class MainWindow(QMainWindow):
 
             hours_item = QTableWidgetItem(hours)
             hours_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            hours_item.setToolTip(f"Net work hours: {hours or 'not available'}")
             self.att_table.setItem(r, 5, hours_item)
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         if restore_row >= 0:
@@ -3642,6 +3949,7 @@ class MainWindow(QMainWindow):
             for c,v in enumerate(vals):
                 item = QTableWidgetItem(str(v))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if c == 0 else Qt.AlignmentFlag.AlignCenter))
+                item.setToolTip(str(v))
                 self.attendance_summary_table.setItem(r,c,item)
 
     def refresh_dashboard(self):
@@ -3652,6 +3960,7 @@ class MainWindow(QMainWindow):
         tasks = self.db.tasks(report_date)
         present = 0
         absent = 0
+        leave = 0
         checked_in = 0
         attendance_rows = []
         for employee in employees:
@@ -3668,8 +3977,10 @@ class MainWindow(QMainWindow):
                     checked_in += 1
             elif status.lower() == "absent":
                 absent += 1
+            elif status.lower() == "leave":
+                leave += 1
             attendance_rows.append((employee["name"], status, check_in))
-        open_tasks = sum(1 for task in tasks if task["status"] not in ("Completed", "Submitted") and int(task["progress"] or 0) < 100)
+        open_tasks = sum(1 for task in tasks if not is_explicitly_completed_task_status(task["status"]) and str(task["status"] or "").strip().casefold() != "cancelled")
         for label, value in zip(self.kpi_labels, [len(employees), present, absent, open_tasks, checked_in]):
             label.setText(str(value))
         if hasattr(self, "dashboard_clock"):
@@ -3681,24 +3992,64 @@ class MainWindow(QMainWindow):
                 self.dashboard_recent.insertRow(row)
                 values = [str(index), employee["employee_code"] or "", employee["name"] or "", employee["designation"] or "", "Active" if employee["active"] else "Inactive"]
                 for column, value in enumerate(values):
-                    self.dashboard_recent.setItem(row, column, QTableWidgetItem(str(value)))
+                    item = QTableWidgetItem(str(value))
+                    item.setToolTip(str(value))
+                    self.dashboard_recent.setItem(row, column, item)
+        for row in range(self.dashboard_tasks.rowCount()):
+            old_progress = self.dashboard_tasks.cellWidget(row, 3)
+            if old_progress is not None:
+                self.dashboard_tasks.removeCellWidget(row, 3)
+                old_progress.deleteLater()
         self.dashboard_tasks.setRowCount(0)
         for task in tasks[:12]:
             row = self.dashboard_tasks.rowCount()
             self.dashboard_tasks.insertRow(row)
-            values = [task["employee_name"], task["title"], task["status"], f'{task["progress"]}%', task["due_time"] or "—"]
+            values = [task["employee_name"], task["title"], task_status_label(task["status"]), None, task["due_time"] or "—"]
             for column, value in enumerate(values):
-                self.dashboard_tasks.setItem(row, column, QTableWidgetItem(str(value)))
+                if column == 3:
+                    try:
+                        progress = int(float(task["progress"] or 0))
+                    except (TypeError, ValueError):
+                        progress = 0
+                    progress = max(0, min(100, progress))
+                    employee_name = str(task["employee_name"] or "Employee")
+                    task_title = str(task["title"] or "Task")
+                    progress_bar = QProgressBar()
+                    progress_bar.setObjectName("dashboardProgress")
+                    progress_bar.setRange(0, 100)
+                    progress_bar.setValue(progress)
+                    progress_bar.setFormat("%p%")
+                    progress_bar.setTextVisible(True)
+                    progress_bar.setAccessibleName(f"Progress for {employee_name}, {task_title}: {progress}%")
+                    progress_bar.setToolTip(f"{employee_name}\n{task_title}\nProgress: {progress}%")
+                    self.dashboard_tasks.setCellWidget(row, column, progress_bar)
+                    continue
+                item = QTableWidgetItem(str(value if value is not None else ""))
+                item.setToolTip(str(value if value is not None else ""))
+                self.dashboard_tasks.setItem(row, column, item)
         if hasattr(self, "dashboard_attendance_table"):
             self.dashboard_attendance_table.setRowCount(0)
             for name, status, check_in in attendance_rows[:8]:
                 row = self.dashboard_attendance_table.rowCount()
                 self.dashboard_attendance_table.insertRow(row)
                 for column, value in enumerate((name, status, check_in)):
-                    self.dashboard_attendance_table.setItem(row, column, QTableWidgetItem(str(value)))
+                    item = QTableWidgetItem(str(value))
+                    item.setToolTip(str(value))
+                    if column == 1:
+                        status_colors = {
+                            "Present": "#4ADE80" if self.current_theme() == "night" else "#15803D",
+                            "Absent": "#FDA4AF" if self.current_theme() == "night" else "#BE123C",
+                            "Leave": "#C4B5FD" if self.current_theme() == "night" else "#7C3AED",
+                            "Not checked": "#CBD5E1" if self.current_theme() == "night" else "#64748B",
+                        }
+                        item.setForeground(QColor(status_colors.get(status, "#64748B")))
+                    self.dashboard_attendance_table.setItem(row, column, item)
             total = len(employees)
             percent = round((present / total) * 100) if total else 0
-            self.dashboard_attendance_summary.setText(f"{percent}% checked in\n{present} Present  ·  {absent} Absent  ·  {max(0, total-present-absent)} Not checked")
+            not_checked = max(0, total - present - absent - leave)
+            self.dashboard_attendance_summary.setText(
+                f"{percent}% checked in\n{present} Present  ·  {absent} Absent  ·  {leave} Leave  ·  {not_checked} Not checked"
+            )
         metrics = []
         self.productivity_table.setRowCount(0)
         for employee in employees:
@@ -3708,7 +4059,9 @@ class MainWindow(QMainWindow):
             row = self.productivity_table.rowCount()
             self.productivity_table.insertRow(row)
             for column, value in enumerate(values):
-                self.productivity_table.setItem(row, column, QTableWidgetItem(str(value)))
+                item = QTableWidgetItem(str(value))
+                item.setToolTip(str(value))
+                self.productivity_table.setItem(row, column, item)
         self.productivity_chart.set_values(metrics)
 
     def report_data(self, report_date, employee_id=None):
@@ -3740,17 +4093,19 @@ class MainWindow(QMainWindow):
         source_value = self.source_status(employee, "missing_proof", report_date)
         if source_value:
             return source_value
-        return "Yes" if any(t["status"] in ("Submitted", "Completed") and not t["proof_url"] for t in tasks) else "No"
+        return "Yes" if any(is_explicitly_completed_task_status(t["status"]) and not t["proof_url"] for t in tasks) else "No"
 
     def task_proof_label(self, employee, task, report_date):
         if task["proof_url"]:
+            if proof_urls(task["proof_url"]):
+                return "Link(s) attached"
             return task["proof_url"]
         if task["status"] in ("Pending", "Not started", "In progress", "Blocked", "Pending review"):
             return "Not provided (task is pending or in progress)"
         source_missing = self.source_status(employee, "missing_proof", report_date)
         if source_missing and source_missing.startswith("No"):
             return "No direct URL supplied in source; see proof notes / attached EOD evidence."
-        if task["status"] in ("Submitted", "Completed"):
+        if is_explicitly_completed_task_status(task["status"]):
             return "MISSING"
         return "Not provided"
 
@@ -3802,56 +4157,64 @@ class MainWindow(QMainWindow):
         sub=doc.add_paragraph(); sub.alignment=1; sub.add_run(f"Report date: {report_date}    |    Scope: {chosen['name'] if chosen else 'All employees'}").bold=True
         doc.add_paragraph("")
         emps=self._report_employees(employee_id)
+        opts=self.selected_eod_options() if eod_options is None else eod_options
         if report_type=="Employee Details":
-            tab=doc.add_table(rows=1,cols=8); tab.style="Light Shading Accent 1"
-            headers=["Employee ID","Name","Department","Role","Phone","Email","Joining date","Status"]
-            for c,v in zip(tab.rows[0].cells,headers): c.text=v
+            fields=[("Name",lambda e:e["name"])]
+            if opts.get("details_identity",True): fields.extend([("Employee ID",lambda e:e["employee_code"] or "N/A"),("Department",lambda e:e["department"] or "N/A"),("Role",lambda e:e["designation"] or "N/A")])
+            if opts.get("details_contact",True): fields.extend([("Phone",lambda e:e["phone"] or "N/A"),("Email",lambda e:e["email"] or "N/A")])
+            if opts.get("details_joining",True): fields.append(("Joining date",lambda e:e["joining_date"] or "N/A"))
+            if opts.get("details_status",True): fields.append(("Status",lambda e:"Active" if e["active"] else "Inactive"))
+            if opts.get("details_notes",False): fields.append(("Notes",lambda e:e["notes"] or "N/A"))
+            tab=doc.add_table(rows=1,cols=len(fields)); tab.style="Light Shading Accent 1"
+            for c,(label,_value) in zip(tab.rows[0].cells,fields): c.text=label
             for e in emps:
                 cells=tab.add_row().cells
-                vals=[e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A",e["phone"] or "N/A",e["email"] or "N/A",e["joining_date"] or "N/A","Active" if e["active"] else "Inactive"]
+                vals=[value(e) for _label,value in fields]
                 for c,v in zip(cells,vals): c.text=str(v)
             doc.add_paragraph(f"Total employees: {len(emps)}")
         elif report_type=="Employee Attendance":
             if self.db.is_holiday(report_date):
                 holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(report_date,)).fetchone()
                 doc.add_paragraph(f"Declared holiday: {holiday['holiday_name'] if holiday else 'Holiday'}")
-            tab=doc.add_table(rows=1,cols=7); tab.style="Light Shading Accent 1"
-            headers=["Employee ID","Employee","Status","Check-in","Check-out","Net hours","Remarks"]
-            for c,v in zip(tab.rows[0].cells,headers): c.text=v
             rows=self._attendance_report_rows(report_date,employee_id)
+            fields=[("Employee",lambda item:item["employee"]["name"])]
+            if opts.get("attendance_identity",True): fields.extend([("Employee ID",lambda item:item["employee"]["employee_code"] or "N/A"),("Department",lambda item:item["employee"]["department"] or "N/A")])
+            if opts.get("attendance_status",True): fields.append(("Status",lambda item:item["status"]))
+            if opts.get("attendance_times",True): fields.extend([("Check-in",lambda item:item["check_in"] or "N/A"),("Check-out",lambda item:item["check_out"] or "N/A"),("Net hours",lambda item:item["net_hours"] or "N/A")])
+            if opts.get("attendance_remarks",True): fields.append(("Remarks",lambda item:item["note"] or "N/A"))
+            tab=doc.add_table(rows=1,cols=len(fields)); tab.style="Light Shading Accent 1"
+            for c,(label,_value) in zip(tab.rows[0].cells,fields): c.text=label
             for item in rows:
                 e=item["employee"]; cells=tab.add_row().cells
-                vals=[e["employee_code"] or "N/A",e["name"],item["status"],item["check_in"] or "N/A",item["check_out"] or "N/A",item["net_hours"] or "N/A",item["note"] or "N/A"]
+                vals=[value(item) for _label,value in fields]
                 for c,v in zip(cells,vals): c.text=str(v)
             present=sum(x["status"]=="Present" for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
-            doc.add_paragraph(f"Summary: Present {present}  |  Absent {absent}  |  Leave {leave}  |  Employees {len(rows)}")
+            if opts.get("attendance_summary",True): doc.add_paragraph(f"Summary: Present {present}  |  Absent {absent}  |  Leave {leave}  |  Employees {len(rows)}")
         elif report_type=="Employee Productivity":
             data=self.report_data(report_date,employee_id)
             for e,tasks,_att in data:
                 prod=self.employee_productivity(e, date.fromisoformat(report_date))
                 doc.add_heading(e["name"],level=1)
-                for label,value in [
-                    ("Employee ID",e["employee_code"] or "N/A"),("Department",e["department"] or "N/A"),
-                    ("Overall productivity score",f'{prod["score"]}%'),
-                    ("Task progress component",f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),
-                    ("Attendance component",f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data"),
-                    ("Scoring explanation","Attendance is present scheduled working days divided by attendance-eligible scheduled working days through the report date. Unmarked days count as not present; declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both components are available; otherwise the available component is used."),
-                    ("Tracking start",prod["start"].isoformat()),("Working days since tracking start",prod["working_days"]),
-                    ("Attendance-eligible working days",prod["attendance_eligible_days"]),
-                    ("Present days recorded",prod["present"]),("Tasks counted",prod["tasks"]),("Completed/submitted tasks",prod["completed"]),
-                ]:
-                    doc.add_paragraph(f"{label}: {value}",style="List Bullet")
-                if tasks:
+                if opts.get("productivity_identity",True):
+                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"}  |  Department: {e["department"] or "N/A"}',style="List Bullet")
+                if opts.get("productivity_metrics",True):
+                    for label,value in [("Overall productivity score",f'{prod["score"]}%'),("Task progress component",f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),("Attendance component",f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data")]:
+                        doc.add_paragraph(f"{label}: {value}",style="List Bullet")
+                if opts.get("productivity_explanation",True):
+                    doc.add_paragraph("Scoring explanation: Attendance is present scheduled working days divided by attendance-eligible scheduled working days through the report date. Unmarked days count as not present; declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both components are available; otherwise the available component is used.",style="List Bullet")
+                if opts.get("productivity_tracking",True):
+                    for label,value in [("Tracking start",prod["start"].isoformat()),("Working days since tracking start",prod["working_days"]),("Attendance-eligible working days",prod["attendance_eligible_days"]),("Present days recorded",prod["present"]),("Tasks counted",prod["tasks"]),("Completed/submitted tasks",prod["completed"])]:
+                        doc.add_paragraph(f"{label}: {value}",style="List Bullet")
+                if opts.get("productivity_tasks",True) and tasks:
                     doc.add_paragraph("TASK PROGRESS",style="Heading 2")
                     for t in tasks:
-                        doc.add_paragraph(f'{t["title"]} — Status: {t["status"]} — Progress: {t["progress"]}%',style="List Bullet")
-                else:
+                        doc.add_paragraph(f'{t["title"]} — Status: {task_status_label(t["status"])} — Progress: {t["progress"]}%',style="List Bullet")
+                elif opts.get("productivity_tasks",True):
                     doc.add_paragraph("No tasks recorded for the selected date.",style="List Bullet")
         else:
-            opts=eod_options or self.selected_eod_options()
             data=self.report_data(report_date,employee_id)
             all_tasks=[t for _,ts,_ in data for t in ts]
-            completed=sum(1 for t in all_tasks if t["status"] in ("Completed","Submitted"))
+            completed=sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))
             pending_count=sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))
             missing=sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,report_date).startswith("Yes"))
             if opts.get("summary",True):
@@ -3864,7 +4227,7 @@ class MainWindow(QMainWindow):
                     doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"}  |  Department: {e["department"] or "N/A"}  |  Role: {e["designation"] or "N/A"}',style="List Bullet")
                 if opts.get("contact",False):
                     doc.add_paragraph(f'Phone: {e["phone"] or "N/A"}  |  Email: {e["email"] or "N/A"}',style="List Bullet")
-                eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+                eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
                 if opts.get("work_status",True): doc.add_paragraph(f"WORK / EOD STATUS: {eod}",style="List Bullet")
                 if opts.get("late_links",True):
                     late=self.source_status(e,"late",report_date) or "Review required"
@@ -3876,21 +4239,24 @@ class MainWindow(QMainWindow):
                     doc.add_paragraph("TASKS / WORK ITEMS",style="Heading 2")
                     if tasks:
                         for idx,t in enumerate(tasks,1):
-                            doc.add_paragraph(f'{idx}. {t["title"]} — Status: {t["status"]}',style="List Bullet")
+                            doc.add_paragraph(f'{idx}. {t["title"]} — Status: {task_status_label(t["status"])}',style="List Bullet")
                             if opts.get("details",True) and t["details"]: doc.add_paragraph(f'Details: {t["details"]}',style="List Bullet 2")
                             if opts.get("due_time",True) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
                             if opts.get("proof",True):
-                                proof_urls = extract_http_urls(t["proof_url"])
-                                if proof_urls:
+                                task_links = proof_urls(t["proof_url"])
+                                if task_links:
                                     proof_paragraph = doc.add_paragraph(style="List Bullet 2")
                                     proof_paragraph.add_run("Proof / Evidence: ")
-                                    for link_index, url in enumerate(proof_urls):
+                                    for link_index, url in enumerate(task_links):
                                         if link_index:
                                             proof_paragraph.add_run(" | ")
                                         add_docx_hyperlink(proof_paragraph, url)
                                 else:
                                     doc.add_paragraph(f'Proof / Evidence: {self.task_proof_label(e,t,report_date)}',style="List Bullet 2")
-                            if opts.get("proof_notes",False) and t["proof_note"]: doc.add_paragraph(f'Proof notes: {t["proof_note"]}',style="List Bullet 2")
+                            if opts.get("proof_notes",False) and t["proof_note"]:
+                                note_paragraph=doc.add_paragraph(style="List Bullet 2")
+                                note_paragraph.add_run("Proof notes: ")
+                                add_docx_linkified_text(note_paragraph,t["proof_note"])
                             if opts.get("remarks",True): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
                     else:
                         doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
@@ -3950,7 +4316,17 @@ class MainWindow(QMainWindow):
         def clean(value):
             if value is None or str(value).strip() == "":
                 return "—"
-            return escape(str(value)).replace("\r\n", "\n").replace("\n", "<br/>")
+            raw = str(value)
+            def as_link(match):
+                matched = match.group(0)
+                url = matched.rstrip(".,;:!?)]}")
+                if not proof_urls(url):
+                    return escape(matched)
+                suffix = matched[len(url):]
+                return (f'<link href="{html_escape(url, quote=True)}" color="#075E9B">'
+                        f'{escape(url)}</link>{escape(suffix)}')
+            result = re.sub(r"https?://[^\s<>]+", as_link, raw, flags=re.IGNORECASE)
+            return result.replace("\r\n", "\n").replace("\n", "<br/>")
 
         def para(label, value, style="RSBody"):
             return Paragraph(f"<b>{escape(label)}</b> {clean(value)}", styles[style])
@@ -3963,6 +4339,7 @@ class MainWindow(QMainWindow):
 
         employee = self.db.employee(employee_id) if employee_id else None
         scope = employee["name"] if employee else "All employees"
+        opts = self.selected_eod_options() if eod_options is None else eod_options
         story = [Paragraph("RAW STRENGTH CALISTHENICS", styles["RSBrand"]),
                  Paragraph(escape(self._report_title(report_type)), styles["RSTitle"]),
                  Paragraph(f"Report date: {escape(report_date)} &nbsp;&nbsp; | &nbsp;&nbsp; Scope: {escape(scope)}", styles["RSSubtitle"]),
@@ -3972,37 +4349,35 @@ class MainWindow(QMainWindow):
             emps = self._report_employees(employee_id)
             story.append(para("TOTAL EMPLOYEES:", len(emps), "RSSection"))
             for index, e in enumerate(emps, 1):
-                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"]),
-                    bullet(f"Employee ID: {e['employee_code'] or '—'}"),
-                    bullet(f"Department: {e['department'] or '—'}"),
-                    bullet(f"Role / Designation: {e['designation'] or '—'}"),
-                    bullet(f"Phone: {e['phone'] or '—'}"),
-                    bullet(f"Email: {e['email'] or '—'}"),
-                    bullet(f"Joining date: {e['joining_date'] or '—'}"),
-                    bullet(f"Status: {'Active' if e['active'] else 'Inactive'}"),
-                    Spacer(1, 5), HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)]
+                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"])]
+                if opts.get("details_identity", True):
+                    block.extend([bullet(f"Employee ID: {e['employee_code'] or '—'}"), bullet(f"Department: {e['department'] or '—'}"), bullet(f"Role / Designation: {e['designation'] or '—'}")])
+                if opts.get("details_contact", True):
+                    block.extend([bullet(f"Phone: {e['phone'] or '—'}"), bullet(f"Email: {e['email'] or '—'}")])
+                if opts.get("details_joining", True): block.append(bullet(f"Joining date: {e['joining_date'] or '—'}"))
+                if opts.get("details_status", True): block.append(bullet(f"Status: {'Active' if e['active'] else 'Inactive'}"))
+                if opts.get("details_notes", False) and e["notes"]: block.append(bullet(f"Notes: {e['notes']}"))
+                block.extend([Spacer(1, 5), HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)])
                 story.extend(block)
 
         elif report_type == "Employee Attendance":
             rows = self._attendance_report_rows(report_date, employee_id)
             holiday = self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (report_date,)).fetchone()
-            if holiday:
+            if holiday and opts.get("attendance_summary", True):
                 story.append(para("DECLARED HOLIDAY:", holiday["holiday_name"], "RSSection"))
             present = sum(x["status"] == "Present" for x in rows)
             absent = sum(x["status"] == "Absent" for x in rows)
             leave = sum(x["status"] == "Leave" for x in rows)
-            story.append(para("SUMMARY:", f"Employees {len(rows)} | Present {present} | Absent {absent} | Leave {leave}", "RSSection"))
+            if opts.get("attendance_summary", True):
+                story.append(para("SUMMARY:", f"Employees {len(rows)} | Present {present} | Absent {absent} | Leave {leave}", "RSSection"))
             for index, item in enumerate(rows, 1):
                 e = item["employee"]
-                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"]),
-                    bullet(f"Employee ID: {e['employee_code'] or '—'}"),
-                    bullet(f"Department: {e['department'] or '—'}"),
-                    bullet(f"Attendance status: {item['status']}"),
-                    bullet(f"Check-in: {item['check_in'] or 'Not recorded'}"),
-                    bullet(f"Check-out: {item['check_out'] or 'Not recorded'}"),
-                    bullet(f"Net working hours: {item['net_hours'] or 'Not available'}"),
-                    bullet(f"Remarks: {item['note'] or '—'}"), Spacer(1, 5),
-                    HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)]
+                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"])]
+                if opts.get("attendance_identity", True): block.extend([bullet(f"Employee ID: {e['employee_code'] or '—'}"), bullet(f"Department: {e['department'] or '—'}")])
+                if opts.get("attendance_status", True): block.append(bullet(f"Attendance status: {item['status']}"))
+                if opts.get("attendance_times", True): block.extend([bullet(f"Check-in: {item['check_in'] or 'Not recorded'}"), bullet(f"Check-out: {item['check_out'] or 'Not recorded'}"), bullet(f"Net working hours: {item['net_hours'] or 'Not available'}")])
+                if opts.get("attendance_remarks", True): block.append(bullet(f"Remarks: {item['note'] or '—'}"))
+                block.extend([Spacer(1, 5), HRFlowable(width="100%", thickness=.35, color=colors.HexColor("#D4DEE7"), spaceAfter=4)])
                 story.extend(block)
 
         elif report_type == "Employee Productivity":
@@ -4010,33 +4385,28 @@ class MainWindow(QMainWindow):
             for e, tasks, _att in data:
                 prod = self.employee_productivity(e, date.fromisoformat(report_date))
                 story.append(Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]))
-                for label, value in [
-                    ("Employee ID", e["employee_code"] or "N/A"),
-                    ("Department", e["department"] or "N/A"),
-                    ("Overall productivity score", f'{prod["score"]}%'),
-                    ("Task progress component", f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),
-                    ("Attendance component", f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data"),
-                    ("Scoring explanation", "Attendance is present scheduled working days divided by attendance-eligible scheduled working days through the report date. Unmarked days count as not present; declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both components are available; otherwise the available component is used."),
-                    ("Tracking start", prod["start"].isoformat()),
-                    ("Working days since tracking start", str(prod["working_days"])),
-                    ("Attendance-eligible working days", str(prod["attendance_eligible_days"])),
-                    ("Present days recorded", str(prod["present"])),
-                    ("Tasks counted", str(prod["tasks"])),
-                    ("Completed / submitted tasks", str(prod["completed"])),
-                ]:
-                    story.append(bullet(f"{label}: {value}"))
-                story.append(Paragraph("TASK PROGRESS", styles["RSSection"]))
-                if tasks:
+                if opts.get("productivity_identity", True):
+                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"}'))
+                if opts.get("productivity_metrics", True):
+                    for label, value in [("Overall productivity score", f'{prod["score"]}%'), ("Task progress component", f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"), ("Attendance component", f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data")]:
+                        story.append(bullet(f"{label}: {value}"))
+                if opts.get("productivity_explanation", True):
+                    story.append(bullet("Scoring explanation: Attendance is present scheduled working days divided by attendance-eligible scheduled working days through the report date. Unmarked days count as not present; declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both components are available; otherwise the available component is used."))
+                if opts.get("productivity_tracking", True):
+                    for label, value in [("Tracking start", prod["start"].isoformat()), ("Working days since tracking start", str(prod["working_days"])), ("Attendance-eligible working days", str(prod["attendance_eligible_days"])), ("Present days recorded", str(prod["present"])), ("Tasks counted", str(prod["tasks"])), ("Completed / submitted tasks", str(prod["completed"]))]:
+                        story.append(bullet(f"{label}: {value}"))
+                if opts.get("productivity_tasks", True):
+                    story.append(Paragraph("TASK PROGRESS", styles["RSSection"]))
+                if opts.get("productivity_tasks", True) and tasks:
                     for t in tasks:
-                        story.append(bullet(f'{t["title"]} — Status: {t["status"]} — Progress: {t["progress"]}%'))
-                else:
+                        story.append(bullet(f'{t["title"]} — Status: {task_status_label(t["status"])} — Progress: {t["progress"]}%'))
+                elif opts.get("productivity_tasks", True):
                     story.append(bullet("No tasks recorded for the selected date."))
                 story.append(HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5))
         else:
-            opts = eod_options or self.selected_eod_options()
             data = self.report_data(report_date, employee_id)
             all_tasks = [t for _, tasks, _ in data for t in tasks]
-            completed = sum(1 for t in all_tasks if t["status"] in ("Completed", "Submitted"))
+            completed = sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))
             pending_count = sum(1 for t in all_tasks if t["status"] not in ("Completed", "Submitted", "Cancelled"))
             missing = sum(1 for e, tasks, _ in data if self.employee_missing_proof(e, tasks, report_date).startswith("Yes"))
             if opts.get("summary", True):
@@ -4051,7 +4421,7 @@ class MainWindow(QMainWindow):
                     story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}'))
                 if opts.get("contact", False):
                     story.append(bullet(f'Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}'))
-                eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted", "Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+                eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
                 if opts.get("work_status", True):
                     story.append(bullet(f"WORK / EOD STATUS: {eod}"))
                 if opts.get("late_links", True):
@@ -4064,19 +4434,20 @@ class MainWindow(QMainWindow):
                     story.append(Paragraph("TASKS / WORK ITEMS", styles["RSSection"]))
                     if tasks:
                         for idx, t in enumerate(tasks, 1):
-                            story.append(bullet(f'{idx}. {t["title"]} — Status: {t["status"]}'))
+                            story.append(bullet(f'{idx}. {t["title"]} — Status: {task_status_label(t["status"])}'))
                             if opts.get("details", True) and t["details"]:
                                 story.append(bullet(f'Details: {t["details"]}'))
                             if opts.get("due_time", True) and t["due_time"]:
                                 story.append(bullet(f'Due time: {t["due_time"]}'))
                             if opts.get("proof", True):
-                                proof_urls = extract_http_urls(t["proof_url"])
-                                if proof_urls:
+                                task_links = proof_urls(t["proof_url"])
+                                if task_links:
+                                    link_markup = " | ".join(
+                                        f'<link href="{html_escape(url, quote=True)}" color="#075E9B">{escape(url)}</link>'
+                                        for url in task_links
+                                    )
                                     story.append(Paragraph(
-                                        "&#8226;&nbsp; Proof / Evidence: " + " | ".join(
-                                            '<link href="' + escape(url, {'"': '&quot;'}) + '">' + escape(url) + '</link>'
-                                            for url in proof_urls
-                                        ),
+                                        "&#8226;&nbsp; Proof / Evidence: " + link_markup,
                                         styles["RSLink"],
                                     ))
                                 else:
@@ -4111,36 +4482,86 @@ class MainWindow(QMainWindow):
 
     def export_report_csv(self, path, report_date, employee_id=None, report_type="Audit / EOD", eod_options=None):
         import csv
-        opts=eod_options or self.selected_eod_options()
+        opts=self.selected_eod_options() if eod_options is None else eod_options
         with open(path,"w",newline="",encoding="utf-8-sig") as f:
             w=csv.writer(f)
             if report_type=="Employee Details":
-                w.writerow(["Employee ID","Name","Department","Role","Phone","Email","Joining date","Status","Notes"])
+                fields=[("Name",lambda e:e["name"])]
+                if opts.get("details_identity",True): fields.extend([("Employee ID",lambda e:e["employee_code"] or "N/A"),("Department",lambda e:e["department"] or "N/A"),("Role",lambda e:e["designation"] or "N/A")])
+                if opts.get("details_contact",True): fields.extend([("Phone",lambda e:e["phone"] or "N/A"),("Email",lambda e:e["email"] or "N/A")])
+                if opts.get("details_joining",True): fields.append(("Joining date",lambda e:e["joining_date"] or "N/A"))
+                if opts.get("details_status",True): fields.append(("Status",lambda e:"Active" if e["active"] else "Inactive"))
+                if opts.get("details_notes",False): fields.append(("Notes",lambda e:e["notes"] or "N/A"))
+                w.writerow([label for label,_value in fields])
                 for e in self._report_employees(employee_id):
-                    w.writerow([e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A",e["phone"] or "N/A",e["email"] or "N/A",e["joining_date"] or "N/A","Active" if e["active"] else "Inactive",e["notes"] or "N/A"])
+                    w.writerow([value(e) for _label,value in fields])
             elif report_type=="Employee Attendance":
-                w.writerow(["Report date","Employee ID","Employee","Department","Status","Check-in","Check-out","Net hours","Remarks"])
-                for x in self._attendance_report_rows(report_date,employee_id):
-                    e=x["employee"]; w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",x["status"],x["check_in"] or "N/A",x["check_out"] or "N/A",x["net_hours"] or "N/A",x["note"] or "N/A"])
+                rows=self._attendance_report_rows(report_date,employee_id)
+                headers=["Report date","Employee"]
+                if opts.get("attendance_identity",True): headers += ["Employee ID","Department"]
+                if opts.get("attendance_status",True): headers.append("Status")
+                if opts.get("attendance_times",True): headers += ["Check-in","Check-out","Net hours"]
+                if opts.get("attendance_remarks",True): headers.append("Remarks")
+                w.writerow(headers)
+                for item in rows:
+                    e=item["employee"]; row=[report_date,e["name"]]
+                    if opts.get("attendance_identity",True): row += [e["employee_code"] or "N/A",e["department"] or "N/A"]
+                    if opts.get("attendance_status",True): row.append(item["status"])
+                    if opts.get("attendance_times",True): row += [item["check_in"] or "N/A",item["check_out"] or "N/A",item["net_hours"] or "N/A"]
+                    if opts.get("attendance_remarks",True): row.append(item["note"] or "N/A")
+                    w.writerow(row)
+                if opts.get("attendance_summary",True):
+                    present=sum(x["status"]=="Present" for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
+                    summary=[report_date,"SUMMARY"]
+                    if opts.get("attendance_identity",True): summary += ["",""]
+                    if opts.get("attendance_status",True): summary.append(f"Present {present} | Absent {absent} | Leave {leave} | Employees {len(rows)}")
+                    if opts.get("attendance_times",True): summary += ["","",""]
+                    if opts.get("attendance_remarks",True): summary.append("")
+                    w.writerow(summary)
             elif report_type=="Employee Productivity":
-                w.writerow(["Report date","Employee ID","Employee","Department","Overall score %","Task progress component %","Attendance component %","Scoring explanation","Tracking start","Working days since start","Attendance-eligible working days","Present days","Tasks counted","Completed/submitted tasks","Task","Task status","Task progress %"])
-                for e,tasks,_att in self.report_data(report_date,employee_id):
-                    prod=self.employee_productivity(e, date.fromisoformat(report_date))
-                    explanation="Attendance = present scheduled workdays / eligible scheduled workdays; unmarked days count as not present, while declared holidays and recorded leave are excluded. Task progress 70% + attendance 30% when both components are available; otherwise the available component is used."
-                    if not tasks:
-                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["attendance_eligible_days"],prod["present"],prod["tasks"],prod["completed"],"N/A","N/A","N/A"])
-                    for t in tasks:
-                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["attendance_eligible_days"],prod["present"],prod["tasks"],prod["completed"],t["title"],t["status"],t["progress"]])
-            else:
-                headers=["Report date","Employee ID","Employee","Department","Role"]
-                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
-                headers += [label for key,label in field_keys if opts.get(key,True)]
+                fields=[]
+                if opts.get("productivity_identity",True): fields += [("Employee ID",lambda e,p:e["employee_code"] or "N/A"),("Department",lambda e,p:e["department"] or "N/A")]
+                if opts.get("productivity_metrics",True): fields += [("Overall score %",lambda e,p:p["score"]),("Task progress component %",lambda e,p:round(p["task_score"]) if p["task_score"] is not None else "N/A"),("Attendance component %",lambda e,p:round(p["attendance_score"]) if p["attendance_score"] is not None else "N/A")]
+                if opts.get("productivity_explanation",True): fields.append(("Scoring explanation",lambda e,p:"Attendance = present scheduled workdays / eligible scheduled workdays; unmarked days count as not present, while declared holidays and recorded leave are excluded. Task progress 70% + attendance 30% when both components are available; otherwise the available component is used."))
+                if opts.get("productivity_tracking",True): fields += [("Tracking start",lambda e,p:p["start"].isoformat()),("Working days since start",lambda e,p:p["working_days"]),("Attendance-eligible working days",lambda e,p:p["attendance_eligible_days"]),("Present days",lambda e,p:p["present"]),("Tasks counted",lambda e,p:p["tasks"]),("Completed/submitted tasks",lambda e,p:p["completed"])]
+                headers=["Report date","Employee"]+[label for label,_value in fields]
+                if opts.get("productivity_tasks",True): headers += ["Task","Task status","Task progress %"]
                 w.writerow(headers)
                 for e,tasks,_att in self.report_data(report_date,employee_id):
-                    eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+                    prod=self.employee_productivity(e, date.fromisoformat(report_date))
+                    base=[report_date,e["name"]]+[value(e,prod) for _label,value in fields]
+                    task_rows=tasks if opts.get("productivity_tasks",True) else [None]
+                    if not task_rows: task_rows=[None]
+                    for task in task_rows:
+                        row=list(base)
+                        if opts.get("productivity_tasks",True):
+                            row += [task["title"] if task else "N/A",task_status_label(task["status"]) if task else "N/A",task["progress"] if task else "N/A"]
+                        w.writerow(row)
+            else:
+                headers=["Report date","Employee ID","Employee","Department","Role"]
+                report_rows=self.report_data(report_date,employee_id)
+                def task_proof_links(task):
+                    if not task:
+                        return []
+                    return list(dict.fromkeys(proof_urls(task["proof_url"]) + proof_urls(task["proof_note"])))
+                max_proof_links=max([len(task_proof_links(t)) for _e,tasks,_a in report_rows for t in tasks] or [1])
+                max_proof_links=max(1,max_proof_links)
+                proof_headers=["Proof URL"] if max_proof_links==1 else [f"Proof URL {index+1}" for index in range(max_proof_links)]
+                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
+                headers += [label for key,label in field_keys if key!="proof" and opts.get(key,True)]
+                if opts.get("proof",True):
+                    insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))
+                    headers[insert_at:insert_at]=proof_headers
+                w.writerow(headers)
+                for e,tasks,_att in report_rows:
+                    eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
                     base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A"]
                     task_rows=tasks or [None]
                     for t in task_rows:
+                        links=task_proof_links(t)
+                        def hyperlink_cell(url):
+                            safe_url=url.replace('"','""')
+                            return f'=HYPERLINK("{safe_url}","Open proof")'
                         values={
                             "EOD status":eod,
                             "Late":self.source_status(e,"late",report_date) or "Review required",
@@ -4148,37 +4569,60 @@ class MainWindow(QMainWindow):
                             "Missing proof":self.employee_missing_proof(e,tasks,report_date),
                             "Task":t["title"] if t else "N/A",
                             "Task details":t["details"] if t else "N/A",
-                            "Task status":t["status"] if t else "N/A",
+                            "Task status":task_status_label(t["status"]) if t else "N/A",
                             "Due time":t["due_time"] or "N/A" if t else "N/A",
-                            "Proof URL":t["proof_url"] or "N/A" if t else "N/A",
-                            "Proof notes":t["proof_note"] or "N/A" if t else "N/A",
+                            "Proof notes":(re.sub(r"https?://[^\s<>]+", "[link]", str(t["proof_note"])).strip() or "N/A") if t and t["proof_note"] else "N/A",
                             "Manager remarks":t["manager_note"] or "N/A" if t else "N/A",
                             "Pending items":"; ".join(x["title"] for x in tasks if x["status"] not in ("Completed","Submitted","Cancelled")) or "No",
                         }
-                        row=base+[values[label] for key,label in field_keys if opts.get(key,True)]
+                        row=base+[values[label] for key,label in field_keys if key!="proof" and opts.get(key,True)]
+                        if opts.get("proof",True):
+                            proof_cells=[hyperlink_cell(url) for url in links[:max_proof_links]]
+                            if not proof_cells: proof_cells=["N/A"]
+                            proof_cells += [""] * (max_proof_links-len(proof_cells))
+                            insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))
+                            row[insert_at:insert_at]=proof_cells
                         w.writerow(row)
 
     def preview_report(self):
         if not hasattr(self,"report_summary"): return
         d=self.report_date.date().toString("yyyy-MM-dd"); eid=self._effective_report_employee_id(); kind=self.report_type.currentText()
+        opts=self.selected_eod_options()
         if kind=="Employee Details":
-            emps=self._report_employees(eid); lines=[self._report_title(kind),f"Employees: {len(emps)}","", "\n".join(f'{e["employee_code"] or "N/A"} | {e["name"]} | {e["department"] or "N/A"} | {e["designation"] or "N/A"}' for e in emps)]
+            emps=self._report_employees(eid); lines=[self._report_title(kind),f"Employees: {len(emps)}",""]
+            for employee in emps:
+                parts=[employee["name"]]
+                if opts.get("details_identity",True): parts += [employee["employee_code"] or "N/A",employee["department"] or "N/A",employee["designation"] or "N/A"]
+                if opts.get("details_contact",True): parts += [employee["phone"] or "N/A",employee["email"] or "N/A"]
+                if opts.get("details_joining",True): parts.append(employee["joining_date"] or "N/A")
+                if opts.get("details_status",True): parts.append("Active" if employee["active"] else "Inactive")
+                if opts.get("details_notes",False): parts.append(employee["notes"] or "N/A")
+                lines.append(" | ".join(str(part) for part in parts))
             self.report_summary.setPlainText("\n".join(lines))
         elif kind=="Employee Attendance":
             rows=self._attendance_report_rows(d,eid); lines=[self._report_title(kind),f"Date: {d}",""]
-            lines += [f'{x["employee"]["name"]} | {x["status"]} | In: {x["check_in"] or "—"} | Out: {x["check_out"] or "—"} | Hours: {x["net_hours"] or "—"}' for x in rows]
+            if opts.get("attendance_summary",True):
+                lines.append(f'Present {sum(x["status"]=="Present" for x in rows)} | Absent {sum(x["status"]=="Absent" for x in rows)} | Leave {sum(x["status"]=="Leave" for x in rows)} | Employees {len(rows)}')
+            for item in rows:
+                employee=item["employee"]; parts=[employee["name"]]
+                if opts.get("attendance_identity",True): parts += [employee["employee_code"] or "N/A",employee["department"] or "N/A"]
+                if opts.get("attendance_status",True): parts.append(item["status"])
+                if opts.get("attendance_times",True): parts += [f'In: {item["check_in"] or "—"}',f'Out: {item["check_out"] or "—"}',f'Hours: {item["net_hours"] or "—"}']
+                if opts.get("attendance_remarks",True): parts.append(f'Remarks: {item["note"] or "—"}')
+                lines.append(" | ".join(str(part) for part in parts))
             self.report_summary.setPlainText("\n".join(lines))
         elif kind=="Employee Productivity":
             lines=[self._report_title(kind),f"Date: {d}",""]
             for e,tasks,_a in self.report_data(d,eid):
                 prod=self.employee_productivity(e, date.fromisoformat(d))
-                lines.extend([e["name"],f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"}',
-                    f'Overall score: {prod["score"]}%',
-                    f'Task progress component: {round(prod["task_score"])}%' if prod["task_score"] is not None else "Task progress component: N/A",
-                    f'Attendance component: {round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Attendance component: N/A",
-                    "Attendance is present scheduled working days divided by attendance-eligible scheduled working days; unmarked days count as not present, while declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used.",
-                    f'Tracking start: {prod["start"].isoformat()} | Working days: {prod["working_days"]} | Attendance-eligible days: {prod["attendance_eligible_days"]} | Present days: {prod["present"]}'])
-                lines.extend([f'• {t["title"]}: {t["status"]} — {t["progress"]}%' for t in tasks]); lines.append("")
+                lines.append(e["name"])
+                if opts.get("productivity_identity",True): lines.append(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"}')
+                if opts.get("productivity_metrics",True):
+                    lines.extend([f'Overall score: {prod["score"]}%',f'Task progress component: {round(prod["task_score"])}%' if prod["task_score"] is not None else "Task progress component: N/A",f'Attendance component: {round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Attendance component: N/A"])
+                if opts.get("productivity_explanation",True): lines.append("Attendance is present scheduled working days divided by attendance-eligible scheduled working days; unmarked days count as not present, while declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used.")
+                if opts.get("productivity_tracking",True): lines.append(f'Tracking start: {prod["start"].isoformat()} | Working days: {prod["working_days"]} | Attendance-eligible days: {prod["attendance_eligible_days"]} | Present days: {prod["present"]}')
+                if opts.get("productivity_tasks",True): lines.extend([f'• {t["title"]}: {task_status_label(t["status"])} — {t["progress"]}%' for t in tasks])
+                lines.append("")
             self.report_summary.setPlainText("\n".join(lines))
         else: self.report_summary.setPlainText(self.report_preview_text(d,eid))
         self.db.log("Report previewed",f"type={kind}, date={d}, employee={eid or 'all'}")
@@ -4216,14 +4660,14 @@ class MainWindow(QMainWindow):
         all_tasks=[t for _,tasks,_ in data for t in tasks]
         if opts.get("summary",True):
             lines.extend(["DAILY SUMMARY",f"• Employees: {len(data)}",f"• Tasks recorded: {len(all_tasks)}",
-                f'• Completed / submitted tasks: {sum(1 for t in all_tasks if t["status"] in ("Completed","Submitted"))}',
+                f'• Completed / submitted tasks: {sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))}',
                 f'• Pending / other tasks: {sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))}',
                 f'• Employees flagged for missing proof: {sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,d).startswith("Yes"))}',""])
         for e,tasks,_att in data:
             lines.append(e["name"].upper())
             if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}')
             if opts.get("contact",False): lines.append(f'• Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}')
-            eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(t["status"] in ("Submitted","Completed") for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
+            eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
             if opts.get("work_status",True): lines.append(f"• WORK / EOD STATUS: {eod}")
             if opts.get("late_links",True):
                 lines.append(f'• LATE: {self.source_status(e,"late",d) or "Review required"} | LINKS: {self.source_status(e,"links",d) or "Not independently checked"}')
@@ -4232,7 +4676,7 @@ class MainWindow(QMainWindow):
                 lines.append("TASKS / WORK ITEMS")
                 if tasks:
                     for i,t in enumerate(tasks,1):
-                        lines.append(f'• {i}. {t["title"]} — Status: {t["status"]}')
+                        lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}')
                         if opts.get("details",True) and t["details"]: lines.append(f'  • Details: {t["details"]}')
                         if opts.get("due_time",True) and t["due_time"]: lines.append(f'  • Due time: {t["due_time"]}')
                         if opts.get("proof",True):
@@ -4541,7 +4985,8 @@ class MainWindow(QMainWindow):
             size=self.db.conn.execute("SELECT length(content) FROM archived_documents WHERE id=?",(d["id"],)).fetchone()[0]
             vals=[d["id"],d["file_name"],d["employee_name"] or "Unassigned / All",d["report_date"] or "Unknown",d["uploaded_at"],d["notes"],f"{(size or 0)/1024:.1f} KB"]
             r=self.archive_table.rowCount(); self.archive_table.insertRow(r)
-            for c,v in enumerate(vals): self.archive_table.setItem(r,c,QTableWidgetItem(str(v)))
+            for c,v in enumerate(vals):
+                item=QTableWidgetItem(str(v)); item.setToolTip(str(v)); self.archive_table.setItem(r,c,item)
         self.refresh_archived_report_choices()
 
     def change_password(self):
@@ -4603,9 +5048,13 @@ class MainWindow(QMainWindow):
             idx=table.rowCount(); table.insertRow(idx)
             for col,val in enumerate([row["username"],row["display_name"],row["role"],"Active" if row["active"] else "Disabled",row["created_at"]]):
                 if col == 3:
-                    table.setItem(idx, col, self.status_item(val))
+                    item = self.status_item(val)
+                    item.setToolTip(str(val))
+                    table.setItem(idx, col, item)
                 else:
-                    table.setItem(idx, col, QTableWidgetItem(str(val)))
+                    item = QTableWidgetItem(str(val))
+                    item.setToolTip(str(val))
+                    table.setItem(idx, col, item)
         layout.addWidget(table)
         formbox=QGroupBox("Create account"); form=QFormLayout(formbox)
         username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["HR","Admin"])
@@ -4765,7 +5214,7 @@ QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { backgro
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QDialog { background: #E8EEF6; color: #1E293B; }
 QFormLayout QLabel { color: #334155; background: transparent; }
-QToolTip { background: #F1F5F9; color: #1E293B; border: 1px solid #CBD5E1; padding: 6px 8px; border-radius: 6px; }
+QToolTip { background: #F8FAFC; color: #0F172A; border: 1px solid #A5B4FC; padding: 8px 10px; border-radius: 8px; font-size: 9pt; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #15233F; }
 QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 4px; padding: 6px 8px; font-weight: 600; }
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
@@ -4777,6 +5226,16 @@ QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F
 QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
 QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }
 QWidget#kpiCard, QWidget#dashboardPanel { background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 14px; }
+QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #FFFFFF, stop:1 #F8FAFC); border: 1px solid #CBD5E1; border-radius: 16px; }
+QGroupBox#kpiCard:hover { border-color: #A78BFA; }
+QGroupBox#dashboardPanel { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 15px; }
+QGroupBox#dashboardPanel:hover { border-color: #A5B4FC; }
+QGroupBox#kpiCard::title, QGroupBox#dashboardPanel::title { background: transparent; color: #334155; padding: 0 5px; font-weight: 700; }
+QPushButton[dashboardAction="true"] { background: #F8FAFC; color: #1E293B; border: 1px solid #CBD5E1; border-radius: 10px; padding: 8px 12px; text-align: left; font-weight: 650; }
+QPushButton[dashboardAction="true"]:hover { background: #EEF2FF; color: #4C1D95; border-color: #A78BFA; }
+QPushButton[dashboardAction="true"]:pressed { background: #E0E7FF; border-color: #7C3AED; }
+QProgressBar#dashboardProgress { background: #E2E8F0; color: #1E293B; border: 1px solid #CBD5E1; border-radius: 7px; min-width: 62px; max-height: 20px; text-align: center; font-size: 8pt; font-weight: 700; }
+QProgressBar#dashboardProgress::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6366F1, stop:1 #8B5CF6); border-radius: 6px; }
 QWidget#sessionStrip, QWidget#guideItem { background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; }
 QWidget#settingsContent { background-color: #F8FAFC; color: #0F172A; }
 QWidget#settingsContent QGroupBox { background-color: #FFFFFF; color: #0F172A; }
@@ -4910,7 +5369,7 @@ QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { backgro
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QDialog { background: #111827; color: #E2E8F0; }
 QFormLayout QLabel { color: #CBD5E1; background: transparent; }
-QToolTip { background: #111827; color: #E2E8F0; border: 1px solid #334155; padding: 6px 8px; border-radius: 6px; }
+QToolTip { background: #111827; color: #F8FAFC; border: 1px solid #6366F1; padding: 8px 10px; border-radius: 8px; font-size: 9pt; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #070B14; }
 QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 4px; padding: 6px 8px; font-weight: 600; }
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
@@ -4922,6 +5381,16 @@ QWidget#homeContent, QWidget#pageContent { background-color: #111827; color: #F8
 QGroupBox { background-color: #0F172A; color: #F8FAFC; border: 1px solid #475569; border-radius: 12px; }
 QGroupBox::title { color: #F1F5F9; background-color: #0F172A; }
 QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC; border: 1px solid #475569; border-radius: 14px; }
+QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #111C32, stop:1 #0F172A); border: 1px solid #334155; border-radius: 16px; }
+QGroupBox#kpiCard:hover { border-color: #8B5CF6; }
+QGroupBox#dashboardPanel { background: #0F172A; border: 1px solid #334155; border-radius: 15px; }
+QGroupBox#dashboardPanel:hover { border-color: #6366F1; }
+QGroupBox#kpiCard::title, QGroupBox#dashboardPanel::title { background: transparent; color: #E2E8F0; padding: 0 5px; font-weight: 700; }
+QPushButton[dashboardAction="true"] { background: #111C32; color: #E2E8F0; border: 1px solid #334155; border-radius: 10px; padding: 8px 12px; text-align: left; font-weight: 650; }
+QPushButton[dashboardAction="true"]:hover { background: #312E81; color: #FFFFFF; border-color: #8B5CF6; }
+QPushButton[dashboardAction="true"]:pressed { background: #3730A3; border-color: #A78BFA; }
+QProgressBar#dashboardProgress { background: #1E293B; color: #F8FAFC; border: 1px solid #334155; border-radius: 7px; min-width: 62px; max-height: 20px; text-align: center; font-size: 8pt; font-weight: 700; }
+QProgressBar#dashboardProgress::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #6366F1, stop:1 #A78BFA); border-radius: 6px; }
 QWidget#sessionStrip, QWidget#guideItem { background-color: #0B1220; color: #F8FAFC; border: 1px solid #475569; }
 QWidget#settingsContent { background-color: #111827; color: #F8FAFC; }
 QWidget#settingsContent QGroupBox { background-color: #0F172A; color: #F8FAFC; }
