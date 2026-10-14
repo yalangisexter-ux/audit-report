@@ -75,6 +75,14 @@ jobs:
           Stop-Process -Id $proc.Id -Force
           Write-Host "PASS: packaged application remained running for 8 seconds."
 
+      - name: Upload installer as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RawStrengthEmployeeAuditManager-Setup-v1.2.15
+          path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish versioned release with direct EXE installer
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
