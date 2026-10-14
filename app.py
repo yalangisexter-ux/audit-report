@@ -1512,7 +1512,7 @@ class MainWindow(QMainWindow):
         self.rollback_button.setToolTip("Install a previous application version (Admin password required)")
         self.rollback_button.setMinimumWidth(120)
         self.rollback_button.clicked.connect(self.rollback_application)
-        session_layout.addWidget(self.rollback_button, 2, 1)
+        session_layout.addWidget(self.rollback_button, 3, 0)
         self.theme_toggle_btn = QPushButton("Switch theme")
         self.theme_toggle_btn.setToolTip("Toggle day / night appearance")
         self.theme_toggle_btn.setMinimumWidth(120)
@@ -3847,15 +3847,15 @@ QLabel[welcomeSubtitle="true"] { color: #F3E8FF; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:1 #312E81); border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(255,255,255,0.58); border: 1px solid rgba(255,255,255,0.75); border-radius: 18px; }
+QWidget#homeContent { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.78); border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(255,255,255,0.54); border: 1px solid rgba(255,255,255,0.72); border-radius: 18px; }
+QWidget#pageContent { background: rgba(255,255,255,0.38); border: 1px solid rgba(255,255,255,0.70); border-radius: 18px; }
 QTextEdit#reportPreview { background: #F1F5F9; border: 0; border-radius: 14px; }
-QWidget#sessionStrip { background: #F1F5F9; border: 0; border-radius: 16px; }
+QWidget#sessionStrip { background: rgba(255,255,255,0.38); border: 1px solid rgba(255,255,255,0.70); border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: #F1F5F9; border: 0; border-left: 4px solid #7C5CFC; border-radius: 16px; }
+QWidget#guideItem { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.68); border-left: 4px solid #7C5CFC; border-radius: 16px; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 0; border-radius: 14px; color: #312E81; font-weight: 600; padding: 11px 14px; }
@@ -3978,15 +3978,15 @@ QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:1 #4C1D95); border-radius: 16px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(15,23,42,0.94); border: 1px solid rgba(148,163,184,0.30); border-radius: 18px; }
+QWidget#homeContent { background: rgba(15,23,42,0.58); border: 1px solid rgba(226,232,240,0.24); border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(15,23,42,0.48); border: 1px solid rgba(148,163,184,0.20); border-radius: 18px; }
+QWidget#pageContent { background: rgba(15,23,42,0.38); border: 1px solid rgba(226,232,240,0.22); border-radius: 18px; }
 QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
-QWidget#sessionStrip { background: #0B1220; border: 1px solid #334155; border-radius: 12px; }
+QWidget#sessionStrip { background: rgba(11,18,32,0.52); border: 1px solid rgba(148,163,184,0.34); border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #312E81; color: #DDD6FE; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #F8FAFC; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: #111827; border: 1px solid #1F2937; border-left: 4px solid #A78BFA; border-radius: 14px; }
+QWidget#guideItem { background: rgba(17,24,39,0.48); border: 1px solid rgba(148,163,184,0.26); border-left: 4px solid #A78BFA; border-radius: 16px; }
 QLabel[guideTitle="true"] { color: #F8FAFC; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #A78BFA; }
 QLabel[statusSummary="true"] { background: #1E1B4B; border: 1px solid #4C1D95; border-radius: 12px; color: #DDD6FE; font-weight: 600; padding: 11px 14px; }
