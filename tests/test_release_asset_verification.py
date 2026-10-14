@@ -109,3 +109,19 @@ def test_live_wallpapers_use_high_resolution_photos_with_animation():
     assert "zoom = 1.035 + 0.012 * math.sin(self.phase * 0.35)" in source
     assert "Real photographic wallpapers use a slow Ken Burns pan/zoom" in source
     assert "QSvgRenderer" not in source
+
+
+def test_release_build_bundles_photo_wallpapers_for_offline_use():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    app_source = (root / "app.py").read_text(encoding="utf-8")
+    assert "Download high-resolution photographic wallpaper assets" in workflow
+    assert '"galaxy.jpg"' in workflow
+    assert '"milky_way.jpg"' in workflow
+    assert '"ocean_waves.jpg"' in workflow
+    assert '"lord_shiva.jpg"' in workflow
+    assert '"love_couples.jpg"' in workflow
+    assert 'Path("assets") / "wallpapers" / "photos" / filename' in app_source
+    assert '--add-data "assets;assets"' in workflow
