@@ -2,7 +2,7 @@ import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets,
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -144,6 +144,26 @@ def now_text():
 
 def configure_date_edit(date_edit):
     date_edit.setCalendarPopup(True)
+    calendar = date_edit.calendarWidget()
+    calendar.setGridVisible(True)
+    calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
+    calendar.setStyleSheet("""
+        QCalendarWidget { background: #FFFFFF; color: #0F172A; }
+        QWidget#qt_calendar_navigationbar { background: #FFFFFF; border-bottom: 1px solid #CBD5E1; }
+        QCalendarWidget QToolButton { background: #FFFFFF; color: #0F172A; border: 0;
+            border-radius: 6px; padding: 6px 8px; font-weight: 700; }
+        QCalendarWidget QToolButton:hover { background: #EDE9FE; color: #4C1D95; }
+        QCalendarWidget QSpinBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
+            border-radius: 5px; padding: 3px; }
+        QCalendarWidget QMenu { background: #FFFFFF; color: #0F172A; }
+        QCalendarWidget QAbstractItemView { background: #FFFFFF; alternate-background-color: #F1F5F9;
+            color: #0F172A; selection-background-color: #6D28D9; selection-color: #FFFFFF;
+            gridline-color: #CBD5E1; outline: 0; }
+        QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
+        QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
+        QCalendarWidget QHeaderView::section { background: #F1F5F9; color: #334155;
+            border: 1px solid #E2E8F0; padding: 5px; font-weight: 700; }
+    """)
 
 
 def valid_hhmm(value):
@@ -182,6 +202,44 @@ def verify_release_asset_bytes(data, asset, require_digest=True):
     return True
 
 
+def previous_release_choices(releases, current_version):
+    """Return installable, published stable releases older than the app, newest first."""
+    current_parts = release_version_tuple(current_version)
+    if not isinstance(releases, list):
+        raise ValueError("GitHub returned an invalid releases response.")
+
+    choices = []
+    installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
+    for release in releases:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        if not release.get("published_at"):
+            continue
+        try:
+            version = release_version_tuple(release.get("tag_name", ""))
+        except ValueError:
+            continue
+        if version >= current_parts:
+            continue
+
+        assets = release.get("assets", [])
+        if not isinstance(assets, list):
+            continue
+        asset = next((item for item in assets
+                      if isinstance(item, dict) and item.get("name") == installer_name), None)
+        if not asset:
+            continue
+        url = str(asset.get("browser_download_url") or "")
+        size = asset.get("size")
+        if (not url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX)
+                or not isinstance(size, int) or size < 1000000):
+            continue
+        choices.append((version, str(release["tag_name"]), url, asset))
+
+    choices.sort(key=lambda item: item[0], reverse=True)
+    return [(tag, url, asset) for _, tag, url, asset in choices]
+
+
 class UpdateWorker(QObject):
     ready = Signal(str, str)
     current = Signal(str)
@@ -201,17 +259,33 @@ class UpdateWorker(QObject):
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         })
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=60) as response:
             return response.read()
 
     def run(self):
         try:
-            # Query the release list instead of trusting a single /latest response.
-            # Ignore drafts, prereleases, malformed tags, and unpublished releases.
-            releases_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases?per_page=100"
-            payload = json.loads(self.request_bytes(releases_url).decode("utf-8"))
-            if not isinstance(payload, list):
-                raise ValueError("GitHub returned an invalid releases response.")
+            # Use the small /releases/latest response as the primary endpoint.
+            # The paginated releases list can be hundreds of KB and is prone to
+            # IncompleteRead on customer networks; it is unnecessary for updates.
+            latest_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
+            latest_payload = None
+            latest_error = None
+            for attempt in range(3):
+                try:
+                    latest_payload = json.loads(self.request_bytes(latest_url).decode("utf-8"))
+                    if not isinstance(latest_payload, dict):
+                        raise ValueError("GitHub returned an invalid latest-release response.")
+                    break
+                except Exception as exc:
+                    latest_error = exc
+                    if attempt == 2:
+                        raise RuntimeError(
+                            "Unable to fetch the latest release from GitHub after 3 attempts. "
+                            f"Details: {latest_error}"
+                        ) from latest_error
+                    import time
+                    time.sleep(attempt + 1)
+            payload = [latest_payload]
             stable_releases = []
             for candidate in payload:
                 if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
@@ -250,29 +324,73 @@ class UpdateWorker(QObject):
             installer_path = update_dir / installer_name
             partial_path = update_dir / (installer_name + ".part")
             try:
-                request = Request(installer_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
-                with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
-                    total_bytes = int(response.headers.get("Content-Length") or 0)
-                    downloaded = 0
-                    digest = hashlib.sha256()
-                    self.progress.emit(0, "Downloading update installer...")
-                    while True:
-                        chunk = response.read(256 * 1024)
-                        if not chunk:
+                # Large installer downloads can be interrupted by customer networks.
+                # Keep verified partial bytes and resume with HTTP Range instead of
+                # failing permanently on urllib's IncompleteRead exception.
+                import time
+                last_error = None
+                for attempt in range(1, 7):
+                    downloaded = partial_path.stat().st_size if partial_path.exists() else 0
+                    headers = {"User-Agent": "RawStrengthEmployeeAuditManager"}
+                    if downloaded:
+                        headers["Range"] = f"bytes={downloaded}-"
+                    request = Request(installer_url, headers=headers)
+                    try:
+                        with urlopen(request, timeout=90) as response:
+                            status = getattr(response, "status", response.getcode())
+                            if downloaded and status != 206:
+                                # Server ignored Range; restart cleanly to avoid corrupting the file.
+                                downloaded = 0
+                                partial_path.unlink(missing_ok=True)
+                                if status != 200:
+                                    raise ValueError(f"Unexpected HTTP status while restarting download: {status}")
+                            mode = "ab" if downloaded and status == 206 else "wb"
+                            response_length = int(response.headers.get("Content-Length") or 0)
+                            expected_response_size = asset_size - downloaded if mode == "ab" else asset_size
+                            if response_length and response_length != expected_response_size:
+                                raise ValueError("Server returned an unexpected installer content length.")
+                            self.progress.emit(min(99, int(downloaded * 100 / asset_size)),
+                                               f"Downloading update installer... {int(downloaded * 100 / asset_size)}%")
+                            with partial_path.open(mode) as output:
+                                while True:
+                                    try:
+                                        chunk = response.read(256 * 1024)
+                                    except Exception as read_error:
+                                        # urllib.error.IncompleteRead carries bytes received
+                                        # by the final failed read; preserve them for resume.
+                                        partial = getattr(read_error, "partial", b"")
+                                        if partial:
+                                            output.write(partial)
+                                            downloaded += len(partial)
+                                        raise
+                                    if not chunk:
+                                        break
+                                    output.write(chunk)
+                                    downloaded += len(chunk)
+                                    percent = min(99, int(downloaded * 100 / asset_size))
+                                    self.progress.emit(percent, f"Downloading update installer... {percent}%")
+                        if partial_path.stat().st_size == asset_size:
                             break
-                        output.write(chunk)
-                        digest.update(chunk)
-                        downloaded += len(chunk)
-                        if total_bytes > 0:
-                            percent = min(99, int(downloaded * 100 / total_bytes))
-                            self.progress.emit(percent, f"Downloading update installer... {percent}%")
-                        else:
-                            self.progress.emit(0, f"Downloading update installer... ({downloaded // 1024} KB)")
-                actual_size = partial_path.stat().st_size
-                if actual_size < 1000000:
-                    raise ValueError("The downloaded installer is missing or incomplete.")
+                        last_error = ValueError(
+                            f"Installer download ended early ({partial_path.stat().st_size} of {asset_size} bytes)."
+                        )
+                    except Exception as download_error:
+                        last_error = download_error
+                        if partial_path.exists() and partial_path.stat().st_size >= asset_size:
+                            break
+                        if attempt < 6:
+                            self.progress.emit(0, f"Download interrupted; resuming ({attempt}/5)...")
+                            time.sleep(min(attempt * 2, 8))
+                actual_size = partial_path.stat().st_size if partial_path.exists() else 0
                 if actual_size != asset_size:
-                    raise ValueError("Downloaded installer size does not match GitHub release metadata.")
+                    raise RuntimeError(
+                        f"Could not download the complete installer after 6 attempts "
+                        f"({actual_size} of {asset_size} bytes). Last error: {last_error}"
+                    )
+                digest = hashlib.sha256()
+                with partial_path.open("rb") as downloaded_file:
+                    for chunk in iter(lambda: downloaded_file.read(1024 * 1024), b""):
+                        digest.update(chunk)
                 expected = expected_digest.partition(":")[2].lower()
                 if not secrets.compare_digest(digest.hexdigest().lower(), expected):
                     raise ValueError("Installer checksum verification failed; the download was rejected.")
@@ -1240,10 +1358,16 @@ class AnimatedBackground(QWidget):
             source.moveCenter(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(center_x, center_y))
             painter.drawPixmap(QRectF(rect), self.wallpaper_pixmap, source)
 
-            # A gentle dark tint preserves readability without hiding the photograph.
+            # Animate the wallpaper with a soft fade. Foreground panels are kept
+            # opaque/light, so moving photos never reduce text contrast.
             veil = QLinearGradient(0, 0, 0, h)
-            veil.setColorAt(0.0, QColor(3, 7, 18, 52 if not is_day else 22))
-            veil.setColorAt(1.0, QColor(3, 7, 18, 92 if not is_day else 40))
+            if is_day:
+                fade = 78 + int(22 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(62, fade - 12)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(145, fade + 28)))
+            else:
+                veil.setColorAt(0.0, QColor(3, 7, 18, 52))
+                veil.setColorAt(1.0, QColor(3, 7, 18, 92))
             painter.fillRect(rect, veil)
 
         if self.mode in ("Ambient Glow", "Aurora Waves"):
@@ -1312,9 +1436,14 @@ class MainWindow(QMainWindow):
         title_layout.setContentsMargins(10, 0, 12, 0)
         title_layout.setSpacing(8)
 
-        title_icon = QLabel()
-        title_icon.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(18, 18))
-        title_layout.addWidget(title_icon)
+        self.header_logo_menu = QToolButton()
+        self.header_logo_menu.setObjectName("headerLogoMenu")
+        self.header_logo_menu.setIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        self.header_logo_menu.setIconSize(QSize(22, 22))
+        self.header_logo_menu.setFixedSize(36, 32)
+        self.header_logo_menu.setToolTip("Go to Home")
+        self.header_logo_menu.setAccessibleName("Application menu")
+        title_layout.addWidget(self.header_logo_menu)
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("titleLabel")
         self.title_label.setMinimumWidth(0)
@@ -1323,27 +1452,18 @@ class MainWindow(QMainWindow):
         title_layout.addStretch(1)
         self.header_clock = QLabel()
         self.header_clock.setObjectName("headerClock")
-        self.header_clock.setMinimumWidth(190)
+        self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
         title_layout.addWidget(self.header_clock)
         self.header_prev = QPushButton("‹")
         self.header_prev.setObjectName("headerNavButton")
         self.header_prev.setToolTip("Previous page")
-        self.header_prev.setFixedSize(34, 28)
-        title_layout.addWidget(self.header_prev)
+        self.header_prev.setFixedSize(36, 32)
         self.header_next = QPushButton("›")
         self.header_next.setObjectName("headerNavButton")
         self.header_next.setToolTip("Next page")
-        self.header_next.setFixedSize(34, 28)
-        title_layout.addWidget(self.header_next)
-        self.header_nav = QComboBox()
-        self.header_nav.setObjectName("headerNavigation")
-        self.header_nav.setMinimumWidth(155)
-        self.header_nav.setMaximumWidth(210)
-        self.header_nav.setToolTip("Jump to a section")
-        title_layout.addWidget(self.header_nav)
-
+        self.header_next.setFixedSize(36, 32)
         btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
         close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
 
@@ -1372,12 +1492,32 @@ class MainWindow(QMainWindow):
         self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow")
         self.bg_anim.setObjectName("animatedBg")
 
-        # Central content
+        # Main shell: collapsible glass sidebar + existing content pages.
         central = QWidget()
-        central_layout = QVBoxLayout(central)
+        central_layout = QHBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
-        central_layout.addWidget(self.title_bar)
+
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("navigationSidebar")
+        self.sidebar.setFixedWidth(224)
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setContentsMargins(8, 10, 8, 10)
+        self.sidebar_layout.setSpacing(6)
+        self.sidebar_toggle = QPushButton("☰  Collapse menu")
+        self.sidebar_toggle.setObjectName("sidebarToggle")
+        self.sidebar_toggle.setToolTip("Collapse or expand navigation")
+        self.sidebar_toggle.setMinimumHeight(38)
+        self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
+        self.sidebar_layout.addWidget(self.sidebar_toggle)
+        self.sidebar_layout.addWidget(self.header_prev)
+
+        self.main_content = QWidget()
+        self.main_content.setObjectName("mainContentSurface")
+        main_content_layout = QVBoxLayout(self.main_content)
+        main_content_layout.setContentsMargins(0, 0, 0, 0)
+        main_content_layout.setSpacing(0)
+        main_content_layout.addWidget(self.title_bar)
         self.title_bar.raise_()
 
         self.tabs = QTabWidget()
@@ -1387,9 +1527,12 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setUsesScrollButtons(False)
         self.tabs.tabBar().setExpanding(False)
-        central_layout.addWidget(self.tabs)
+        self.tabs.tabBar().hide()
+        main_content_layout.addWidget(self.tabs)
+        central_layout.addWidget(self.sidebar)
+        central_layout.addWidget(self.main_content, 1)
         central.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         central.setAutoFillBackground(False)
         self.setCentralWidget(central)
@@ -1405,17 +1548,36 @@ class MainWindow(QMainWindow):
             page.setAutoFillBackground(False)
             page.setObjectName("appPageSurface")
         self.business_tab = BusinessTrackingTab(self.db)
-        tab_items = [(self.home_tab,"⌂  Home"),(self.dashboard,"▦  Dashboard"),(self.employees_tab,"♙  Employees"),(self.tasks_tab,"✓  Task Manager"),(self.tracker_tab,"◷  Employee Tracker"),(self.attendance_tab,"◉  Attendance"),(self.reports_tab,"▤  Print Center"),(self.archive_tab,"▣  EOD Archive"),(self.business_tab,"◈  Business Tracking"),(self.settings_tab,"⚙  Settings & Backup")]
-        for widget, title in tab_items:
+        tab_items = [
+            (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
+            (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
+            (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
+            (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
+            (self.business_tab, "💼  Business Tracking"), (self.settings_tab, "⚙️  Settings & Backup"),
+        ]
+        self.sidebar_buttons = []
+        for index, (widget, title) in enumerate(tab_items):
             self.tabs.addTab(widget, title)
+            button = QPushButton(title)
+            button.setObjectName("sidebarNavButton")
+            button.setCheckable(True)
+            button.setMinimumHeight(38)
+            button.setToolTip(title)
+            button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
+            self.sidebar_layout.addWidget(button)
+            self.sidebar_buttons.append((button, title))
+        self.sidebar_layout.addStretch(1)
+        self.sidebar_layout.addWidget(self.header_next)
+        # Navigation already exists in the persistent sidebar; avoid a duplicate
+        # low-contrast menu under the logo. The original logo remains a Home shortcut.
+        self.header_logo_menu.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
         self._tab_animation = None
         self._animated_page = None
         self.tabs.currentChanged.connect(self.animate_tab_transition)
+        self.tabs.currentChanged.connect(self.sync_sidebar_selection)
+        self.sync_sidebar_selection(self.tabs.currentIndex())
         self.header_prev.clicked.connect(lambda: self.tabs.setCurrentIndex(max(0, self.tabs.currentIndex() - 1)))
         self.header_next.clicked.connect(lambda: self.tabs.setCurrentIndex(min(self.tabs.count() - 1, self.tabs.currentIndex() + 1)))
-        self.header_nav.addItems([self.tabs.tabText(i) for i in range(self.tabs.count())])
-        self.header_nav.currentIndexChanged.connect(self._navigate_from_header)
-        self.tabs.currentChanged.connect(self._sync_header_navigation)
         self._header_clock_timer = QTimer(self)
         self._header_clock_timer.timeout.connect(self.refresh_header_clock)
         self._header_clock_timer.start(1000)
@@ -1432,33 +1594,51 @@ class MainWindow(QMainWindow):
         if hasattr(self, "header_clock"):
             self.header_clock.setText(datetime.now().strftime("%a, %d %b  %I:%M:%S %p"))
 
-    def _navigate_from_header(self, index):
-        if hasattr(self, "tabs") and 0 <= index < self.tabs.count() and self.tabs.currentIndex() != index:
-            self.tabs.setCurrentIndex(index)
+    def toggle_sidebar(self):
+        collapsed = self.sidebar.width() > 100
+        self.sidebar.setFixedWidth(76 if collapsed else 224)
+        self._apply_responsive_layout()
+        QTimer.singleShot(0, self.fit_sidebar_labels)
 
-    def _sync_header_navigation(self, index):
-        if hasattr(self, "header_nav") and self.header_nav.currentIndex() != index:
-            self.header_nav.blockSignals(True)
-            self.header_nav.setCurrentIndex(index)
-            self.header_nav.blockSignals(False)
+    def sync_sidebar_selection(self, index):
+        for i, (button, title) in enumerate(getattr(self, "sidebar_buttons", [])):
+            button.setChecked(i == index)
 
     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         if "QWidget#headerClock" not in self.styleSheet():
             self.setStyleSheet(self.styleSheet() + """
-            QWidget#headerClock { background: #0F172A; color: #F8FAFC; border: 1px solid #475569;
+            QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
+            QWidget#mainContentSurface { background: transparent; }
+            QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            QWidget#pageHeader { background: #FFFFFF; color: #0F172A; }
+            QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
+                border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
+            QPushButton#sidebarToggle:hover { background: rgba(8, 145, 178, 220); border-color: #67E8F9; }
+            QPushButton#sidebarNavButton { background: #F8FAFC; color: #1E293B;
+                border: 1px solid #E2E8F0; border-radius: 11px;
+                font-size: 10pt; font-weight: 600; text-align: left; padding: 8px 10px; }
+            QPushButton#sidebarNavButton:hover { background: #EDE9FE; color: #4C1D95; border-color: #C4B5FD; }
+            QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
+                color: #FFFFFF; border: 1px solid #C4B5FD; }
+            QWidget#headerClock { background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1;
                 border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
-            QPushButton#headerNavButton { background: #334155; color: #F8FAFC; border: 1px solid #64748B;
-                border-radius: 9px; font-size: 17pt; font-weight: 700; padding: 0; }
-            QPushButton#headerNavButton:hover { background: #7C5CFC; color: #FFFFFF; }
-            QComboBox#headerNavigation { min-height: 28px; max-height: 32px; padding: 3px 28px 3px 9px;
-                border-radius: 9px; }
+            QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
+                border-radius: 10px; font-size: 18pt; font-weight: 800; padding: 0;
+                min-width: 34px; max-width: 36px; min-height: 28px; max-height: 32px; margin: 2px; }
+            QPushButton#headerNavButton:hover { background: #0891B2; border-color: #67E8F9; color: #FFFFFF; }
+            QToolButton#headerLogoMenu { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #6D28D9,stop:1 #DB2777);
+                border: 1px solid #C4B5FD; border-radius: 10px; padding: 3px; }
+            QToolButton#headerLogoMenu:hover { background: #0891B2; border-color: #67E8F9; }
+            QMenu#headerSectionMenu { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; padding: 5px; }
+            QMenu#headerSectionMenu::item { padding: 8px 18px; border-radius: 6px; }
+            QMenu#headerSectionMenu::item:selected { background: #6D28D9; color: #FFFFFF; }
             QComboBox QAbstractItemView, QComboBox QListView {
-                background-color: #111827; color: #F8FAFC; border: 1px solid #64748B;
+                background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
                 selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0;
             }
             QComboBox QAbstractItemView::item, QComboBox QListView::item {
-                background-color: #111827; color: #F8FAFC; padding: 7px 10px; min-height: 24px;
+                background-color: #FFFFFF; color: #0F172A; padding: 7px 10px; min-height: 24px;
             }
             QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected {
                 background-color: #6D28D9; color: #FFFFFF;
@@ -1524,8 +1704,10 @@ class MainWindow(QMainWindow):
         for widget in self.findChildren(QLabel):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
-                if widget.text() and len(widget.text()) > 36:
+                widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+                if widget.text() and (len(widget.text()) > 28 or "\n" in widget.text()):
                     widget.setWordWrap(True)
+                    widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for widget in self.findChildren(QLineEdit):
             widget.setMinimumWidth(max(90, widget.minimumWidth()))
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -1570,10 +1752,44 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "bg_anim"):
-            self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
+            self.bg_anim.setGeometry(0, 42, self.width(), max(1, self.height() - 42))
             self.bg_anim.init_particles()
+        self._apply_responsive_layout()
         if hasattr(self, "title_label"):
             QTimer.singleShot(0, self.update_title_label)
+        if hasattr(self, "sidebar_buttons"):
+            QTimer.singleShot(0, self.fit_sidebar_labels)
+
+    def _apply_responsive_layout(self):
+        compact = self.width() < 1220
+        home = self.findChild(QWidget, "homeContent")
+        if home is not None and home.layout() is not None:
+            margin_x = 16 if compact else 22
+            margin_y = 14 if compact else 18
+            home.layout().setContentsMargins(margin_x, margin_y, margin_x, margin_y)
+            home.layout().setSpacing(12 if compact else 16)
+        for surface in self.findChildren(QWidget, "pageContent"):
+            layout = surface.layout()
+            if layout is None:
+                continue
+            margins = layout.contentsMargins()
+            margin_x = 14 if compact else 18
+            layout.setContentsMargins(margin_x, margins.top(), margin_x, margins.bottom())
+            layout.setSpacing(10 if compact else 12)
+
+    def fit_sidebar_labels(self):
+        if not hasattr(self, "sidebar"):
+            return
+        collapsed = self.sidebar.width() <= 100
+        self.sidebar_toggle.setText("☰" if collapsed else "☰  Collapse menu")
+        self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
+        for button, title in getattr(self, "sidebar_buttons", []):
+            label = title.split("  ", 1)[0] if collapsed else title
+            text_width = max(0, button.contentsRect().width() - 22)
+            button.setText(button.fontMetrics().elidedText(
+                label, Qt.TextElideMode.ElideRight, text_width
+            ))
+            button.setToolTip(title)
 
     def update_title_label(self):
         self.title_label.setText(self.title_label.fontMetrics().elidedText(
@@ -1620,7 +1836,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
-        content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
+        content_layout.setContentsMargins(18, 0 if page_title else 12, 18, 14)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
@@ -1632,7 +1848,7 @@ class MainWindow(QMainWindow):
         header = QWidget()
         header.setObjectName("pageHeader")
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(20, 12, 20, 0)
+        header_layout.setContentsMargins(16, 10, 16, 0)
         header_layout.setSpacing(0)
         self.add_page_header(header_layout, title, subtitle)
         outer_layout.addWidget(header)
@@ -1640,8 +1856,8 @@ class MainWindow(QMainWindow):
     @staticmethod
     def add_page_header(layout, title, subtitle):
         header_row = QHBoxLayout()
-        header_row.setSpacing(14)
-        header_row.setContentsMargins(0, 4, 0, 8)
+        header_row.setSpacing(12)
+        header_row.setContentsMargins(0, 3, 0, 6)
         logo = QLabel()
         logo.setFixedSize(48, 48)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1662,7 +1878,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_row)
 
     def current_theme(self):
-        return self.db.get_setting("ui_theme", "night") or "night"
+        return self.db.get_setting("ui_theme", "day") or "day"
 
     def apply_theme(self, theme_name=None):
         theme_name = theme_name or self.current_theme()
@@ -1698,22 +1914,29 @@ class MainWindow(QMainWindow):
         return theme_name
 
     def apply_content_surface_styles(self, theme_name=None):
-        """Keep wallpaper behind the UI while matching solid panels to the active theme."""
+        """Keep text readable while allowing the live wallpaper to show through page surfaces."""
         theme_name = (theme_name or self.current_theme()).lower()
         if theme_name == "ocean":
             background, foreground, border = "#F0F9FF", "#0F172A", "#0284C7"
+            alpha = 255
         elif theme_name == "sunset":
             background, foreground, border = "#FFEDD5", "#0F172A", "#EA580C"
+            alpha = 255
         elif theme_name == "day":
-            background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"
+            background, foreground, border = "#FFFFFF", "#0F172A", "#E2E8F0"
+            alpha = 255
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
+            alpha = 255
+        red, green, blue = (
+            int(background[offset:offset + 2], 16) for offset in (1, 3, 5)
+        )
         for object_name in ("homeContent", "pageContent"):
             for surface in self.findChildren(QWidget, object_name):
-                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-                surface.setAutoFillBackground(True)
+                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                surface.setAutoFillBackground(False)
                 surface.setStyleSheet(
-                    f"QWidget#{object_name} {{ background-color: {background}; "
+                    f"QWidget#{object_name} {{ background-color: rgba({red}, {green}, {blue}, {alpha}); "
                     f"color: {foreground}; border: 1px solid {border}; border-radius: 18px; }}"
                 )
 
@@ -1751,14 +1974,14 @@ class MainWindow(QMainWindow):
         content.setAutoFillBackground(True)
         content.setObjectName("homeContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(26, 22, 26, 22)
-        content_layout.setSpacing(18)
+        content_layout.setContentsMargins(22, 18, 22, 18)
+        content_layout.setSpacing(16)
 
         welcome = QWidget()
         welcome.setObjectName("welcomeHero")
         welcome_layout = QHBoxLayout(welcome)
-        welcome_layout.setContentsMargins(22, 18, 22, 18)
-        welcome_layout.setSpacing(18)
+        welcome_layout.setContentsMargins(18, 14, 18, 14)
+        welcome_layout.setSpacing(14)
         brand_mark = QLabel()
         brand_mark.setObjectName("welcomeMark")
         brand_mark.setFixedSize(80, 80)
@@ -1768,23 +1991,29 @@ class MainWindow(QMainWindow):
         welcome_copy = QVBoxLayout()
         welcome_title = QLabel(f"Welcome, {self.current_user.get('display_name') or self.current_user.get('username')}")
         welcome_title.setProperty("welcomeTitle", True)
+        welcome_title.setWordWrap(True)
+        welcome_title.setMinimumWidth(0)
         welcome_copy.addWidget(welcome_title)
         welcome_subtitle = QLabel("Raw Strength Calisthenics · Employee Audit Manager")
         welcome_subtitle.setProperty("welcomeSubtitle", True)
+        welcome_subtitle.setWordWrap(True)
+        welcome_subtitle.setMinimumWidth(0)
         welcome_copy.addWidget(welcome_subtitle)
         welcome_layout.addLayout(welcome_copy, 1)
 
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
         session_layout = QGridLayout(session_strip)
-        session_layout.setContentsMargins(16, 12, 16, 12)
-        session_layout.setHorizontalSpacing(12)
-        session_layout.setVerticalSpacing(8)
+        session_layout.setContentsMargins(12, 10, 12, 10)
+        session_layout.setHorizontalSpacing(8)
+        session_layout.setVerticalSpacing(6)
         session_label = QLabel("SIGNED IN")
         session_label.setProperty("sessionLabel", True)
         session_layout.addWidget(session_label, 0, 0)
         username_label = QLabel(self.current_user.get("username", "N/A"))
-        username_label.setMinimumWidth(70)
+        username_label.setMinimumWidth(0)
+        username_label.setWordWrap(True)
+        username_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         session_layout.addWidget(username_label, 0, 1)
         role_label = QLabel(self.user_role)
         role_label.setProperty("roleBadge", True)
@@ -1822,7 +2051,7 @@ class MainWindow(QMainWindow):
         self.home_theme_combo.setObjectName("homeThemeDropdown")
         self.home_theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
         self.home_theme_combo.setCurrentText(self.current_theme().capitalize())
-        self.home_theme_combo.setMinimumWidth(125)
+        self.home_theme_combo.setMinimumWidth(110)
         self.home_theme_combo.setToolTip("Choose the application color theme")
         self.home_theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
         session_layout.addWidget(self.home_theme_combo, 2, 1)
@@ -1835,7 +2064,7 @@ class MainWindow(QMainWindow):
         saved_wallpaper = self.db.get_setting("animation_style", "Galaxy") or "Galaxy"
         if self.home_wallpaper_combo.findText(saved_wallpaper) >= 0:
             self.home_wallpaper_combo.setCurrentText(saved_wallpaper)
-        self.home_wallpaper_combo.setMinimumWidth(175)
+        self.home_wallpaper_combo.setMinimumWidth(145)
         self.home_wallpaper_combo.setToolTip("Choose the animated background for the application")
         self.home_wallpaper_combo.currentTextChanged.connect(self.set_animation_style)
         session_layout.addWidget(self.home_wallpaper_combo, 2, 3)
@@ -1862,8 +2091,8 @@ class MainWindow(QMainWindow):
             guide_card = QWidget()
             guide_card.setObjectName("guideItem")
             card_layout = QVBoxLayout(guide_card)
-            card_layout.setContentsMargins(16, 14, 16, 14)
-            card_layout.setSpacing(6)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(5)
             heading_row = QHBoxLayout()
             heading_row.setSpacing(10)
             icon_label = QLabel(symbol)
@@ -2270,6 +2499,7 @@ class MainWindow(QMainWindow):
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
+        self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row.")
         l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
@@ -2564,8 +2794,10 @@ class MainWindow(QMainWindow):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
-            table.verticalHeader().setDefaultSectionSize(36)
+            table.verticalHeader().setDefaultSectionSize(40)
             table.setCornerButtonEnabled(False)
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideRight)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setSelectionMode(QAbstractItemView.SingleSelection)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -3050,6 +3282,64 @@ class MainWindow(QMainWindow):
         else: score=0
         return {"start":start,"working_days":self.count_working_days(start,as_of_date),"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
 
+    def save_attendance_inline(self, employee_id, work_date, field, value):
+        """Validate and persist inline attendance edits without losing unrelated fields."""
+        if self.db.is_holiday(work_date):
+            error(self, "This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
+            self.refresh_attendance()
+            return
+        value = str(value or "").strip()
+        old = self.db.conn.execute(
+            "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, work_date),
+        ).fetchone()
+        if field in ("check_in", "check_out") and value and not valid_hhmm(value):
+            error(self, "Enter time in 24-hour HH:MM format, for example 09:30.")
+            self.refresh_attendance()
+            return
+        check_in = old["check_in"] if old else ""
+        check_out = old["check_out"] if old else ""
+        status = old["attendance_status"] if old else "Unmarked"
+        note = old["attendance_note"] if old else ""
+        if field == "status":
+            if value not in ("Unmarked", "Present", "Absent", "Leave"):
+                return
+            status = value
+            if value in ("Absent", "Leave", "Unmarked"):
+                check_in, check_out = "", ""
+        elif field == "check_in":
+            if not value and check_out:
+                error(self, "Clear Check-out before clearing Check-in.")
+                self.refresh_attendance()
+                return
+            check_in = value
+            if value:
+                status = "Present"
+            elif status == "Present":
+                status = "Unmarked"
+        elif field == "check_out":
+            if value and not check_in:
+                error(self, "Enter Check-in before Check-out.")
+                self.refresh_attendance()
+                return
+            check_out = value
+            if value:
+                status = "Present"
+        elif field == "note":
+            note = value
+        else:
+            return
+        self.db.upsert_attendance(
+            employee_id, work_date, check_in=check_in, check_out=check_out,
+            note=note, status=status
+        )
+        employee = self.db.employee(employee_id)
+        self.db.log(
+            "Attendance updated",
+            f"{employee['name']}: {field}={value or '(cleared)'} on {work_date}"
+        )
+        self.refresh_attendance()
+
     def refresh_attendance(self):
         if not hasattr(self,"att_table"): return
         self.refresh_employee_filter()
@@ -3083,13 +3373,46 @@ class MainWindow(QMainWindow):
                     hours=f"{mins/60:.2f}"
                 except Exception: pass
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
-            for c,v in enumerate(vals,1):
-                if c == 2:
-                    item = self.status_item(v)
-                else:
-                    item = QTableWidgetItem(str(v or ""))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.att_table.setItem(r, c, item)
+            # Inline editors make attendance updates visible and discoverable.
+            date_item = QTableWidgetItem(d)
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.att_table.setItem(r, 1, date_item)
+
+            status_combo = QComboBox()
+            status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
+            status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
+            status_combo.setMinimumWidth(104)
+            status_combo.setEnabled(not bool(holiday))
+            status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
+            status_combo.currentTextChanged.connect(
+                lambda value, employee_id=e["id"], work_date=d: self.save_attendance_inline(
+                    employee_id, work_date, "status", value
+                )
+            )
+            self.att_table.setCellWidget(r, 2, status_combo)
+
+            for column, value, field in (
+                (3, ci, "check_in"),
+                (4, co, "check_out"),
+                (6, a["attendance_note"] if a else "", "note"),
+            ):
+                editor = QLineEdit(str(value or ""))
+                editor.setMinimumWidth(90 if column != 6 else 140)
+                editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
+                editor.setToolTip(
+                    "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")
+                    else "Enter an attendance note"
+                )
+                editor.setEnabled(not bool(holiday))
+                editor.editingFinished.connect(
+                    lambda input_widget=editor, employee_id=e["id"], work_date=d, field_name=field:
+                    self.save_attendance_inline(employee_id, work_date, field_name, input_widget.text())
+                )
+                self.att_table.setCellWidget(r, column, editor)
+
+            hours_item = QTableWidgetItem(hours)
+            hours_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.att_table.setItem(r, 5, hours_item)
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         if restore_row >= 0:
             self.att_table.selectRow(restore_row)
@@ -3804,22 +4127,10 @@ class MainWindow(QMainWindow):
         progress.show()
         QApplication.processEvents()
         try:
-            request = Request("https://api.github.com/repos/" + GITHUB_REPOSITORY + "/releases?per_page=20", headers={"Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager"})
+            request = Request("https://api.github.com/repos/" + GITHUB_REPOSITORY + "/releases?per_page=100", headers={"Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager"})
             with urlopen(request, timeout=20) as response:
                 releases = json.loads(response.read().decode("utf-8"))
-            choices = []
-            for release in releases:
-                tag = str(release.get("tag_name", ""))
-                try:
-                    version = release_version_tuple(tag)
-                except ValueError:
-                    continue
-                if version < release_version_tuple(APP_VERSION):
-                    assets = {item.get("name"): item for item in release.get("assets", [])}
-                    asset = assets.get("RawStrengthEmployeeAuditManager-Setup.exe", {})
-                    url = asset.get("browser_download_url", "")
-                    if url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
-                        choices.append((tag, url, asset))
+            choices = previous_release_choices(releases, APP_VERSION)
             progress.close()
             if not choices:
                 return error(self, "No previous published application version is available.")
@@ -3841,11 +4152,19 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
             with urlopen(Request(url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"}), timeout=60) as response:
                 data = response.read()
-            if len(data) < 1000000:
-                raise ValueError("Downloaded rollback installer is missing or incomplete.")
+            expected_size = installer_asset.get("size")
+            if (not isinstance(expected_size, int) or expected_size < 1000000
+                    or len(data) != expected_size):
+                raise ValueError("Downloaded rollback installer size does not match GitHub release metadata.")
             # Older releases may predate GitHub's digest metadata. Verify it whenever available.
             verify_release_asset_bytes(data, installer_asset, require_digest=False)
-            installer.write_bytes(data)
+            partial_path = installer.with_suffix(installer.suffix + ".part")
+            try:
+                partial_path.write_bytes(data)
+                os.replace(partial_path, installer)
+            except Exception:
+                partial_path.unlink(missing_ok=True)
+                raise
             progress.setLabelText("Starting silent rollback...")
             QApplication.processEvents()
             if sys.platform == "win32":
@@ -4129,7 +4448,7 @@ QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #DCEBFA, stop:0.48 #F4EEFF, stop:1 #DDF7F5); }
 QWidget#sessionStrip, QWidget#welcomeHero, QWidget#guideItem, QGroupBox { background: rgba(255,255,255,190); border: 1px solid rgba(255,255,255,225); border-radius: 16px; }
 QScrollArea#homeScroll, QScrollArea#homeScroll QWidget#qt_scrollarea_viewport { background: transparent; border: 0; }
-QPushButton { min-height: 32px; padding: 6px 12px; border-radius: 9px; }
+QPushButton { min-height: 36px; padding: 8px 14px; border-radius: 9px; font-size: 9pt; }
 QLabel { padding: 1px; }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
@@ -4403,6 +4722,12 @@ QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
 QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
 QCheckBox, QRadioButton { color: #E2E8F0; }
 QStatusBar { background: #111827; color: #E2E8F0; }
+
+QLabel { word-wrap: true; }
+QPushButton { text-align: center; }
+QTableWidget { font-size: 9pt; }
+QTableWidget::item { padding: 4px 6px; }
+QHeaderView::section { padding: 6px 8px; min-height: 36px; }
 """
 
 def apply_app_theme(app, theme_name):
@@ -4441,7 +4766,12 @@ def main():
     try:
         db=Database()
         seed_initial_audit(db)
-        apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
+        # Migrate existing installs to the requested white UI once. Later manual
+        # theme selections are preserved by this migration flag.
+        if db.get_setting("white_ui_wallpaper_fix_v1241") != "1":
+            db.set_setting("ui_theme", "day")
+            db.set_setting("white_ui_wallpaper_fix_v1241", "1")
+        apply_app_theme(app, db.get_setting("ui_theme", "day") or "day")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1

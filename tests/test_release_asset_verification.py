@@ -177,29 +177,92 @@ def test_release_version_tuple_normalizes_v_prefix_and_rejects_invalid_tags():
         app.release_version_tuple("v1.2.3-rc1")
 
 
-def test_update_worker_selects_newest_published_stable_release(monkeypatch):
-    releases = [
-        {"tag_name": "v1.2.31", "draft": False, "prerelease": False,
-         "published_at": "2026-10-14T07:00:00Z", "assets": []},
-        {"tag_name": "v1.2.99", "draft": False, "prerelease": True,
-         "published_at": "2026-10-15T07:00:00Z", "assets": []},
-        {"tag_name": "v9.9.9", "draft": True, "prerelease": False,
-         "published_at": "2026-10-16T07:00:00Z", "assets": []},
-        {"tag_name": "not-a-version", "draft": False, "prerelease": False,
-         "published_at": "2026-10-17T07:00:00Z", "assets": []},
-        {"tag_name": "v1.2.32", "draft": False, "prerelease": False,
-         "published_at": "2026-10-18T07:00:00Z", "assets": []},
-    ]
-    monkeypatch.setattr(app.UpdateWorker, "request_bytes",
-                        staticmethod(lambda url, accept="application/vnd.github+json": __import__("json").dumps(releases).encode()))
-    worker = app.UpdateWorker("1.2.31")
+def test_update_worker_uses_latest_published_stable_release(monkeypatch):
+    release = {
+        "tag_name": "v1.2.36",
+        "draft": False,
+        "prerelease": False,
+        "published_at": "2026-10-14T08:00:00Z",
+        "assets": [],
+    }
+    requested = []
+    monkeypatch.setattr(
+        app.UpdateWorker,
+        "request_bytes",
+        staticmethod(lambda url, accept="application/vnd.github+json": (
+            requested.append(url) or __import__("json").dumps(release).encode()
+        )),
+    )
+    worker = app.UpdateWorker("1.2.35")
     emitted = []
     worker.current.connect(lambda version: emitted.append(("current", version)))
     worker.failed.connect(lambda message: emitted.append(("failed", message)))
     worker.ready.connect(lambda path, version: emitted.append(("ready", version)))
-    # The selected release has no installer, so selection must not declare the
-    # application current merely because the first API item is v1.2.31.
+
     worker.run()
+
+    assert requested == [
+        "https://api.github.com/repos/yalangisexter-ux/audit-report/releases/latest"
+    ]
     assert emitted
     assert emitted[0][0] == "failed"
     assert "missing a trusted installer" in emitted[0][1]
+def test_update_worker_retries_after_a_read_timeout(monkeypatch):
+    release = {
+        "tag_name": "v1.2.36",
+        "draft": False,
+        "prerelease": False,
+        "published_at": "2026-10-14T08:00:00Z",
+        "assets": [],
+    }
+    attempts = []
+
+    def request(url, accept="application/vnd.github+json"):
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise TimeoutError("The read operation timed out")
+        return __import__("json").dumps(release).encode()
+
+    monkeypatch.setattr(app.UpdateWorker, "request_bytes", staticmethod(request))
+    monkeypatch.setattr(__import__("time"), "sleep", lambda _seconds: None)
+    worker = app.UpdateWorker("1.2.35")
+    emitted = []
+    worker.failed.connect(lambda message: emitted.append(message))
+
+    worker.run()
+
+    assert len(attempts) == 2
+    assert emitted
+    assert "missing a trusted installer" in emitted[0]
+
+
+def test_previous_release_choices_only_returns_installable_stable_versions_sorted_newest_first():
+    def release(tag, *, draft=False, prerelease=False, published=True, size=1000000, url=None):
+        return {
+            "tag_name": tag,
+            "draft": draft,
+            "prerelease": prerelease,
+            "published_at": "2026-10-14T00:00:00Z" if published else None,
+            "assets": [{
+                "name": "RawStrengthEmployeeAuditManager-Setup.exe",
+                "browser_download_url": url or (
+                    "https://github.com/yalangisexter-ux/audit-report/releases/download/"
+                    + tag + "/RawStrengthEmployeeAuditManager-Setup.exe"
+                ),
+                "size": size,
+            }],
+        }
+
+    releases = [
+        release("v1.2.10"),
+        release("v1.2.31"),
+        release("v1.2.99", prerelease=True),
+        release("v9.0.0", draft=True),
+        release("v1.2.30", published=False),
+        release("v1.2.29", size=999999),
+        release("v1.2.28", url="https://example.com/installer.exe"),
+        release("not-a-version"),
+        release("v1.2.32"),
+    ]
+    choices = app.previous_release_choices(releases, "1.2.32")
+    assert [choice[0] for choice in choices] == ["v1.2.31", "v1.2.10"]
