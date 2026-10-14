@@ -141,7 +141,8 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QProgressBar#dashboardProgress' in source
     assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
     assert "QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}" in source
-    assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
+    assert 'QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC;' in source
+    assert 'QWidget#guideItem { background: #0F172A; border: 1px solid #334155; border-left: 4px solid #A78BFA;' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
     assert 'QPrintPreviewDialog' in source
     assert 'def open_print_preview(self):' in source
@@ -235,6 +236,8 @@ def test_release_metadata_is_consistent_and_newer_than_installed_version():
     assert f'MyAppVersion "{version}"' in (root / "installer.iss").read_text(encoding="utf-8")
     assert f"StringStruct('FileVersion', '{version}.0')" in (root / "version_info.txt").read_text(encoding="utf-8")
     assert f"StringStruct('ProductVersion', '{version}.0')" in (root / "version_info.txt").read_text(encoding="utf-8")
+    assert f"filevers=(1, 2, {app.release_version_tuple(version)[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
+    assert f"prodvers=(1, 2, {app.release_version_tuple(version)[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
     workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
     assert f'APP_VERSION: "{version}"' in workflow
     assert f"tag_name: v{version}" in workflow
