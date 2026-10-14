@@ -97,13 +97,12 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QComboBox QListView::item:selected' in source
     assert 'page.setObjectName("appPageSurface")' in source
     assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
-    assert 'QWidget#homeContent, QWidget#pageContent { background: #F8FAFC' in source
-    assert 'QWidget#homeContent, QWidget#pageContent { background: #111827' in source
-    assert 'content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)' in source
-    assert 'content.setAutoFillBackground(True)' in source
-    assert 'QWidget#sessionStrip { background: #E2E8F0' in source
-    assert 'QWidget#guideItem { background: #F1F5F9' in source
-    assert 'QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9' in source
+    assert 'QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.88)' in source
+    assert 'QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.90)' in source
+    assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
+    assert 'QComboBox QAbstractItemView::item:selected' in source
+    assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
+    assert 'QTextEdit#reportPreview { background: #111827' in source
 
 
 def test_live_wallpapers_use_high_resolution_photos_with_animation():
