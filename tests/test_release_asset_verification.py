@@ -122,19 +122,21 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'for col, width in enumerate((145, 112, 136, 118, 118, 90, 190))' in source
     assert 'Scroll horizontally to see every column on smaller screens.' in source
     assert 'update_label.setWordWrap(True)' in source
-    assert 'self._update_progress.setMinimumWidth(440)' in source
+    assert 'dialog_width = max(240, min(440, available_width - 32))' in source
+    assert 'self._update_progress.setMinimumWidth(dialog_width)' in source
     assert 'self.brand_banner = QFrame()' in source
     assert 'main_content_layout.addWidget(self.brand_banner)' in source
     assert 'page_layout.addWidget(welcome)' not in source
     assert 'def _show_message(parent, message, icon):' in source
     assert 'label.setWordWrap(True)' in source
-    assert 'box.setMinimumWidth(500)' in source
+    assert 'dialog_width = max(240, min(500, available_width - 32))' in source
+    assert 'box.setMinimumWidth(dialog_width)' in source
     assert 'self.header_clock.show()' in source
     assert 'self._wrap_page_in_scroll(self.dashboard, root)' in source
     assert 'grid.addWidget(productivity, 1, 1, 1, 2)' in source
     assert 'Qt.TextFlag.TextWordWrap, name)' in source
     assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
-    assert 'QListView::item:selected { background: #6D28D9; color: #FFFFFF; }' in source
+    assert "QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}" in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
     assert 'QPrintPreviewDialog' in source
@@ -195,7 +197,8 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
     assert 'page_layout.addWidget(welcome)' not in source
     assert 'def _show_message(parent, message, icon):' in source
     assert 'label.setWordWrap(True)' in source
-    assert 'box.setMinimumWidth(500)' in source
+    assert 'dialog_width = max(240, min(500, available_width - 32))' in source
+    assert 'box.setMinimumWidth(dialog_width)' in source
     assert '"🟢"' in source and '"🔴"' in source and '"🟣"' in source
     assert "Live print preview — updates when report options change" in source
     assert "self.report_summary.setMinimumHeight(220)" in source
@@ -210,6 +213,22 @@ def test_release_version_tuple_normalizes_v_prefix_and_rejects_invalid_tags():
         app.release_version_tuple("v1.2")
     with pytest.raises(ValueError):
         app.release_version_tuple("v1.2.3-rc1")
+
+
+def test_release_metadata_is_consistent_and_newer_than_installed_version():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    version = app.APP_VERSION
+    assert app.release_version_tuple(version) > app.release_version_tuple("1.2.55")
+    assert f'APP_VERSION = "{version}"' in (root / "build_info.py").read_text(encoding="utf-8")
+    assert f'MyAppVersion "{version}"' in (root / "installer.iss").read_text(encoding="utf-8")
+    assert f"StringStruct('FileVersion', '{version}.0')" in (root / "version_info.txt").read_text(encoding="utf-8")
+    assert f"StringStruct('ProductVersion', '{version}.0')" in (root / "version_info.txt").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    assert f'APP_VERSION: "{version}"' in workflow
+    assert f"tag_name: v{version}" in workflow
+    assert f"Raw Strength Employee Audit Manager v{version}" in workflow
 
 
 def test_update_worker_uses_latest_published_stable_release(monkeypatch):
