@@ -1433,7 +1433,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
-        content.setStyleSheet("QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 18px; }")
+        self.apply_content_surface_styles()
         content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
@@ -1481,6 +1481,7 @@ class MainWindow(QMainWindow):
         theme_name = theme_name or self.current_theme()
         theme_name = apply_app_theme(QApplication.instance(), theme_name)
         self.db.set_setting("ui_theme", theme_name)
+        self.apply_content_surface_styles(theme_name)
         for combo_name in ("theme_combo", "home_theme_combo"):
             combo = getattr(self, combo_name, None)
             if combo is not None and combo.currentText().lower() != theme_name:
@@ -1500,6 +1501,22 @@ class MainWindow(QMainWindow):
             self.btn_max.setStyleSheet(btn_style)
             self.btn_close.setStyleSheet(close_style)
         return theme_name
+
+    def apply_content_surface_styles(self, theme_name=None):
+        """Keep wallpaper behind the UI while matching solid panels to the active theme."""
+        theme_name = (theme_name or self.current_theme()).lower()
+        if theme_name == "day":
+            background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"
+        else:
+            background, foreground, border = "#111827", "#F8FAFC", "#64748B"
+        for object_name in ("homeContent", "pageContent"):
+            for surface in self.findChildren(QWidget, object_name):
+                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+                surface.setAutoFillBackground(True)
+                surface.setStyleSheet(
+                    f"QWidget#{object_name} {{ background-color: {background}; "
+                    f"color: {foreground}; border: 1px solid {border}; border-radius: 18px; }}"
+                )
 
     def toggle_theme(self):
         nxt = "night" if self.current_theme() == "day" else "day"
@@ -1533,7 +1550,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("homeContent")
-        content.setStyleSheet("QWidget#homeContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 18px; }")
+        self.apply_content_surface_styles()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(26, 22, 26, 22)
         content_layout.setSpacing(18)
