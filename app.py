@@ -1433,11 +1433,11 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
-        self.apply_content_surface_styles()
         content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
+        self.apply_content_surface_styles()
         outer.addWidget(scroll)
         return outer
 
@@ -1550,7 +1550,6 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("homeContent")
-        self.apply_content_surface_styles()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(26, 22, 26, 22)
         content_layout.setSpacing(18)
@@ -2222,6 +2221,7 @@ class MainWindow(QMainWindow):
 
         l.addStretch(1)
         scroll.setWidget(content)
+        self.apply_content_surface_styles()
         outer.addWidget(scroll)
 
         self.report_type.currentTextChanged.connect(self._report_type_changed)
