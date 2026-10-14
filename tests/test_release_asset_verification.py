@@ -107,6 +107,10 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'def open_print_preview(self):' in source
     assert 'QPrintPreviewDialog(printer, self)' in source
     assert "def apply_content_surface_styles(self, theme_name=None):" in source
+    assert 'QWidget#kpiCard, QWidget#dashboardPanel { background-color: #FFFFFF; color: #0F172A;' in source
+    assert 'QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC;' in source
+    assert 'QWidget#settingsContent { background-color: #F8FAFC; color: #0F172A; }' in source
+    assert 'QWidget#settingsContent { background-color: #111827; color: #F8FAFC; }' in source
     assert 'background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"' in source
     assert 'background, foreground, border = "#111827", "#F8FAFC", "#64748B"' in source
     assert "self.apply_content_surface_styles(theme_name)" in source
