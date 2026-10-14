@@ -97,7 +97,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert "homeWallpaperDropdown" in source
     assert 'icon_label = QLabel(symbol)' in source
     assert 'QPixmap' in source
-    assert 'QWidget#appPageSurface { background: rgba(255, 255, 255, 238); color: #0F172A; }' in source
+    assert 'QWidget#appPageSurface { background: #FFFFFF; color: #0F172A; }' in source
     assert 'QWidget#appPageSurface { background: transparent; color: #F8FAFC; }' in source
     assert 'background-color: #F8FAFC' in source
     assert 'background-color: #111827' in source
