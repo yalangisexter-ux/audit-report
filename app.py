@@ -1426,7 +1426,7 @@ class MainWindow(QMainWindow):
         title_layout.addStretch(1)
         self.header_clock = QLabel()
         self.header_clock.setObjectName("headerClock")
-        self.header_clock.setMinimumWidth(190)
+        self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
         title_layout.addWidget(self.header_clock)
@@ -1476,8 +1476,8 @@ class MainWindow(QMainWindow):
         self.sidebar.setObjectName("navigationSidebar")
         self.sidebar.setFixedWidth(224)
         self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setContentsMargins(10, 12, 10, 12)
-        self.sidebar_layout.setSpacing(7)
+        self.sidebar_layout.setContentsMargins(8, 10, 8, 10)
+        self.sidebar_layout.setSpacing(6)
         self.sidebar_toggle = QPushButton("☰  Collapse menu")
         self.sidebar_toggle.setObjectName("sidebarToggle")
         self.sidebar_toggle.setToolTip("Collapse or expand navigation")
@@ -1535,7 +1535,7 @@ class MainWindow(QMainWindow):
             button = QPushButton(title)
             button.setObjectName("sidebarNavButton")
             button.setCheckable(True)
-            button.setMinimumHeight(42)
+            button.setMinimumHeight(38)
             button.setToolTip(title)
             button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
             self.sidebar_layout.addWidget(button)
@@ -1576,11 +1576,8 @@ class MainWindow(QMainWindow):
     def toggle_sidebar(self):
         collapsed = self.sidebar.width() > 100
         self.sidebar.setFixedWidth(76 if collapsed else 224)
-        self.sidebar_toggle.setText("☰" if collapsed else "☰  Collapse menu")
-        self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
-        for button, title in getattr(self, "sidebar_buttons", []):
-            button.setText(title.split("  ", 1)[0] if collapsed else title)
-            button.setToolTip(title)
+        self._apply_responsive_layout()
+        QTimer.singleShot(0, self.fit_sidebar_labels)
 
     def sync_sidebar_selection(self, index):
         for i, (button, title) in enumerate(getattr(self, "sidebar_buttons", [])):
@@ -1732,10 +1729,44 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "bg_anim"):
-            self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
+            self.bg_anim.setGeometry(0, 42, self.width(), max(1, self.height() - 42))
             self.bg_anim.init_particles()
+        self._apply_responsive_layout()
         if hasattr(self, "title_label"):
             QTimer.singleShot(0, self.update_title_label)
+        if hasattr(self, "sidebar_buttons"):
+            QTimer.singleShot(0, self.fit_sidebar_labels)
+
+    def _apply_responsive_layout(self):
+        compact = self.width() < 1220
+        home = self.findChild(QWidget, "homeContent")
+        if home is not None and home.layout() is not None:
+            margin_x = 16 if compact else 22
+            margin_y = 14 if compact else 18
+            home.layout().setContentsMargins(margin_x, margin_y, margin_x, margin_y)
+            home.layout().setSpacing(12 if compact else 16)
+        for surface in self.findChildren(QWidget, "pageContent"):
+            layout = surface.layout()
+            if layout is None:
+                continue
+            margins = layout.contentsMargins()
+            margin_x = 14 if compact else 18
+            layout.setContentsMargins(margin_x, margins.top(), margin_x, margins.bottom())
+            layout.setSpacing(10 if compact else 12)
+
+    def fit_sidebar_labels(self):
+        if not hasattr(self, "sidebar"):
+            return
+        collapsed = self.sidebar.width() <= 100
+        self.sidebar_toggle.setText("☰" if collapsed else "☰  Collapse menu")
+        self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
+        for button, title in getattr(self, "sidebar_buttons", []):
+            label = title.split("  ", 1)[0] if collapsed else title
+            text_width = max(0, button.contentsRect().width() - 22)
+            button.setText(button.fontMetrics().elidedText(
+                label, Qt.TextElideMode.ElideRight, text_width
+            ))
+            button.setToolTip(title)
 
     def update_title_label(self):
         self.title_label.setText(self.title_label.fontMetrics().elidedText(
@@ -1782,7 +1813,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
-        content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
+        content_layout.setContentsMargins(18, 0 if page_title else 12, 18, 14)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
@@ -1794,7 +1825,7 @@ class MainWindow(QMainWindow):
         header = QWidget()
         header.setObjectName("pageHeader")
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(20, 12, 20, 0)
+        header_layout.setContentsMargins(16, 10, 16, 0)
         header_layout.setSpacing(0)
         self.add_page_header(header_layout, title, subtitle)
         outer_layout.addWidget(header)
@@ -1802,8 +1833,8 @@ class MainWindow(QMainWindow):
     @staticmethod
     def add_page_header(layout, title, subtitle):
         header_row = QHBoxLayout()
-        header_row.setSpacing(14)
-        header_row.setContentsMargins(0, 4, 0, 8)
+        header_row.setSpacing(12)
+        header_row.setContentsMargins(0, 3, 0, 6)
         logo = QLabel()
         logo.setFixedSize(48, 48)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1860,22 +1891,29 @@ class MainWindow(QMainWindow):
         return theme_name
 
     def apply_content_surface_styles(self, theme_name=None):
-        """Keep wallpaper behind the UI while matching solid panels to the active theme."""
+        """Keep text readable while allowing the live wallpaper to show through page surfaces."""
         theme_name = (theme_name or self.current_theme()).lower()
         if theme_name == "ocean":
             background, foreground, border = "#F0F9FF", "#0F172A", "#0284C7"
+            alpha = 226
         elif theme_name == "sunset":
             background, foreground, border = "#FFEDD5", "#0F172A", "#EA580C"
+            alpha = 226
         elif theme_name == "day":
             background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"
+            alpha = 230
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
+            alpha = 226
+        red, green, blue = (
+            int(background[offset:offset + 2], 16) for offset in (1, 3, 5)
+        )
         for object_name in ("homeContent", "pageContent"):
             for surface in self.findChildren(QWidget, object_name):
-                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-                surface.setAutoFillBackground(True)
+                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                surface.setAutoFillBackground(False)
                 surface.setStyleSheet(
-                    f"QWidget#{object_name} {{ background-color: {background}; "
+                    f"QWidget#{object_name} {{ background-color: rgba({red}, {green}, {blue}, {alpha}); "
                     f"color: {foreground}; border: 1px solid {border}; border-radius: 18px; }}"
                 )
 
@@ -1913,14 +1951,14 @@ class MainWindow(QMainWindow):
         content.setAutoFillBackground(True)
         content.setObjectName("homeContent")
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(26, 22, 26, 22)
-        content_layout.setSpacing(18)
+        content_layout.setContentsMargins(22, 18, 22, 18)
+        content_layout.setSpacing(16)
 
         welcome = QWidget()
         welcome.setObjectName("welcomeHero")
         welcome_layout = QHBoxLayout(welcome)
-        welcome_layout.setContentsMargins(22, 18, 22, 18)
-        welcome_layout.setSpacing(18)
+        welcome_layout.setContentsMargins(18, 14, 18, 14)
+        welcome_layout.setSpacing(14)
         brand_mark = QLabel()
         brand_mark.setObjectName("welcomeMark")
         brand_mark.setFixedSize(80, 80)
@@ -1930,23 +1968,29 @@ class MainWindow(QMainWindow):
         welcome_copy = QVBoxLayout()
         welcome_title = QLabel(f"Welcome, {self.current_user.get('display_name') or self.current_user.get('username')}")
         welcome_title.setProperty("welcomeTitle", True)
+        welcome_title.setWordWrap(True)
+        welcome_title.setMinimumWidth(0)
         welcome_copy.addWidget(welcome_title)
         welcome_subtitle = QLabel("Raw Strength Calisthenics · Employee Audit Manager")
         welcome_subtitle.setProperty("welcomeSubtitle", True)
+        welcome_subtitle.setWordWrap(True)
+        welcome_subtitle.setMinimumWidth(0)
         welcome_copy.addWidget(welcome_subtitle)
         welcome_layout.addLayout(welcome_copy, 1)
 
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
         session_layout = QGridLayout(session_strip)
-        session_layout.setContentsMargins(16, 12, 16, 12)
-        session_layout.setHorizontalSpacing(12)
-        session_layout.setVerticalSpacing(8)
+        session_layout.setContentsMargins(12, 10, 12, 10)
+        session_layout.setHorizontalSpacing(8)
+        session_layout.setVerticalSpacing(6)
         session_label = QLabel("SIGNED IN")
         session_label.setProperty("sessionLabel", True)
         session_layout.addWidget(session_label, 0, 0)
         username_label = QLabel(self.current_user.get("username", "N/A"))
-        username_label.setMinimumWidth(70)
+        username_label.setMinimumWidth(0)
+        username_label.setWordWrap(True)
+        username_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         session_layout.addWidget(username_label, 0, 1)
         role_label = QLabel(self.user_role)
         role_label.setProperty("roleBadge", True)
@@ -1984,7 +2028,7 @@ class MainWindow(QMainWindow):
         self.home_theme_combo.setObjectName("homeThemeDropdown")
         self.home_theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
         self.home_theme_combo.setCurrentText(self.current_theme().capitalize())
-        self.home_theme_combo.setMinimumWidth(125)
+        self.home_theme_combo.setMinimumWidth(110)
         self.home_theme_combo.setToolTip("Choose the application color theme")
         self.home_theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
         session_layout.addWidget(self.home_theme_combo, 2, 1)
@@ -1997,7 +2041,7 @@ class MainWindow(QMainWindow):
         saved_wallpaper = self.db.get_setting("animation_style", "Galaxy") or "Galaxy"
         if self.home_wallpaper_combo.findText(saved_wallpaper) >= 0:
             self.home_wallpaper_combo.setCurrentText(saved_wallpaper)
-        self.home_wallpaper_combo.setMinimumWidth(175)
+        self.home_wallpaper_combo.setMinimumWidth(145)
         self.home_wallpaper_combo.setToolTip("Choose the animated background for the application")
         self.home_wallpaper_combo.currentTextChanged.connect(self.set_animation_style)
         session_layout.addWidget(self.home_wallpaper_combo, 2, 3)
@@ -2024,8 +2068,8 @@ class MainWindow(QMainWindow):
             guide_card = QWidget()
             guide_card.setObjectName("guideItem")
             card_layout = QVBoxLayout(guide_card)
-            card_layout.setContentsMargins(16, 14, 16, 14)
-            card_layout.setSpacing(6)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(5)
             heading_row = QHBoxLayout()
             heading_row.setSpacing(10)
             icon_label = QLabel(symbol)
