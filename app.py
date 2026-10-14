@@ -15,6 +15,8 @@ from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase,
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -90,6 +92,44 @@ TASKS = [
     ("Sai Teja", "Comical video shoot completed, edited with needed changes, and posted in Fun and Facts", "Completed item in source report.", ["https://www.instagram.com/reel/DeRhfPdSKvH/?rpxt=enR1bWpyOWc5YWZo", "https://drive.google.com/drive/folders/1dCMip95NJjrEKQSVAQeW0imH7qYvWFzY?usp=share_link"], "Both original links are retained.", "Submitted", 100),
     ("Sai Teja", "Villain intro animations", "Pending item exactly as stated in source report.", [], "Do not mark completed until manager updates the task.", "Pending", 0),
 ]
+
+
+def extract_http_urls(value):
+    """Return HTTP(S) URLs from evidence fields without changing the original URL."""
+    urls = []
+    for line in str(value or "").splitlines():
+        for candidate in line.split():
+            candidate = candidate.strip("<>").rstrip(".,;)")
+            if candidate.startswith(("https://", "http://")):
+                urls.append(candidate)
+    return urls
+
+
+def add_docx_hyperlink(paragraph, url):
+    """Add a visible URL as a real external hyperlink in a Word paragraph."""
+    relationship_id = paragraph.part.relate_to(
+        url,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+        is_external=True,
+    )
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), relationship_id)
+    run = OxmlElement("w:r")
+    properties = OxmlElement("w:rPr")
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "0563C1")
+    properties.append(color)
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    properties.append(underline)
+    run.append(properties)
+    text_node = OxmlElement("w:t")
+    text_node.text = url
+    run.append(text_node)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+    return hyperlink
+
 
 def seed_initial_audit(db):
     key = "initial_audit_2026_10_09_imported"
@@ -3840,8 +3880,16 @@ class MainWindow(QMainWindow):
                             if opts.get("details",True) and t["details"]: doc.add_paragraph(f'Details: {t["details"]}',style="List Bullet 2")
                             if opts.get("due_time",True) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
                             if opts.get("proof",True):
-                                doc.add_paragraph(f'Proof / Evidence: {self.task_proof_label(e,t,report_date)}',style="List Bullet 2")
-                                if t["proof_url"]: doc.add_paragraph(str(t["proof_url"]),style="List Bullet 2")
+                                proof_urls = extract_http_urls(t["proof_url"])
+                                if proof_urls:
+                                    proof_paragraph = doc.add_paragraph(style="List Bullet 2")
+                                    proof_paragraph.add_run("Proof / Evidence: ")
+                                    for link_index, url in enumerate(proof_urls):
+                                        if link_index:
+                                            proof_paragraph.add_run(" | ")
+                                        add_docx_hyperlink(proof_paragraph, url)
+                                else:
+                                    doc.add_paragraph(f'Proof / Evidence: {self.task_proof_label(e,t,report_date)}',style="List Bullet 2")
                             if opts.get("proof_notes",False) and t["proof_note"]: doc.add_paragraph(f'Proof notes: {t["proof_note"]}',style="List Bullet 2")
                             if opts.get("remarks",True): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
                     else:
@@ -4022,9 +4070,17 @@ class MainWindow(QMainWindow):
                             if opts.get("due_time", True) and t["due_time"]:
                                 story.append(bullet(f'Due time: {t["due_time"]}'))
                             if opts.get("proof", True):
-                                story.append(bullet(f'Proof / Evidence: {self.task_proof_label(e, t, report_date)}'))
-                                if t["proof_url"]:
-                                    story.append(Paragraph("&#8226;&nbsp; " + escape(str(t["proof_url"])), styles["RSLink"]))
+                                proof_urls = extract_http_urls(t["proof_url"])
+                                if proof_urls:
+                                    story.append(Paragraph(
+                                        "&#8226;&nbsp; Proof / Evidence: " + " | ".join(
+                                            '<link href="' + escape(url, {'"': '&quot;'}) + '">' + escape(url) + '</link>'
+                                            for url in proof_urls
+                                        ),
+                                        styles["RSLink"],
+                                    ))
+                                else:
+                                    story.append(bullet(f"Proof / Evidence: {self.task_proof_label(e, t, report_date)}"))
                             if opts.get("proof_notes", False) and t["proof_note"]:
                                 story.append(bullet(f'Proof notes: {t["proof_note"]}'))
                             if opts.get("remarks", True):
