@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QProgressDialog,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
-    QToolButton, QMenu, QSizePolicy, QFrame
+    QToolButton, QMenu, QSizePolicy, QFrame, QListView
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
 from docx import Document
@@ -1339,9 +1339,9 @@ class MainWindow(QMainWindow):
 
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for page in (self.home_tab, self.dashboard, self.employees_tab, self.tasks_tab, self.tracker_tab, self.attendance_tab, self.reports_tab, self.archive_tab, self.settings_tab):
-            # Do not let the animated child background paint through the page surface.
-            page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-            page.setAutoFillBackground(True)
+            # Keep page surfaces translucent so the wallpaper remains visible behind opaque content cards.
+            page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            page.setAutoFillBackground(False)
             page.setObjectName("appPageSurface")
         self.business_tab = BusinessTrackingTab(self.db)
         tab_items = [(self.home_tab,"⌂  Home"),(self.dashboard,"▦  Dashboard"),(self.employees_tab,"♙  Employees"),(self.tasks_tab,"✓  Task Manager"),(self.tracker_tab,"◷  Employee Tracker"),(self.attendance_tab,"◉  Attendance"),(self.reports_tab,"▤  Print Center"),(self.archive_tab,"▣  EOD Archive"),(self.business_tab,"◈  Business Tracking"),(self.settings_tab,"⚙  Settings & Backup")]
@@ -3890,7 +3890,7 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
     padding: 10px 14px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox, QDateEdit {
-    background-color: #FFFFFF; color: #0F172A; border: 0; border-radius: 12px;
+    combobox-popup: 0; background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px;
     padding: 10px 14px; min-height: 20px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #F1F5F9; color: #0F172A; }
@@ -3900,9 +3900,9 @@ QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBo
     border: 2px solid #7C5CFC; background-color: #F1F5F9; color: #0F172A;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-QComboBox QAbstractItemView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
-QComboBox QAbstractItemView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
-QComboBox QAbstractItemView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
+QComboBox QAbstractItemView, QComboBox QListView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #64748B; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
+QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
+QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
 QHeaderView::section { background: #E2E8F0; color: #334155; padding: 7px 8px; border: 0; border-bottom: 2px solid #CBD5E1; font-weight: 700; }
 QTableWidget { background: rgba(255,255,255,0.68); alternate-background-color: rgba(241,245,249,0.66); color: #0F172A; border: 1px solid rgba(255,255,255,0.82); border-radius: 16px; gridline-color: rgba(226,232,240,0.65); selection-background-color: #DDE7FF; selection-color: #312E81; outline: 0; }
 QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #E2E8F0; color: #0F172A; }
@@ -3957,8 +3957,8 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
-QWidget#appPageSurface { background: #F8FAFC; color: #0F172A; }
-QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
+QWidget#appPageSurface { background: transparent; color: #0F172A; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.88); color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
@@ -4022,7 +4022,7 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
     padding: 10px 14px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
 }
 QComboBox, QDateEdit {
-    background-color: #111827; color: #F8FAFC; border: 0; border-radius: 14px;
+    combobox-popup: 0; background-color: #111827; color: #F8FAFC; border: 1px solid #475569; border-radius: 14px;
     padding: 8px 10px; min-height: 20px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
 }
 QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #111827; color: #F8FAFC; }
@@ -4032,9 +4032,9 @@ QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBo
     border: 2px solid #A78BFA; background-color: #0F172A; color: #F8FAFC;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-QComboBox QAbstractItemView { background-color: #111827; color: #F8FAFC; border: 1px solid #334155; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
-QComboBox QAbstractItemView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
-QComboBox QAbstractItemView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
+QComboBox QAbstractItemView, QComboBox QListView { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
+QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
+QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
 QHeaderView::section { background: #111827; color: #CBD5E1; padding: 7px 8px; border: 0; border-bottom: 2px solid #374151; font-weight: 700; }
 QTableWidget { background: rgba(15,23,42,0.96); alternate-background-color: rgba(30,41,59,0.94); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.34); border-radius: 20px; gridline-color: rgba(71,85,105,0.70); selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
 QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #1F2937; color: #E2E8F0; }
@@ -4089,8 +4089,8 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#appPageSurface { background: #111827; color: #F8FAFC; }
-QWidget#homeContent, QWidget#pageContent { background: #111827; color: #F8FAFC; border: 1px solid #64748B; }
+QWidget#appPageSurface { background: transparent; color: #F8FAFC; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.90); color: #F8FAFC; border: 1px solid #64748B; }
 QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
 QGroupBox::title { color: #CBD5E1; }
 QLabel { color: #E2E8F0; }
