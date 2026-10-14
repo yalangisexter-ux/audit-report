@@ -513,11 +513,11 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
 
         with csv_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.reader(stream))
-        proof_columns = [index for index, heading in enumerate(rows[0]) if heading.startswith("Proof URL")]
+        proof_columns = [index for index, heading in enumerate(rows[0]) if heading.startswith("Proof link")]
         assert len(proof_columns) == 3
-        assert rows[1][proof_columns[0]].startswith('=HYPERLINK("https://example.com/proof?id=1&x=2"')
-        assert rows[1][proof_columns[1]].startswith('=HYPERLINK("https://example.org/second"')
-        assert rows[1][proof_columns[2]].startswith('=HYPERLINK("https://example.net/note"')
+        assert rows[1][proof_columns[0]] == '=HYPERLINK("https://example.com/proof?id=1&x=2","Proof link 1")'
+        assert rows[1][proof_columns[1]] == '=HYPERLINK("https://example.org/second","Proof link 2")'
+        assert rows[1][proof_columns[2]] == '=HYPERLINK("https://example.net/note","Proof link 3")'
         assert "https://example.net/note" not in rows[1][rows[0].index("Proof notes")]
 
         window.report_type.setCurrentText("Employee Attendance")
