@@ -2,7 +2,7 @@ import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets,
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QTimer
+from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QToolButton, QMenu, QSizePolicy, QFrame
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
@@ -1019,10 +1020,13 @@ class ProductivityChart(QWidget):
 
 class AnimatedBackground(QWidget):
     """Selectable, low-cost animated wallpaper behind the main application tabs."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Ocean Waves", "Shiva", "Love & Couples")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Shiva", "Lord Shiva", "Love & Couples")
+    WALLPAPERS = {"Galaxy": "assets/wallpapers/galaxy.svg", "Milky Way": "assets/wallpapers/milky_way_waves.svg", "Milky Way Waves": "assets/wallpapers/milky_way_waves.svg", "Ocean Waves": "assets/wallpapers/ocean_waves.svg", "Shiva": "assets/wallpapers/lord_shiva.svg", "Lord Shiva": "assets/wallpapers/lord_shiva.svg", "Love & Couples": "assets/wallpapers/love_couples.svg"}
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self.wallpaper_renderer = None
+        self._load_wallpaper_renderer()
         self.particles = []
         self.phase = 0.0
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -1030,6 +1034,17 @@ class AnimatedBackground(QWidget):
         self.timer.timeout.connect(self.update_particles)
         self.timer.start(45)
         self.init_particles()
+
+    def _load_wallpaper_renderer(self):
+        relative = self.WALLPAPERS.get(self.mode)
+        path = resource_path(relative) if relative else None
+        self.wallpaper_renderer = QSvgRenderer(path) if path and os.path.isfile(path) else None
+
+    def set_mode(self, mode):
+        self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self._load_wallpaper_renderer()
+        self.init_particles()
+        self.update()
 
     def init_particles(self):
         import random
@@ -1075,9 +1090,17 @@ class AnimatedBackground(QWidget):
             base.setColorAt(0.52, QColor("#0B1020"))
             base.setColorAt(1.0, QColor("#100A1D"))
         painter.fillRect(rect, base)
-        # Image-like illustrated scenes remain bundled in the app painter so the
-        # wallpapers work offline on customer PCs, without external downloads.
-        if self.mode in ("Galaxy", "Milky Way", "Ocean Waves", "Shiva", "Love & Couples"):
+        # Restore bundled vector wallpaper art; images work offline and animate with particles.
+        if self.wallpaper_renderer and self.wallpaper_renderer.isValid():
+            painter.save()
+            self.wallpaper_renderer.render(painter, QRectF(rect))
+            painter.restore()
+            veil = QLinearGradient(0, 0, 0, h)
+            veil.setColorAt(0.0, QColor(4, 8, 20, 8 if not is_day else 3))
+            veil.setColorAt(1.0, QColor(4, 8, 20, 22 if not is_day else 6))
+            painter.fillRect(rect, veil)
+        # Painter-generated scenes remain as fallback if bundled artwork is unavailable.
+        if self.mode in ("Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Shiva", "Lord Shiva", "Love & Couples") and not (self.wallpaper_renderer and self.wallpaper_renderer.isValid()):
             import math
             if self.mode in ("Galaxy", "Milky Way"):
                 for i in range(180):
@@ -1250,8 +1273,9 @@ class MainWindow(QMainWindow):
             page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             page.setAutoFillBackground(False)
         self.business_tab = BusinessTrackingTab(self.db)
-        for widget,title in [(self.home_tab,"Home"),(self.dashboard,"Dashboard"),(self.employees_tab,"Employees"),(self.tasks_tab,"Task Manager"),(self.tracker_tab,"Employee Tracker"),(self.attendance_tab,"Attendance"),(self.reports_tab,"Print Center"),(self.archive_tab,"EOD Archive"),(self.business_tab,"Business Tracking"),(self.settings_tab,"Settings && Backup")]:
-            self.tabs.addTab(widget,title)
+        tab_items = [(self.home_tab,"⌂  Home"),(self.dashboard,"▦  Dashboard"),(self.employees_tab,"♙  Employees"),(self.tasks_tab,"✓  Task Manager"),(self.tracker_tab,"◷  Employee Tracker"),(self.attendance_tab,"◉  Attendance"),(self.reports_tab,"▤  Print Center"),(self.archive_tab,"▣  EOD Archive"),(self.business_tab,"◈  Business Tracking"),(self.settings_tab,"⚙  Settings & Backup")]
+        for widget, title in tab_items:
+            self.tabs.addTab(widget, title)
         self._tab_animation = None
         self._animated_page = None
         self.tabs.currentChanged.connect(self.animate_tab_transition)
@@ -1383,6 +1407,12 @@ class MainWindow(QMainWindow):
         theme_name = theme_name or self.current_theme()
         theme_name = apply_app_theme(QApplication.instance(), theme_name)
         self.db.set_setting("ui_theme", theme_name)
+        for combo_name in ("theme_combo", "home_theme_combo"):
+            combo = getattr(self, combo_name, None)
+            if combo is not None and combo.currentText().lower() != theme_name:
+                combo.blockSignals(True)
+                combo.setCurrentText(theme_name.capitalize())
+                combo.blockSignals(False)
         # Force style refresh
         QApplication.instance().style().unpolish(self)
         QApplication.instance().style().polish(self)
@@ -1405,9 +1435,13 @@ class MainWindow(QMainWindow):
         style_name = style_name or "Ambient Glow"
         self.db.set_setting("animation_style", style_name)
         if hasattr(self, "bg_anim"):
-            self.bg_anim.mode = style_name
-            self.bg_anim.init_particles()
-            self.bg_anim.update()
+            self.bg_anim.set_mode(style_name)
+        for combo_name in ("animation_combo", "home_wallpaper_combo"):
+            combo = getattr(self, combo_name, None)
+            if combo is not None and combo.currentText() != style_name:
+                combo.blockSignals(True)
+                combo.setCurrentText(style_name)
+                combo.blockSignals(False)
 
     def build_home(self):
 
@@ -1488,6 +1522,31 @@ class MainWindow(QMainWindow):
         database_label.setProperty("mutedText", True)
         database_label.setWordWrap(True)
         session_layout.addWidget(database_label, 1, 3)
+        # Quick theme and wallpaper selectors are available directly in the Home header.
+        home_theme_label = QLabel("Theme")
+        home_theme_label.setProperty("mutedText", True)
+        session_layout.addWidget(home_theme_label, 2, 0)
+        self.home_theme_combo = QComboBox()
+        self.home_theme_combo.setObjectName("homeThemeDropdown")
+        self.home_theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
+        self.home_theme_combo.setCurrentText(self.current_theme().capitalize())
+        self.home_theme_combo.setMinimumWidth(125)
+        self.home_theme_combo.setToolTip("Choose the application color theme")
+        self.home_theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
+        session_layout.addWidget(self.home_theme_combo, 2, 1)
+        home_wallpaper_label = QLabel("Live wallpaper")
+        home_wallpaper_label.setProperty("mutedText", True)
+        session_layout.addWidget(home_wallpaper_label, 2, 2)
+        self.home_wallpaper_combo = QComboBox()
+        self.home_wallpaper_combo.setObjectName("homeWallpaperDropdown")
+        self.home_wallpaper_combo.addItems(list(AnimatedBackground.STYLES))
+        saved_wallpaper = self.db.get_setting("animation_style", "Galaxy") or "Galaxy"
+        if self.home_wallpaper_combo.findText(saved_wallpaper) >= 0:
+            self.home_wallpaper_combo.setCurrentText(saved_wallpaper)
+        self.home_wallpaper_combo.setMinimumWidth(175)
+        self.home_wallpaper_combo.setToolTip("Choose the animated background for the application")
+        self.home_wallpaper_combo.currentTextChanged.connect(self.set_animation_style)
+        session_layout.addWidget(self.home_wallpaper_combo, 2, 3)
         content_layout.addWidget(session_strip)
 
         guide_heading = QLabel("Workspace guide")
@@ -1498,24 +1557,33 @@ class MainWindow(QMainWindow):
         guide_grid.setHorizontalSpacing(12)
         guide_grid.setVerticalSpacing(10)
         guide_items = [
-            ("Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
-            ("Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
-            ("Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
-            ("Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
-            ("Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
-            ("Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
-            ("EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
-            ("Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
+            ("▦", "Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
+            ("♙", "Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
+            ("✓", "Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
+            ("◷", "Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
+            ("◉", "Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
+            ("▤", "Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
+            ("▣", "EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
+            ("⚙", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
         ]
-        for index, (section, guidance, example) in enumerate(guide_items):
+        for index, (symbol, section, guidance, example) in enumerate(guide_items):
             guide_card = QWidget()
             guide_card.setObjectName("guideItem")
             card_layout = QVBoxLayout(guide_card)
             card_layout.setContentsMargins(16, 14, 16, 14)
             card_layout.setSpacing(6)
+            heading_row = QHBoxLayout()
+            heading_row.setSpacing(10)
+            icon_label = QLabel(symbol)
+            icon_label.setObjectName("guideIcon")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setFixedSize(34, 34)
+            icon_label.setStyleSheet("QLabel#guideIcon { background: rgba(124,92,252,0.16); color: #7C5CFC; border: 1px solid rgba(124,92,252,0.30); border-radius: 10px; font-size: 17px; font-weight: 700; }")
+            heading_row.addWidget(icon_label)
             section_label = QLabel(section)
             section_label.setProperty("guideTitle", True)
-            card_layout.addWidget(section_label)
+            heading_row.addWidget(section_label, 1)
+            card_layout.addLayout(heading_row)
             guidance_label = QLabel(guidance)
             guidance_label.setWordWrap(True)
             card_layout.addWidget(guidance_label)
