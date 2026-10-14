@@ -1524,8 +1524,10 @@ class MainWindow(QMainWindow):
         for widget in self.findChildren(QLabel):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
-                if widget.text() and len(widget.text()) > 36:
+                widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+                if widget.text() and (len(widget.text()) > 28 or "\n" in widget.text()):
                     widget.setWordWrap(True)
+                    widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for widget in self.findChildren(QLineEdit):
             widget.setMinimumWidth(max(90, widget.minimumWidth()))
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -2564,8 +2566,10 @@ class MainWindow(QMainWindow):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
-            table.verticalHeader().setDefaultSectionSize(36)
+            table.verticalHeader().setDefaultSectionSize(40)
             table.setCornerButtonEnabled(False)
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideRight)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setSelectionMode(QAbstractItemView.SingleSelection)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -4126,7 +4130,7 @@ QDialog#loginDialog QPushButton[flat="true"] { background: transparent; color: #
 QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
-QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #DCEBFA, stop:0.48 #F4EEFF, stop:1 #DDF7F5); }\nQWidget#sessionStrip, QWidget#welcomeHero, QWidget#guideItem, QGroupBox { background: rgba(255,255,255,190); border: 1px solid rgba(255,255,255,225); border-radius: 16px; }\nQScrollArea#homeScroll, QScrollArea#homeScroll QWidget#qt_scrollarea_viewport { background: transparent; border: 0; }\nQPushButton { min-height: 32px; padding: 6px 12px; border-radius: 9px; }\nQLabel { padding: 1px; }
+QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #DCEBFA, stop:0.48 #F4EEFF, stop:1 #DDF7F5); }\nQWidget#sessionStrip, QWidget#welcomeHero, QWidget#guideItem, QGroupBox { background: rgba(255,255,255,190); border: 1px solid rgba(255,255,255,225); border-radius: 16px; }\nQScrollArea#homeScroll, QScrollArea#homeScroll QWidget#qt_scrollarea_viewport { background: transparent; border: 0; }\nQPushButton { min-height: 36px; padding: 8px 14px; border-radius: 9px; font-size: 9pt; }\nQLabel { padding: 1px; }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
@@ -4399,6 +4403,12 @@ QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
 QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
 QCheckBox, QRadioButton { color: #E2E8F0; }
 QStatusBar { background: #111827; color: #E2E8F0; }
+
+QLabel { word-wrap: true; }
+QPushButton { text-align: center; }
+QTableWidget { font-size: 9pt; }
+QTableWidget::item { padding: 4px 6px; }
+QHeaderView::section { padding: 6px 8px; min-height: 36px; }
 """
 
 def apply_app_theme(app, theme_name):
