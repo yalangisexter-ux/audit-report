@@ -710,7 +710,7 @@ class Database:
           due_time TEXT DEFAULT '', priority TEXT DEFAULT 'Normal',
           status TEXT DEFAULT 'Not started', progress INTEGER DEFAULT 0,
           proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
-          manager_note TEXT DEFAULT '', FOREIGN KEY(employee_id) REFERENCES employees(id)
+          manager_note TEXT DEFAULT '', expose_link INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(employee_id) REFERENCES employees(id)
         );
         CREATE TABLE IF NOT EXISTS attendance(
           id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
@@ -787,6 +787,7 @@ class Database:
             ("proof_note", "TEXT DEFAULT ''"),
             ("submitted_at", "TEXT DEFAULT ''"),
             ("manager_note", "TEXT DEFAULT ''"),
+            ("expose_link", "INTEGER NOT NULL DEFAULT 0"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
@@ -1298,6 +1299,8 @@ class TaskDialog(QDialog):
         self.progress=QSpinBox(); self.progress.setRange(0,100); self.progress.setSuffix("%")
         self.proof=QTextEdit(row["proof_url"] if row else ""); self.proof.setPlaceholderText("Optional URL or local file path. Use one proof link per line."); self.proof.setMaximumHeight(78)
         self.proof_note=QLineEdit(row["proof_note"] if row else "")
+        self.expose_link=QCheckBox("Expose full evidence URL in reports")
+        self.expose_link.setChecked(bool(row["expose_link"]) if row and "expose_link" in row.keys() else False)
         self.manager_note=QLineEdit(row["manager_note"] if row else "")
         if row:
             idx=self.employee.findData(row["employee_id"])
@@ -1313,7 +1316,7 @@ class TaskDialog(QDialog):
         self.layout.addRow("Task title *", self.title); self.layout.addRow("Description", self.details)
         self.layout.addRow("Due time", self.due); self.layout.addRow("Priority", self.priority)
         self.layout.addRow("Status", self.status); self.layout.addRow("Progress", self.progress)
-        self.layout.addRow("Evidence link or file", self.proof); self.layout.addRow("Evidence notes", self.proof_note)
+        self.layout.addRow("Evidence link or file", self.proof); self.layout.addRow("", self.expose_link); self.layout.addRow("Evidence notes", self.proof_note)
         self.layout.addRow("Manager notes", self.manager_note)
         buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); self.layout.addRow(buttons)
@@ -1330,7 +1333,7 @@ class TaskDialog(QDialog):
         return (self.employee.currentData(), self.date.date().toString("yyyy-MM-dd"), self.title.text().strip(),
                 self.details.toPlainText().strip(), self.due.time().toString("HH:mm"), self.priority.currentText(),
                 status, progress, self.proof.toPlainText().strip(), self.proof_note.text().strip(), submitted,
-                self.manager_note.text().strip())
+                self.manager_note.text().strip(), int(self.expose_link.isChecked()))
 
 _ACCESSIBLE_TOOLTIP_CONTROLLER = None
 
@@ -4008,8 +4011,8 @@ class MainWindow(QMainWindow):
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
@@ -4022,7 +4025,7 @@ class MainWindow(QMainWindow):
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
-        self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+        self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
         self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
 
     def delete_task(self, table=None):
@@ -4791,7 +4794,7 @@ class MainWindow(QMainWindow):
                                     for task_link_index, url in enumerate(task_links):
                                         if task_link_index:
                                             proof_paragraph.add_run(" | ")
-                                        add_docx_hyperlink(proof_paragraph, url, "Tap here to view content")
+                                        add_docx_hyperlink(proof_paragraph, url, url if bool(t["expose_link"]) else "Tap here to view content")
                                 else:
                                     doc.add_paragraph('Proof / Evidence: N/A',style="List Bullet 2")
                             if opts.get("proof_notes",False) and t["proof_note"]:
@@ -5003,7 +5006,7 @@ class MainWindow(QMainWindow):
                                     for task_link_index,url in enumerate(task_links):
                                         if task_link_index:
                                             link_markup.append("|")
-                                        link_markup.append(report_pdf_hyperlink(url,"Tap here to view content"))
+                                        link_markup.append(report_pdf_hyperlink(url, url if bool(t["expose_link"]) else "Tap here to view content"))
                                     story.append(Paragraph(
                                         "&#8226;&nbsp; Proof / Evidence: " + " ".join(link_markup),
                                         styles["RSLink"],
