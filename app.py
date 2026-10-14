@@ -967,7 +967,7 @@ class ProductivityChart(QWidget):
 
 class AnimatedBackground(QWidget):
     """Selectable, low-cost animated wallpaper behind the main application tabs."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Ocean Waves", "Shiva", "Love & Couples")
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
@@ -1008,11 +1008,61 @@ class AnimatedBackground(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         w, h = max(rect.width(), 1), max(rect.height(), 1)
+        is_day = False
+        try:
+            is_day = self.window() is not None and self.window().current_theme() == "day"
+        except Exception:
+            pass
         base = QLinearGradient(0, 0, w, h)
-        base.setColorAt(0.0, QColor("#050811"))
-        base.setColorAt(0.52, QColor("#0B1020"))
-        base.setColorAt(1.0, QColor("#100A1D"))
+        if is_day:
+            base.setColorAt(0.0, QColor("#DCEBFA"))
+            base.setColorAt(0.48, QColor("#F2E9FF"))
+            base.setColorAt(1.0, QColor("#D9F5F4"))
+        else:
+            base.setColorAt(0.0, QColor("#050811"))
+            base.setColorAt(0.52, QColor("#0B1020"))
+            base.setColorAt(1.0, QColor("#100A1D"))
         painter.fillRect(rect, base)
+        # Image-like illustrated scenes remain bundled in the app painter so the
+        # wallpapers work offline on customer PCs, without external downloads.
+        if self.mode in ("Galaxy", "Milky Way", "Ocean Waves", "Shiva", "Love & Couples"):
+            import math
+            if self.mode in ("Galaxy", "Milky Way"):
+                for i in range(180):
+                    x = (i * 7919 % max(w, 1))
+                    y = (i * 3571 % max(h, 1))
+                    radius = 1 + (i % 3)
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.setBrush(QColor(255, 255, 255, 100 + (i % 150)))
+                    painter.drawEllipse(x, y, radius, radius)
+                painter.setPen(QPen(QColor(139, 92, 246, 85), 18))
+                for band in range(5):
+                    painter.drawArc(int(w*.12), int(h*.08+band*15), int(w*.8), int(h*.8), 0, 210*16)
+            elif self.mode == "Ocean Waves":
+                for band, color in enumerate(("#38BDF8", "#0EA5E9", "#0F766E", "#67E8F9")):
+                    painter.setPen(QPen(QColor(color), 5 + band))
+                    path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
+                    for x in range(0, w + 8, 8):
+                        y = int(h * (.45 + band * .095) + math.sin(x * .012 + self.phase + band) * (18 + band*7))
+                        if x == 0: path.moveTo(x, y)
+                        else: path.lineTo(x, y)
+                    painter.drawPath(path)
+            elif self.mode == "Love & Couples":
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(244, 114, 182, 100))
+                painter.drawEllipse(int(w*.2), int(h*.12), int(min(w,h)*.65), int(min(w,h)*.65))
+                painter.setPen(QPen(QColor(190, 24, 93, 170), max(3, int(min(w,h)*.006))))
+                painter.drawArc(int(w*.35), int(h*.22), int(w*.3), int(h*.3), 0, 180*16)
+                painter.drawArc(int(w*.42), int(h*.25), int(w*.16), int(h*.22), 0, -180*16)
+            else:
+                # Stylized meditative silhouette motif for the Shiva wallpaper.
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(99, 102, 241, 95))
+                painter.drawEllipse(int(w*.38), int(h*.12), int(w*.24), int(h*.24))
+                painter.setBrush(QColor(30, 41, 59, 180))
+                painter.drawEllipse(int(w*.34), int(h*.32), int(w*.32), int(h*.48))
+                painter.setPen(QPen(QColor(56, 189, 248, 180), 3))
+                painter.drawLine(int(w*.5), int(h*.08), int(w*.5), int(h*.88))
         if self.mode in ("Ambient Glow", "Aurora Waves"):
             colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
             for i, color in enumerate(colors):
@@ -1372,6 +1422,11 @@ class MainWindow(QMainWindow):
         self.update_button.setMinimumWidth(150)
         self.update_button.clicked.connect(self.check_for_updates)
         session_layout.addWidget(self.update_button, 1, 1)
+        self.rollback_button = QPushButton("↶ Roll back")
+        self.rollback_button.setToolTip("Install a previous application version (Admin password required)")
+        self.rollback_button.setMinimumWidth(120)
+        self.rollback_button.clicked.connect(self.rollback_application)
+        session_layout.addWidget(self.rollback_button, 2, 1)
         self.theme_toggle_btn = QPushButton("Switch theme")
         self.theme_toggle_btn.setToolTip("Toggle day / night appearance")
         self.theme_toggle_btn.setMinimumWidth(120)
@@ -2000,7 +2055,6 @@ class MainWindow(QMainWindow):
         actions = [
             ("Create backup", self.backup_db, "Create a backup of the local database"),
             ("Restore database", self.restore_backup, "Restore a database backup without changing the application version"),
-            ("Rollback app", self.rollback_application, "Install a previous application version without reverting the database"),
             ("Change password", self.change_password, "Change your login password"),
             ("Recovery question", self.update_recovery_question, "Update your password recovery question"),
             ("Manage accounts", self.manage_accounts, "Create or manage HR and Admin accounts"),
@@ -3253,7 +3307,27 @@ class MainWindow(QMainWindow):
             return False
 
     def rollback_application(self):
-        """Install a previous published build without changing database data."""
+        """Require an Admin role and password before installing a previous build."""
+        if self.user_role != "Admin":
+            return error(self, "Only an Admin can roll back the application.")
+        username = str(self.current_user.get("username", ""))
+        row = self.db.conn.execute(
+            "SELECT password_salt, password_hash, active FROM auth_users WHERE username=?",
+            (username,),
+        ).fetchone()
+        if not row or not row["active"]:
+            return error(self, "The active Admin account could not be verified.")
+        password, ok = QInputDialog.getText(
+            self, "Admin verification", "Enter your Admin password to roll back:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        _, digest = hash_pin(password, row["password_salt"])
+        if not secrets.compare_digest(digest, row["password_hash"]):
+            self.db.log("Application rollback denied", "Incorrect Admin password")
+            return error(self, "Incorrect Admin password. Rollback was cancelled.")
+        self.db.log("Application rollback authorized", username)
         progress = QProgressDialog("Loading previous versions...", "", 0, 0, self)
         progress.setWindowTitle("Application Rollback")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
@@ -3581,7 +3655,7 @@ QDialog#loginDialog QPushButton[flat="true"] { background: transparent; color: #
 QDialog#loginDialog QPushButton[flat="true"]:hover { color: #FFFFFF; }
 
 * { font-family: "DejaVu Sans"; font-size: 9pt; color: #1E293B; }
-QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #EAF2FF, stop:0.48 #F4F0FF, stop:1 #E0F7FA); }
+QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #DCEBFA, stop:0.48 #F4EEFF, stop:1 #DDF7F5); }\nQWidget#sessionStrip, QWidget#welcomeHero, QWidget#guideItem, QGroupBox { background: rgba(255,255,255,190); border: 1px solid rgba(255,255,255,225); border-radius: 16px; }\nQScrollArea#homeScroll, QScrollArea#homeScroll QWidget#qt_scrollarea_viewport { background: transparent; border: 0; }\nQPushButton { min-height: 32px; padding: 6px 12px; border-radius: 9px; }\nQLabel { padding: 1px; }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
