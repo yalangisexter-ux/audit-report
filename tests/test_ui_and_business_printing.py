@@ -132,3 +132,43 @@ def test_responsive_dashboard_and_tooltip_use_visible_high_contrast_layout(tmp_p
         window.close()
         database.conn.close()
         qt_app.processEvents()
+
+
+def test_add_task_preserves_selected_employee_and_task_date(tmp_path, monkeypatch):
+    qt_app, database, window = _make_window(tmp_path, monkeypatch)
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        employee_ids = {}
+        for name in ("Gopi", "Sai Teja"):
+            cursor = database.conn.execute(
+                "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
+                (name, "", 1, timestamp),
+            )
+            employee_ids[name] = cursor.lastrowid
+        database.conn.commit()
+        window.refresh_task_filter()
+        window.task_filter.setCurrentIndex(window.task_filter.findData(employee_ids["Sai Teja"]))
+        selected_date = app.QDate(2026, 10, 8)
+        window.task_date.setDate(selected_date)
+
+        captured = {}
+        base_dialog = app.TaskDialog
+
+        class InspectTaskDialog(base_dialog):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                captured["employee_id"] = self.employee.currentData()
+                captured["dialog"] = self
+
+            def exec(self):
+                return app.QDialog.DialogCode.Rejected
+
+        monkeypatch.setattr(app, "TaskDialog", InspectTaskDialog)
+        window.add_task()
+
+        assert captured["employee_id"] == employee_ids["Sai Teja"]
+        assert captured["dialog"].date.date().toString("yyyy-MM-dd") == "2026-10-08"
+    finally:
+        window.close()
+        database.conn.close()
+        qt_app.processEvents()

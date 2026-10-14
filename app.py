@@ -146,7 +146,7 @@ def extract_http_urls(value):
     return urls
 
 
-def add_docx_hyperlink(paragraph, url, label="Proof link"):
+def add_docx_hyperlink(paragraph, url, label="Tap here to view content"):
     """Add a concise, clickable external link to a Word paragraph."""
     relationship_id = paragraph.part.relate_to(
         url,
@@ -165,27 +165,27 @@ def add_docx_hyperlink(paragraph, url, label="Proof link"):
     properties.append(underline)
     run.append(properties)
     text_node = OxmlElement("w:t")
-    text_node.text = str(label or "Proof link")
+    text_node.text = str(label or "Tap here to view content")
     run.append(text_node)
     hyperlink.append(run)
     paragraph._p.append(hyperlink)
     return hyperlink
 
 
-def report_pdf_hyperlink(url, label):
+def report_pdf_hyperlink(url, label="Tap here to view content"):
     """Build a ReportLab link with a short display label and the original URL target."""
     if not proof_urls(url):
-        return html_escape(str(label or "Proof link"))
+        return html_escape(str(label or "Tap here to view content"))
     return (f'<link href="{html_escape(str(url), quote=True)}" color="#0563C1">'
-            f'<u>{html_escape(str(label or "Proof link"))}</u></link>')
+            f'<u>{html_escape(str(label or "Tap here to view content"))}</u></link>')
 
 
-def csv_hyperlink_formula(url, label):
+def csv_hyperlink_formula(url, label="Tap here to view content"):
     """Return a spreadsheet hyperlink formula for a CSV proof cell."""
     if not proof_urls(url):
         return ""
     safe_url = str(url).replace('"', '""')
-    safe_label = str(label or "Proof link").replace('"', '""')
+    safe_label = str(label or "Tap here to view content").replace('"', '""')
     return f'=HYPERLINK("{safe_url}","{safe_label}")'
 
 
@@ -305,7 +305,7 @@ def add_docx_linkified_text(paragraph, text):
         trailing = match.group(0)[len(url):]
         if match.start() > position:
             paragraph.add_run(raw[position:match.start()])
-        add_docx_hyperlink(paragraph, url, "Proof link")
+        add_docx_hyperlink(paragraph, url, "Tap here to view content")
         if trailing:
             paragraph.add_run(trailing)
         position = match.end()
@@ -4001,7 +4001,8 @@ class MainWindow(QMainWindow):
         self.db.log("Employee deleted",e["name"]); self.refresh_all()
 
     def add_task(self):
-        d=TaskDialog(self.db,self)
+        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData())
+        d.date.setDate(self.task_date.date())
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
@@ -4787,12 +4788,12 @@ class MainWindow(QMainWindow):
                                 if task_links:
                                     proof_paragraph = doc.add_paragraph(style="List Bullet 2")
                                     proof_paragraph.add_run("Proof / Evidence: ")
-                                    for link_index, url in enumerate(task_links):
-                                        if link_index:
+                                    for task_link_index, url in enumerate(task_links):
+                                        if task_link_index:
                                             proof_paragraph.add_run(" | ")
-                                        add_docx_hyperlink(proof_paragraph, url, f"Proof link {link_index + 1}")
+                                        add_docx_hyperlink(proof_paragraph, url, "Tap here to view content")
                                 else:
-                                    doc.add_paragraph(f'Proof / Evidence: {self.task_proof_label(e,t,report_date)}',style="List Bullet 2")
+                                    doc.add_paragraph('Proof / Evidence: N/A',style="List Bullet 2")
                             if opts.get("proof_notes",False) and t["proof_note"]:
                                 note_paragraph=doc.add_paragraph(style="List Bullet 2")
                                 note_paragraph.add_run("Proof notes: ")
@@ -4863,7 +4864,7 @@ class MainWindow(QMainWindow):
         styles.add(ParagraphStyle(name="RSMeta", fontName=regular_name, fontSize=8, leading=11,
             textColor=muted, spaceAfter=3))
         styles.add(ParagraphStyle(name="RSLink", fontName=regular_name, fontSize=7.7, leading=10,
-            textColor=colors.HexColor("#075E9B"), leftIndent=13, firstLineIndent=-8,
+            textColor=colors.HexColor("#1F2937"), leftIndent=13, firstLineIndent=-8,
             wordWrap="CJK", spaceAfter=3))
 
         def clean(value):
@@ -4876,7 +4877,7 @@ class MainWindow(QMainWindow):
                 if not proof_urls(url):
                     return escape(matched)
                 suffix = matched[len(url):]
-                return f'{report_pdf_hyperlink(url, "Proof link")}{escape(suffix)}'
+                return f'{report_pdf_hyperlink(url, "Tap here to view content")}{escape(suffix)}'
             result = re.sub(r"https?://[^\s<>]+", as_link, raw, flags=re.IGNORECASE)
             return result.replace("\r\n", "\n").replace("\n", "<br/>")
 
@@ -4994,16 +4995,17 @@ class MainWindow(QMainWindow):
                             if opts.get("proof", True):
                                 task_links = proof_urls(t["proof_url"])
                                 if task_links:
-                                    link_markup = " | ".join(
-                                        report_pdf_hyperlink(url, f"Proof link {link_index + 1}")
-                                        for link_index, url in enumerate(task_links)
-                                    )
+                                    link_markup=[]
+                                    for task_link_index,url in enumerate(task_links):
+                                        if task_link_index:
+                                            link_markup.append("|")
+                                        link_markup.append(report_pdf_hyperlink(url,"Tap here to view content"))
                                     story.append(Paragraph(
-                                        "&#8226;&nbsp; Proof / Evidence: " + link_markup,
+                                        "&#8226;&nbsp; Proof / Evidence: " + " ".join(link_markup),
                                         styles["RSLink"],
                                     ))
                                 else:
-                                    story.append(bullet(f"Proof / Evidence: {self.task_proof_label(e, t, report_date)}"))
+                                    story.append(bullet("Proof / Evidence: N/A"))
                             if opts.get("proof_notes", False) and t["proof_note"]:
                                 story.append(bullet(f'Proof notes: {t["proof_note"]}'))
                             if opts.get("remarks", True):
@@ -5137,10 +5139,9 @@ class MainWindow(QMainWindow):
                             # CSV has no native hyperlink formatting. Spreadsheet
                             # apps evaluate HYPERLINK formulas and render their
                             # short labels as clickable links.
-                            proof_cells=[
-                                csv_hyperlink_formula(url, f"Proof link {index + 1}")
-                                for index, url in enumerate(links[:max_proof_links])
-                            ]
+                            proof_cells=[]
+                            for url in links[:max_proof_links]:
+                                proof_cells.append(csv_hyperlink_formula(url, "Tap here to view content"))
                             if not proof_cells: proof_cells=["N/A"]
                             proof_cells += [""] * (max_proof_links-len(proof_cells))
                             insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))

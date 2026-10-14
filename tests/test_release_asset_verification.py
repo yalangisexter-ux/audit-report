@@ -469,8 +469,10 @@ def test_unknown_task_status_never_counts_as_completed_from_stale_progress(monke
 
 def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_path):
     import csv
+    import xml.etree.ElementTree as ET
     import zipfile
     from datetime import date, datetime
+    import reportlab.platypus
 
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     qt_app = app.QApplication.instance() or app.QApplication([])
@@ -488,6 +490,14 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
     db.conn.execute(
         "INSERT INTO tasks(employee_id,task_date,title,status,progress,proof_url,proof_note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
         (employee_id, today, "Linked task", "Submitted", 100, urls, "See https://example.net/note", timestamp, timestamp),
+    )
+    db.conn.execute(
+        "INSERT INTO tasks(employee_id,task_date,title,status,progress,proof_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+        (employee_id, today, "Second linked task", "In progress", 50, "https://example.edu/second-task", timestamp, timestamp),
+    )
+    db.conn.execute(
+        "INSERT INTO tasks(employee_id,task_date,title,status,progress,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+        (employee_id, today, "Task without proof", "Not started", 0, timestamp, timestamp),
     )
     db.conn.commit()
     window = app.MainWindow(db, {"username": "Preview", "role": "Admin"})
@@ -508,17 +518,55 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
         assert "https://example.org/second" in relationships
         assert "https://example.net/note" in relationships
         assert "<w:hyperlink" in document_xml
+        doc_root = ET.fromstring(document_xml)
+        word_ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        docx_link_labels = [node.text for node in doc_root.findall(".//w:hyperlink//w:t", word_ns)]
+        assert docx_link_labels == ["Tap here to view content"] * 4
+        from docx import Document
+        assert any(paragraph.text == "Proof / Evidence: N/A" for paragraph in Document(docx_path).paragraphs)
         pdf_bytes = pdf_path.read_bytes()
         assert b"/URI" in pdf_bytes and b"https://example.com/proof" in pdf_bytes
+
+        captured_story = []
+
+        class CaptureDocument:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def build(self, story, **kwargs):
+                captured_story.extend(story)
+
+        monkeypatch.setattr(reportlab.platypus, "SimpleDocTemplate", CaptureDocument)
+        window.make_pdf(tmp_path / "captured-proof-links.pdf", today, employee_id, "Audit / EOD", options)
+        proof_paragraphs = [
+            flowable for flowable in captured_story
+            if hasattr(flowable, "frags") and getattr(flowable, "getPlainText", lambda: "")().find("Proof") >= 0
+        ]
+        assert any("Proof / Evidence: N/A" in paragraph.getPlainText() for paragraph in proof_paragraphs)
+        pdf_link_fragments = [
+            fragment for paragraph in proof_paragraphs for fragment in paragraph.frags
+            if getattr(fragment, "link", None)
+        ]
+        assert [fragment.text for fragment in pdf_link_fragments] == [
+            "Tap here to view content"
+        ] * 4
+        assert all(fragment.textColor.hexval() == "0x0563c1" and fragment.us_lines for fragment in pdf_link_fragments)
+        evidence_line = next(paragraph for paragraph in proof_paragraphs if "Proof / Evidence:" in paragraph.getPlainText())
+        evidence_prefix = next(fragment for fragment in evidence_line.frags if "Proof / Evidence:" in fragment.text)
+        assert evidence_prefix.textColor.hexval() == "0x1f2937"
 
         with csv_path.open(encoding="utf-8-sig", newline="") as stream:
             rows = list(csv.reader(stream))
         proof_columns = [index for index, heading in enumerate(rows[0]) if heading.startswith("Proof link")]
         assert len(proof_columns) == 3
-        assert rows[1][proof_columns[0]] == '=HYPERLINK("https://example.com/proof?id=1&x=2","Proof link 1")'
-        assert rows[1][proof_columns[1]] == '=HYPERLINK("https://example.org/second","Proof link 2")'
-        assert rows[1][proof_columns[2]] == '=HYPERLINK("https://example.net/note","Proof link 3")'
-        assert "https://example.net/note" not in rows[1][rows[0].index("Proof notes")]
+        assert rows[1][proof_columns[0]] == "N/A"
+        assert rows[1][proof_columns[1]] == ""
+        assert rows[1][proof_columns[2]] == ""
+        assert rows[2][proof_columns[0]] == '=HYPERLINK("https://example.edu/second-task","Tap here to view content")'
+        assert rows[3][proof_columns[0]] == '=HYPERLINK("https://example.com/proof?id=1&x=2","Tap here to view content")'
+        assert rows[3][proof_columns[1]] == '=HYPERLINK("https://example.org/second","Tap here to view content")'
+        assert rows[3][proof_columns[2]] == '=HYPERLINK("https://example.net/note","Tap here to view content")'
+        assert "https://example.net/note" not in rows[3][rows[0].index("Proof notes")]
 
         window.report_type.setCurrentText("Employee Attendance")
         window.eod_checks["attendance_times"].setChecked(False)
