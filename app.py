@@ -1433,6 +1433,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
+        content.setStyleSheet("QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 18px; }")
         content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
@@ -1532,6 +1533,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("homeContent")
+        content.setStyleSheet("QWidget#homeContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; border-radius: 18px; }")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(26, 22, 26, 22)
         content_layout.setSpacing(18)
@@ -3989,7 +3991,7 @@ QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; p
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
 QWidget#appPageSurface { background: transparent; color: #0F172A; }
-QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.97); color: #0F172A; border: 1px solid #64748B; }
+QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
@@ -4124,7 +4126,7 @@ QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; p
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
 QWidget#appPageSurface { background: transparent; color: #F8FAFC; }
-QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.97); color: #F8FAFC; border: 1px solid #64748B; }
+QWidget#homeContent, QWidget#pageContent { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; }
 QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
 QGroupBox::title { color: #CBD5E1; }
 QLabel { color: #E2E8F0; }
