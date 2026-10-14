@@ -1927,8 +1927,9 @@ class MainWindow(QMainWindow):
             progress.setLabelText(message)
 
     def _update_is_current(self, version):
-        if getattr(self, "_update_progress", None):
-            self._update_progress.close()
+        progress = getattr(self, "_update_progress", None)
+        if progress is not None:
+            progress.close()
             self._update_progress = None
         info(self, f"You are already using the latest version ({version}).")
 
@@ -1989,7 +1990,7 @@ class MainWindow(QMainWindow):
             self._update_progress = None
         self._update_worker = None
         self._update_thread = None
-        self.update_button.setText("Update application")
+        self.update_button.setText("⬇  Check for updates")
         self.update_button.setEnabled(True)
 
     def refresh_dashboard_clock(self):
@@ -2021,6 +2022,7 @@ class MainWindow(QMainWindow):
         hero_layout.addLayout(copy, 1)
         self.dashboard_clock = QLabel()
         self.dashboard_clock.setProperty("heroSubtitle", True)
+        self.dashboard_clock.setMinimumHeight(24)
         hero_layout.addWidget(self.dashboard_clock)
         self._dashboard_clock_timer = QTimer(self)
         self._dashboard_clock_timer.timeout.connect(self.refresh_dashboard_clock)
@@ -2167,7 +2169,7 @@ class MainWindow(QMainWindow):
         self.tracker_summary=QLabel("Select an employee to view assigned tasks.")
         self.tracker_summary.setProperty("statusSummary", True)
         l.addWidget(self.tracker_summary)
-        self.tracker_progress=QProgressBar(); self.tracker_progress.setRange(0,100); self.tracker_progress.setValue(0); self.tracker_progress.setFormat("Average task progress: %p%")
+        self.tracker_progress=QProgressBar(); self.tracker_progress.setRange(0,100); self.tracker_progress.setValue(0); self.tracker_progress.setFormat("Average task progress: %p%"); self.tracker_progress.setMinimumHeight(22)
         l.addWidget(self.tracker_progress)
         actions=QHBoxLayout(); l.addLayout(actions)
         # Employee Tracker is a read-only employee/date view. Task creation,
@@ -2550,6 +2552,7 @@ class MainWindow(QMainWindow):
         note = QLabel("Choose a color theme and animated wallpaper. Changes apply immediately across the main app screens.")
         note.setWordWrap(True)
         note.setMinimumWidth(0)
+        note.setMinimumHeight(40)
         note.setProperty("mutedText", True)
         appearance_layout.addWidget(note)
         l.addWidget(appearance_box)
@@ -4190,7 +4193,7 @@ QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-siz
 QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F3E8FF; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:0.55 #5B21B6, stop:1 #0E7490); border-radius: 14px; }
-QLabel#kpiIcon { font-size: 22pt; background: transparent; border: 0; }
+QLabel#kpiIcon { font-size: 24pt; background: transparent; border: 0; min-height: 28px; }
 QWidget#kpiCard { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#dashboardPanel { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
@@ -4205,7 +4208,7 @@ QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
 QWidget#guideItem { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.68); border-left: 4px solid #7C5CFC; border-radius: 16px; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
-QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; }
+QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; min-height: 32px; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 0; border-radius: 14px; color: #312E81; font-weight: 600; padding: 11px 14px; }
 QLabel[warningBanner="true"] { background: #FFFBEB; border: 0; border-radius: 14px; color: #92400E; font-weight: 600; padding: 9px 12px; }
 QProgressBar { border: 1px solid #CBD5E1; border-radius: 8px; text-align: center; color: #1E293B; background: #E2E8F0; min-height: 15px; }
@@ -4331,7 +4334,7 @@ QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-siz
 QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:0.55 #4C1D95, stop:1 #0E7490); border-radius: 16px; }
-QLabel#kpiIcon { font-size: 22pt; background: transparent; border: 0; }
+QLabel#kpiIcon { font-size: 24pt; background: transparent; border: 0; min-height: 28px; }
 QWidget#kpiCard { border: 1px solid #475569; border-radius: 14px; }
 QWidget#dashboardPanel { border: 1px solid #475569; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
