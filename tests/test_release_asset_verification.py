@@ -60,9 +60,11 @@ def test_pre_migration_backup_failure_stops_migrations(tmp_path, monkeypatch):
     connection.commit()
     connection.close()
 
-    def fail_backup(self, destination, pages=-1, progress=None, name="main", sleep=0.250):
-        raise __import__("sqlite3").OperationalError("simulated backup failure")
+    sqlite3 = __import__("sqlite3")
 
-    monkeypatch.setattr(__import__("sqlite3").Connection, "backup", fail_backup)
+    def fail_connect(*args, **kwargs):
+        raise sqlite3.OperationalError("simulated backup failure")
+
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
     with pytest.raises(RuntimeError, match="migrations were cancelled"):
         app.create_pre_migration_backup(source_path, tmp_path / "backups")
