@@ -747,6 +747,11 @@ def ask(parent, title, message):
 
 def _show_message(parent, message, icon):
     """Show readable, word-wrapped app messages without clipped native dialogs."""
+    screen = parent.screen() if parent is not None else QApplication.primaryScreen()
+    available_width = screen.availableGeometry().width() if screen else 720
+    dialog_width = max(240, min(500, available_width - 32))
+    label_width = max(180, min(440, dialog_width - 64))
+    label_max_width = max(label_width, min(680, available_width - 64))
     box = QMessageBox(parent)
     box.setWindowTitle(APP_NAME)
     box.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
@@ -754,18 +759,18 @@ def _show_message(parent, message, icon):
     box.setText(str(message))
     box.setTextFormat(Qt.TextFormat.PlainText)
     box.setStandardButtons(QMessageBox.StandardButton.Ok)
-    box.setMinimumWidth(500)
-    box.setStyleSheet("""
-        QMessageBox { background: #FFFFFF; color: #0F172A; }
-        QLabel#qt_msgbox_label { min-width: 440px; max-width: 680px; color: #0F172A;
-            background: transparent; padding: 8px; }
-        QPushButton { min-width: 84px; min-height: 30px; padding: 4px 12px; }
+    box.setMinimumWidth(dialog_width)
+    box.setStyleSheet(f"""
+        QMessageBox {{ background: #FFFFFF; color: #0F172A; }}
+        QLabel#qt_msgbox_label {{ min-width: {label_width}px; max-width: {label_max_width}px; color: #0F172A;
+            background: transparent; padding: 8px; }}
+        QPushButton {{ min-width: 84px; min-height: 30px; padding: 4px 12px; }}
     """)
     label = box.findChild(QLabel, "qt_msgbox_label")
     if label is not None:
         label.setWordWrap(True)
-        label.setMinimumWidth(440)
-        label.setMaximumWidth(680)
+        label.setMinimumWidth(label_width)
+        label.setMaximumWidth(label_max_width)
     box.adjustSize()
     box.exec()
 
@@ -1685,6 +1690,62 @@ class MainWindow(QMainWindow):
         for i, (button, title) in enumerate(getattr(self, "sidebar_buttons", [])):
             button.setChecked(i == index)
 
+    @staticmethod
+    def _ui_chrome_palette(theme_name):
+        palettes = {
+            "day": {"surface": "#FFFFFF", "border": "#E2E8F0", "nav": "#F8FAFC", "text": "#1E293B", "hover": "#EDE9FE", "hover_text": "#4C1D95", "accent": "#6D28D9"},
+            "night": {"surface": "#111827", "border": "#334155", "nav": "#1E293B", "text": "#E2E8F0", "hover": "#312E81", "hover_text": "#F8FAFC", "accent": "#7C3AED"},
+            "ocean": {"surface": "#F0F9FF", "border": "#BAE6FD", "nav": "#E0F2FE", "text": "#0C4A6E", "hover": "#CFFAFE", "hover_text": "#075985", "accent": "#0284C7"},
+            "sunset": {"surface": "#FFEDD5", "border": "#FED7AA", "nav": "#FFF7ED", "text": "#7C2D12", "hover": "#FED7AA", "hover_text": "#7C2D12", "accent": "#EA580C"},
+        }
+        return palettes.get((theme_name or "day").lower(), palettes["day"])
+
+    def _refresh_theme_chrome(self, theme_name=None):
+        """Refresh chrome colors after a theme switch without changing its layout."""
+        colors = self._ui_chrome_palette(theme_name or self.current_theme())
+        surface, border = colors["surface"], colors["border"]
+        if hasattr(self, "sidebar"):
+            self.sidebar.setStyleSheet(
+                f"QWidget#navigationSidebar {{ background: {surface}; border-right: 1px solid {border}; }}"
+            )
+        if hasattr(self, "title_bar"):
+            self.title_bar.setStyleSheet(
+                f"QWidget#titleBar {{ background: {surface}; border-bottom: 1px solid {border}; }}"
+            )
+        if hasattr(self, "title_label"):
+            title_color = "#F8FAFC" if (theme_name or self.current_theme()).lower() == "night" else colors["text"]
+            self.title_label.setStyleSheet(f"QLabel#titleLabel {{ color: {title_color}; }}")
+        if hasattr(self, "sidebar_buttons"):
+            for button, _title in self.sidebar_buttons:
+                button.setStyleSheet(f"""
+                    QPushButton#sidebarNavButton {{ background: {colors['nav']}; color: {colors['text']};
+                        border: 1px solid {border}; border-radius: 11px; font-size: 10pt;
+                        font-weight: 600; text-align: left; padding: 8px 10px; }}
+                    QPushButton#sidebarNavButton:hover {{ background: {colors['hover']};
+                        color: {colors['hover_text']}; border-color: #C4B5FD; }}
+                    QPushButton#sidebarNavButton:checked {{
+                        background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
+                        color: #FFFFFF; border: 1px solid #C4B5FD; }}
+                """)
+        for header in self.findChildren(QWidget, "pageHeader"):
+            header.setStyleSheet(
+                f"QWidget#pageHeader {{ background: {surface}; color: {colors['text']}; }}"
+            )
+        for date_edit in self.findChildren(QDateEdit):
+            calendar = date_edit.calendarWidget()
+            if calendar is not None:
+                header = "#070B14" if (theme_name or self.current_theme()).lower() == "night" else "#15233F"
+                calendar.setStyleSheet(f"""
+                    QCalendarWidget {{ background: {surface}; color: {colors['text']}; }}
+                    QCalendarWidget QWidget#qt_calendar_navigationbar,
+                    QCalendarWidget QToolButton, QCalendarWidget QSpinBox {{
+                        background: {header}; color: #FFFFFF; }}
+                    QCalendarWidget QAbstractItemView {{ background: {surface};
+                        alternate-background-color: {colors['nav']}; color: {colors['text']};
+                        selection-background-color: {colors['accent']}; selection-color: #FFFFFF; }}
+                    QCalendarWidget QAbstractItemView:disabled {{ color: #94A3B8; }}
+                """)
+
     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         if "QWidget#headerClock" not in self.styleSheet():
@@ -1808,18 +1869,12 @@ class MainWindow(QMainWindow):
                 view.setMinimumWidth(max(widget.width(), widget.minimumWidth(), 180))
                 view.setUniformItemSizes(False)
                 # Explicit popup styling avoids low-contrast/solid-looking options.
-                if self.current_theme() == "night":
-                    view.setStyleSheet("""
-                        QListView { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
-                        QListView::item { background: #111827; color: #F8FAFC; padding: 7px 10px; min-height: 24px; }
-                        QListView::item:selected { background: #6D28D9; color: #FFFFFF; }
-                    """)
-                else:
-                    view.setStyleSheet("""
-                        QListView { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
-                        QListView::item { background: #FFFFFF; color: #0F172A; padding: 7px 10px; min-height: 24px; }
-                        QListView::item:selected { background: #6D28D9; color: #FFFFFF; }
-                    """)
+                colors = self._ui_chrome_palette(self.current_theme())
+                view.setStyleSheet(f"""
+                    QListView {{ background: {colors['surface']}; color: {colors['text']}; border: 1px solid {colors['border']}; }}
+                    QListView::item {{ background: {colors['surface']}; color: {colors['text']}; padding: 7px 10px; min-height: 24px; }}
+                    QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}
+                """)
         for widget in self.findChildren(QDateEdit):
             widget.setCalendarPopup(True)
             calendar = widget.calendarWidget()
@@ -1827,6 +1882,7 @@ class MainWindow(QMainWindow):
                 calendar.setGridVisible(True)
                 calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
                 calendar.setMinimumSize(300, 240)
+        self._refresh_theme_chrome(self.current_theme())
         self.polish_tables()
 
     def toggle_maximize(self):
@@ -2207,11 +2263,16 @@ class MainWindow(QMainWindow):
         self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
         update_label = QLabel("Checking for an update...")
         update_label.setWordWrap(True)
-        update_label.setMinimumWidth(390)
+        screen = self.screen()
+        available_width = screen.availableGeometry().width() if screen else 600
+        dialog_width = max(240, min(440, available_width - 32))
+        update_label.setMinimumWidth(max(180, dialog_width - 48))
         update_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         update_label.setMargin(4)
         self._update_progress.setLabel(update_label)
-        self._update_progress.setMinimumWidth(440)
+        self._update_progress.setMinimumWidth(dialog_width)
+        if screen is not None:
+            self._update_progress.setMaximumWidth(max(dialog_width, available_width - 16))
         self._update_progress.setMinimumHeight(132)
         self._update_progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._update_progress.setCancelButton(None)
@@ -2934,10 +2995,14 @@ class MainWindow(QMainWindow):
         """Fill a table row; status_cols get colored pill styling."""
         status_cols = set(status_cols or [])
         for c, v in enumerate(values):
+            text = str(v or "")
             if c in status_cols:
-                table.setItem(row, c, self.status_item(v))
+                item = self.status_item(text)
             else:
-                table.setItem(row, c, QTableWidgetItem(str(v or "")))
+                item = QTableWidgetItem(text)
+            if text:
+                item.setToolTip(text)
+            table.setItem(row, c, item)
 
     def refresh_all(self):
         self.refresh_employees(); self.refresh_task_filter(); self.refresh_tracker_employees(); self.refresh_tasks(); self.refresh_tracker(); self.refresh_attendance(); self.refresh_report_employees(); self.refresh_dashboard(); self.refresh_archive()
