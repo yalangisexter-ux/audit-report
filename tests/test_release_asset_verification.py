@@ -68,3 +68,25 @@ def test_pre_migration_backup_failure_stops_migrations(tmp_path, monkeypatch):
     monkeypatch.setattr(sqlite3, "connect", fail_connect)
     with pytest.raises(RuntimeError, match="migrations were cancelled"):
         app.create_pre_migration_backup(source_path, tmp_path / "backups")
+
+
+
+def test_bundled_wallpaper_artwork_is_available():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    for name in ("galaxy.svg", "lord_shiva.svg", "love_couples.svg", "milky_way_waves.svg", "ocean_waves.svg"):
+        artwork = root / "assets" / "wallpapers" / name
+        assert artwork.is_file()
+        assert "<svg" in artwork.read_text(encoding="utf-8")
+
+
+def test_home_ui_restores_icons_and_quick_dropdowns():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+    assert "homeThemeDropdown" in source
+    assert "homeWallpaperDropdown" in source
+    assert 'icon_label = QLabel(symbol)' in source
+    assert 'from PySide6.QtSvg import QSvgRenderer' in source
+    assert 'QWidget#homeContent { background: rgba(15,23,42,0.58)' in source
