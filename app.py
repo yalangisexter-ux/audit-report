@@ -1656,7 +1656,7 @@ class MainWindow(QMainWindow):
         QApplication.instance().style().unpolish(self)
         QApplication.instance().style().polish(self)
         if hasattr(self, "theme_toggle_btn"):
-            self.theme_toggle_btn.setText("🌙  Night mode" if theme_name == "day" else "☀️  Day mode")
+            self.theme_toggle_btn.setText("☀️  Day mode" if theme_name == "night" else "🌙  Night mode")
         if hasattr(self, "update_button"):
             self.update_button.setText("⬇  Check for updates")
         if hasattr(self, "rollback_button"):
@@ -1677,7 +1677,11 @@ class MainWindow(QMainWindow):
     def apply_content_surface_styles(self, theme_name=None):
         """Keep wallpaper behind the UI while matching solid panels to the active theme."""
         theme_name = (theme_name or self.current_theme()).lower()
-        if theme_name in ("day", "ocean", "sunset"):
+        if theme_name == "ocean":
+            background, foreground, border = "#F0F9FF", "#0F172A", "#0284C7"
+        elif theme_name == "sunset":
+            background, foreground, border = "#FFEDD5", "#0F172A", "#EA580C"
+        elif theme_name == "day":
             background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
@@ -1691,7 +1695,8 @@ class MainWindow(QMainWindow):
                 )
 
     def toggle_theme(self):
-        nxt = "night" if self.current_theme() == "day" else "day"
+        current = self.current_theme()
+        nxt = "night" if current == "day" else "day"
         self.apply_theme(nxt)
 
     def set_animation_style(self, style_name):
@@ -4189,7 +4194,6 @@ QCheckBox::indicator:checked { background: #7C5CFC; border-color: #7C5CFC; }
 QCheckBox::indicator:checked:hover { background: #6D28D9; border-color: #6D28D9; }
 QStatusBar { background: #F1F5F9; color: #334155; border-top: 1px solid #CBD5E1; padding: 4px 8px; font-weight: 500; }
 QRadioButton { spacing: 8px; color: #334155; background: transparent; }
-QStatusBar { background: #F1F5F9; color: #64748B; border-top: 1px solid #CBD5E1; }
 QStatusBar::item { border: none; }
 QScrollBar:vertical, QScrollBar:horizontal { background: transparent; width: 11px; height: 11px; margin: 2px; }
 QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #CBD5E1; border-radius: 5px; min-height: 24px; min-width: 24px; }
