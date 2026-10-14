@@ -1406,7 +1406,8 @@ class MainWindow(QMainWindow):
 
     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
-        self.setStyleSheet(self.styleSheet() + """
+        if "QWidget#headerClock" not in self.styleSheet():
+            self.setStyleSheet(self.styleSheet() + """
             QWidget#headerClock { background: #0F172A; color: #F8FAFC; border: 1px solid #475569;
                 border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
             QPushButton#headerNavButton { background: #334155; color: #F8FAFC; border: 1px solid #64748B;
