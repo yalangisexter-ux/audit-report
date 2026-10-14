@@ -1089,6 +1089,15 @@ class AnimatedBackground(QWidget):
             self.update()
             return
         filename, url = entry
+        # Prefer the image bundled inside the installer so wallpapers work offline immediately.
+        bundled_path = Path(resource_path(str(Path("assets") / "wallpapers" / "photos" / filename)))
+        if bundled_path.is_file():
+            pixmap = QPixmap(str(bundled_path))
+            if not pixmap.isNull():
+                self.wallpaper_pixmap = pixmap
+                self.update()
+                return
+        # Development builds can fetch once and cache locally; normal release builds bundle photos.
         cached_path = self._wallpaper_cache_path(filename)
         if cached_path.is_file() and cached_path.stat().st_size > 30000:
             pixmap = QPixmap(str(cached_path))
