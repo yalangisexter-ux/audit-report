@@ -20,7 +20,8 @@ def test_word_evidence_url_is_an_external_hyperlink():
     assert hyperlink is not None
     relationship_id = hyperlink.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
     assert paragraph.part.rels[relationship_id].target_ref == url
-    assert "".join(hyperlink.itertext()) == url
+    text_node = hyperlink.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")
+    assert text_node.text == url
 
 
 def test_csv_evidence_urls_remain_raw_urls_for_spreadsheet_link_detection():
