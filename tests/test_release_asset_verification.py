@@ -177,34 +177,36 @@ def test_release_version_tuple_normalizes_v_prefix_and_rejects_invalid_tags():
         app.release_version_tuple("v1.2.3-rc1")
 
 
-def test_update_worker_selects_newest_published_stable_release(monkeypatch):
-    releases = [
-        {"tag_name": "v1.2.31", "draft": False, "prerelease": False,
-         "published_at": "2026-10-14T07:00:00Z", "assets": []},
-        {"tag_name": "v1.2.99", "draft": False, "prerelease": True,
-         "published_at": "2026-10-15T07:00:00Z", "assets": []},
-        {"tag_name": "v9.9.9", "draft": True, "prerelease": False,
-         "published_at": "2026-10-16T07:00:00Z", "assets": []},
-        {"tag_name": "not-a-version", "draft": False, "prerelease": False,
-         "published_at": "2026-10-17T07:00:00Z", "assets": []},
-        {"tag_name": "v1.2.32", "draft": False, "prerelease": False,
-         "published_at": "2026-10-18T07:00:00Z", "assets": []},
-    ]
-    monkeypatch.setattr(app.UpdateWorker, "request_bytes",
-                        staticmethod(lambda url, accept="application/vnd.github+json": __import__("json").dumps(releases).encode()))
-    worker = app.UpdateWorker("1.2.31")
+def test_update_worker_uses_latest_published_stable_release(monkeypatch):
+    release = {
+        "tag_name": "v1.2.36",
+        "draft": False,
+        "prerelease": False,
+        "published_at": "2026-10-14T08:00:00Z",
+        "assets": [],
+    }
+    requested = []
+    monkeypatch.setattr(
+        app.UpdateWorker,
+        "request_bytes",
+        staticmethod(lambda url, accept="application/vnd.github+json": (
+            requested.append(url) or __import__("json").dumps(release).encode()
+        )),
+    )
+    worker = app.UpdateWorker("1.2.35")
     emitted = []
     worker.current.connect(lambda version: emitted.append(("current", version)))
     worker.failed.connect(lambda message: emitted.append(("failed", message)))
     worker.ready.connect(lambda path, version: emitted.append(("ready", version)))
-    # The selected release has no installer, so selection must not declare the
-    # application current merely because the first API item is v1.2.31.
+
     worker.run()
+
+    assert requested == [
+        "https://api.github.com/repos/yalangisexter-ux/audit-report/releases/latest"
+    ]
     assert emitted
     assert emitted[0][0] == "failed"
     assert "missing a trusted installer" in emitted[0][1]
-
-
 def test_previous_release_choices_only_returns_installable_stable_versions_sorted_newest_first():
     def release(tag, *, draft=False, prerelease=False, published=True, size=1000000, url=None):
         return {
