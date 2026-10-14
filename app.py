@@ -2415,7 +2415,7 @@ class MainWindow(QMainWindow):
         productivity = QGroupBox("Employee Productivity")
         productivity.setObjectName("dashboardPanel")
         productivity_layout = QVBoxLayout(productivity)
-        note = QLabel("Productivity based on task progress and recorded attendance.")
+        note = QLabel("Attendance scoring includes every scheduled working day through the report date; holidays and recorded leave are excluded, and unmarked days count as not present.")
         note.setProperty("mutedText", True)
         productivity_layout.addWidget(note)
         self.productivity_chart = ProductivityChart()
@@ -3353,14 +3353,24 @@ class MainWindow(QMainWindow):
         task_rows=self.db.conn.execute("SELECT progress,status FROM tasks WHERE employee_id=? AND task_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),as_of_date.isoformat())).fetchall()
         task_score=(sum(int(t["progress"] or 0) for t in task_rows)/len(task_rows)) if task_rows else None
         att_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(employee["id"],start.isoformat(),as_of_date.isoformat())).fetchall()
-        present=sum(1 for a in att_rows if (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])) and not self.db.is_holiday(a["work_date"]))
-        eligible=sum(1 for a in att_rows if not self.db.is_holiday(a["work_date"]) and (a["attendance_status"] in ("Present","Absent") or (a["attendance_status"]=="Unmarked" and a["check_in"])))
-        attendance_score=(present/eligible*100) if eligible else None
+        weekdays=self.db.working_weekdays()
+        holidays={row["holiday_date"] for row in self.db.holidays_between(start.isoformat(),as_of_date.isoformat())}
+        def is_scheduled_workday(day_text):
+            try:
+                work_day=date.fromisoformat(day_text)
+            except (TypeError,ValueError):
+                return False
+            return work_day.weekday() in weekdays and day_text not in holidays
+        working_days=self.count_working_days(start,as_of_date)
+        leave_days=sum(1 for a in att_rows if a["attendance_status"]=="Leave" and is_scheduled_workday(a["work_date"]))
+        attendance_eligible_days=max(0,working_days-leave_days)
+        present=sum(1 for a in att_rows if is_scheduled_workday(a["work_date"]) and (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])))
+        attendance_score=(present/attendance_eligible_days*100) if attendance_eligible_days else None
         if task_score is not None and attendance_score is not None: score=round(task_score*0.7+attendance_score*0.3)
         elif task_score is not None: score=round(task_score)
         elif attendance_score is not None: score=round(attendance_score)
         else: score=0
-        return {"start":start,"working_days":self.count_working_days(start,as_of_date),"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
+        return {"start":start,"working_days":working_days,"attendance_eligible_days":attendance_eligible_days,"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
 
     def save_attendance_inline(self, employee_id, work_date, field, value):
         """Validate and persist inline attendance edits without losing unrelated fields."""
@@ -3720,8 +3730,9 @@ class MainWindow(QMainWindow):
                     ("Overall productivity score",f'{prod["score"]}%'),
                     ("Task progress component",f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),
                     ("Attendance component",f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data"),
-                    ("Scoring explanation","Task progress contributes 70% and attendance contributes 30% when both are available; if only one component is available, that component is used."),
+                    ("Scoring explanation","Attendance is present scheduled working days divided by attendance-eligible scheduled working days through the report date. Unmarked days count as not present; declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both components are available; otherwise the available component is used."),
                     ("Tracking start",prod["start"].isoformat()),("Working days since tracking start",prod["working_days"]),
+                    ("Attendance-eligible working days",prod["attendance_eligible_days"]),
                     ("Present days recorded",prod["present"]),("Tasks counted",prod["tasks"]),("Completed/submitted tasks",prod["completed"]),
                 ]:
                     doc.add_paragraph(f"{label}: {value}",style="List Bullet")
@@ -3892,9 +3903,10 @@ class MainWindow(QMainWindow):
                     ("Overall productivity score", f'{prod["score"]}%'),
                     ("Task progress component", f'{round(prod["task_score"])}%' if prod["task_score"] is not None else "Not enough task data"),
                     ("Attendance component", f'{round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Not enough attendance data"),
-                    ("Scoring explanation", "Task progress contributes 70% and attendance contributes 30% when both are available. If only one component is available, that component is used."),
+                    ("Scoring explanation", "Attendance is present scheduled working days divided by attendance-eligible scheduled working days through the report date. Unmarked days count as not present; declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both components are available; otherwise the available component is used."),
                     ("Tracking start", prod["start"].isoformat()),
                     ("Working days since tracking start", str(prod["working_days"])),
+                    ("Attendance-eligible working days", str(prod["attendance_eligible_days"])),
                     ("Present days recorded", str(prod["present"])),
                     ("Tasks counted", str(prod["tasks"])),
                     ("Completed / submitted tasks", str(prod["completed"])),
@@ -3990,14 +4002,14 @@ class MainWindow(QMainWindow):
                 for x in self._attendance_report_rows(report_date,employee_id):
                     e=x["employee"]; w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",x["status"],x["check_in"] or "N/A",x["check_out"] or "N/A",x["net_hours"] or "N/A",x["note"] or "N/A"])
             elif report_type=="Employee Productivity":
-                w.writerow(["Report date","Employee ID","Employee","Department","Overall score %","Task progress component %","Attendance component %","Scoring explanation","Tracking start","Working days since start","Present days","Tasks counted","Completed/submitted tasks","Task","Task status","Task progress %"])
+                w.writerow(["Report date","Employee ID","Employee","Department","Overall score %","Task progress component %","Attendance component %","Scoring explanation","Tracking start","Working days since start","Attendance-eligible working days","Present days","Tasks counted","Completed/submitted tasks","Task","Task status","Task progress %"])
                 for e,tasks,_att in self.report_data(report_date,employee_id):
                     prod=self.employee_productivity(e, date.fromisoformat(report_date))
-                    explanation="Task progress 70% + attendance 30% when both available; otherwise available component used."
+                    explanation="Attendance = present scheduled workdays / eligible scheduled workdays; unmarked days count as not present, while declared holidays and recorded leave are excluded. Task progress 70% + attendance 30% when both components are available; otherwise the available component is used."
                     if not tasks:
-                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["present"],prod["tasks"],prod["completed"],"N/A","N/A","N/A"])
+                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["attendance_eligible_days"],prod["present"],prod["tasks"],prod["completed"],"N/A","N/A","N/A"])
                     for t in tasks:
-                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["present"],prod["tasks"],prod["completed"],t["title"],t["status"],t["progress"]])
+                        w.writerow([report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",prod["score"],round(prod["task_score"]) if prod["task_score"] is not None else "N/A",round(prod["attendance_score"]) if prod["attendance_score"] is not None else "N/A",explanation,prod["start"].isoformat(),prod["working_days"],prod["attendance_eligible_days"],prod["present"],prod["tasks"],prod["completed"],t["title"],t["status"],t["progress"]])
             else:
                 headers=["Report date","Employee ID","Employee","Department","Role"]
                 field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
@@ -4043,8 +4055,8 @@ class MainWindow(QMainWindow):
                     f'Overall score: {prod["score"]}%',
                     f'Task progress component: {round(prod["task_score"])}%' if prod["task_score"] is not None else "Task progress component: N/A",
                     f'Attendance component: {round(prod["attendance_score"])}%' if prod["attendance_score"] is not None else "Attendance component: N/A",
-                    "Reason: task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used.",
-                    f'Tracking start: {prod["start"].isoformat()} | Working days: {prod["working_days"]} | Present days: {prod["present"]}'])
+                    "Attendance is present scheduled working days divided by attendance-eligible scheduled working days; unmarked days count as not present, while declared holidays and recorded leave are excluded. Task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used.",
+                    f'Tracking start: {prod["start"].isoformat()} | Working days: {prod["working_days"]} | Attendance-eligible days: {prod["attendance_eligible_days"]} | Present days: {prod["present"]}'])
                 lines.extend([f'• {t["title"]}: {t["status"]} — {t["progress"]}%' for t in tasks]); lines.append("")
             self.report_summary.setPlainText("\n".join(lines))
         else: self.report_summary.setPlainText(self.report_preview_text(d,eid))
