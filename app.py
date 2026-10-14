@@ -1426,8 +1426,9 @@ class MainWindow(QMainWindow):
         scroll.setAutoFillBackground(False)
         scroll.viewport().setStyleSheet("background: transparent;")
         content = QWidget()
-        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        content.setAutoFillBackground(False)
+        # Keep the content surface opaque; the wallpaper belongs behind, not through, UI text.
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
         content_layout.setContentsMargins(20, 0 if page_title else 16, 20, 16)
         content_layout.setSpacing(12)
@@ -1524,8 +1525,9 @@ class MainWindow(QMainWindow):
         self.home_scroll.setAutoFillBackground(False)
         self.home_scroll.viewport().setStyleSheet("background: transparent;")
         content = QWidget()
-        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        content.setAutoFillBackground(False)
+        # Keep the content surface opaque; the wallpaper belongs behind, not through, UI text.
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        content.setAutoFillBackground(True)
         content.setObjectName("homeContent")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(26, 22, 26, 22)
@@ -3952,18 +3954,18 @@ QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
-/* High-contrast frosted panels keep text readable over every live wallpaper while leaving a subtle wallpaper tint visible. */
-QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.96); color: #0F172A; border: 1px solid rgba(148,163,184,0.82); }
-QGroupBox { background: rgba(255,255,255,0.96); color: #0F172A; border: 1px solid rgba(148,163,184,0.78); }
+/* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
+QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #94A3B8; }
+QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
-QWidget#sessionStrip { background: rgba(226,232,240,0.96); border: 1px solid rgba(148,163,184,0.78); }
-QWidget#guideItem { background: rgba(241,245,249,0.95); border: 1px solid rgba(148,163,184,0.76); }
+QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #94A3B8; }
+QWidget#guideItem { background: #F1F5F9; border: 1px solid #94A3B8; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
 QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
-QTableWidget { background: rgba(255,255,255,0.97); alternate-background-color: rgba(241,245,249,0.96); color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
+QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
 QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
 QTableWidget::item:selected { background: #DDE7FF; color: #1E1B4B; }
 QCheckBox, QRadioButton { color: #1E293B; }
