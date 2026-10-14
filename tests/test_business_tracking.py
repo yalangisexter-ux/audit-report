@@ -80,3 +80,12 @@ def test_parse_quantity_rejects_invalid():
     assert business_tracking.parse_quantity("nan") is None
     assert business_tracking.parse_quantity("inf") is None
     assert business_tracking.parse_quantity("abc") is None
+
+
+def test_parse_quantity_rejects_negative_and_non_finite_values():
+    import business_tracking
+    assert business_tracking.parse_quantity("0") == 0
+    assert business_tracking.parse_quantity("2.5") == 2.5
+    assert business_tracking.parse_quantity("-0.01") is None
+    assert business_tracking.parse_quantity("nan") is None
+    assert business_tracking.parse_quantity("inf") is None
