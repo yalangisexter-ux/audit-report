@@ -182,6 +182,52 @@ def verify_release_asset_bytes(data, asset, require_digest=True):
     return True
 
 
+def previous_release_choices(releases, current_version):
+    """Return installable, published stable releases older than the app, newest first."""
+    current_parts = release_version_tuple(current_version)
+    if not isinstance(releases, list):
+        raise ValueError("GitHub returned an invalid releases response.")
+
+    choices = []
+    installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
+    for release in releases:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        if not release.get("published_at"):
+            continue
+        try:
+            version = release_version_tuple(release.get("tag_name", ""))
+        except ValueError:
+            continue
+        if version >= current_parts:
+            continue
+
+        assets = release.get("assets", [])
+        if not isinstance(assets, list):
+            continue
+        asset = next((item for item in assets
+                      if isinstance(item, dict) and item.get("name") == installer_name), None)
+        if not asset:
+            continue
+        url = str(asset.get("browser_download_url") or "")
+        size = asset.get("size")
+        if (not url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX)
+                or not isinstance(size, int) or size < 1000000):
+            continue
+        choices.append((version, str(release["tag_name"]), url, asset))
+
+    choices.sort(key=lambda item: item[0], reverse=True)
+    return [(tag, url, asset) for _, tag, url, asset in choices]
+
+
+class UpdateWorker(QObject):
+    ready = Signal(str, str)
+    current = Signal(str)
+    failed = Signal(str)
+    progress = Signal(int, str)
+    completed = Signal()
+
+
 class UpdateWorker(QObject):
     ready = Signal(str, str)
     current = Signal(str)
@@ -3867,22 +3913,10 @@ class MainWindow(QMainWindow):
         progress.show()
         QApplication.processEvents()
         try:
-            request = Request("https://api.github.com/repos/" + GITHUB_REPOSITORY + "/releases?per_page=20", headers={"Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager"})
+            request = Request("https://api.github.com/repos/" + GITHUB_REPOSITORY + "/releases?per_page=100", headers={"Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager"})
             with urlopen(request, timeout=20) as response:
                 releases = json.loads(response.read().decode("utf-8"))
-            choices = []
-            for release in releases:
-                tag = str(release.get("tag_name", ""))
-                try:
-                    version = release_version_tuple(tag)
-                except ValueError:
-                    continue
-                if version < release_version_tuple(APP_VERSION):
-                    assets = {item.get("name"): item for item in release.get("assets", [])}
-                    asset = assets.get("RawStrengthEmployeeAuditManager-Setup.exe", {})
-                    url = asset.get("browser_download_url", "")
-                    if url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
-                        choices.append((tag, url, asset))
+            choices = previous_release_choices(releases, APP_VERSION)
             progress.close()
             if not choices:
                 return error(self, "No previous published application version is available.")
@@ -3904,11 +3938,19 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
             with urlopen(Request(url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"}), timeout=60) as response:
                 data = response.read()
-            if len(data) < 1000000:
-                raise ValueError("Downloaded rollback installer is missing or incomplete.")
+            expected_size = installer_asset.get("size")
+            if (not isinstance(expected_size, int) or expected_size < 1000000
+                    or len(data) != expected_size):
+                raise ValueError("Downloaded rollback installer size does not match GitHub release metadata.")
             # Older releases may predate GitHub's digest metadata. Verify it whenever available.
             verify_release_asset_bytes(data, installer_asset, require_digest=False)
-            installer.write_bytes(data)
+            partial_path = installer.with_suffix(installer.suffix + ".part")
+            try:
+                partial_path.write_bytes(data)
+                os.replace(partial_path, installer)
+            except Exception:
+                partial_path.unlink(missing_ok=True)
+                raise
             progress.setLabelText("Starting silent rollback...")
             QApplication.processEvents()
             if sys.platform == "win32":

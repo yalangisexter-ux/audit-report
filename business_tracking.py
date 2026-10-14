@@ -5,7 +5,7 @@ This module never modifies existing employee, task, or audit tables.
 import sqlite3
 from datetime import datetime
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QTabWidget, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QFormLayout,
     QDialog, QDialogButtonBox, QGroupBox, QHeaderView, QAbstractItemView,
     QMessageBox, QInputDialog,
@@ -194,8 +194,50 @@ class BusinessTrackingTab(QWidget):
     def _build_dashboard(self):
         w = QWidget()
         l = QVBoxLayout(w)
-        self.dash_summary = QLabel("Loading...")
+        l.setContentsMargins(18, 18, 18, 18)
+        l.setSpacing(14)
+
+        heading = QLabel("Business overview")
+        heading.setProperty("sectionHeading", True)
+        l.addWidget(heading)
+
+        cards = QGridLayout()
+        cards.setHorizontalSpacing(12)
+        cards.setVerticalSpacing(12)
+        self.dashboard_metrics = {}
+        metric_specs = (
+            ("products", "Products", "Catalog items"),
+            ("low_stock", "Low stock", "At or below reorder level"),
+            ("orders", "Orders", "Order records"),
+            ("members", "Active members", "Current memberships"),
+        )
+        for index, (key, title, description) in enumerate(metric_specs):
+            card = QWidget()
+            card.setObjectName("kpiCard")
+            card.setMinimumHeight(122)
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 12, 16, 12)
+            card_layout.setSpacing(4)
+
+            title_label = QLabel(title)
+            title_label.setProperty("mutedText", True)
+            value_label = QLabel("—")
+            value_label.setProperty("metricValue", True)
+            value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            description_label = QLabel(description)
+            description_label.setProperty("mutedText", True)
+            description_label.setWordWrap(True)
+
+            card_layout.addWidget(title_label)
+            card_layout.addWidget(value_label)
+            card_layout.addWidget(description_label)
+            self.dashboard_metrics[key] = value_label
+            cards.addWidget(card, index // 4, index % 4)
+
+        l.addLayout(cards)
+        self.dash_summary = QLabel("Loading business activity...")
         self.dash_summary.setWordWrap(True)
+        self.dash_summary.setProperty("statusSummary", True)
         l.addWidget(self.dash_summary)
         l.addStretch()
         return w
@@ -289,13 +331,23 @@ class BusinessTrackingTab(QWidget):
 
     def refresh_dashboard(self):
         c = self.db.conn
-        products = c.execute("SELECT COUNT(*) FROM bt_products").fetchone()[0]
-        orders = c.execute("SELECT COUNT(*) FROM bt_orders").fetchone()[0]
-        members = c.execute("SELECT COUNT(*) FROM bt_members").fetchone()[0]
-        activities = c.execute("SELECT COUNT(*) FROM bt_activities").fetchone()[0]
-        self.dash_summary.setText(
-            f"Products: {products}  •  Orders: {orders}  •  Members: {members}  •  Activities: {activities}"
+        products = c.execute("SELECT * FROM bt_products ORDER BY name").fetchall()
+        low_stock = sum(
+            available_stock(product) <= float(product["reorder_level"] or 0)
+            for product in products
         )
+        orders = c.execute("SELECT COUNT(*) FROM bt_orders").fetchone()[0]
+        members = c.execute("SELECT COUNT(*) FROM bt_members WHERE status='Active'").fetchone()[0]
+        activities = c.execute("SELECT COUNT(*) FROM bt_activities").fetchone()[0]
+
+        for key, value in {
+            "products": len(products),
+            "low_stock": low_stock,
+            "orders": orders,
+            "members": members,
+        }.items():
+            self.dashboard_metrics[key].setText(str(value))
+        self.dash_summary.setText(f"{activities} employee activity records are available.")
 
     def refresh_products(self):
         text = self.prod_search.text().lower() if hasattr(self, "prod_search") else ""

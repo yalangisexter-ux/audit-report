@@ -203,3 +203,35 @@ def test_update_worker_selects_newest_published_stable_release(monkeypatch):
     assert emitted
     assert emitted[0][0] == "failed"
     assert "missing a trusted installer" in emitted[0][1]
+
+
+def test_previous_release_choices_only_returns_installable_stable_versions_sorted_newest_first():
+    def release(tag, *, draft=False, prerelease=False, published=True, size=1000000, url=None):
+        return {
+            "tag_name": tag,
+            "draft": draft,
+            "prerelease": prerelease,
+            "published_at": "2026-10-14T00:00:00Z" if published else None,
+            "assets": [{
+                "name": "RawStrengthEmployeeAuditManager-Setup.exe",
+                "browser_download_url": url or (
+                    "https://github.com/yalangisexter-ux/audit-report/releases/download/"
+                    + tag + "/RawStrengthEmployeeAuditManager-Setup.exe"
+                ),
+                "size": size,
+            }],
+        }
+
+    releases = [
+        release("v1.2.10"),
+        release("v1.2.31"),
+        release("v1.2.99", prerelease=True),
+        release("v9.0.0", draft=True),
+        release("v1.2.30", published=False),
+        release("v1.2.29", size=999999),
+        release("v1.2.28", url="https://example.com/installer.exe"),
+        release("not-a-version"),
+        release("v1.2.32"),
+    ]
+    choices = app.previous_release_choices(releases, "1.2.32")
+    assert [choice[0] for choice in choices] == ["v1.2.31", "v1.2.10"]
