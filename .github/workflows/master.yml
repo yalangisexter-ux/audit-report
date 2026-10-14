@@ -47,6 +47,28 @@ jobs:
           choco install innosetup --yes --no-progress
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup compiler was not installed." }
 
+      - name: Download high-resolution photographic wallpaper assets
+        shell: pwsh
+        run: |
+          $wallpaperDir = "assets/wallpapers/photos"
+          New-Item -ItemType Directory -Force -Path $wallpaperDir | Out-Null
+          $wallpapers = @{
+            "galaxy.jpg" = "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "milky_way.jpg" = "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "ocean_waves.jpg" = "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "lord_shiva.jpg" = "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "love_couples.jpg" = "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+          }
+          foreach ($name in $wallpapers.Keys) {
+            $target = Join-Path $wallpaperDir $name
+            Invoke-WebRequest -Uri $wallpapers[$name] -OutFile $target
+            $bytes = [System.IO.File]::ReadAllBytes($target)
+            if ($bytes.Length -lt 30000 -or $bytes[0] -ne 0xFF -or $bytes[1] -ne 0xD8 -or $bytes[2] -ne 0xFF) {
+              throw "Wallpaper download is not a valid high-resolution JPEG: $name"
+            }
+            Write-Host "Verified photo wallpaper $name ($($bytes.Length) bytes)"
+          }
+
       - name: Compile Python application with bundled assets
         shell: pwsh
         run: |
