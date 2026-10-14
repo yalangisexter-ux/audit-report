@@ -295,19 +295,46 @@ def migrate_legacy_task_employee_links(conn):
     conn.commit()
 
 
+def create_pre_migration_backup(db_path, backup_dir):
+    """Create and validate a consistent SQLite snapshot before schema migrations."""
+    db_path = Path(db_path)
+    backup_dir = Path(backup_dir)
+    if not db_path.exists() or db_path.stat().st_size <= 0:
+        return None
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = backup_dir / f"pre_upgrade_{stamp}_{secrets.token_hex(4)}.db"
+    source = None
+    destination = None
+    try:
+        # SQLite's backup API includes committed WAL data; a file copy may not.
+        source = sqlite3.connect(str(db_path), timeout=15)
+        destination = sqlite3.connect(str(target), timeout=15)
+        source.backup(destination)
+        integrity = destination.execute("PRAGMA integrity_check").fetchone()
+        if not integrity or integrity[0] != "ok":
+            raise RuntimeError("Pre-migration backup failed SQLite integrity validation.")
+        destination.close()
+        destination = None
+        source.close()
+        source = None
+        return target
+    except Exception as exc:
+        if destination is not None:
+            destination.close()
+        if source is not None:
+            source.close()
+        target.unlink(missing_ok=True)
+        raise RuntimeError(f"Pre-migration database backup failed; migrations were cancelled: {exc}") from exc
+
+
 class Database:
     def __init__(self):
         try:
-            # Backup existing database before migrations if it has data
-            db_path = Path(DB_PATH) if not isinstance(DB_PATH, Path) else DB_PATH
-            if db_path.exists() and db_path.stat().st_size > 0:
-                BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                pre_backup = BACKUP_DIR / f"pre_upgrade_{stamp}.db"
-                try:
-                    shutil.copy2(db_path, pre_backup)
-                except Exception as backup_err:
-                    print(f"Pre-upgrade backup failed: {backup_err}")
+            # Do not run schema migrations unless the existing database was backed up.
+            db_path = Path(DB_PATH)
+            create_pre_migration_backup(db_path, BACKUP_DIR)
             self.conn = sqlite3.connect(DB_PATH)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
