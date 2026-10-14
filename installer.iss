@@ -1,7 +1,7 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
 #define AppVersionEnv GetEnv("APP_VERSION")
 #if AppVersionEnv == ""
-	#define MyAppVersion "1.2.27"
+	#define MyAppVersion "1.2.29"
 #else
 	#define MyAppVersion AppVersionEnv
 #endif
@@ -51,7 +51,6 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Au
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
 	ResultCode: Integer;
-	InstallDir: String;
 begin
 	Result := '';
 	// Clean old app files in the install directory (not the user database)
