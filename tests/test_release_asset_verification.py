@@ -6,6 +6,14 @@ import pytest
 import app
 
 
+def test_valid_hhmm_rejects_malformed_attendance_times():
+    assert app.valid_hhmm("09:30") is True
+    assert app.valid_hhmm("23:59") is True
+    assert app.valid_hhmm("24:00") is False
+    assert app.valid_hhmm("9:30") is False
+    assert app.valid_hhmm("noon") is False
+
+
 def test_release_asset_checksum_accepts_matching_sha256():
     data = b"trusted installer payload"
     asset = {"digest": "sha256:" + hashlib.sha256(data).hexdigest()}
