@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Keep only the newest main build active so two rapid pushes cannot race to publish one tag.
+concurrency:
+  group: audit-report-main-release
+  cancel-in-progress: true
+
 jobs:
   build-and-release:
     runs-on: windows-latest
@@ -25,7 +30,10 @@ jobs:
       - name: Install Python dependencies and packaging tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
+          python -m pip install -r requirements.txt pyinstaller pytest
+
+      - name: Run regression tests
+        run: python -m pytest -q
 
       - name: Download Microsoft Visual C++ runtime prerequisite
         shell: pwsh
@@ -49,7 +57,7 @@ jobs:
       - name: Build standalone Windows installer
         shell: pwsh
         env:
-          APP_VERSION: "1.2.14"
+          APP_VERSION: "1.2.15"
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
@@ -71,8 +79,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.14
-          name: Raw Strength Employee Audit Manager v1.2.14
+          tag_name: v1.2.15
+          name: Raw Strength Employee Audit Manager v1.2.15
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
