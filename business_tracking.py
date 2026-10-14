@@ -235,6 +235,8 @@ class BusinessTrackingTab(QWidget):
         self.order_table.setHorizontalHeaderLabels(["ID", "External ID", "Date", "Channel", "Customer", "Status"])
         self.order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.order_table.setToolTip("Double-click an order row to update its tracking status.")
+        self.order_table.cellDoubleClicked.connect(self.edit_order_status)
         l.addWidget(self.order_table)
         return w
 
@@ -397,6 +399,29 @@ class BusinessTrackingTab(QWidget):
         except sqlite3.Error as ex:
             self.db.conn.rollback()
             QMessageBox.warning(self, "Could not save product", str(ex))
+            return
+        self.refresh_all()
+
+    def edit_order_status(self, row, column):
+        item = self.order_table.item(row, 0)
+        if item is None:
+            return
+        order_id = int(item.text())
+        current = self.db.conn.execute("SELECT order_status FROM bt_orders WHERE id=?", (order_id,)).fetchone()
+        if not current:
+            return
+        statuses = ["Pending", "Confirmed", "Packed", "Dispatched", "Delivered", "Cancelled", "Returned"]
+        selected, ok = QInputDialog.getItem(self, "Update order status", "Tracking status:", statuses,
+                                            max(0, statuses.index(current["order_status"]) if current["order_status"] in statuses else 0), False)
+        if not ok or not selected:
+            return
+        try:
+            self.db.conn.execute("UPDATE bt_orders SET order_status=?, updated_at=? WHERE id=?",
+                                 (selected, now_text(), order_id))
+            self.db.conn.commit()
+        except sqlite3.Error as ex:
+            self.db.conn.rollback()
+            QMessageBox.warning(self, "Could not update order", str(ex))
             return
         self.refresh_all()
 
