@@ -4853,7 +4853,7 @@ class MainWindow(QMainWindow):
             alignment=TA_CENTER, textColor=cyan, spaceAfter=6))
         styles.add(ParagraphStyle(name="RSSubtitle", fontName=regular_name, fontSize=8.5, leading=12,
             alignment=TA_CENTER, textColor=muted, spaceAfter=12))
-        styles.add(ParagraphStyle(name="RSEmployee", fontName=bold_name, fontSize=11, leading=15,
+        styles.add(ParagraphStyle(name="RSName", fontName=regular_name, fontSize=8.5, leading=12,
             textColor=navy, spaceBefore=8, spaceAfter=5, keepWithNext=True))
         styles.add(ParagraphStyle(name="RSSection", fontName=bold_name, fontSize=9.2, leading=12,
             textColor=navy, spaceBefore=5, spaceAfter=3, keepWithNext=True))
@@ -4890,6 +4890,10 @@ class MainWindow(QMainWindow):
         def add_field(story, label, value):
             story.append(para(label, value))
 
+        def employee_name(name, index=None):
+            number = f"{index}. " if index is not None else ""
+            return Paragraph(f"{number}<b>Name :</b> {clean(name)}", styles["RSName"])
+
         employee = self.db.employee(employee_id) if employee_id else None
         scope = employee["name"] if employee else "All employees"
         opts = self.selected_eod_options() if eod_options is None else eod_options
@@ -4902,7 +4906,7 @@ class MainWindow(QMainWindow):
             emps = self._report_employees(employee_id)
             story.append(para("TOTAL EMPLOYEES:", len(emps), "RSSection"))
             for index, e in enumerate(emps, 1):
-                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"])]
+                block = [employee_name(e["name"], index)]
                 if opts.get("details_identity", True):
                     block.extend([bullet(f"Employee ID: {e['employee_code'] or '—'}"), bullet(f"Department: {e['department'] or '—'}"), bullet(f"Role / Designation: {e['designation'] or '—'}")])
                 if opts.get("details_contact", True):
@@ -4925,7 +4929,7 @@ class MainWindow(QMainWindow):
                 story.append(para("SUMMARY:", f"Employees {len(rows)} | Present {present} | Absent {absent} | Leave {leave}", "RSSection"))
             for index, item in enumerate(rows, 1):
                 e = item["employee"]
-                block = [Paragraph(f"{index}. {clean(e['name'])}", styles["RSEmployee"])]
+                block = [employee_name(e["name"], index)]
                 if opts.get("attendance_identity", True): block.extend([bullet(f"Employee ID: {e['employee_code'] or '—'}"), bullet(f"Department: {e['department'] or '—'}")])
                 if opts.get("attendance_status", True): block.append(bullet(f"Attendance status: {item['status']}"))
                 if opts.get("attendance_times", True): block.extend([bullet(f"Check-in: {item['check_in'] or 'Not recorded'}"), bullet(f"Check-out: {item['check_out'] or 'Not recorded'}"), bullet(f"Net working hours: {item['net_hours'] or 'Not available'}")])
@@ -4937,7 +4941,7 @@ class MainWindow(QMainWindow):
             data = self.report_data(report_date, employee_id)
             for e, tasks, _att in data:
                 prod = self.employee_productivity(e, date.fromisoformat(report_date))
-                story.append(Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]))
+                story.append(employee_name(e["name"]))
                 if opts.get("productivity_identity", True):
                     story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"}'))
                 if opts.get("productivity_metrics", True):
@@ -4969,7 +4973,7 @@ class MainWindow(QMainWindow):
                     bullet(f"Employees flagged for missing proof: {missing}"), Spacer(1, 5),
                     HRFlowable(width="100%", thickness=.6, color=cyan, spaceAfter=6)])
             for e, tasks, _att in data:
-                story.append(Paragraph(clean(e["name"]).upper(), styles["RSEmployee"]))
+                story.append(employee_name(e["name"]))
                 if opts.get("identity", True):
                     story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}'))
                 if opts.get("contact", False):
