@@ -119,7 +119,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QWidget#pageContent { background: #FFFFFF;' in source
     assert 'base.setColorAt(0.0, QColor("#FFFFFF"))' in source
     assert 'if is_day else [(124, 92, 252, 42)' in source
-    assert 'for col, width in enumerate((145, 112, 136, 118, 118, 90, 190))' in source
+    assert 'for col, width in enumerate((156, 120, 158, 126, 126, 96, 220))' in source
     assert 'Scroll horizontally to see every column on smaller screens.' in source
     assert 'update_label.setWordWrap(True)' in source
     assert 'dialog_width = max(240, min(440, available_width - 32))' in source
@@ -137,7 +137,9 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'Qt.TextFlag.TextWordWrap, display_name)' in source
     assert 'if slot >= 72:' in source and 'elif slot >= 38:' in source
     assert 'tooltip_for_index(self, index)' in source
-    assert 'QToolTip.showText' in source
+    assert 'show_accessible_tooltip(event.globalPosition().toPoint(), self.tooltip_for_index(hovered), self)' in source
+    assert 'class AccessibleTooltipController(QObject)' in source
+    assert 'color: #111827' in source and 'background-color: #FFFFFF' in source
     assert 'QProgressBar#dashboardProgress' in source
     assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
     assert "QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}" in source
@@ -213,6 +215,8 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
     assert 'self.brand_logo_frame = AnimatedRGBFrame(hover_only=True, outline_inset=2)' in source
     assert 'self.brand_logo_frame.setFixedSize(92, 92)' in source
     assert 'self.header_clock_frame.setFixedSize(254, 66)' in source
+    assert 'self.brand_logo.setPixmap(brand_mark_pixmap(68))' in source
+    assert 'self.showMaximized()' in source
     assert 'class InteractionFeedback(QObject)' in source
     assert 'QEvent.Type.MouseButtonPress' in source and 'QEvent.Type.MouseButtonRelease' in source
     assert 'self.findChildren(QAbstractItemView)' in source
@@ -393,7 +397,8 @@ def test_dashboard_summaries_and_progress_widgets_remain_accurate(monkeypatch, t
     employee_ids = [row["id"] for row in db.employees()]
     for employee_id, status, check_in in (
         (employee_ids[0], "Present", "09:00"),
-        (employee_ids[1], "Absent", ""),
+        # An explicit Absent status must win over a stale or inconsistent check-in value.
+        (employee_ids[1], "Absent", "09:15"),
         (employee_ids[2], "Leave", ""),
     ):
         db.conn.execute(

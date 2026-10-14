@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
     QToolButton, QMenu, QSizePolicy, QFrame, QListView
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -28,7 +28,46 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from build_info import APP_VERSION
-from business_tracking import BusinessTrackingTab
+from business_tracking import BusinessTrackingTab, available_stock
+
+
+def brand_mark_pixmap(size):
+    """Create the current vector-style RSC brand mark at the requested size."""
+    size = max(24, int(size))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    bounds = QRectF(1, 1, size - 2, size - 2)
+    background = QLinearGradient(bounds.topLeft(), bounds.bottomRight())
+    background.setColorAt(0.0, QColor("#111B4D"))
+    background.setColorAt(0.55, QColor("#312E81"))
+    background.setColorAt(1.0, QColor("#6D28D9"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(background)
+    painter.drawRoundedRect(bounds, size * .23, size * .23)
+
+    border = QConicalGradient(bounds.center(), 0)
+    border.setColorAt(0.0, QColor("#22D3EE"))
+    border.setColorAt(.35, QColor("#A78BFA"))
+    border.setColorAt(.7, QColor("#F472B6"))
+    border.setColorAt(1.0, QColor("#22D3EE"))
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(QPen(QBrush(border), max(1.4, size * .035)))
+    painter.drawRoundedRect(bounds.adjusted(size * .06, size * .06, -size * .06, -size * .06), size * .19, size * .19)
+
+    painter.setPen(QColor("#FFFFFF"))
+    font = QFont("Segoe UI", max(9, round(size * .23)), QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.drawText(QRectF(size * .08, size * .27, size * .84, size * .42), Qt.AlignmentFlag.AlignCenter, "RSC")
+    accent = QLinearGradient(size * .27, size * .76, size * .73, size * .76)
+    accent.setColorAt(0.0, QColor("#22D3EE"))
+    accent.setColorAt(.5, QColor("#A78BFA"))
+    accent.setColorAt(1.0, QColor("#F472B6"))
+    painter.setPen(QPen(QBrush(accent), max(1.8, size * .045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    painter.drawLine(int(size * .28), int(size * .77), int(size * .72), int(size * .77))
+    painter.end()
+    return pixmap
 
 # Embedded historical audit seed data (combined from audit_seed.py).
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
@@ -1093,7 +1132,7 @@ class LoginDialog(QDialog):
         # Logo
         logo = QLabel()
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
+        logo.setPixmap(brand_mark_pixmap(72))
         layout.addWidget(logo)
 
         title = QLabel("Raw Strength Calisthenics")
@@ -1276,6 +1315,110 @@ class TaskDialog(QDialog):
                 status, progress, self.proof.toPlainText().strip(), self.proof_note.text().strip(), submitted,
                 self.manager_note.text().strip())
 
+_ACCESSIBLE_TOOLTIP_CONTROLLER = None
+
+
+class AccessibleTooltipController(QObject):
+    """Render high-contrast help popups without the Windows native tooltip theme."""
+    def __init__(self, application):
+        super().__init__(application)
+        self.application = application
+        self.current_target = None
+        self.popup = QLabel()
+        self.popup.setObjectName("accessibleHoverMessage")
+        self.popup.setWindowFlags(
+            Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.popup.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.popup.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.popup.setTextFormat(Qt.TextFormat.PlainText)
+        self.popup.setWordWrap(True)
+        self.popup.setMaximumWidth(420)
+        self.popup.setStyleSheet(
+            "QLabel#accessibleHoverMessage { background-color: #FFFFFF; color: #111827; "
+            "border: 2px solid #6D28D9; border-radius: 9px; padding: 10px 12px; "
+            "font-family: 'Segoe UI'; font-size: 9pt; font-weight: 600; }"
+        )
+        self.hide_timer = QTimer(self)
+        self.hide_timer.setSingleShot(True)
+        self.hide_timer.timeout.connect(self.hide)
+        application.installEventFilter(self)
+
+    def _tooltip_text(self, watched, event):
+        text = watched.toolTip().strip() if isinstance(watched, QWidget) else ""
+        parent = watched.parentWidget() if isinstance(watched, QWidget) else None
+        if isinstance(parent, QAbstractItemView) and parent.viewport() is watched:
+            position = event.pos()
+            item = parent.itemAt(position)
+            if item is not None:
+                text = item.toolTip().strip() or item.text().strip()
+            elif isinstance(parent, QTableWidget):
+                header = parent.horizontalHeader()
+                if watched is header and isinstance(watched, QHeaderView):
+                    logical = watched.logicalIndexAt(position)
+                    header_item = parent.horizontalHeaderItem(logical) if logical >= 0 else None
+                    text = header_item.toolTip().strip() if header_item else ""
+        elif isinstance(watched, QHeaderView):
+            logical = watched.logicalIndexAt(event.pos())
+            view = watched.parentWidget()
+            if isinstance(view, QTableWidget) and logical >= 0:
+                header_item = view.horizontalHeaderItem(logical)
+                text = header_item.toolTip().strip() if header_item else ""
+        return text
+
+    def show(self, text, position, target=None):
+        text = str(text or "").strip()
+        if not text:
+            self.hide()
+            return
+        self.current_target = target
+        self.popup.setText(text)
+        self.popup.adjustSize()
+        desired = position + QPoint(16, 20)
+        screen = self.application.screenAt(position) or self.application.primaryScreen()
+        if screen is not None:
+            available = screen.availableGeometry()
+            x = min(max(available.left() + 6, desired.x()), available.right() - self.popup.width() - 6)
+            y = min(max(available.top() + 6, desired.y()), available.bottom() - self.popup.height() - 6)
+            desired = QPoint(x, y)
+        self.popup.move(desired)
+        self.popup.show()
+        self.popup.raise_()
+        self.hide_timer.start(5000)
+
+    def hide(self):
+        self.hide_timer.stop()
+        self.current_target = None
+        self.popup.hide()
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.ToolTip:
+            text = self._tooltip_text(watched, event)
+            if text:
+                self.show(text, event.globalPos(), watched)
+                event.accept()
+                return True
+        elif event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.WindowDeactivate):
+            self.hide()
+        elif event.type() == QEvent.Type.Leave and watched is self.current_target:
+            self.hide()
+        return False
+
+
+def ensure_accessible_tooltip_controller(application=None):
+    global _ACCESSIBLE_TOOLTIP_CONTROLLER
+    application = application or QApplication.instance()
+    if application is not None and _ACCESSIBLE_TOOLTIP_CONTROLLER is None:
+        _ACCESSIBLE_TOOLTIP_CONTROLLER = AccessibleTooltipController(application)
+    return _ACCESSIBLE_TOOLTIP_CONTROLLER
+
+
+def show_accessible_tooltip(text, position, target=None):
+    controller = ensure_accessible_tooltip_controller()
+    if controller is not None:
+        controller.show(text, position, target)
+
+
 class ProductivityChart(QWidget):
     """Lightweight native Qt bar chart; no charting dependency is required."""
     PALETTES = {
@@ -1408,16 +1551,20 @@ class ProductivityChart(QWidget):
             self.update()
         if hovered is None:
             self.unsetCursor()
-            QToolTip.hideText()
+            controller = ensure_accessible_tooltip_controller()
+            if controller is not None:
+                controller.hide()
         else:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            QToolTip.showText(event.globalPosition().toPoint(), self.tooltip_for_index(hovered), self, self._bar_rect(hovered).toRect())
+            show_accessible_tooltip(event.globalPosition().toPoint(), self.tooltip_for_index(hovered), self)
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
         self._hovered_index = None
         self.update()
-        QToolTip.hideText()
+        controller = ensure_accessible_tooltip_controller()
+        if controller is not None:
+            controller.hide()
         self.unsetCursor()
         super().leaveEvent(event)
 
@@ -1462,7 +1609,7 @@ class AnimatedDashboardIcon(QLabel):
 
 
 class AnimatedRGBFrame(QFrame):
-    """Paint a soft, animated RGB outline for the clock and the unchanged app mark."""
+    """Paint a soft, animated RGB outline for the clock and brand mark."""
     def __init__(self, *, hover_only=False, outline_inset=8, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -1849,8 +1996,8 @@ class AnimatedBackground(QWidget):
 
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
-        super().__init__(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
-        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        super().__init__(); ensure_accessible_tooltip_controller(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
+        self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(brand_mark_pixmap(128)))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         screen = QApplication.primaryScreen()
         available = screen.availableGeometry() if screen else None
@@ -1872,7 +2019,7 @@ class MainWindow(QMainWindow):
 
         self.header_logo_menu = QToolButton()
         self.header_logo_menu.setObjectName("headerLogoMenu")
-        self.header_logo_menu.setIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        self.header_logo_menu.setIcon(QIcon(brand_mark_pixmap(32)))
         self.header_logo_menu.setIconSize(QSize(22, 22))
         self.header_logo_menu.setFixedSize(36, 32)
         self.header_logo_menu.setToolTip("Go to Home")
@@ -1956,8 +2103,7 @@ class MainWindow(QMainWindow):
         main_content_layout.addWidget(self.title_bar)
         self.title_bar.raise_()
 
-        # Persistent brand banner shared by every page; keep the original logo
-        # and the single live clock together in the same colored surface.
+        # Persistent brand banner shared by every page with the refreshed RSC mark.
         self.brand_banner = QFrame()
         self.brand_banner.setObjectName("brandBanner")
         self.brand_banner.setMinimumHeight(104)
@@ -1974,8 +2120,8 @@ class MainWindow(QMainWindow):
         self.brand_logo.setObjectName("brandLogo")
         self.brand_logo.setFixedSize(76, 76)
         self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.brand_logo.setToolTip("Raw Strength Calisthenics application logo")
-        self.brand_logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(68, 68))
+        self.brand_logo.setToolTip("Raw Strength Calisthenics brand mark")
+        self.brand_logo.setPixmap(brand_mark_pixmap(68))
         logo_frame_layout.addWidget(self.brand_logo)
         brand_layout.addWidget(self.brand_logo_frame)
         brand_copy = QVBoxLayout()
@@ -1987,11 +2133,15 @@ class MainWindow(QMainWindow):
         brand_copy.addWidget(self.brand_heading)
         brand_copy.addWidget(self.brand_subheading)
         brand_layout.addLayout(brand_copy, 1)
-        self.header_clock.setMinimumWidth(210)
+        self.header_clock.setMinimumWidth(0)
+        self.header_clock.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.header_clock.setMinimumHeight(42)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock_frame = AnimatedRGBFrame()
         self.header_clock_frame.setObjectName("headerClockFrame")
+        # Reserve enough room for the full date/time, including the meridiem.
+        # A flexible QLabel inside a narrow minimum frame clipped both ends of
+        # the clock string on maximized, DPI-scaled Windows displays.
         self.header_clock_frame.setFixedSize(254, 66)
         clock_frame_layout = QHBoxLayout(self.header_clock_frame)
         clock_frame_layout.setContentsMargins(11, 9, 11, 9)
@@ -2049,8 +2199,7 @@ class MainWindow(QMainWindow):
             self.sidebar_buttons.append((button, title))
         self.sidebar_layout.addStretch(1)
         self.sidebar_layout.addWidget(self.header_next)
-        # Navigation already exists in the persistent sidebar; avoid a duplicate
-        # low-contrast menu under the logo. The original logo remains a Home shortcut.
+        # Navigation already exists in the persistent sidebar.
         self.header_logo_menu.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
         self._tab_animation = None
         self._animated_page = None
@@ -2345,13 +2494,18 @@ class MainWindow(QMainWindow):
             self.bg_anim.setGeometry(0, 42, self.width(), max(1, self.height() - 42))
             self.bg_anim.init_particles()
         self._apply_responsive_layout()
+        # Main content geometry settles after QMainWindow finishes processing the
+        # resize; repeat once on the event loop so first-show/maximize uses the
+        # actual DPI-scaled client width.
+        QTimer.singleShot(0, self._apply_responsive_layout)
         if hasattr(self, "title_label"):
             QTimer.singleShot(0, self.update_title_label)
         if hasattr(self, "sidebar_buttons"):
             QTimer.singleShot(0, self.fit_sidebar_labels)
 
     def _apply_responsive_layout(self):
-        compact = self.width() < 1220
+        content_width = self.main_content.width() if hasattr(self, "main_content") else self.width()
+        compact = content_width < 1220
         home = self.findChild(QWidget, "homeContent")
         if home is not None and home.layout() is not None:
             margin_x = 16 if compact else 22
@@ -2366,6 +2520,32 @@ class MainWindow(QMainWindow):
             margin_x = 14 if compact else 18
             layout.setContentsMargins(margin_x, margins.top(), margin_x, margins.bottom())
             layout.setSpacing(10 if compact else 12)
+        if hasattr(self, "kpis") and hasattr(self, "kpi_cards"):
+            kpi_columns = 5 if content_width >= 1500 else (4 if content_width >= 1200 else 3)
+            if kpi_columns != getattr(self, "_kpi_column_count", 0):
+                while self.kpis.count():
+                    self.kpis.takeAt(0)
+                for index, card in enumerate(self.kpi_cards):
+                    self.kpis.addWidget(card, index // kpi_columns, index % kpi_columns)
+                self._kpi_column_count = kpi_columns
+        if hasattr(self, "dashboard_grid") and hasattr(self, "dashboard_panels"):
+            dashboard_columns = 3 if content_width >= 1500 else (2 if content_width >= 1050 else 1)
+            if dashboard_columns != getattr(self, "_dashboard_column_count", 0):
+                while self.dashboard_grid.count():
+                    self.dashboard_grid.takeAt(0)
+                positions = {
+                    3: {"quick": (0, 0), "recent": (0, 1), "tasks": (0, 2),
+                        "attendance": (1, 0), "productivity": (1, 1, 1, 2)},
+                    2: {"quick": (0, 0), "recent": (0, 1), "tasks": (1, 0),
+                        "attendance": (1, 1), "productivity": (2, 0, 1, 2)},
+                    1: {"quick": (0, 0), "recent": (1, 0), "tasks": (2, 0),
+                        "attendance": (3, 0), "productivity": (4, 0)},
+                }[dashboard_columns]
+                for name, position in positions.items():
+                    self.dashboard_grid.addWidget(self.dashboard_panels[name], *position)
+                for column in range(3):
+                    self.dashboard_grid.setColumnStretch(column, 1 if column < dashboard_columns else 0)
+                self._dashboard_column_count = dashboard_columns
 
     def fit_sidebar_labels(self):
         if not hasattr(self, "sidebar"):
@@ -2451,7 +2631,7 @@ class MainWindow(QMainWindow):
         logo = QLabel()
         logo.setFixedSize(48, 48)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(40, 40))
+        logo.setPixmap(brand_mark_pixmap(40))
         header_row.addWidget(logo)
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
@@ -2819,8 +2999,10 @@ class MainWindow(QMainWindow):
 
         self._wrap_page_in_scroll(self.dashboard, root)
 
-        self.kpis = QHBoxLayout()
-        self.kpis.setSpacing(10)
+        self.kpis = QGridLayout()
+        self.kpis.setHorizontalSpacing(10)
+        self.kpis.setVerticalSpacing(10)
+        self.kpi_cards = []
         root.addLayout(self.kpis)
         self.kpi_labels = []
         specs = [
@@ -2843,7 +3025,7 @@ class MainWindow(QMainWindow):
             value.setProperty("metricValue", True)
             value.setToolTip(f"Current {heading.lower()} count")
             layout.addWidget(value, 1)
-            self.kpis.addWidget(card, 1)
+            self.kpi_cards.append(card)
             self.kpi_labels.append(value)
 
         grid = QGridLayout()
@@ -2932,6 +3114,15 @@ class MainWindow(QMainWindow):
         self.productivity_chart.setMinimumHeight(270)
         productivity_layout.setContentsMargins(14, 12, 14, 14)
         grid.addWidget(productivity, 1, 1, 1, 2)
+
+        self.dashboard_grid = grid
+        self.dashboard_panels = {
+            "quick": quick,
+            "recent": recent,
+            "tasks": tasks_box,
+            "attendance": attendance,
+            "productivity": productivity,
+        }
 
         self.productivity_table = QTableWidget(0, 7)
         self.productivity_table.setHorizontalHeaderLabels(["Employee", "Joined / tracking start", "Working days", "Present days", "Tasks", "Completed", "Score"])
@@ -3072,17 +3263,18 @@ class MainWindow(QMainWindow):
         att_header = self.att_table.horizontalHeader()
         att_header.setSectionResizeMode(QHeaderView.Interactive)
         att_header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        att_header.setMinimumSectionSize(82)
+        att_header.setMinimumSectionSize(90)
         # Inline editors must never exceed their cells. Use stable widths and
         # horizontal scrolling on laptop-sized windows instead of overlapping.
         att_header.setSectionResizeMode(QHeaderView.Interactive)
-        for col, width in enumerate((145, 112, 136, 118, 118, 90, 190)):
+        for col, width in enumerate((156, 120, 158, 126, 126, 96, 220)):
             self.att_table.setColumnWidth(col, width)
+        self.att_table.horizontalHeader().setStretchLastSection(True)
         self.att_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setMinimumHeight(230)
-        self.att_table.verticalHeader().setDefaultSectionSize(46)
+        self.att_table.verticalHeader().setDefaultSectionSize(54)
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
@@ -3214,6 +3406,21 @@ class MainWindow(QMainWindow):
             cb.stateChanged.connect(lambda _state: self.preview_report())
             self.eod_checks[key] = cb
         l.addWidget(self.eod_options_group)
+
+        self.business_data_group = QGroupBox("Optional business data — include these catalogs in the report")
+        business_data_layout = QHBoxLayout(self.business_data_group)
+        business_data_layout.setContentsMargins(12, 16, 12, 10)
+        business_data_layout.setSpacing(18)
+        self.business_report_checks = {
+            "business_products": QCheckBox("Product catalog and available stock"),
+            "business_services": QCheckBox("Service catalog"),
+        }
+        for checkbox in self.business_report_checks.values():
+            checkbox.setChecked(False)
+            checkbox.stateChanged.connect(lambda _state: self.preview_report())
+            business_data_layout.addWidget(checkbox)
+        business_data_layout.addStretch(1)
+        l.addWidget(self.business_data_group)
 
         self.report_scope.currentIndexChanged.connect(self._report_scope_changed)
         self.report_exclude_employee.currentIndexChanged.connect(lambda _value: self.preview_report())
@@ -3655,6 +3862,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "eod_options_group"):
             self.eod_options_group.setEnabled(not is_archived)
             self.eod_options_group.setVisible(True)
+        if hasattr(self, "business_data_group"):
+            self.business_data_group.setEnabled(not is_archived)
+            self.business_data_group.setVisible(True)
         if is_archived:
             self.report_summary.setPlainText("Historical archived PDF selected. Use Print Selected Report to print it, or Generate / Save to export a copy.")
         else:
@@ -3690,7 +3900,9 @@ class MainWindow(QMainWindow):
             "productivity_explanation": True, "productivity_tracking": True,
             "productivity_tasks": True,
         }
-        return {key: cb.isChecked() for key, cb in getattr(self, "eod_checks", {}).items()} or defaults
+        selected = {key: cb.isChecked() for key, cb in getattr(self, "eod_checks", {}).items()}
+        selected.update({key: cb.isChecked() for key, cb in getattr(self, "business_report_checks", {}).items()})
+        return selected or defaults
 
     def _report_scope_changed(self, *_args):
         if not hasattr(self, "report_scope") or not hasattr(self, "report_employee"):
@@ -4116,7 +4328,7 @@ class MainWindow(QMainWindow):
                 cell = QWidget()
                 cell.setObjectName("attendanceEditorCell")
                 cell_layout = QHBoxLayout(cell)
-                cell_layout.setContentsMargins(3, 3, 3, 3)
+                cell_layout.setContentsMargins(4, 4, 4, 4)
                 cell_layout.setSpacing(0)
                 cell_layout.addWidget(editor)
                 self.att_table.setCellWidget(r, column, cell)
@@ -4125,8 +4337,9 @@ class MainWindow(QMainWindow):
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
             status_combo.setMinimumWidth(0)
-            status_combo.setFixedHeight(32)
-            status_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            status_combo.setMinimumWidth(108)
+            status_combo.setFixedHeight(38)
+            status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
             status_combo.currentTextChanged.connect(
@@ -4143,8 +4356,8 @@ class MainWindow(QMainWindow):
             ):
                 editor = QLineEdit(str(value or ""))
                 editor.setMinimumWidth(0)
-                editor.setFixedHeight(32)
-                editor.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+                editor.setFixedHeight(38)
+                editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
                 editor.setToolTip(
                     "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")
@@ -4212,17 +4425,25 @@ class MainWindow(QMainWindow):
                 "SELECT attendance_status, check_in FROM attendance WHERE employee_id=? AND work_date=?",
                 (employee["id"], report_date),
             ).fetchone()
-            status = record["attendance_status"] if record and record["attendance_status"] else "Not checked"
+            status = str(record["attendance_status"] or "Unmarked").strip() if record else "Unmarked"
             check_in = record["check_in"] if record and record["check_in"] else "—"
-            if status.lower() == "present" or (record and record["check_in"]):
+            normalized_status = status.casefold()
+            has_check_in = bool(record and str(record["check_in"] or "").strip())
+            if normalized_status == "present" or (normalized_status == "unmarked" and has_check_in):
                 status = "Present"
                 present += 1
-                if record and record["check_in"]:
+                if has_check_in:
                     checked_in += 1
-            elif status.lower() == "absent":
+            elif normalized_status == "absent":
+                status = "Absent"
                 absent += 1
-            elif status.lower() == "leave":
+            elif normalized_status == "leave":
+                status = "Leave"
                 leave += 1
+            elif normalized_status in {"unmarked", "", "not checked"}:
+                status = "Not checked"
+            else:
+                status = task_status_label(status)
             attendance_rows.append((employee["name"], status, check_in))
         open_tasks = sum(1 for task in tasks if not is_explicitly_completed_task_status(task["status"])
                          and not is_cancelled_task_status(task["status"]))
@@ -4353,6 +4574,63 @@ class MainWindow(QMainWindow):
         if is_explicitly_completed_task_status(task["status"]):
             return "MISSING"
         return "Not provided"
+
+    def _selected_business_report_sections(self, options):
+        """Return only the optional product/service catalogs selected for export."""
+        sections = []
+        if options.get("business_products", False):
+            try:
+                products = self.db.conn.execute("SELECT * FROM bt_products ORDER BY name").fetchall()
+            except sqlite3.OperationalError:
+                products = []
+            rows = [
+                [
+                    str(product["name"] or "—"), str(product["sku"] or "—"),
+                    str(product["category"] or "—"), str(product["brand"] or "—"),
+                    str(product["base_unit"] or "—"), f"{available_stock(product):g}",
+                    f"{float(product['reorder_level'] or 0):g}",
+                    f"{float(product['selling_price'] or 0):.2f}",
+                ]
+                for product in products
+            ]
+            sections.append((
+                "PRODUCT CATALOG & STOCK",
+                ["Product", "SKU", "Category", "Brand", "Unit", "Available stock", "Reorder level", "Selling price"],
+                rows,
+            ))
+        if options.get("business_services", False):
+            try:
+                services = self.db.conn.execute("SELECT * FROM bt_services ORDER BY name").fetchall()
+            except sqlite3.OperationalError:
+                services = []
+            rows = [
+                [
+                    str(service["name"] or "—"), str(service["category"] or "—"),
+                    str(service["description"] or "—"), str(service["training_mode"] or "—"),
+                    str(service["service_unit"] or "—"), str(service["session_duration"] or 0),
+                    str(service["num_sessions"] or 0), str(service["plan_validity"] or 0),
+                    f"{float(service['standard_price'] or 0):.2f}",
+                    "Active" if bool(service["active"]) else "Inactive",
+                ]
+                for service in services
+            ]
+            sections.append((
+                "SERVICE CATALOG",
+                ["Service", "Category", "Description", "Training mode", "Unit", "Session minutes", "Sessions", "Validity days", "Standard price", "Status"],
+                rows,
+            ))
+        return sections
+
+    def _business_report_preview_lines(self, options):
+        lines = []
+        for title, headers, rows in self._selected_business_report_sections(options):
+            lines.extend([title, " | ".join(headers)])
+            if rows:
+                lines.extend(" | ".join(row) for row in rows)
+            else:
+                lines.append("No records available.")
+            lines.append("")
+        return lines
 
     def _report_employees(self, employee_id=None):
         # Exclusion is report-only: it never deletes or changes employee records.
@@ -4509,6 +4787,19 @@ class MainWindow(QMainWindow):
                     pending_titles=[t["title"] for t in tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"])]
                     doc.add_paragraph("PENDING",style="Heading 2")
                     doc.add_paragraph("; ".join(pending_titles) if pending_titles else "No",style="List Bullet")
+        for section_title, headers, rows in self._selected_business_report_sections(opts):
+            doc.add_heading(section_title, level=1)
+            table = doc.add_table(rows=1, cols=len(headers))
+            table.style = "Light Shading Accent 1"
+            for cell, heading in zip(table.rows[0].cells, headers):
+                cell.text = heading
+            if rows:
+                for values in rows:
+                    cells = table.add_row().cells
+                    for cell, value in zip(cells, values):
+                        cell.text = value
+            else:
+                doc.add_paragraph("No records available.")
         doc.save(path)
 
     def make_pdf(self, path, report_date, employee_id=None, report_type="Audit / EOD", eod_options=None):
@@ -4708,6 +4999,14 @@ class MainWindow(QMainWindow):
                     story.extend([Paragraph("PENDING", styles["RSSection"]), bullet("; ".join(pending_titles) if pending_titles else "No")])
                 story.extend([Spacer(1, 5), HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5)])
 
+        for section_title, headers, rows in self._selected_business_report_sections(opts):
+            story.append(Paragraph(escape(section_title), styles["RSSection"]))
+            if rows:
+                for values in rows:
+                    story.append(bullet(" | ".join(f"{header}: {value}" for header, value in zip(headers, values))))
+            else:
+                story.append(bullet("No records available."))
+
         def draw_page(canvas, doc_obj):
             canvas.saveState()
             page_width, page_height = A4
@@ -4828,6 +5127,14 @@ class MainWindow(QMainWindow):
                             insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))
                             row[insert_at:insert_at]=proof_cells
                         w.writerow(row)
+            for section_title, headers, rows in self._selected_business_report_sections(opts):
+                w.writerow([])
+                w.writerow([section_title])
+                w.writerow(headers)
+                if rows:
+                    w.writerows(rows)
+                else:
+                    w.writerow(["No records available."])
 
     def preview_report(self):
         if not hasattr(self,"report_summary"): return
@@ -4870,6 +5177,10 @@ class MainWindow(QMainWindow):
                 lines.append("")
             self.report_summary.setPlainText("\n".join(lines))
         else: self.report_summary.setPlainText(self.report_preview_text(d,eid))
+        business_lines = self._business_report_preview_lines(opts)
+        if business_lines:
+            report_lines = self.report_summary.toPlainText().rstrip()
+            self.report_summary.setPlainText("\n".join(filter(None, [report_lines, "\n".join(business_lines)])))
         self.db.log("Report previewed",f"type={kind}, date={d}, employee={eid or 'all'}")
 
     def generate_report(self):
@@ -5694,7 +6005,7 @@ def main():
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
     app.setFont(QFont("DejaVu Sans", 9))
-    app.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+    app.setWindowIcon(QIcon(brand_mark_pixmap(128)))
     try:
         db=Database()
         seed_initial_audit(db)
@@ -5740,7 +6051,7 @@ def main():
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
         info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
-    win=MainWindow(db, active_user); win.apply_theme(); win.show()
+    win=MainWindow(db, active_user); win.apply_theme(); win.showMaximized()
     if resume_user is not None and resume_tab < win.tabs.count():
         win.tabs.setCurrentIndex(resume_tab)
     return app.exec()
