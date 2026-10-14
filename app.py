@@ -9,9 +9,10 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QProgressDialog,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
-    QToolButton, QMenu, QSizePolicy, QFrame, QListView
+    QToolButton, QMenu, QSizePolicy, QFrame, QListView, QPrintPreviewDialog
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
+from PySide6.QtPrintSupport import QPrinter
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
@@ -2170,6 +2171,7 @@ class MainWindow(QMainWindow):
         }
         for label, slot, primary in [
             ("Preview Report", self.preview_report, False),
+            ("🖨️ Print Preview", self.open_print_preview, False),
             ("Generate / Save", self.generate_report, True),
             ("Print Selected Report", self.print_report, False),
             ("Open reports folder", self.open_export_folder, False),
@@ -3460,6 +3462,23 @@ class MainWindow(QMainWindow):
             lines.append("")
         return "\n".join(lines)
 
+    def open_print_preview(self):
+        """Open a real Qt print-preview dialog for the currently selected report."""
+        try:
+            if not hasattr(self, "report_summary"):
+                return info(self, "Open the Print Center and select a report first.")
+            self.preview_report()
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            dialog = QPrintPreviewDialog(printer, self)
+            dialog.setWindowTitle("Print Preview — Employee Audit Manager")
+            dialog.resize(1000, 720)
+            dialog.paintRequested.connect(
+                lambda active_printer: self.report_summary.document().print_(active_printer)
+            )
+            dialog.exec()
+        except Exception as ex:
+            error(self, f"Could not open print preview:\n{ex}")
+
     def print_report(self):
         archived_id = self.archived_report.currentData() if hasattr(self, "archived_report") else None
         if archived_id is not None:
@@ -3970,7 +3989,7 @@ QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; p
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
 QWidget#appPageSurface { background: transparent; color: #0F172A; }
-QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.88); color: #0F172A; border: 1px solid #64748B; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.97); color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
@@ -4105,7 +4124,7 @@ QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; p
 QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
 QWidget#appPageSurface { background: transparent; color: #F8FAFC; }
-QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.90); color: #F8FAFC; border: 1px solid #64748B; }
+QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.97); color: #F8FAFC; border: 1px solid #64748B; }
 QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
 QGroupBox::title { color: #CBD5E1; }
 QLabel { color: #E2E8F0; }
