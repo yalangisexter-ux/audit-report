@@ -96,7 +96,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'combobox-popup: 0' in source
     assert 'QComboBox QListView::item:selected' in source
     assert 'page.setObjectName("appPageSurface")' in source
-    assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)' in source
+    assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
     assert 'QWidget#homeContent, QWidget#pageContent { background: #F8FAFC' in source
     assert 'QWidget#homeContent, QWidget#pageContent { background: #111827' in source
     assert 'content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)' in source
