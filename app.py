@@ -209,9 +209,24 @@ class UpdateWorker(QObject):
             # Query the release list instead of trusting a single /latest response.
             # Ignore drafts, prereleases, malformed tags, and unpublished releases.
             releases_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases?per_page=100"
-            payload = json.loads(self.request_bytes(releases_url).decode("utf-8"))
-            if not isinstance(payload, list):
-                raise ValueError("GitHub returned an invalid releases response.")
+            latest_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
+            try:
+                payload = json.loads(self.request_bytes(releases_url).decode("utf-8"))
+                if not isinstance(payload, list):
+                    raise ValueError("GitHub returned an invalid releases response.")
+            except Exception as list_error:
+                # Some networks/proxies block paginated API endpoints or return
+                # transient errors. Retry via GitHub's stable latest-release endpoint.
+                try:
+                    latest_payload = json.loads(self.request_bytes(latest_url).decode("utf-8"))
+                    if not isinstance(latest_payload, dict):
+                        raise ValueError("GitHub returned an invalid latest-release response.")
+                    payload = [latest_payload]
+                except Exception as latest_error:
+                    raise RuntimeError(
+                        "GitHub update check failed using both release endpoints. "
+                        f"Releases API: {list_error}; latest API: {latest_error}"
+                    ) from latest_error
             stable_releases = []
             for candidate in payload:
                 if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
