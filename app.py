@@ -152,6 +152,22 @@ def release_version_tuple(version):
     return tuple(int(part) for part in parts)
 
 
+def verify_release_asset_bytes(data, asset, require_digest=True):
+    """Verify a downloaded release asset against GitHub's SHA-256 digest."""
+    digest = str((asset or {}).get("digest") or "").strip()
+    if not digest:
+        if require_digest:
+            raise ValueError("GitHub release asset has no SHA-256 digest; refusing an unverified installer.")
+        return False
+    algorithm, separator, expected = digest.partition(":")
+    if not separator or algorithm.lower() != "sha256" or len(expected) != 64:
+        raise ValueError("GitHub release asset has an invalid SHA-256 digest.")
+    actual = hashlib.sha256(data).hexdigest()
+    if not secrets.compare_digest(actual.lower(), expected.lower()):
+        raise ValueError("Installer checksum verification failed; the file may be incomplete or altered.")
+    return True
+
+
 class UpdateWorker(QObject):
     ready = Signal(str, str)
     current = Signal(str)
@@ -181,12 +197,16 @@ class UpdateWorker(QObject):
                 self.current.emit(self.current_version)
                 return
 
-            assets = {asset.get("name"): asset.get("browser_download_url", "")
+            assets = {asset.get("name"): asset
                       for asset in release.get("assets", [])}
             installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
-            installer_url = assets.get(installer_name, "")
+            installer_asset = assets.get(installer_name, {})
+            installer_url = installer_asset.get("browser_download_url", "")
             if not installer_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
                 raise ValueError("The latest release is missing a trusted installer.")
+            expected_digest = str(installer_asset.get("digest") or "")
+            if not expected_digest.startswith("sha256:"):
+                raise ValueError("The latest release has no SHA-256 installer checksum; update cancelled.")
 
             version_text = ".".join(str(part) for part in latest_parts)
             update_dir = APP_DIR / "updates" / version_text
@@ -198,12 +218,14 @@ class UpdateWorker(QObject):
                 with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
                     total_bytes = int(response.headers.get("Content-Length") or 0)
                     downloaded = 0
+                    digest = hashlib.sha256()
                     self.progress.emit(0, "Downloading update installer...")
                     while True:
                         chunk = response.read(256 * 1024)
                         if not chunk:
                             break
                         output.write(chunk)
+                        digest.update(chunk)
                         downloaded += len(chunk)
                         if total_bytes > 0:
                             percent = min(99, int(downloaded * 100 / total_bytes))
@@ -212,6 +234,9 @@ class UpdateWorker(QObject):
                             self.progress.emit(0, f"Downloading update installer... ({downloaded // 1024} KB)")
                 if partial_path.stat().st_size < 1000000:
                     raise ValueError("The downloaded installer is missing or incomplete.")
+                expected = expected_digest.partition(":")[2].lower()
+                if not secrets.compare_digest(digest.hexdigest().lower(), expected):
+                    raise ValueError("Installer checksum verification failed; the download was rejected.")
                 os.replace(partial_path, installer_path)
             except Exception:
                 partial_path.unlink(missing_ok=True)
@@ -3347,10 +3372,11 @@ class MainWindow(QMainWindow):
                 except ValueError:
                     continue
                 if version < release_version_tuple(APP_VERSION):
-                    assets = {item.get("name"): item.get("browser_download_url", "") for item in release.get("assets", [])}
-                    url = assets.get("RawStrengthEmployeeAuditManager-Setup.exe", "")
+                    assets = {item.get("name"): item for item in release.get("assets", [])}
+                    asset = assets.get("RawStrengthEmployeeAuditManager-Setup.exe", {})
+                    url = asset.get("browser_download_url", "")
                     if url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
-                        choices.append((tag, url))
+                        choices.append((tag, url, asset))
             progress.close()
             if not choices:
                 return error(self, "No previous published application version is available.")
@@ -3358,7 +3384,7 @@ class MainWindow(QMainWindow):
             selected, ok = QInputDialog.getItem(self, "Rollback application", "Choose a version. Database data will remain unchanged:", labels, 0, False)
             if not ok or not selected:
                 return
-            tag, url = choices[labels.index(selected)]
+            tag, url, installer_asset = choices[labels.index(selected)]
             version = ".".join(str(part) for part in release_version_tuple(tag))
             target_dir = APP_DIR / "updates" / version
             target_dir.mkdir(parents=True, exist_ok=True)
@@ -3372,8 +3398,10 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
             with urlopen(Request(url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"}), timeout=60) as response:
                 data = response.read()
-            if not data:
-                raise ValueError("Downloaded installer is empty.")
+            if len(data) < 1000000:
+                raise ValueError("Downloaded rollback installer is missing or incomplete.")
+            # Older releases may predate GitHub's digest metadata. Verify it whenever available.
+            verify_release_asset_bytes(data, installer_asset, require_digest=False)
             installer.write_bytes(data)
             progress.setLabelText("Starting silent rollback...")
             QApplication.processEvents()
