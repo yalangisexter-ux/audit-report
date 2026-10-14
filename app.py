@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QToolButton, QMenu, QSizePolicy, QFrame
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
-from PySide6.QtSvg import QSvgRenderer
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
@@ -1018,32 +1017,110 @@ class ProductivityChart(QWidget):
 
 
 
+class WallpaperPhotoLoader(QThread):
+    """Download a high-resolution wallpaper once, then keep it available offline."""
+    loaded = Signal(str, str)
+
+    def __init__(self, name, url, destination, parent=None):
+        super().__init__(parent)
+        self.name = name
+        self.url = url
+        self.destination = Path(destination)
+
+    def run(self):
+        saved_path = ""
+        try:
+            self.destination.parent.mkdir(parents=True, exist_ok=True)
+            if self.destination.is_file() and self.destination.stat().st_size > 30000:
+                saved_path = str(self.destination)
+            else:
+                request = Request(self.url, headers={"User-Agent": "EmployeeAuditManager/1.0 wallpaper-cache"})
+                with urlopen(request, timeout=18) as response:
+                    content_type = (response.headers.get("Content-Type") or "").lower()
+                    data = response.read(15 * 1024 * 1024 + 1)
+                if len(data) > 15 * 1024 * 1024:
+                    raise ValueError("Wallpaper image exceeds the 15 MB limit")
+                if not (data.startswith(b"\xff\xd8\xff") or data.startswith(b"\x89PNG\r\n\x1a\n")):
+                    raise ValueError("Wallpaper server did not return a valid JPEG or PNG")
+                temp_path = self.destination.with_suffix(".download")
+                temp_path.write_bytes(data)
+                temp_path.replace(self.destination)
+                saved_path = str(self.destination)
+        except Exception:
+            saved_path = ""
+        self.loaded.emit(self.name, saved_path)
+
+
 class AnimatedBackground(QWidget):
-    """Selectable, low-cost animated wallpaper behind the main application tabs."""
+    """High-resolution photographic wallpapers with gentle Ken Burns motion and particles."""
     STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Shiva", "Lord Shiva", "Love & Couples")
-    WALLPAPERS = {"Galaxy": "assets/wallpapers/galaxy.svg", "Milky Way": "assets/wallpapers/milky_way_waves.svg", "Milky Way Waves": "assets/wallpapers/milky_way_waves.svg", "Ocean Waves": "assets/wallpapers/ocean_waves.svg", "Shiva": "assets/wallpapers/lord_shiva.svg", "Lord Shiva": "assets/wallpapers/lord_shiva.svg", "Love & Couples": "assets/wallpapers/love_couples.svg"}
+    PHOTO_WALLPAPERS = {
+        "Galaxy": ("galaxy.jpg", "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Milky Way": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Milky Way Waves": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Ocean Waves": ("ocean_waves.jpg", "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Lord Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Love & Couples": ("love_couples.jpg", "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+    }
+
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
-        self.wallpaper_renderer = None
-        self._load_wallpaper_renderer()
-        self.particles = []
+        self.wallpaper_pixmap = QPixmap()
+        self.photo_loader = None
         self.phase = 0.0
+        self.particles = []
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_particles)
         self.timer.start(45)
         self.init_particles()
+        self._load_wallpaper_image()
 
-    def _load_wallpaper_renderer(self):
-        relative = self.WALLPAPERS.get(self.mode)
-        path = resource_path(relative) if relative else None
-        self.wallpaper_renderer = QSvgRenderer(path) if path and os.path.isfile(path) else None
+    def _wallpaper_cache_path(self, filename):
+        local_root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+        return local_root / "EmployeeAuditManager" / "wallpapers" / filename
+
+    def _load_wallpaper_image(self):
+        entry = self.PHOTO_WALLPAPERS.get(self.mode)
+        if not entry:
+            self.wallpaper_pixmap = QPixmap()
+            self.update()
+            return
+        filename, url = entry
+        cached_path = self._wallpaper_cache_path(filename)
+        if cached_path.is_file() and cached_path.stat().st_size > 30000:
+            pixmap = QPixmap(str(cached_path))
+            if not pixmap.isNull():
+                self.wallpaper_pixmap = pixmap
+                self.update()
+                return
+        self.wallpaper_pixmap = QPixmap()
+        if self.photo_loader is None:
+            self.photo_loader = WallpaperPhotoLoader(self.mode, url, cached_path, self)
+            self.photo_loader.loaded.connect(self._on_wallpaper_loaded)
+            self.photo_loader.finished.connect(self._on_wallpaper_loader_finished)
+            self.photo_loader.start()
+        self.update()
+
+    def _on_wallpaper_loaded(self, name, path):
+        if path and name == self.mode:
+            pixmap = QPixmap(path)
+            if not pixmap.isNull():
+                self.wallpaper_pixmap = pixmap
+        self.update()
+
+    def _on_wallpaper_loader_finished(self):
+        self.photo_loader = None
+        entry = self.PHOTO_WALLPAPERS.get(self.mode)
+        if entry and self.wallpaper_pixmap.isNull():
+            QTimer.singleShot(0, self._load_wallpaper_image)
 
     def set_mode(self, mode):
         self.mode = mode if mode in self.STYLES else "Ambient Glow"
-        self._load_wallpaper_renderer()
         self.init_particles()
+        self._load_wallpaper_image()
         self.update()
 
     def init_particles(self):
@@ -1090,54 +1167,37 @@ class AnimatedBackground(QWidget):
             base.setColorAt(0.52, QColor("#0B1020"))
             base.setColorAt(1.0, QColor("#100A1D"))
         painter.fillRect(rect, base)
-        # Restore bundled vector wallpaper art; images work offline and animate with particles.
-        if self.wallpaper_renderer and self.wallpaper_renderer.isValid():
-            painter.save()
-            self.wallpaper_renderer.render(painter, QRectF(rect))
-            painter.restore()
-            veil = QLinearGradient(0, 0, 0, h)
-            veil.setColorAt(0.0, QColor(4, 8, 20, 8 if not is_day else 3))
-            veil.setColorAt(1.0, QColor(4, 8, 20, 22 if not is_day else 6))
-            painter.fillRect(rect, veil)
-        # Painter-generated scenes remain as fallback if bundled artwork is unavailable.
-        if self.mode in ("Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Shiva", "Lord Shiva", "Love & Couples") and not (self.wallpaper_renderer and self.wallpaper_renderer.isValid()):
-            import math
-            if self.mode in ("Galaxy", "Milky Way"):
-                for i in range(180):
-                    x = (i * 7919 % max(w, 1))
-                    y = (i * 3571 % max(h, 1))
-                    radius = 1 + (i % 3)
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.setBrush(QColor(255, 255, 255, 100 + (i % 150)))
-                    painter.drawEllipse(x, y, radius, radius)
-                painter.setPen(QPen(QColor(139, 92, 246, 85), 18))
-                for band in range(5):
-                    painter.drawArc(int(w*.12), int(h*.08+band*15), int(w*.8), int(h*.8), 0, 210*16)
-            elif self.mode == "Ocean Waves":
-                for band, color in enumerate(("#38BDF8", "#0EA5E9", "#0F766E", "#67E8F9")):
-                    painter.setPen(QPen(QColor(color), 5 + band))
-                    path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
-                    for x in range(0, w + 8, 8):
-                        y = int(h * (.45 + band * .095) + math.sin(x * .012 + self.phase + band) * (18 + band*7))
-                        if x == 0: path.moveTo(x, y)
-                        else: path.lineTo(x, y)
-                    painter.drawPath(path)
-            elif self.mode == "Love & Couples":
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor(244, 114, 182, 100))
-                painter.drawEllipse(int(w*.2), int(h*.12), int(min(w,h)*.65), int(min(w,h)*.65))
-                painter.setPen(QPen(QColor(190, 24, 93, 170), max(3, int(min(w,h)*.006))))
-                painter.drawArc(int(w*.35), int(h*.22), int(w*.3), int(h*.3), 0, 180*16)
-                painter.drawArc(int(w*.42), int(h*.25), int(w*.16), int(h*.22), 0, -180*16)
+
+        # Real photographic wallpapers use a slow Ken Burns pan/zoom, not vector clipart.
+        if not self.wallpaper_pixmap.isNull():
+            image_w, image_h = self.wallpaper_pixmap.width(), self.wallpaper_pixmap.height()
+            target_ratio = w / max(h, 1)
+            image_ratio = image_w / max(image_h, 1)
+            if image_ratio > target_ratio:
+                crop_h = float(image_h)
+                crop_w = crop_h * target_ratio
+                max_x = max(0.0, image_w - crop_w)
+                source_x = max_x * (0.5 + 0.20 * math.sin(self.phase * 0.45))
+                source = QRectF(source_x, 0, crop_w, crop_h)
             else:
-                # Stylized meditative silhouette motif for the Shiva wallpaper.
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor(99, 102, 241, 95))
-                painter.drawEllipse(int(w*.38), int(h*.12), int(w*.24), int(h*.24))
-                painter.setBrush(QColor(30, 41, 59, 180))
-                painter.drawEllipse(int(w*.34), int(h*.32), int(w*.32), int(h*.48))
-                painter.setPen(QPen(QColor(56, 189, 248, 180), 3))
-                painter.drawLine(int(w*.5), int(h*.08), int(w*.5), int(h*.88))
+                crop_w = float(image_w)
+                crop_h = crop_w / max(target_ratio, 0.01)
+                max_y = max(0.0, image_h - crop_h)
+                source_y = max_y * (0.5 + 0.20 * math.sin(self.phase * 0.45))
+                source = QRectF(0, source_y, crop_w, crop_h)
+            zoom = 1.035 + 0.012 * math.sin(self.phase * 0.35)
+            center_x, center_y = source.center().x(), source.center().y()
+            source.setWidth(source.width() / zoom)
+            source.setHeight(source.height() / zoom)
+            source.moveCenter(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(center_x, center_y))
+            painter.drawPixmap(QRectF(rect), self.wallpaper_pixmap, source)
+
+            # A gentle dark tint preserves readability without hiding the photograph.
+            veil = QLinearGradient(0, 0, 0, h)
+            veil.setColorAt(0.0, QColor(3, 7, 18, 52 if not is_day else 22))
+            veil.setColorAt(1.0, QColor(3, 7, 18, 92 if not is_day else 40))
+            painter.fillRect(rect, veil)
+
         if self.mode in ("Ambient Glow", "Aurora Waves"):
             colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
             for i, color in enumerate(colors):
