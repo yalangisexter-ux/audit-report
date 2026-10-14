@@ -5148,7 +5148,7 @@ class MainWindow(QMainWindow):
                             # short labels as clickable links.
                             proof_cells=[]
                             for url in links[:max_proof_links]:
-                                proof_cells.append(csv_hyperlink_formula(url, "Tap here to view content"))
+                                proof_cells.append(csv_hyperlink_formula(url, url if t and bool(t["expose_link"]) else "Tap here to view content"))
                             if not proof_cells: proof_cells=["N/A"]
                             proof_cells += [""] * (max_proof_links-len(proof_cells))
                             insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))
