@@ -1404,9 +1404,9 @@ class AnimatedBackground(QWidget):
                 # as competing detail behind text and controls.
                 # One gentle wash only. A second near-opaque wash used to
                 # completely hide the photo on Day mode.
-                fade = 30 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
-                veil.setColorAt(0.0, QColor(255, 255, 255, max(24, fade - 3)))
-                veil.setColorAt(1.0, QColor(255, 255, 255, min(38, fade + 3)))
+                fade = 22 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(18, fade - 3)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(30, fade + 3)))
             else:
                 veil.setColorAt(0.0, QColor(3, 7, 18, 52))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 92))
@@ -1462,8 +1462,8 @@ class AnimatedBackground(QWidget):
             final_veil = QLinearGradient(0, 0, 0, h)
             # Leave the selected animated wallpaper visible as a very light
             # watermark while keeping foreground controls high contrast.
-            final_veil.setColorAt(0.0, QColor(255, 255, 255, 202))
-            final_veil.setColorAt(1.0, QColor(255, 255, 255, 218))
+            final_veil.setColorAt(0.0, QColor(255, 255, 255, 172))
+            final_veil.setColorAt(1.0, QColor(255, 255, 255, 188))
             painter.fillRect(rect, final_veil)
         painter.end()
 
