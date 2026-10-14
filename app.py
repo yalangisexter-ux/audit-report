@@ -1466,12 +1466,32 @@ class MainWindow(QMainWindow):
         self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow")
         self.bg_anim.setObjectName("animatedBg")
 
-        # Central content
+        # Main shell: collapsible glass sidebar + existing content pages.
         central = QWidget()
-        central_layout = QVBoxLayout(central)
+        central_layout = QHBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
-        central_layout.addWidget(self.title_bar)
+
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("navigationSidebar")
+        self.sidebar.setFixedWidth(224)
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setContentsMargins(10, 12, 10, 12)
+        self.sidebar_layout.setSpacing(7)
+        self.sidebar_toggle = QPushButton("☰  Collapse menu")
+        self.sidebar_toggle.setObjectName("sidebarToggle")
+        self.sidebar_toggle.setToolTip("Collapse or expand navigation")
+        self.sidebar_toggle.setMinimumHeight(38)
+        self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
+        self.sidebar_layout.addWidget(self.sidebar_toggle)
+        self.sidebar_layout.addWidget(self.header_prev)
+
+        self.main_content = QWidget()
+        self.main_content.setObjectName("mainContentSurface")
+        main_content_layout = QVBoxLayout(self.main_content)
+        main_content_layout.setContentsMargins(0, 0, 0, 0)
+        main_content_layout.setSpacing(0)
+        main_content_layout.addWidget(self.title_bar)
         self.title_bar.raise_()
 
         self.tabs = QTabWidget()
@@ -1481,11 +1501,12 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(False)
         self.tabs.setDocumentMode(True)
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setUsesScrollButtons(False)
         self.tabs.tabBar().setExpanding(False)
-        self.tabs.setCornerWidget(self.header_prev, Qt.Corner.TopLeftCorner)
-        self.tabs.setCornerWidget(self.header_next, Qt.Corner.TopRightCorner)
-        central_layout.addWidget(self.tabs)
+        self.tabs.tabBar().hide()
+        main_content_layout.addWidget(self.tabs)
+        central_layout.addWidget(self.sidebar)
+        central_layout.addWidget(self.main_content, 1)
         central.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         central.setAutoFillBackground(False)
         self.setCentralWidget(central)
@@ -1508,8 +1529,19 @@ class MainWindow(QMainWindow):
             (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
             (self.business_tab, "💼  Business Tracking"), (self.settings_tab, "⚙️  Settings & Backup"),
         ]
-        for widget, title in tab_items:
+        self.sidebar_buttons = []
+        for index, (widget, title) in enumerate(tab_items):
             self.tabs.addTab(widget, title)
+            button = QPushButton(title)
+            button.setObjectName("sidebarNavButton")
+            button.setCheckable(True)
+            button.setMinimumHeight(42)
+            button.setToolTip(title)
+            button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
+            self.sidebar_layout.addWidget(button)
+            self.sidebar_buttons.append((button, title))
+        self.sidebar_layout.addStretch(1)
+        self.sidebar_layout.addWidget(self.header_next)
         self.header_section_menu = QMenu(self.header_logo_menu)
         self.header_section_menu.setObjectName("headerSectionMenu")
         for index, (_, title) in enumerate(tab_items):
@@ -1521,6 +1553,8 @@ class MainWindow(QMainWindow):
         self._tab_animation = None
         self._animated_page = None
         self.tabs.currentChanged.connect(self.animate_tab_transition)
+        self.tabs.currentChanged.connect(self.sync_sidebar_selection)
+        self.sync_sidebar_selection(self.tabs.currentIndex())
         self.header_prev.clicked.connect(lambda: self.tabs.setCurrentIndex(max(0, self.tabs.currentIndex() - 1)))
         self.header_next.clicked.connect(lambda: self.tabs.setCurrentIndex(min(self.tabs.count() - 1, self.tabs.currentIndex() + 1)))
         self._header_clock_timer = QTimer(self)
@@ -1539,10 +1573,34 @@ class MainWindow(QMainWindow):
         if hasattr(self, "header_clock"):
             self.header_clock.setText(datetime.now().strftime("%a, %d %b  %I:%M:%S %p"))
 
-     def apply_global_control_polish(self):
+    def toggle_sidebar(self):
+        collapsed = self.sidebar.width() > 100
+        self.sidebar.setFixedWidth(76 if collapsed else 224)
+        self.sidebar_toggle.setText("☰" if collapsed else "☰  Collapse menu")
+        self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
+        for button, title in getattr(self, "sidebar_buttons", []):
+            button.setText(title.split("  ", 1)[0] if collapsed else title)
+            button.setToolTip(title)
+
+    def sync_sidebar_selection(self, index):
+        for i, (button, title) in enumerate(getattr(self, "sidebar_buttons", [])):
+            button.setChecked(i == index)
+
+    def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         if "QWidget#headerClock" not in self.styleSheet():
             self.setStyleSheet(self.styleSheet() + """
+            QWidget#navigationSidebar { background: rgba(15, 23, 42, 218); border-right: 1px solid rgba(167, 139, 250, 125); }
+            QWidget#mainContentSurface { background: transparent; }
+            QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
+                border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
+            QPushButton#sidebarToggle:hover { background: rgba(8, 145, 178, 220); border-color: #67E8F9; }
+            QPushButton#sidebarNavButton { background: rgba(255, 255, 255, 18); color: #E2E8F0;
+                border: 1px solid rgba(148, 163, 184, 45); border-radius: 11px;
+                font-size: 10pt; font-weight: 600; text-align: left; padding: 8px 10px; }
+            QPushButton#sidebarNavButton:hover { background: rgba(139, 92, 246, 105); color: #FFFFFF; border-color: rgba(196, 181, 253, 180); }
+            QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
+                color: #FFFFFF; border: 1px solid #C4B5FD; }
             QWidget#headerClock { background: #0F172A; color: #F8FAFC; border: 1px solid #475569;
                 border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
             QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
