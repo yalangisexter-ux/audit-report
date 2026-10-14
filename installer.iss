@@ -1,7 +1,7 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
 #define AppVersionEnv GetEnv("APP_VERSION")
 #if AppVersionEnv == ""
-	#define MyAppVersion "1.2.56"
+	#define MyAppVersion "1.2.57"
 #else
 	#define MyAppVersion AppVersionEnv
 #endif
