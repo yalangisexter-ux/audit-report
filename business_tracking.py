@@ -465,8 +465,20 @@ class BusinessTrackingTab(QWidget):
         form = QFormLayout(d)
         name = QLineEdit()
         contact = QLineEdit()
+        service = QComboBox()
+        service.addItem("Select service", None)
+        for svc in self.db.conn.execute("SELECT id, name, training_mode FROM bt_services WHERE active=1 ORDER BY name").fetchall():
+            service.addItem(f"{svc['name']} ({svc['training_mode']})", svc["id"])
+        mode = QComboBox()
+        mode.addItems(["Offline", "Online", "Hybrid"])
+        sessions = QSpinBox()
+        sessions.setRange(0, 10000)
+        sessions.setValue(0)
         form.addRow("Name *", name)
         form.addRow("Contact", contact)
+        form.addRow("Service", service)
+        form.addRow("Training mode", mode)
+        form.addRow("Sessions purchased", sessions)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
@@ -475,8 +487,8 @@ class BusinessTrackingTab(QWidget):
             return
         try:
             self.db.conn.execute(
-                "INSERT INTO bt_members(name,contact) VALUES(?,?)",
-                (name.text().strip(), contact.text().strip()),
+                "INSERT INTO bt_members(name,contact,service_id,training_mode,sessions_purchased,registration_date,status) VALUES(?,?,?,?,?,?,?)",
+                (name.text().strip(), contact.text().strip(), service.currentData(), mode.currentText(), sessions.value(), datetime.now().strftime("%Y-%m-%d"), "Active"),
             )
             self.db.conn.commit()
         except sqlite3.Error as ex:
@@ -495,10 +507,13 @@ class BusinessTrackingTab(QWidget):
         task_type = QComboBox()
         task_type.addItems(["Picking", "Packing", "QC", "Dispatch", "Training", "Attendance", "other"])
         qty = QLineEdit("0")
+        status = QComboBox()
+        status.addItems(["Pending", "In Progress", "Completed", "Blocked", "Cancelled"])
         remarks = QLineEdit()
         form.addRow("Employee *", emp)
         form.addRow("Task type", task_type)
         form.addRow("Quantity", qty)
+        form.addRow("Status", status)
         form.addRow("Remarks", remarks)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(d.accept)
@@ -512,8 +527,9 @@ class BusinessTrackingTab(QWidget):
             return
         try:
             self.db.conn.execute(
-                "INSERT INTO bt_activities(employee_id,task_type,quantity,remarks,created_at) VALUES(?,?,?,?,?)",
-                (emp.currentData(), task_type.currentText(), quantity, remarks.text().strip(), now_text()),
+                "INSERT INTO bt_activities(employee_id,task_type,quantity,remarks,start_time,task_status,created_at) VALUES(?,?,?,?,?,?,?)",
+                (emp.currentData(), task_type.currentText(), quantity, remarks.text().strip(),
+                 now_text() if status.currentText() == "In Progress" else "", status.currentText(), now_text()),
             )
             self.db.conn.commit()
         except sqlite3.Error as ex:
