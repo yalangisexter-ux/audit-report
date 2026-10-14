@@ -97,7 +97,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert "homeWallpaperDropdown" in source
     assert 'icon_label = QLabel(symbol)' in source
     assert 'QPixmap' in source
-    assert 'QWidget#appPageSurface { background: transparent; color: #0F172A; }' in source
+    assert 'QWidget#appPageSurface { background: rgba(255, 255, 255, 238); color: #0F172A; }' in source
     assert 'QWidget#appPageSurface { background: transparent; color: #F8FAFC; }' in source
     assert 'background-color: #F8FAFC' in source
     assert 'background-color: #111827' in source
@@ -109,6 +109,12 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QWidget#homeContent, QWidget#pageContent { background-color: #111827' in source
     assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
     assert 'QComboBox QAbstractItemView::item:selected' in source
+    assert 'self.header_logo_menu.hide()' in source
+    assert 'mode == "Shiva"' in source
+    assert '"Lord Shiva": ("lord_shiva.jpg"' in source
+    assert '"Shiva": ("lord_shiva.jpg"' not in source
+    assert 'fade = 210 +' in source
+    assert 'QListView::item:selected { background: #6D28D9; color: #FFFFFF; }' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
     assert 'QPrintPreviewDialog' in source
