@@ -2,7 +2,7 @@ import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets,
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QDate, QTime, QEasingCurve, QPropertyAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -1410,9 +1410,14 @@ class MainWindow(QMainWindow):
         title_layout.setContentsMargins(10, 0, 12, 0)
         title_layout.setSpacing(8)
 
-        title_icon = QLabel()
-        title_icon.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(18, 18))
-        title_layout.addWidget(title_icon)
+        self.header_logo_menu = QToolButton()
+        self.header_logo_menu.setObjectName("headerLogoMenu")
+        self.header_logo_menu.setIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        self.header_logo_menu.setIconSize(QSize(22, 22))
+        self.header_logo_menu.setFixedSize(36, 32)
+        self.header_logo_menu.setToolTip("Open section menu")
+        self.header_logo_menu.setAccessibleName("Application menu")
+        title_layout.addWidget(self.header_logo_menu)
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("titleLabel")
         self.title_label.setMinimumWidth(0)
@@ -1428,21 +1433,12 @@ class MainWindow(QMainWindow):
         self.header_prev = QPushButton("‹")
         self.header_prev.setObjectName("headerNavButton")
         self.header_prev.setToolTip("Previous page")
-        self.header_prev.setFixedSize(34, 28)
-        title_layout.addWidget(self.header_prev)
+        self.header_prev.setFixedSize(36, 32)
         self.header_next = QPushButton("›")
         self.header_next.setObjectName("headerNavButton")
         self.header_next.setToolTip("Next page")
-        self.header_next.setFixedSize(34, 28)
-        title_layout.addWidget(self.header_next)
-        self.header_nav = QComboBox()
-        self.header_nav.setObjectName("headerNavigation")
-        self.header_nav.setMinimumWidth(155)
-        self.header_nav.setMaximumWidth(210)
-        self.header_nav.setToolTip("Jump to a section")
-        title_layout.addWidget(self.header_nav)
-
-        btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
+        self.header_next.setFixedSize(36, 32)
+         btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
         close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
 
         self.btn_min = QPushButton("—")
@@ -1487,6 +1483,8 @@ class MainWindow(QMainWindow):
         self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.tabs.setUsesScrollButtons(True)
         self.tabs.tabBar().setExpanding(False)
+        self.tabs.setCornerWidget(self.header_prev, Qt.Corner.TopLeftCorner)
+        self.tabs.setCornerWidget(self.header_next, Qt.Corner.TopRightCorner)
         central_layout.addWidget(self.tabs)
         central.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         central.setAutoFillBackground(False)
@@ -1503,17 +1501,28 @@ class MainWindow(QMainWindow):
             page.setAutoFillBackground(False)
             page.setObjectName("appPageSurface")
         self.business_tab = BusinessTrackingTab(self.db)
-        tab_items = [(self.home_tab,"⌂  Home"),(self.dashboard,"▦  Dashboard"),(self.employees_tab,"♙  Employees"),(self.tasks_tab,"✓  Task Manager"),(self.tracker_tab,"◷  Employee Tracker"),(self.attendance_tab,"◉  Attendance"),(self.reports_tab,"▤  Print Center"),(self.archive_tab,"▣  EOD Archive"),(self.business_tab,"◈  Business Tracking"),(self.settings_tab,"⚙  Settings & Backup")]
+        tab_items = [
+            (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
+            (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
+            (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
+            (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
+            (self.business_tab, "💼  Business Tracking"), (self.settings_tab, "⚙️  Settings & Backup"),
+        ]
         for widget, title in tab_items:
             self.tabs.addTab(widget, title)
+        self.header_section_menu = QMenu(self.header_logo_menu)
+        self.header_section_menu.setObjectName("headerSectionMenu")
+        for index, (_, title) in enumerate(tab_items):
+            action = QAction(title, self.header_section_menu)
+            action.triggered.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
+            self.header_section_menu.addAction(action)
+        self.header_logo_menu.setMenu(self.header_section_menu)
+        self.header_logo_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._tab_animation = None
         self._animated_page = None
         self.tabs.currentChanged.connect(self.animate_tab_transition)
         self.header_prev.clicked.connect(lambda: self.tabs.setCurrentIndex(max(0, self.tabs.currentIndex() - 1)))
         self.header_next.clicked.connect(lambda: self.tabs.setCurrentIndex(min(self.tabs.count() - 1, self.tabs.currentIndex() + 1)))
-        self.header_nav.addItems([self.tabs.tabText(i) for i in range(self.tabs.count())])
-        self.header_nav.currentIndexChanged.connect(self._navigate_from_header)
-        self.tabs.currentChanged.connect(self._sync_header_navigation)
         self._header_clock_timer = QTimer(self)
         self._header_clock_timer.timeout.connect(self.refresh_header_clock)
         self._header_clock_timer.start(1000)
@@ -1530,27 +1539,22 @@ class MainWindow(QMainWindow):
         if hasattr(self, "header_clock"):
             self.header_clock.setText(datetime.now().strftime("%a, %d %b  %I:%M:%S %p"))
 
-    def _navigate_from_header(self, index):
-        if hasattr(self, "tabs") and 0 <= index < self.tabs.count() and self.tabs.currentIndex() != index:
-            self.tabs.setCurrentIndex(index)
-
-    def _sync_header_navigation(self, index):
-        if hasattr(self, "header_nav") and self.header_nav.currentIndex() != index:
-            self.header_nav.blockSignals(True)
-            self.header_nav.setCurrentIndex(index)
-            self.header_nav.blockSignals(False)
-
-    def apply_global_control_polish(self):
+     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         if "QWidget#headerClock" not in self.styleSheet():
             self.setStyleSheet(self.styleSheet() + """
             QWidget#headerClock { background: #0F172A; color: #F8FAFC; border: 1px solid #475569;
                 border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
-            QPushButton#headerNavButton { background: #334155; color: #F8FAFC; border: 1px solid #64748B;
-                border-radius: 9px; font-size: 17pt; font-weight: 700; padding: 0; }
-            QPushButton#headerNavButton:hover { background: #7C5CFC; color: #FFFFFF; }
-            QComboBox#headerNavigation { min-height: 28px; max-height: 32px; padding: 3px 28px 3px 9px;
-                border-radius: 9px; }
+            QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
+                border-radius: 10px; font-size: 18pt; font-weight: 800; padding: 0;
+                min-width: 34px; max-width: 36px; min-height: 28px; max-height: 32px; margin: 2px; }
+            QPushButton#headerNavButton:hover { background: #0891B2; border-color: #67E8F9; color: #FFFFFF; }
+            QToolButton#headerLogoMenu { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #6D28D9,stop:1 #DB2777);
+                border: 1px solid #C4B5FD; border-radius: 10px; padding: 3px; }
+            QToolButton#headerLogoMenu:hover { background: #0891B2; border-color: #67E8F9; }
+            QMenu#headerSectionMenu { background: #111827; color: #F8FAFC; border: 1px solid #64748B; padding: 5px; }
+            QMenu#headerSectionMenu::item { padding: 8px 18px; border-radius: 6px; }
+            QMenu#headerSectionMenu::item:selected { background: #6D28D9; color: #FFFFFF; }
             QComboBox QAbstractItemView, QComboBox QListView {
                 background-color: #111827; color: #F8FAFC; border: 1px solid #64748B;
                 selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0;
