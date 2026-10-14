@@ -94,3 +94,18 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QWidget#sessionStrip { background: rgba(11,18,32,0.94)' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'background: rgba(248,250,252,0.96)' in source
+
+
+def test_live_wallpapers_use_high_resolution_photos_with_animation():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+    assert "class WallpaperPhotoLoader(QThread)" in source
+    assert "PHOTO_WALLPAPERS" in source
+    assert "images.unsplash.com/photo-1707057538849-f723c167324b" in source
+    assert "images.unsplash.com/photo-1429305223369-4d065fdb6f53" in source
+    assert "images.unsplash.com/photo-1533743725296-2e099eed32c6" in source
+    assert "wallpaper_pixmap" in source
+    assert "zoom = 1.035 + 0.012 * math.sin(self.phase * 0.35)" in source
+    assert "Real photographic wallpapers use a slow Ken Burns pan/zoom" in source
+    assert "QSvgRenderer" not in source
