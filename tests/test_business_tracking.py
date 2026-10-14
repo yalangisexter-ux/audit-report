@@ -71,7 +71,7 @@ def test_parse_quantity_rejects_invalid():
     qt = sys.modules['PySide6.QtWidgets']
     for cls in ['QWidget', 'QVBoxLayout', 'QHBoxLayout', 'QTabWidget', 'QLabel', 'QPushButton',
                 'QTableWidget', 'QTableWidgetItem', 'QLineEdit', 'QComboBox', 'QFormLayout',
-                'QDialog', 'QDialogButtonBox', 'QGroupBox', 'QHeaderView', 'QAbstractItemView', 'QMessageBox']:
+                'QDialog', 'QDialogButtonBox', 'QGroupBox', 'QHeaderView', 'QAbstractItemView', 'QMessageBox', 'QInputDialog']:
         setattr(qt, cls, type(cls, (), {}))
     sys.modules['PySide6.QtCore'].Qt = type('Qt', (), {})()
     import business_tracking
