@@ -2782,7 +2782,9 @@ class MainWindow(QMainWindow):
         eid=self.selected_id(self.emp_table)
         if not eid: return error(self,"Select an employee first.")
         e=self.db.employee(eid)
-        if not ask(self,"Delete employee",f'Delete {e["name"]} and permanently remove their tasks and attendance? This cannot be undone. Create a backup first if needed.'): return
+        if not ask(self,"Delete employee",f'Delete {e["name"]} and permanently remove their tasks and attendance? A safety backup will be created first. This cannot be undone.'): return
+        if not self.backup_db(silent=True):
+            return error(self, "Safety backup failed. Employee deletion was cancelled.")
         self.db.conn.execute("DELETE FROM tasks WHERE employee_id=?",(eid,))
         self.db.conn.execute("DELETE FROM attendance WHERE employee_id=?",(eid,))
         self.db.conn.execute("DELETE FROM employees WHERE id=?",(eid,)); self.db.conn.commit()
