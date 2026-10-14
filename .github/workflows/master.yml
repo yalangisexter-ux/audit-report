@@ -85,3 +85,6 @@ jobs:
           generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           fail_on_unmatched_files: true
+          # Prefer a repository-configured PAT when the default Actions token is
+          # restricted from creating releases by repository/organization policy.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
