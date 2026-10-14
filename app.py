@@ -745,11 +745,35 @@ class Database:
 def ask(parent, title, message):
     return QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
 
+def _show_message(parent, message, icon):
+    """Show readable, word-wrapped app messages without clipped native dialogs."""
+    box = QMessageBox(parent)
+    box.setWindowTitle(APP_NAME)
+    box.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+    box.setIcon(icon)
+    box.setText(str(message))
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    box.setMinimumWidth(500)
+    box.setStyleSheet("""
+        QMessageBox { background: #FFFFFF; color: #0F172A; }
+        QLabel#qt_msgbox_label { min-width: 440px; max-width: 680px; color: #0F172A;
+            background: transparent; padding: 8px; }
+        QPushButton { min-width: 84px; min-height: 30px; padding: 4px 12px; }
+    """)
+    label = box.findChild(QLabel, "qt_msgbox_label")
+    if label is not None:
+        label.setWordWrap(True)
+        label.setMinimumWidth(440)
+        label.setMaximumWidth(680)
+    box.adjustSize()
+    box.exec()
+
 def info(parent, message):
-    QMessageBox.information(parent, APP_NAME, message)
+    _show_message(parent, message, QMessageBox.Icon.Information)
 
 def error(parent, message):
-    QMessageBox.critical(parent, APP_NAME, message)
+    _show_message(parent, message, QMessageBox.Icon.Critical)
 
 SECURITY_QUESTIONS = [
     "What was the name of your first school?",
@@ -1475,8 +1499,7 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
-        # The live clock is shown only inside the shared branded banner, not twice.
-        self.header_clock.hide()
+        # The clock belongs to the shared branded banner, not the top title strip.
         self.header_prev = QPushButton("‹")
         self.header_prev.setObjectName("headerNavButton")
         self.header_prev.setToolTip("Previous page")
@@ -1568,6 +1591,7 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumHeight(42)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         brand_layout.addWidget(self.header_clock)
+        self.header_clock.show()
         main_content_layout.addWidget(self.brand_banner)
 
         self.tabs = QTabWidget()
@@ -2048,30 +2072,6 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(22, 18, 22, 18)
         content_layout.setSpacing(16)
 
-        welcome = QWidget()
-        welcome.setObjectName("welcomeHero")
-        welcome_layout = QHBoxLayout(welcome)
-        welcome_layout.setContentsMargins(18, 14, 18, 14)
-        welcome_layout.setSpacing(14)
-        brand_mark = QLabel()
-        brand_mark.setObjectName("welcomeMark")
-        brand_mark.setFixedSize(80, 80)
-        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
-        welcome_layout.addWidget(brand_mark)
-        welcome_copy = QVBoxLayout()
-        welcome_title = QLabel(f"Welcome, {self.current_user.get('display_name') or self.current_user.get('username')}")
-        welcome_title.setProperty("welcomeTitle", True)
-        welcome_title.setWordWrap(True)
-        welcome_title.setMinimumWidth(0)
-        welcome_copy.addWidget(welcome_title)
-        welcome_subtitle = QLabel("Raw Strength Calisthenics · Employee Audit Manager")
-        welcome_subtitle.setProperty("welcomeSubtitle", True)
-        welcome_subtitle.setWordWrap(True)
-        welcome_subtitle.setMinimumWidth(0)
-        welcome_copy.addWidget(welcome_subtitle)
-        welcome_layout.addLayout(welcome_copy, 1)
-
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
         session_layout = QGridLayout(session_strip)
@@ -2187,7 +2187,7 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(guide_grid)
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
-        page_layout.addWidget(welcome)
+        # The shared branded banner above the tabs is the only app header.
         page_layout.addWidget(self.home_scroll)
 
     def check_for_updates(self):
