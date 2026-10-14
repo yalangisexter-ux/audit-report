@@ -144,6 +144,26 @@ def now_text():
 
 def configure_date_edit(date_edit):
     date_edit.setCalendarPopup(True)
+    calendar = date_edit.calendarWidget()
+    calendar.setGridVisible(True)
+    calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
+    calendar.setStyleSheet("""
+        QCalendarWidget { background: #FFFFFF; color: #0F172A; }
+        QWidget#qt_calendar_navigationbar { background: #FFFFFF; border-bottom: 1px solid #CBD5E1; }
+        QCalendarWidget QToolButton { background: #FFFFFF; color: #0F172A; border: 0;
+            border-radius: 6px; padding: 6px 8px; font-weight: 700; }
+        QCalendarWidget QToolButton:hover { background: #EDE9FE; color: #4C1D95; }
+        QCalendarWidget QSpinBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
+            border-radius: 5px; padding: 3px; }
+        QCalendarWidget QMenu { background: #FFFFFF; color: #0F172A; }
+        QCalendarWidget QAbstractItemView { background: #FFFFFF; alternate-background-color: #F1F5F9;
+            color: #0F172A; selection-background-color: #6D28D9; selection-color: #FFFFFF;
+            gridline-color: #CBD5E1; outline: 0; }
+        QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
+        QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
+        QCalendarWidget QHeaderView::section { background: #F1F5F9; color: #334155;
+            border: 1px solid #E2E8F0; padding: 5px; font-weight: 700; }
+    """)
 
 
 def valid_hhmm(value):
@@ -1421,7 +1441,7 @@ class MainWindow(QMainWindow):
         self.header_logo_menu.setIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
         self.header_logo_menu.setIconSize(QSize(22, 22))
         self.header_logo_menu.setFixedSize(36, 32)
-        self.header_logo_menu.setToolTip("Open section menu")
+        self.header_logo_menu.setToolTip("Go to Home")
         self.header_logo_menu.setAccessibleName("Application menu")
         title_layout.addWidget(self.header_logo_menu)
         self.title_label = QLabel(APP_NAME)
@@ -1548,14 +1568,9 @@ class MainWindow(QMainWindow):
             self.sidebar_buttons.append((button, title))
         self.sidebar_layout.addStretch(1)
         self.sidebar_layout.addWidget(self.header_next)
-        self.header_section_menu = QMenu(self.header_logo_menu)
-        self.header_section_menu.setObjectName("headerSectionMenu")
-        for index, (_, title) in enumerate(tab_items):
-            action = QAction(title, self.header_section_menu)
-            action.triggered.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
-            self.header_section_menu.addAction(action)
-        self.header_logo_menu.setMenu(self.header_section_menu)
-        self.header_logo_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        # Navigation already exists in the persistent sidebar; avoid a duplicate
+        # low-contrast menu under the logo. The original logo remains a Home shortcut.
+        self.header_logo_menu.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
         self._tab_animation = None
         self._animated_page = None
         self.tabs.currentChanged.connect(self.animate_tab_transition)
@@ -2484,6 +2499,7 @@ class MainWindow(QMainWindow):
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
+        self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row.")
         l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
@@ -3266,6 +3282,64 @@ class MainWindow(QMainWindow):
         else: score=0
         return {"start":start,"working_days":self.count_working_days(start,as_of_date),"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if t["status"] in ("Completed","Submitted") or int(t["progress"] or 0)>=100),"task_score":task_score,"attendance_score":attendance_score,"score":score}
 
+    def save_attendance_inline(self, employee_id, work_date, field, value):
+        """Validate and persist inline attendance edits without losing unrelated fields."""
+        if self.db.is_holiday(work_date):
+            error(self, "This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
+            self.refresh_attendance()
+            return
+        value = str(value or "").strip()
+        old = self.db.conn.execute(
+            "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, work_date),
+        ).fetchone()
+        if field in ("check_in", "check_out") and value and not valid_hhmm(value):
+            error(self, "Enter time in 24-hour HH:MM format, for example 09:30.")
+            self.refresh_attendance()
+            return
+        check_in = old["check_in"] if old else ""
+        check_out = old["check_out"] if old else ""
+        status = old["attendance_status"] if old else "Unmarked"
+        note = old["attendance_note"] if old else ""
+        if field == "status":
+            if value not in ("Unmarked", "Present", "Absent", "Leave"):
+                return
+            status = value
+            if value in ("Absent", "Leave", "Unmarked"):
+                check_in, check_out = "", ""
+        elif field == "check_in":
+            if not value and check_out:
+                error(self, "Clear Check-out before clearing Check-in.")
+                self.refresh_attendance()
+                return
+            check_in = value
+            if value:
+                status = "Present"
+            elif status == "Present":
+                status = "Unmarked"
+        elif field == "check_out":
+            if value and not check_in:
+                error(self, "Enter Check-in before Check-out.")
+                self.refresh_attendance()
+                return
+            check_out = value
+            if value:
+                status = "Present"
+        elif field == "note":
+            note = value
+        else:
+            return
+        self.db.upsert_attendance(
+            employee_id, work_date, check_in=check_in, check_out=check_out,
+            note=note, status=status
+        )
+        employee = self.db.employee(employee_id)
+        self.db.log(
+            "Attendance updated",
+            f"{employee['name']}: {field}={value or '(cleared)'} on {work_date}"
+        )
+        self.refresh_attendance()
+
     def refresh_attendance(self):
         if not hasattr(self,"att_table"): return
         self.refresh_employee_filter()
@@ -3299,13 +3373,46 @@ class MainWindow(QMainWindow):
                     hours=f"{mins/60:.2f}"
                 except Exception: pass
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
-            for c,v in enumerate(vals,1):
-                if c == 2:
-                    item = self.status_item(v)
-                else:
-                    item = QTableWidgetItem(str(v or ""))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.att_table.setItem(r, c, item)
+            # Inline editors make attendance updates visible and discoverable.
+            date_item = QTableWidgetItem(d)
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.att_table.setItem(r, 1, date_item)
+
+            status_combo = QComboBox()
+            status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
+            status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
+            status_combo.setMinimumWidth(104)
+            status_combo.setEnabled(not bool(holiday))
+            status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
+            status_combo.currentTextChanged.connect(
+                lambda value, employee_id=e["id"], work_date=d: self.save_attendance_inline(
+                    employee_id, work_date, "status", value
+                )
+            )
+            self.att_table.setCellWidget(r, 2, status_combo)
+
+            for column, value, field in (
+                (3, ci, "check_in"),
+                (4, co, "check_out"),
+                (6, a["attendance_note"] if a else "", "note"),
+            ):
+                editor = QLineEdit(str(value or ""))
+                editor.setMinimumWidth(90 if column != 6 else 140)
+                editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
+                editor.setToolTip(
+                    "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")
+                    else "Enter an attendance note"
+                )
+                editor.setEnabled(not bool(holiday))
+                editor.editingFinished.connect(
+                    lambda input_widget=editor, employee_id=e["id"], work_date=d, field_name=field:
+                    self.save_attendance_inline(employee_id, work_date, field_name, input_widget.text())
+                )
+                self.att_table.setCellWidget(r, column, editor)
+
+            hours_item = QTableWidgetItem(hours)
+            hours_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.att_table.setItem(r, 5, hours_item)
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         if restore_row >= 0:
             self.att_table.selectRow(restore_row)
