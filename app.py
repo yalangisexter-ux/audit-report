@@ -1773,6 +1773,10 @@ class MainWindow(QMainWindow):
         self.update_button.setText("Update application")
         self.update_button.setEnabled(True)
 
+    def refresh_dashboard_clock(self):
+        if hasattr(self, "dashboard_clock"):
+            self.dashboard_clock.setText(datetime.now().strftime("%a, %d %b %Y   %I:%M:%S %p"))
+
     def build_dashboard(self):
         root = QVBoxLayout()
         root.setContentsMargins(14, 12, 14, 12)
@@ -1799,13 +1803,17 @@ class MainWindow(QMainWindow):
         self.dashboard_clock = QLabel()
         self.dashboard_clock.setProperty("heroSubtitle", True)
         hero_layout.addWidget(self.dashboard_clock)
+        self._dashboard_clock_timer = QTimer(self)
+        self._dashboard_clock_timer.timeout.connect(self.refresh_dashboard_clock)
+        self._dashboard_clock_timer.start(1000)
+        self.refresh_dashboard_clock()
         self._wrap_page_in_scroll(self.dashboard, root, fixed_header=hero)
 
         self.kpis = QHBoxLayout()
         self.kpis.setSpacing(10)
         root.addLayout(self.kpis)
         self.kpi_labels = []
-        specs = [("TOTAL EMPLOYEES", "👥"), ("PRESENT TODAY", "✓"), ("ABSENT TODAY", "×"), ("OPEN TASKS", "▣"), ("TODAY'S CHECK-INS", "▥")]
+        specs = [("TOTAL EMPLOYEES", "👥"), ("PRESENT TODAY", "🟢"), ("ABSENT TODAY", "🔴"), ("OPEN TASKS", "🟣"), ("TODAY'S CHECK-INS", "🔵")]
         for heading, symbol in specs:
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
@@ -1813,6 +1821,7 @@ class MainWindow(QMainWindow):
             icon_label = QLabel(symbol)
             icon_label.setObjectName("kpiIcon")
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setStyleSheet("font-size: 22pt; background: transparent; border: 0;")
             icon_label.setFixedSize(44, 44)
             layout.addWidget(icon_label)
             value = QLabel("0")
@@ -2176,14 +2185,14 @@ class MainWindow(QMainWindow):
         l.addLayout(btn_row)
 
         # Preview summary — notification-style scrollable panel
-        preview_label = QLabel("Live preview")
+        preview_label = QLabel("🖨️  Live print preview — updates when report options change")
         preview_label.setProperty("mutedText", True)
         l.addWidget(preview_label)
         self.report_summary = QTextEdit()
         self.report_summary.setReadOnly(True)
         self.report_summary.setPlaceholderText("Report preview summary appears here. Select options and click Preview Report.")
-        self.report_summary.setMinimumHeight(140)
-        self.report_summary.setMaximumHeight(220)
+        self.report_summary.setMinimumHeight(220)
+        self.report_summary.setMaximumHeight(420)
         self.report_summary.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.report_summary.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.report_summary.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
@@ -3917,7 +3926,10 @@ QLabel[mutedText="true"] { color: #64748B; }
 QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-size: 16pt; font-weight: 700; }
 QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F3E8FF; font-size: 9pt; }
-QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:1 #312E81); border-radius: 14px; }
+QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #15233F, stop:0.55 #5B21B6, stop:1 #0E7490); border-radius: 14px; }
+QLabel#kpiIcon { font-size: 22pt; background: transparent; border: 0; }
+QWidget#kpiCard { border: 1px solid #94A3B8; border-radius: 14px; }
+QWidget#dashboardPanel { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
 QWidget#homeContent { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.78); border-radius: 18px; }
@@ -4049,7 +4061,10 @@ QLabel[mutedText="true"] { color: #94A3B8; }
 QLabel[heroTitle="true"], QLabel[welcomeTitle="true"] { color: #FFFFFF; font-size: 16pt; font-weight: 700; }
 QLabel[heroSubtitle="true"] { color: #E2E8F0; font-size: 9pt; }
 QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
-QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:1 #4C1D95); border-radius: 16px; }
+QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:0.55 #4C1D95, stop:1 #0E7490); border-radius: 16px; }
+QLabel#kpiIcon { font-size: 22pt; background: transparent; border: 0; }
+QWidget#kpiCard { border: 1px solid #475569; border-radius: 14px; }
+QWidget#dashboardPanel { border: 1px solid #475569; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
 QWidget#homeContent { background: rgba(15,23,42,0.94); border: 1px solid rgba(226,232,240,0.32); border-radius: 18px; }
