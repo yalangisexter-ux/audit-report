@@ -1283,6 +1283,28 @@ class MainWindow(QMainWindow):
         self.title_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         title_layout.addWidget(self.title_label)
         title_layout.addStretch(1)
+        self.header_clock = QLabel()
+        self.header_clock.setObjectName("headerClock")
+        self.header_clock.setMinimumWidth(190)
+        self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.header_clock.setToolTip("Current local date and time")
+        title_layout.addWidget(self.header_clock)
+        self.header_prev = QPushButton("‹")
+        self.header_prev.setObjectName("headerNavButton")
+        self.header_prev.setToolTip("Previous page")
+        self.header_prev.setFixedSize(34, 28)
+        title_layout.addWidget(self.header_prev)
+        self.header_next = QPushButton("›")
+        self.header_next.setObjectName("headerNavButton")
+        self.header_next.setToolTip("Next page")
+        self.header_next.setFixedSize(34, 28)
+        title_layout.addWidget(self.header_next)
+        self.header_nav = QComboBox()
+        self.header_nav.setObjectName("headerNavigation")
+        self.header_nav.setMinimumWidth(155)
+        self.header_nav.setMaximumWidth(210)
+        self.header_nav.setToolTip("Jump to a section")
+        title_layout.addWidget(self.header_nav)
 
         btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
         close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
@@ -1351,12 +1373,98 @@ class MainWindow(QMainWindow):
         self._tab_animation = None
         self._animated_page = None
         self.tabs.currentChanged.connect(self.animate_tab_transition)
+        self.header_prev.clicked.connect(lambda: self.tabs.setCurrentIndex(max(0, self.tabs.currentIndex() - 1)))
+        self.header_next.clicked.connect(lambda: self.tabs.setCurrentIndex(min(self.tabs.count() - 1, self.tabs.currentIndex() + 1)))
+        self.header_nav.addItems([self.tabs.tabText(i) for i in range(self.tabs.count())])
+        self.header_nav.currentIndexChanged.connect(self._navigate_from_header)
+        self.tabs.currentChanged.connect(self._sync_header_navigation)
+        self._header_clock_timer = QTimer(self)
+        self._header_clock_timer.timeout.connect(self.refresh_header_clock)
+        self._header_clock_timer.start(1000)
+        self.refresh_header_clock()
         self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
         self.polish_tables()
+        self.apply_global_control_polish()
         self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
+
+    def refresh_header_clock(self):
+        if hasattr(self, "header_clock"):
+            self.header_clock.setText(datetime.now().strftime("%a, %d %b  %I:%M:%S %p"))
+
+    def _navigate_from_header(self, index):
+        if hasattr(self, "tabs") and 0 <= index < self.tabs.count() and self.tabs.currentIndex() != index:
+            self.tabs.setCurrentIndex(index)
+
+    def _sync_header_navigation(self, index):
+        if hasattr(self, "header_nav") and self.header_nav.currentIndex() != index:
+            self.header_nav.blockSignals(True)
+            self.header_nav.setCurrentIndex(index)
+            self.header_nav.blockSignals(False)
+
+    def apply_global_control_polish(self):
+        """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
+        self.setStyleSheet(self.styleSheet() + """
+            QWidget#headerClock { background: #0F172A; color: #F8FAFC; border: 1px solid #475569;
+                border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
+            QPushButton#headerNavButton { background: #334155; color: #F8FAFC; border: 1px solid #64748B;
+                border-radius: 9px; font-size: 17pt; font-weight: 700; padding: 0; }
+            QPushButton#headerNavButton:hover { background: #7C5CFC; color: #FFFFFF; }
+            QComboBox#headerNavigation { min-height: 28px; max-height: 32px; padding: 3px 28px 3px 9px;
+                border-radius: 9px; }
+            QComboBox QAbstractItemView, QComboBox QListView {
+                background-color: #111827; color: #F8FAFC; border: 1px solid #64748B;
+                selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0;
+            }
+            QComboBox QAbstractItemView::item, QComboBox QListView::item {
+                background-color: #111827; color: #F8FAFC; padding: 7px 10px; min-height: 24px;
+            }
+            QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected {
+                background-color: #6D28D9; color: #FFFFFF;
+            }
+            QCalendarWidget QWidget#qt_calendar_navigationbar { background: #15233F; }
+            QCalendarWidget QToolButton { background: #15233F; color: #FFFFFF; border: 0;
+                border-radius: 7px; padding: 6px 8px; font-weight: 700; }
+            QCalendarWidget QToolButton:hover { background: #6D28D9; }
+            QCalendarWidget QSpinBox { background: #15233F; color: #FFFFFF; border: 0; padding: 4px; }
+            QCalendarWidget QAbstractItemView { background: #F8FAFC; alternate-background-color: #E2E8F0;
+                color: #0F172A; selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0; }
+            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
+            QDateEdit, QTimeEdit { min-height: 22px; }
+            QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
+            QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {
+                color: #64748B; background-color: #E2E8F0;
+            }
+            QPushButton { min-height: 34px; padding: 7px 14px; border-radius: 10px; font-weight: 600; }
+            QTableWidget { gridline-color: #CBD5E1; }
+            QHeaderView::section { padding: 9px 8px; }
+            QLabel { min-width: 0; }
+        """)
+        for widget in self.findChildren(QLabel):
+            if widget.objectName() not in ("titleLabel", "headerClock"):
+                widget.setMinimumWidth(0)
+                if widget.text() and len(widget.text()) > 36:
+                    widget.setWordWrap(True)
+        for widget in self.findChildren(QLineEdit):
+            widget.setMinimumWidth(max(90, widget.minimumWidth()))
+            widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            widget.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
+        for widget in self.findChildren(QComboBox):
+            widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            view = widget.view()
+            if view is not None:
+                view.setMinimumWidth(max(widget.width(), widget.minimumWidth(), 180))
+                view.setUniformItemSizes(False)
+        for widget in self.findChildren(QDateEdit):
+            widget.setCalendarPopup(True)
+            calendar = widget.calendarWidget()
+            if calendar is not None:
+                calendar.setGridVisible(True)
+                calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
+                calendar.setMinimumSize(300, 240)
+        self.polish_tables()
 
     def toggle_maximize(self):
         if self.isMaximized():
@@ -1492,7 +1600,15 @@ class MainWindow(QMainWindow):
         QApplication.instance().style().unpolish(self)
         QApplication.instance().style().polish(self)
         if hasattr(self, "theme_toggle_btn"):
-            self.theme_toggle_btn.setText("Switch to Night mode" if theme_name == "day" else "Switch to Day mode")
+            self.theme_toggle_btn.setText("🌙  Night mode" if theme_name == "day" else "☀️  Day mode")
+        if hasattr(self, "update_button"):
+            self.update_button.setText("⬇  Check for updates")
+        if hasattr(self, "rollback_button"):
+            self.rollback_button.setText("↶  Roll back")
+        if hasattr(self, "header_clock"):
+            self.refresh_header_clock()
+        if hasattr(self, "tabs"):
+            self.apply_global_control_polish()
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
@@ -1595,7 +1711,7 @@ class MainWindow(QMainWindow):
         version_label = QLabel(f"Version {APP_VERSION}")
         version_label.setProperty("mutedText", True)
         session_layout.addWidget(version_label, 1, 0)
-        self.update_button = QPushButton("Check for updates")
+        self.update_button = QPushButton("⬇  Check for updates")
         self.update_button.setToolTip("Check GitHub for the latest application installer")
         self.update_button.setMinimumWidth(150)
         self.update_button.clicked.connect(self.check_for_updates)
@@ -1605,7 +1721,7 @@ class MainWindow(QMainWindow):
         self.rollback_button.setMinimumWidth(120)
         self.rollback_button.clicked.connect(self.rollback_application)
         session_layout.addWidget(self.rollback_button, 3, 0)
-        self.theme_toggle_btn = QPushButton("Switch theme")
+        self.theme_toggle_btn = QPushButton("🌙  Switch theme")
         self.theme_toggle_btn.setToolTip("Toggle day / night appearance")
         self.theme_toggle_btn.setMinimumWidth(120)
         self.theme_toggle_btn.clicked.connect(self.toggle_theme)
