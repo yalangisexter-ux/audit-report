@@ -1505,7 +1505,7 @@ class MainWindow(QMainWindow):
     def apply_content_surface_styles(self, theme_name=None):
         """Keep wallpaper behind the UI while matching solid panels to the active theme."""
         theme_name = (theme_name or self.current_theme()).lower()
-        if theme_name == "day":
+        if theme_name in ("day", "ocean", "sunset"):
             background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
