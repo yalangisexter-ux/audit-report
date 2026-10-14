@@ -1356,9 +1356,11 @@ class AnimatedBackground(QWidget):
             pass
         base = QLinearGradient(0, 0, w, h)
         if is_day:
-            base.setColorAt(0.0, QColor("#DCEBFA"))
-            base.setColorAt(0.48, QColor("#F2E9FF"))
-            base.setColorAt(1.0, QColor("#D9F5F4"))
+            # Keep the overall workspace white; the selected wallpaper and
+            # restrained glow provide only a soft moving watermark underneath.
+            base.setColorAt(0.0, QColor("#FFFFFF"))
+            base.setColorAt(0.48, QColor("#FFFFFF"))
+            base.setColorAt(1.0, QColor("#FFFFFF"))
         else:
             base.setColorAt(0.0, QColor("#050811"))
             base.setColorAt(0.52, QColor("#0B1020"))
@@ -1395,16 +1397,19 @@ class AnimatedBackground(QWidget):
             if is_day:
                 # Keep wallpaper motion visible only as a subtle backdrop, never
                 # as competing detail behind text and controls.
-                fade = 246 + int(4 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
-                veil.setColorAt(0.0, QColor(255, 255, 255, max(242, fade - 3)))
-                veil.setColorAt(1.0, QColor(255, 255, 255, min(252, fade + 3)))
+                # One gentle wash only. A second near-opaque wash used to
+                # completely hide the photo on Day mode.
+                fade = 30 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(24, fade - 3)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(38, fade + 3)))
             else:
                 veil.setColorAt(0.0, QColor(3, 7, 18, 52))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 92))
             painter.fillRect(rect, veil)
 
         if self.mode in ("Ambient Glow", "Aurora Waves"):
-            colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
+            colors = ([(124, 92, 252, 30), (34, 211, 238, 22), (232, 121, 249, 16)]
+                      if is_day else [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)])
             for i, color in enumerate(colors):
                 x = int(w * (0.18 + i * 0.30 + 0.08 * math.sin(self.phase * (0.7 + i * 0.12))))
                 y = int(h * (0.25 + i * 0.24 + 0.10 * math.cos(self.phase * (0.6 + i * 0.15))))
@@ -1450,8 +1455,10 @@ class AnimatedBackground(QWidget):
         # barely visible tint behind the white UI.
         if is_day:
             final_veil = QLinearGradient(0, 0, 0, h)
-            final_veil.setColorAt(0.0, QColor(255, 255, 255, 242))
-            final_veil.setColorAt(1.0, QColor(255, 255, 255, 249))
+            # Leave the selected animated wallpaper visible as a very light
+            # watermark while keeping foreground controls high contrast.
+            final_veil.setColorAt(0.0, QColor(255, 255, 255, 202))
+            final_veil.setColorAt(1.0, QColor(255, 255, 255, 218))
             painter.fillRect(rect, final_veil)
         painter.end()
 
