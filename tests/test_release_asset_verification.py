@@ -123,7 +123,11 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'self._update_progress.setMinimumWidth(440)' in source
     assert 'self.brand_banner = QFrame()' in source
     assert 'main_content_layout.addWidget(self.brand_banner)' in source
-    assert 'self.header_clock.hide()' in source
+    assert 'page_layout.addWidget(welcome)' not in source
+    assert 'def _show_message(parent, message, icon):' in source
+    assert 'label.setWordWrap(True)' in source
+    assert 'box.setMinimumWidth(500)' in source
+    assert 'self.header_clock.show()' in source
     assert 'self._wrap_page_in_scroll(self.dashboard, root)' in source
     assert 'grid.addWidget(productivity, 1, 1, 1, 2)' in source
     assert 'Qt.TextFlag.TextWordWrap, name)' in source
