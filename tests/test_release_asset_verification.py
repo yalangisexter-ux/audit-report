@@ -106,8 +106,10 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QPrintPreviewDialog' in source
     assert 'def open_print_preview(self):' in source
     assert 'QPrintPreviewDialog(printer, self)' in source
-    assert 'content.setStyleSheet("QWidget#homeContent { background-color: #F8FAFC' in source
-    assert 'content.setStyleSheet("QWidget#pageContent { background-color: #F8FAFC' in source
+    assert "def apply_content_surface_styles(self, theme_name=None):" in source
+    assert 'background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"' in source
+    assert 'background, foreground, border = "#111827", "#F8FAFC", "#64748B"' in source
+    assert "self.apply_content_surface_styles(theme_name)" in source
 
 
 def test_live_wallpapers_use_high_resolution_photos_with_animation():
