@@ -1442,6 +1442,46 @@ class MainWindow(QMainWindow):
             QTableWidget { gridline-color: #CBD5E1; }
             QHeaderView::section { padding: 9px 8px; }
             QLabel { min-width: 0; }
+
+            /* Layout safety: controls must not clip their captions at Windows DPI scaling. */
+            QPushButton, QToolButton {
+                min-height: 34px; padding: 7px 10px; margin: 2px;
+                text-align: center; border-radius: 8px;
+            }
+            QGroupBox { margin-top: 12px; padding: 12px 10px 10px 10px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }
+            QTableWidget { gridline-color: #CBD5E1; }
+            QTableWidget::item { padding: 7px 9px; }
+            QHeaderView::section { padding: 8px 9px; min-height: 24px; }
+            QScrollArea#homeScroll, QScrollArea#pageScroll {
+                border: 0; background: transparent;
+            }
+            QScrollArea#homeScroll QScrollBar:vertical, QScrollArea#pageScroll QScrollBar:vertical {
+                width: 12px; background: #E2E8F0; margin: 3px 2px 3px 2px;
+            }
+            QScrollArea#homeScroll QScrollBar::handle:vertical, QScrollArea#pageScroll QScrollBar::handle:vertical {
+                min-height: 30px; background: #64748B; border-radius: 5px;
+            }
+            QCalendarWidget { background: #FFFFFF; color: #0F172A; }
+            QCalendarWidget QWidget#qt_calendar_navigationbar {
+                background: #15233F; min-height: 42px;
+            }
+            QCalendarWidget QToolButton {
+                background: #15233F; color: #FFFFFF; border: 0;
+                padding: 7px 9px; min-height: 28px; font-weight: 700;
+            }
+            QCalendarWidget QToolButton:hover { background: #5B21B6; color: #FFFFFF; }
+            QCalendarWidget QSpinBox {
+                background: #15233F; color: #FFFFFF; border: 1px solid #64748B;
+                padding: 4px 6px; min-height: 24px;
+            }
+            QCalendarWidget QAbstractItemView {
+                background: #FFFFFF; alternate-background-color: #F1F5F9;
+                color: #0F172A; selection-background-color: #6D28D9;
+                selection-color: #FFFFFF; outline: 0; gridline-color: #CBD5E1;
+            }
+            QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
+            QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
         """)
         for widget in self.findChildren(QLabel):
             if widget.objectName() not in ("titleLabel", "headerClock"):
