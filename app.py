@@ -3883,18 +3883,18 @@ QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
-/* High contrast: opaque panels keep live wallpapers from washing out text. */
-QWidget#homeContent, QWidget#pageContent { background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1; }
-QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
+/* High-contrast frosted panels keep text readable over every live wallpaper while leaving a subtle wallpaper tint visible. */
+QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.96); color: #0F172A; border: 1px solid rgba(148,163,184,0.82); }
+QGroupBox { background: rgba(255,255,255,0.96); color: #0F172A; border: 1px solid rgba(148,163,184,0.78); }
 QGroupBox::title { color: #334155; }
 QLabel { color: #1E293B; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
-QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #CBD5E1; }
-QWidget#guideItem { background: #F1F5F9; border: 1px solid #CBD5E1; }
+QWidget#sessionStrip { background: rgba(226,232,240,0.96); border: 1px solid rgba(148,163,184,0.78); }
+QWidget#guideItem { background: rgba(241,245,249,0.95); border: 1px solid rgba(148,163,184,0.76); }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
 QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
-QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
+QTableWidget { background: rgba(255,255,255,0.97); alternate-background-color: rgba(241,245,249,0.96); color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
 QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
 QTableWidget::item:selected { background: #DDE7FF; color: #1E1B4B; }
 QCheckBox, QRadioButton { color: #1E293B; }
@@ -3962,11 +3962,11 @@ QComboBox QAbstractItemView { background-color: #111827; color: #F8FAFC; border:
 QComboBox QAbstractItemView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
 QHeaderView::section { background: #111827; color: #CBD5E1; padding: 7px 8px; border: 0; border-bottom: 2px solid #374151; font-weight: 700; }
-QTableWidget { background: rgba(15,23,42,0.76); alternate-background-color: rgba(30,41,59,0.60); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.20); border-radius: 20px; gridline-color: rgba(71,85,105,0.50); selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
+QTableWidget { background: rgba(15,23,42,0.96); alternate-background-color: rgba(30,41,59,0.94); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.34); border-radius: 20px; gridline-color: rgba(71,85,105,0.70); selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
 QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #1F2937; color: #E2E8F0; }
 QTableWidget::item:selected { background: #312E81; color: #FFFFFF; }
 QTableWidget::item:hover { background: #1E1B4B; }
-QGroupBox { font-weight: 650; color: #E2E8F0; border: 1px solid rgba(148,163,184,0.22); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(17,24,39,0.78); }
+QGroupBox { font-weight: 650; color: #E2E8F0; border: 1px solid rgba(148,163,184,0.34); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(17,24,39,0.94); }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; top: 8px; left: 12px; padding: 0; background: transparent; color: #94A3B8; }
 QLabel { color: #E2E8F0; background: transparent; }
 QLabel[pageTitle="true"] { color: #F8FAFC; font-size: 15pt; font-weight: 700; }
@@ -3978,15 +3978,15 @@ QLabel[welcomeSubtitle="true"] { color: #F5D0FE; font-size: 9pt; }
 QWidget#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #0F172A, stop:1 #4C1D95); border-radius: 16px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(15,23,42,0.58); border: 1px solid rgba(226,232,240,0.24); border-radius: 18px; }
+QWidget#homeContent { background: rgba(15,23,42,0.94); border: 1px solid rgba(226,232,240,0.32); border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(15,23,42,0.38); border: 1px solid rgba(226,232,240,0.22); border-radius: 18px; }
+QWidget#pageContent { background: rgba(15,23,42,0.92); border: 1px solid rgba(226,232,240,0.30); border-radius: 18px; }
 QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
-QWidget#sessionStrip { background: rgba(11,18,32,0.52); border: 1px solid rgba(148,163,184,0.34); border-radius: 16px; }
+QWidget#sessionStrip { background: rgba(11,18,32,0.94); border: 1px solid rgba(148,163,184,0.42); border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #312E81; color: #DDD6FE; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #F8FAFC; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: rgba(17,24,39,0.48); border: 1px solid rgba(148,163,184,0.26); border-left: 4px solid #A78BFA; border-radius: 16px; }
+QWidget#guideItem { background: rgba(17,24,39,0.92); border: 1px solid rgba(148,163,184,0.36); border-left: 4px solid #A78BFA; border-radius: 16px; }
 QLabel[guideTitle="true"] { color: #F8FAFC; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #A78BFA; }
 QLabel[statusSummary="true"] { background: #1E1B4B; border: 1px solid #4C1D95; border-radius: 12px; color: #DDD6FE; font-weight: 600; padding: 11px 14px; }
