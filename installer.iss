@@ -53,12 +53,8 @@ var
 	ResultCode: Integer;
 begin
 	Result := '';
-	// Clean old app files in the install directory (not the user database)
-	InstallDir := ExpandConstant('{app}');
-	if DirExists(InstallDir) then
-	begin
-		DelTree(InstallDir + '\*', False, True, True);
-	end;
+	// Do not delete the existing installation before the new install is ready.
+	// Inno Setup updates managed files in place; user data is stored separately in Local AppData.
 	ExtractTemporaryFile('vc_redist.x64.exe');
 	if not Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
 	begin
