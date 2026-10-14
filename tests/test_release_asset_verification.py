@@ -213,6 +213,35 @@ def test_update_worker_uses_latest_published_stable_release(monkeypatch):
     assert emitted
     assert emitted[0][0] == "failed"
     assert "missing a trusted installer" in emitted[0][1]
+def test_update_request_uses_bounded_timeout_and_reports_check_progress(monkeypatch):
+    import urllib.request
+    import app
+
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout):
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(app, "urlopen", fake_urlopen)
+    payload = app.UpdateWorker.request_bytes("https://api.github.com/test")
+    assert payload == b'{"ok": true}'
+    assert captured["timeout"] == 20
+
+
 def test_update_worker_retries_after_a_read_timeout(monkeypatch):
     release = {
         "tag_name": "v1.2.36",

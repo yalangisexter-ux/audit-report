@@ -259,7 +259,9 @@ class UpdateWorker(QObject):
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         })
-        with urlopen(request, timeout=60) as response:
+        # Keep a failed network request from leaving the UI in a checking state
+        # for a full minute per attempt.
+        with urlopen(request, timeout=20) as response:
             return response.read()
 
     def run(self):
@@ -270,8 +272,11 @@ class UpdateWorker(QObject):
             latest_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
             latest_payload = None
             latest_error = None
+            self.progress.emit(0, "Connecting to GitHub to check the latest release...")
             for attempt in range(3):
                 try:
+                    if attempt:
+                        self.progress.emit(0, f"GitHub did not respond; retrying update check ({attempt + 1}/3)...")
                     latest_payload = json.loads(self.request_bytes(latest_url).decode("utf-8"))
                     if not isinstance(latest_payload, dict):
                         raise ValueError("GitHub returned an invalid latest-release response.")
