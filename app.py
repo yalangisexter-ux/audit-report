@@ -1369,9 +1369,9 @@ class AnimatedBackground(QWidget):
             if is_day:
                 # Keep wallpaper motion visible only as a subtle backdrop, never
                 # as competing detail behind text and controls.
-                fade = 210 + int(10 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
-                veil.setColorAt(0.0, QColor(255, 255, 255, max(198, fade - 10)))
-                veil.setColorAt(1.0, QColor(255, 255, 255, min(242, fade + 18)))
+                fade = 246 + int(4 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(242, fade - 3)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(252, fade + 3)))
             else:
                 veil.setColorAt(0.0, QColor(3, 7, 18, 52))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 92))
@@ -1418,6 +1418,15 @@ class AnimatedBackground(QWidget):
             else:
                 painter.setBrush(QColor(167, 139, 250, alpha))
                 painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
+        # Apply the Day-mode veil after wallpaper, glows, and particles. Applying
+        # it earlier lets later effects draw over text and controls, as seen in
+        # customer screenshots. Keep the animation moving, but reduce it to a
+        # barely visible tint behind the white UI.
+        if is_day:
+            final_veil = QLinearGradient(0, 0, 0, h)
+            final_veil.setColorAt(0.0, QColor(255, 255, 255, 242))
+            final_veil.setColorAt(1.0, QColor(255, 255, 255, 249))
+            painter.fillRect(rect, final_veil)
         painter.end()
 
 class MainWindow(QMainWindow):
@@ -4544,15 +4553,15 @@ QWidget#kpiCard { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#dashboardPanel { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.78); border-radius: 18px; }
+QWidget#homeContent { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(255,255,255,0.38); border: 1px solid rgba(255,255,255,0.70); border-radius: 18px; }
+QWidget#pageContent { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 18px; }
 QTextEdit#reportPreview { background: #F1F5F9; border: 0; border-radius: 14px; }
-QWidget#sessionStrip { background: rgba(255,255,255,0.38); border: 1px solid rgba(255,255,255,0.70); border-radius: 16px; }
+QWidget#sessionStrip { background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.68); border-left: 4px solid #7C5CFC; border-radius: 16px; }
+QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 16px; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; min-height: 32px; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 0; border-radius: 14px; color: #312E81; font-weight: 600; padding: 11px 14px; }
@@ -4580,7 +4589,7 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
-QWidget#appPageSurface { background: rgba(255, 255, 255, 238); color: #0F172A; }
+QWidget#appPageSurface { background: #FFFFFF; color: #0F172A; }
 QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
 QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }

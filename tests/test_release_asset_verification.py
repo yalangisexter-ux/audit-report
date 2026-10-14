@@ -113,7 +113,10 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'mode == "Shiva"' in source
     assert '"Lord Shiva": ("lord_shiva.jpg"' in source
     assert '"Shiva": ("lord_shiva.jpg"' not in source
-    assert 'fade = 210 +' in source
+    assert 'fade = 246 +' in source
+    assert 'final_veil.setColorAt(1.0, QColor(255, 255, 255, 249))' in source
+    assert 'QWidget#homeContent { background: #FFFFFF;' in source
+    assert 'QWidget#pageContent { background: #FFFFFF;' in source
     assert 'QListView::item:selected { background: #6D28D9; color: #FFFFFF; }' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
