@@ -146,6 +146,15 @@ def configure_date_edit(date_edit):
     date_edit.setCalendarPopup(True)
 
 
+def valid_hhmm(value):
+    """Validate a 24-hour HH:MM value without accepting malformed times."""
+    try:
+        datetime.strptime(str(value).strip(), "%H:%M")
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def release_version_tuple(version):
     parts = str(version).strip().removeprefix("v").split(".")
     if len(parts) != 3 or not all(part.isdigit() for part in parts):
@@ -185,6 +194,8 @@ class UpdateWorker(QObject):
         request = Request(url, headers={
             "Accept": accept,
             "User-Agent": "RawStrengthEmployeeAuditManager",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
         })
         with urlopen(request, timeout=30) as response:
             return response.read()
@@ -2875,7 +2886,17 @@ class MainWindow(QMainWindow):
         if self.db.is_holiday(d): return error(self,"This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
         time, ok = QInputDialog.getText(self, "Check In", "Check-in time (HH:MM):", text=datetime.now().strftime("%H:%M"))
         if not ok or not time.strip(): return
-        self.db.upsert_attendance(eid,d,check_in=time.strip(),status="Present")
+        time = time.strip()
+        if not valid_hhmm(time):
+            return error(self, "Enter check-in time in 24-hour HH:MM format, for example 09:30.")
+        existing = self.db.conn.execute("SELECT check_out FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)).fetchone()
+        if existing and existing["check_out"]:
+            try:
+                if datetime.strptime(time, "%H:%M") > datetime.strptime(existing["check_out"], "%H:%M"):
+                    return error(self, "Check-in cannot be later than the saved check-out time.")
+            except ValueError:
+                return error(self, "The saved attendance time is invalid. Use Edit Times to correct it.")
+        self.db.upsert_attendance(eid,d,check_in=time,status="Present")
         self.db.log("Attendance check-in",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
     def check_out(self):
@@ -2885,7 +2906,15 @@ class MainWindow(QMainWindow):
         if self.db.is_holiday(d): return error(self,"This date is declared as a holiday.")
         time, ok = QInputDialog.getText(self, "Check Out", "Check-out time (HH:MM):", text=datetime.now().strftime("%H:%M"))
         if not ok or not time.strip(): return
-        self.db.upsert_attendance(eid,d,check_out=time.strip(),status="Present")
+        time = time.strip()
+        if not valid_hhmm(time):
+            return error(self, "Enter check-out time in 24-hour HH:MM format, for example 18:00.")
+        existing = self.db.conn.execute("SELECT check_in FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)).fetchone()
+        if not existing or not str(existing["check_in"] or "").strip():
+            return error(self, "Record a valid check-in before recording check-out.")
+        if not valid_hhmm(existing["check_in"]):
+            return error(self, "The saved check-in time is invalid. Use Edit Times to correct it.")
+        self.db.upsert_attendance(eid,d,check_out=time,status="Present")
         self.db.log("Attendance check-out",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
     def edit_attendance_times(self):
@@ -2898,7 +2927,17 @@ class MainWindow(QMainWindow):
         if not ok: return
         co, ok = QInputDialog.getText(self, "Edit check-out", "Check-out time (HH:MM):", text=old["check_out"] if old else "")
         if not ok: return
-        self.db.upsert_attendance(eid, d, check_in=ci.strip(), check_out=co.strip(), status="Present")
+        ci, co = ci.strip(), co.strip()
+        if ci and not valid_hhmm(ci):
+            return error(self, "Check-in must use 24-hour HH:MM format.")
+        if co and not valid_hhmm(co):
+            return error(self, "Check-out must use 24-hour HH:MM format.")
+        if co and not ci:
+            return error(self, "A check-out time requires a check-in time.")
+        if ci and co and datetime.strptime(co, "%H:%M") < datetime.strptime(ci, "%H:%M"):
+            # Overnight shifts are supported.
+            pass
+        self.db.upsert_attendance(eid, d, check_in=ci, check_out=co, status="Present")
         self.db.log("Attendance times edited", f"employee={eid}, date={d}, in={ci}, out={co}")
         self.refresh_all()
 
