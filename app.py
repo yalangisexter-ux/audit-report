@@ -147,9 +147,13 @@ def configure_date_edit(date_edit):
 
 
 def valid_hhmm(value):
-    """Validate a 24-hour HH:MM value without accepting malformed times."""
+    """Validate strict 24-hour HH:MM input, including leading zeroes."""
+    import re
+    text = str(value).strip() if value is not None else ""
+    if not re.fullmatch(r"(?:[01]\\d|2[0-3]):[0-5]\\d", text):
+        return False
     try:
-        datetime.strptime(str(value).strip(), "%H:%M")
+        datetime.strptime(text, "%H:%M")
         return True
     except (TypeError, ValueError):
         return False
