@@ -2891,13 +2891,8 @@ class MainWindow(QMainWindow):
         time = time.strip()
         if not valid_hhmm(time):
             return error(self, "Enter check-in time in 24-hour HH:MM format, for example 09:30.")
-        existing = self.db.conn.execute("SELECT check_out FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)).fetchone()
-        if existing and existing["check_out"]:
-            try:
-                if datetime.strptime(time, "%H:%M") > datetime.strptime(existing["check_out"], "%H:%M"):
-                    return error(self, "Check-in cannot be later than the saved check-out time.")
-            except ValueError:
-                return error(self, "The saved attendance time is invalid. Use Edit Times to correct it.")
+        # Overnight shifts are valid (for example, 22:00 to 06:00); validate
+        # format here and let net-hours calculation handle the date boundary.
         self.db.upsert_attendance(eid,d,check_in=time,status="Present")
         self.db.log("Attendance check-in",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
