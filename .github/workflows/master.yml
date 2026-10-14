@@ -5,9 +5,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build-and-test:
+  build-and-release:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,26 +20,60 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+      - name: Install Python dependencies and packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
 
-      - name: Build EXE
-        run: pyinstaller --noconfirm --onedir --windowed --name RawStrengthEmployeeAuditManager app.py
-
-      - name: Verify EXE
+      - name: Download Microsoft Visual C++ runtime prerequisite
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Filter "*.exe" -Recurse | Select-Object -First 1
-          if (-not $exe) { throw "No EXE found" }
-          Write-Host "EXE: $($exe.FullName)"
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "vc_redist.x64.exe"
+          if ((Get-Item "vc_redist.x64.exe").Length -lt 1000000) { throw "Visual C++ runtime download is incomplete." }
 
-      - name: Launch test
+      - name: Install Inno Setup
         shell: pwsh
         run: |
-          $exe = Get-ChildItem dist -Filter "*.exe" -Recurse | Select-Object -First 1
-          $proc = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 5
-          if ($proc.HasExited) { throw "App exited early" }
+          choco install innosetup --yes --no-progress
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup compiler was not installed." }
+
+      - name: Compile Python application with bundled assets
+        shell: pwsh
+        run: |
+          python -m py_compile app.py build_info.py business_tracking.py
+          pyinstaller --noconfirm --clean --onedir --windowed --name RawStrengthEmployeeAuditManager --icon assets/raw_strength_icon.ico --add-data "assets;assets" --version-file version_info.txt app.py
+          if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe")) { throw "Application executable was not created." }
+
+      - name: Build standalone Windows installer
+        shell: pwsh
+        env:
+          APP_VERSION: "1.2.14"
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
+          if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
+          if ((Get-Item "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Length -lt 10000000) { throw "Setup installer is unexpectedly small." }
+
+      - name: Launch smoke test
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe").Path
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          $proc.Refresh()
+          if ($proc.HasExited) { throw "Application exited during launch smoke test (exit code $($proc.ExitCode))." }
           Stop-Process -Id $proc.Id -Force
-          Write-Host "PASS: App launched"
+          Write-Host "PASS: packaged application remained running for 8 seconds."
+
+      - name: Publish versioned release with direct EXE installer
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.2.14
+          name: Raw Strength Employee Audit Manager v1.2.14
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          fail_on_unmatched_files: true
