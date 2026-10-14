@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
     QToolButton, QMenu, QSizePolicy, QFrame, QListView
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap, QPalette
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -1953,6 +1953,15 @@ class MainWindow(QMainWindow):
         }
         return palettes.get((theme_name or "day").lower(), palettes["day"])
 
+    def _apply_tooltip_palette(self, theme_name=None):
+        """Force readable tooltip colors instead of inheriting a black native popup."""
+        colors = self._ui_chrome_palette(theme_name or self.current_theme())
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(colors["surface"]))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(colors["text"]))
+        QToolTip.setPalette(palette)
+        QToolTip.setFont(QFont("Segoe UI", 9))
+
     def _refresh_theme_chrome(self, theme_name=None):
         """Refresh chrome colors after a theme switch without changing its layout."""
         colors = self._ui_chrome_palette(theme_name or self.current_theme())
@@ -2016,6 +2025,7 @@ class MainWindow(QMainWindow):
 
     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
+        self._apply_tooltip_palette(self.current_theme())
         if "QWidget#headerClock" not in self.styleSheet():
             self.setStyleSheet(self.styleSheet() + """
             QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
@@ -2069,6 +2079,13 @@ class MainWindow(QMainWindow):
                 color: #0F172A; selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0; }
             QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
             QDateEdit, QTimeEdit { min-height: 22px; }
+            QLineEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
+                min-height: 24px; max-height: 36px; padding: 4px 9px; border-radius: 8px;
+            }
+            QComboBox, QDateEdit {
+                min-height: 26px; max-height: 36px; padding: 4px 30px 4px 9px; border-radius: 8px;
+            }
+            QTextEdit, QPlainTextEdit { padding: 6px 10px; border-radius: 8px; }
             QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
             QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {
                 color: #64748B; background-color: #E2E8F0;
@@ -2083,7 +2100,7 @@ class MainWindow(QMainWindow):
                 min-height: 34px; padding: 7px 10px; margin: 2px;
                 text-align: center; border-radius: 8px;
             }
-            QGroupBox { margin-top: 12px; padding: 12px 10px 10px 10px; }
+            QGroupBox { margin-top: 14px; padding: 12px 10px 10px 10px; }
             QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }
             QTableWidget { gridline-color: #CBD5E1; }
             QTableWidget::item { padding: 7px 9px; }
@@ -2310,6 +2327,7 @@ class MainWindow(QMainWindow):
         theme_name = theme_name or self.current_theme()
         theme_name = apply_app_theme(QApplication.instance(), theme_name)
         self.db.set_setting("ui_theme", theme_name)
+        self._apply_tooltip_palette(theme_name)
         self.apply_content_surface_styles(theme_name)
         for combo_name in ("theme_combo", "home_theme_combo"):
             combo = getattr(self, combo_name, None)
@@ -2343,29 +2361,22 @@ class MainWindow(QMainWindow):
         return theme_name
 
     def apply_content_surface_styles(self, theme_name=None):
-        """Keep text readable while allowing the live wallpaper to show through page surfaces."""
+        """Keep wallpaper behind the app while content surfaces remain fully opaque."""
         theme_name = (theme_name or self.current_theme()).lower()
         if theme_name == "ocean":
             background, foreground, border = "#F0F9FF", "#0F172A", "#0284C7"
-            alpha = 255
         elif theme_name == "sunset":
             background, foreground, border = "#FFEDD5", "#0F172A", "#EA580C"
-            alpha = 255
         elif theme_name == "day":
             background, foreground, border = "#FFFFFF", "#0F172A", "#E2E8F0"
-            alpha = 255
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
-            alpha = 255
-        red, green, blue = (
-            int(background[offset:offset + 2], 16) for offset in (1, 3, 5)
-        )
         for object_name in ("homeContent", "pageContent"):
             for surface in self.findChildren(QWidget, object_name):
-                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-                surface.setAutoFillBackground(False)
+                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+                surface.setAutoFillBackground(True)
                 surface.setStyleSheet(
-                    f"QWidget#{object_name} {{ background-color: rgba({red}, {green}, {blue}, {alpha}); "
+                    f"QWidget#{object_name} {{ background-color: {background}; "
                     f"color: {foreground}; border: 1px solid {border}; border-radius: 18px; }}"
                 )
 
@@ -2504,7 +2515,7 @@ class MainWindow(QMainWindow):
             icon_label.setObjectName("guideIcon")
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon_label.setFixedSize(34, 34)
-            icon_label.setStyleSheet("QLabel#guideIcon { background: rgba(124,92,252,0.16); color: #7C5CFC; border: 1px solid rgba(124,92,252,0.30); border-radius: 10px; font-size: 17px; font-weight: 700; }")
+            icon_label.setStyleSheet("QLabel#guideIcon { background: rgba(124,92,252,41); color: #7C5CFC; border: 1px solid rgba(124,92,252,77); border-radius: 10px; font-size: 17px; font-weight: 700; }")
             heading_row.addWidget(icon_label)
             section_label = QLabel(section)
             section_label.setProperty("guideTitle", True)
@@ -2716,7 +2727,9 @@ class MainWindow(QMainWindow):
         recent_layout = QVBoxLayout(recent)
         self.dashboard_recent = QTableWidget(0, 5)
         self.dashboard_recent.setHorizontalHeaderLabels(["#", "Employee ID", "Name", "Role", "Status"])
-        self.dashboard_recent.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.dashboard_recent.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for column, width in enumerate((72, 112, 112, 100, 86)):
+            self.dashboard_recent.setColumnWidth(column, width)
         self.dashboard_recent.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_recent.verticalHeader().setVisible(False)
         self.dashboard_recent.setAlternatingRowColors(True)
@@ -2729,7 +2742,9 @@ class MainWindow(QMainWindow):
         tasks_layout = QVBoxLayout(tasks_box)
         self.dashboard_tasks = QTableWidget(0, 5)
         self.dashboard_tasks.setHorizontalHeaderLabels(["Employee", "Task", "Status", "Progress", "Due"])
-        self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for column, width in enumerate((105, 150, 98, 90, 78)):
+            self.dashboard_tasks.setColumnWidth(column, width)
         self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_tasks.verticalHeader().setVisible(False)
         self.dashboard_tasks.setAlternatingRowColors(True)
@@ -2748,7 +2763,9 @@ class MainWindow(QMainWindow):
         attendance_layout.addWidget(self.dashboard_attendance_summary)
         self.dashboard_attendance_table = QTableWidget(0, 3)
         self.dashboard_attendance_table.setHorizontalHeaderLabels(["Employee", "Status", "Check-in"])
-        self.dashboard_attendance_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.dashboard_attendance_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for column, width in enumerate((145, 105, 96)):
+            self.dashboard_attendance_table.setColumnWidth(column, width)
         self.dashboard_attendance_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_attendance_table.verticalHeader().setVisible(False)
         self.dashboard_attendance_table.setToolTip("Today's recorded attendance. Hover a cell to see its full value.")
@@ -3234,20 +3251,48 @@ class MainWindow(QMainWindow):
 
     def polish_tables(self):
         """Apply shared table styling without overriding per-screen layout rules."""
+        colors = self._ui_chrome_palette(self.current_theme())
+        is_night = (self.current_theme() or "day").lower() == "night"
+        alternate = "#1E293B" if is_night else ("#E0F2FE" if self.current_theme() == "ocean" else "#FFF7ED" if self.current_theme() == "sunset" else "#F1F5F9")
         for table in self.findChildren(QTableWidget):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
-            table.verticalHeader().setDefaultSectionSize(40)
+            table.verticalHeader().setMinimumSectionSize(42)
+            table.verticalHeader().setDefaultSectionSize(max(42, table.verticalHeader().defaultSectionSize()))
             table.setCornerButtonEnabled(False)
-            table.setWordWrap(True)
+            table.setWordWrap(False)
             table.setTextElideMode(Qt.TextElideMode.ElideRight)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setSelectionMode(QAbstractItemView.SingleSelection)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            table.horizontalHeader().setMinimumHeight(38)
-            table.horizontalHeader().setMinimumSectionSize(64)
+            table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+            table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+            table.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            table.setAutoFillBackground(True)
+            table.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            table.viewport().setAutoFillBackground(True)
+            table_palette = table.palette()
+            table_palette.setColor(QPalette.ColorRole.Base, QColor(colors["surface"]))
+            table_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(alternate))
+            table_palette.setColor(QPalette.ColorRole.Text, QColor(colors["text"]))
+            table.setPalette(table_palette)
+            table.viewport().setPalette(table_palette)
+            table.horizontalHeader().setMinimumHeight(42)
+            table.horizontalHeader().setMinimumSectionSize(72)
             table.horizontalHeader().setHighlightSections(False)
+            header_view = table.horizontalHeader()
+            resize_modes = [header_view.sectionResizeMode(column) for column in range(table.columnCount())]
+            if resize_modes and all(mode == QHeaderView.Stretch for mode in resize_modes):
+                # Stretching every column evenly clips longer headers such as
+                # "Employee ID" and "Manager remarks" in compact panels.
+                header_view.setSectionResizeMode(QHeaderView.Interactive)
+                for column in range(table.columnCount()):
+                    item = table.horizontalHeaderItem(column)
+                    title_width = header_view.fontMetrics().horizontalAdvance(item.text()) if item else 0
+                    table.setColumnWidth(column, max(72, min(190, title_width + 24)))
+                header_view.setStretchLastSection(True)
             table.setMouseTracking(True)
             for column in range(table.columnCount()):
                 header = table.horizontalHeaderItem(column)
@@ -3258,7 +3303,8 @@ class MainWindow(QMainWindow):
                     item = table.item(row, column)
                     if item and not item.toolTip().strip():
                         item.setToolTip(item.text())
-            # Keep each table's own column sizing and cell alignment.
+            # Preserve explicitly sized screens; long values remain accessible
+            # through the tooltips attached above.
 
     def apply_hover_messages(self):
         """Give every action button a useful hover message, keeping explicit tips."""
@@ -3897,10 +3943,20 @@ class MainWindow(QMainWindow):
             date_item.setToolTip(f"Attendance date: {d}")
             self.att_table.setItem(r, 1, date_item)
 
+            def attach_editor(column, editor):
+                cell = QWidget()
+                cell.setObjectName("attendanceEditorCell")
+                cell_layout = QHBoxLayout(cell)
+                cell_layout.setContentsMargins(3, 3, 3, 3)
+                cell_layout.setSpacing(0)
+                cell_layout.addWidget(editor)
+                self.att_table.setCellWidget(r, column, cell)
+
             status_combo = QComboBox()
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
             status_combo.setMinimumWidth(0)
+            status_combo.setFixedHeight(32)
             status_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
@@ -3909,7 +3965,7 @@ class MainWindow(QMainWindow):
                     employee_id, work_date, "status", value
                 )
             )
-            self.att_table.setCellWidget(r, 2, status_combo)
+            attach_editor(2, status_combo)
 
             for column, value, field in (
                 (3, ci, "check_in"),
@@ -3918,6 +3974,7 @@ class MainWindow(QMainWindow):
             ):
                 editor = QLineEdit(str(value or ""))
                 editor.setMinimumWidth(0)
+                editor.setFixedHeight(32)
                 editor.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
                 editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
                 editor.setToolTip(
@@ -3929,7 +3986,7 @@ class MainWindow(QMainWindow):
                     lambda input_widget=editor, employee_id=e["id"], work_date=d, field_name=field:
                     self.save_attendance_inline(employee_id, work_date, field_name, input_widget.text())
                 )
-                self.att_table.setCellWidget(r, column, editor)
+                attach_editor(column, editor)
 
             hours_item = QTableWidgetItem(hours)
             hours_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5167,12 +5224,12 @@ QPushButton:default:hover, QPushButton[primary="true"]:hover { background: #6D28
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-    background-color: #FFFFFF; color: #0F172A; border: 0; border-radius: 12px;
-    padding: 10px 14px; selection-background-color: #EDE9FE; selection-color: #0F172A;
+    background-color: #FFFFFF; color: #0F172A; border: 0; border-radius: 8px;
+    padding: 6px 10px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox, QDateEdit {
-    combobox-popup: 0; background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px;
-    padding: 10px 14px; min-height: 20px; selection-background-color: #EDE9FE; selection-color: #0F172A;
+    combobox-popup: 0; background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
+    padding: 6px 30px 6px 10px; min-height: 24px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #F1F5F9; color: #0F172A; }
 QComboBox QLineEdit { background-color: #F1F5F9; color: #0F172A; border: 0; padding: 0; }
@@ -5185,11 +5242,11 @@ QComboBox QAbstractItemView, QComboBox QListView { background-color: #F1F5F9; co
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
 QHeaderView::section { background: #E2E8F0; color: #334155; padding: 7px 8px; border: 0; border-bottom: 2px solid #CBD5E1; font-weight: 700; }
-QTableWidget { background: rgba(255,255,255,0.68); alternate-background-color: rgba(241,245,249,0.66); color: #0F172A; border: 1px solid rgba(255,255,255,0.82); border-radius: 16px; gridline-color: rgba(226,232,240,0.65); selection-background-color: #DDE7FF; selection-color: #312E81; outline: 0; }
+QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 12px; gridline-color: #E2E8F0; selection-background-color: #DDE7FF; selection-color: #312E81; outline: 0; }
 QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #E2E8F0; color: #0F172A; }
 QTableWidget::item:selected { background: #EEF2FF; color: #312E81; }
 QTableWidget::item:hover { background: #F5F3FF; }
-QGroupBox { font-weight: 650; color: #1E293B; border: 1px solid rgba(255,255,255,0.78); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(255,255,255,0.72); }
+QGroupBox { font-weight: 650; color: #1E293B; border: 1px solid #CBD5E1; border-radius: 12px; margin-top: 0; padding: 24px 14px 14px 14px; background: #FFFFFF; }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; top: 8px; left: 12px; padding: 0; background: transparent; color: #475569; }
 QLabel { color: #1E293B; background: transparent; }
 QLabel[pageTitle="true"] { color: #0F172A; font-size: 15pt; font-weight: 700; }
@@ -5321,12 +5378,12 @@ QPushButton:default:hover, QPushButton[primary="true"]:hover { background: qline
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-    background-color: #0F172A; color: #F8FAFC; border: 0; border-radius: 12px;
-    padding: 10px 14px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
+    background-color: #0F172A; color: #F8FAFC; border: 0; border-radius: 8px;
+    padding: 6px 10px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
 }
 QComboBox, QDateEdit {
-    combobox-popup: 0; background-color: #111827; color: #F8FAFC; border: 1px solid #475569; border-radius: 14px;
-    padding: 8px 10px; min-height: 20px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
+    combobox-popup: 0; background-color: #111827; color: #F8FAFC; border: 1px solid #475569; border-radius: 8px;
+    padding: 6px 30px 6px 10px; min-height: 24px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
 }
 QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #111827; color: #F8FAFC; }
 QComboBox QLineEdit { background-color: #111827; color: #F8FAFC; border: 0; padding: 0; }
@@ -5339,11 +5396,11 @@ QComboBox QAbstractItemView, QComboBox QListView { background-color: #111827; co
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
 QHeaderView::section { background: #111827; color: #CBD5E1; padding: 7px 8px; border: 0; border-bottom: 2px solid #374151; font-weight: 700; }
-QTableWidget { background: rgba(15,23,42,0.96); alternate-background-color: rgba(30,41,59,0.94); color: #E2E8F0; border: 1px solid rgba(148,163,184,0.34); border-radius: 20px; gridline-color: rgba(71,85,105,0.70); selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
+QTableWidget { background: #0F172A; alternate-background-color: #1E293B; color: #E2E8F0; border: 1px solid #334155; border-radius: 12px; gridline-color: #334155; selection-background-color: #312E81; selection-color: #FFFFFF; outline: 0; }
 QTableWidget::item { padding: 6px 8px; border-bottom: 1px solid #1F2937; color: #E2E8F0; }
 QTableWidget::item:selected { background: #312E81; color: #FFFFFF; }
 QTableWidget::item:hover { background: #1E1B4B; }
-QGroupBox { font-weight: 650; color: #E2E8F0; border: 1px solid rgba(148,163,184,0.34); border-radius: 16px; margin-top: 0; padding: 24px 14px 14px 14px; background: rgba(17,24,39,0.94); }
+QGroupBox { font-weight: 650; color: #E2E8F0; border: 1px solid #334155; border-radius: 12px; margin-top: 0; padding: 24px 14px 14px 14px; background: #111827; }
 QGroupBox::title { subcontrol-origin: padding; subcontrol-position: top left; top: 8px; left: 12px; padding: 0; background: transparent; color: #94A3B8; }
 QLabel { color: #E2E8F0; background: transparent; }
 QLabel[pageTitle="true"] { color: #F8FAFC; font-size: 15pt; font-weight: 700; }
@@ -5358,15 +5415,15 @@ QWidget#kpiCard { border: 1px solid #475569; border-radius: 14px; }
 QWidget#dashboardPanel { border: 1px solid #475569; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4C1D95, stop:0.5 #7C3AED, stop:1 #DB2777); border-radius: 16px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(15,23,42,0.94); border: 1px solid rgba(226,232,240,0.32); border-radius: 18px; }
+QWidget#homeContent { background: #111827; border: 1px solid #334155; border-radius: 12px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(15,23,42,0.92); border: 1px solid rgba(226,232,240,0.30); border-radius: 18px; }
+QWidget#pageContent { background: #111827; border: 1px solid #334155; border-radius: 12px; }
 QTextEdit#reportPreview { background: #111827; border: 1px solid #334155; border-radius: 12px; }
-QWidget#sessionStrip { background: rgba(11,18,32,0.94); border: 1px solid rgba(148,163,184,0.42); border-radius: 16px; }
+QWidget#sessionStrip { background: #0B1220; border: 1px solid #475569; border-radius: 12px; }
 QLabel[sessionLabel="true"] { color: #94A3B8; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #312E81; color: #DDD6FE; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #F8FAFC; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: rgba(17,24,39,0.92); border: 1px solid rgba(148,163,184,0.36); border-left: 4px solid #A78BFA; border-radius: 16px; }
+QWidget#guideItem { background: #0F172A; border: 1px solid #334155; border-left: 4px solid #A78BFA; border-radius: 12px; }
 QLabel[guideTitle="true"] { color: #F8FAFC; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #A78BFA; }
 QLabel[statusSummary="true"] { background: #1E1B4B; border: 1px solid #4C1D95; border-radius: 12px; color: #DDD6FE; font-weight: 600; padding: 11px 14px; }
