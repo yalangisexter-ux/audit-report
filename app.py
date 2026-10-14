@@ -1338,10 +1338,16 @@ class AnimatedBackground(QWidget):
             source.moveCenter(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(center_x, center_y))
             painter.drawPixmap(QRectF(rect), self.wallpaper_pixmap, source)
 
-            # A gentle dark tint preserves readability without hiding the photograph.
+            # Animate the wallpaper with a soft fade. Foreground panels are kept
+            # opaque/light, so moving photos never reduce text contrast.
             veil = QLinearGradient(0, 0, 0, h)
-            veil.setColorAt(0.0, QColor(3, 7, 18, 52 if not is_day else 22))
-            veil.setColorAt(1.0, QColor(3, 7, 18, 92 if not is_day else 40))
+            if is_day:
+                fade = 78 + int(22 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(62, fade - 12)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(145, fade + 28)))
+            else:
+                veil.setColorAt(0.0, QColor(3, 7, 18, 52))
+                veil.setColorAt(1.0, QColor(3, 7, 18, 92))
             painter.fillRect(rect, veil)
 
         if self.mode in ("Ambient Glow", "Aurora Waves"):
@@ -1587,18 +1593,20 @@ class MainWindow(QMainWindow):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         if "QWidget#headerClock" not in self.styleSheet():
             self.setStyleSheet(self.styleSheet() + """
-            QWidget#navigationSidebar { background: rgba(15, 23, 42, 218); border-right: 1px solid rgba(167, 139, 250, 125); }
+            QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
             QWidget#mainContentSurface { background: transparent; }
+            QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            QWidget#pageHeader { background: #FFFFFF; color: #0F172A; }
             QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
                 border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
             QPushButton#sidebarToggle:hover { background: rgba(8, 145, 178, 220); border-color: #67E8F9; }
-            QPushButton#sidebarNavButton { background: rgba(255, 255, 255, 18); color: #E2E8F0;
-                border: 1px solid rgba(148, 163, 184, 45); border-radius: 11px;
+            QPushButton#sidebarNavButton { background: #F8FAFC; color: #1E293B;
+                border: 1px solid #E2E8F0; border-radius: 11px;
                 font-size: 10pt; font-weight: 600; text-align: left; padding: 8px 10px; }
-            QPushButton#sidebarNavButton:hover { background: rgba(139, 92, 246, 105); color: #FFFFFF; border-color: rgba(196, 181, 253, 180); }
+            QPushButton#sidebarNavButton:hover { background: #EDE9FE; color: #4C1D95; border-color: #C4B5FD; }
             QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
                 color: #FFFFFF; border: 1px solid #C4B5FD; }
-            QWidget#headerClock { background: #0F172A; color: #F8FAFC; border: 1px solid #475569;
+            QWidget#headerClock { background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1;
                 border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
             QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
                 border-radius: 10px; font-size: 18pt; font-weight: 800; padding: 0;
@@ -1607,15 +1615,15 @@ class MainWindow(QMainWindow):
             QToolButton#headerLogoMenu { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #6D28D9,stop:1 #DB2777);
                 border: 1px solid #C4B5FD; border-radius: 10px; padding: 3px; }
             QToolButton#headerLogoMenu:hover { background: #0891B2; border-color: #67E8F9; }
-            QMenu#headerSectionMenu { background: #111827; color: #F8FAFC; border: 1px solid #64748B; padding: 5px; }
+            QMenu#headerSectionMenu { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; padding: 5px; }
             QMenu#headerSectionMenu::item { padding: 8px 18px; border-radius: 6px; }
             QMenu#headerSectionMenu::item:selected { background: #6D28D9; color: #FFFFFF; }
             QComboBox QAbstractItemView, QComboBox QListView {
-                background-color: #111827; color: #F8FAFC; border: 1px solid #64748B;
+                background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
                 selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0;
             }
             QComboBox QAbstractItemView::item, QComboBox QListView::item {
-                background-color: #111827; color: #F8FAFC; padding: 7px 10px; min-height: 24px;
+                background-color: #FFFFFF; color: #0F172A; padding: 7px 10px; min-height: 24px;
             }
             QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected {
                 background-color: #6D28D9; color: #FFFFFF;
@@ -1855,7 +1863,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_row)
 
     def current_theme(self):
-        return self.db.get_setting("ui_theme", "night") or "night"
+        return self.db.get_setting("ui_theme", "day") or "day"
 
     def apply_theme(self, theme_name=None):
         theme_name = theme_name or self.current_theme()
@@ -1895,16 +1903,16 @@ class MainWindow(QMainWindow):
         theme_name = (theme_name or self.current_theme()).lower()
         if theme_name == "ocean":
             background, foreground, border = "#F0F9FF", "#0F172A", "#0284C7"
-            alpha = 226
+            alpha = 255
         elif theme_name == "sunset":
             background, foreground, border = "#FFEDD5", "#0F172A", "#EA580C"
-            alpha = 226
+            alpha = 255
         elif theme_name == "day":
-            background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"
-            alpha = 230
+            background, foreground, border = "#FFFFFF", "#0F172A", "#E2E8F0"
+            alpha = 255
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
-            alpha = 226
+            alpha = 255
         red, green, blue = (
             int(background[offset:offset + 2], 16) for offset in (1, 3, 5)
         )
@@ -4651,7 +4659,12 @@ def main():
     try:
         db=Database()
         seed_initial_audit(db)
-        apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
+        # Migrate existing installs to the requested white UI once. Later manual
+        # theme selections are preserved by this migration flag.
+        if db.get_setting("white_ui_wallpaper_fix_v1241") != "1":
+            db.set_setting("ui_theme", "day")
+            db.set_setting("white_ui_wallpaper_fix_v1241", "1")
+        apply_app_theme(app, db.get_setting("ui_theme", "day") or "day")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
