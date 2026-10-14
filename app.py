@@ -187,7 +187,24 @@ def now_text():
 
 def is_explicitly_completed_task_status(status):
     """Only an explicit Completed or Submitted state counts as complete."""
-    return isinstance(status, str) and status.strip().casefold() in {"completed", "submitted"}
+    return normalized_task_status(status) in {"completed", "submitted"}
+
+
+def normalized_task_status(status):
+    """Normalize legacy status spelling for comparisons without rewriting stored data."""
+    return str(status or "").strip().casefold()
+
+
+def is_cancelled_task_status(status):
+    return normalized_task_status(status) == "cancelled"
+
+
+def is_blocked_task_status(status):
+    return normalized_task_status(status) == "blocked"
+
+
+def is_in_progress_task_status(status):
+    return normalized_task_status(status) == "in progress"
 
 
 def task_status_label(status):
@@ -199,9 +216,7 @@ def task_status_label(status):
 
 def is_known_task_status(status):
     """Return False for blank, unselected, and legacy NA task states."""
-    if not isinstance(status, str):
-        return False
-    value = status.strip().casefold()
+    value = normalized_task_status(status)
     return value in {
         "not started", "in progress", "submitted", "completed", "blocked",
         "pending review", "pending", "cancelled",
@@ -3362,10 +3377,13 @@ class MainWindow(QMainWindow):
         rows=self.db.tasks(d,eid)
         completed=sum(1 for t in rows if is_explicitly_completed_task_status(t["status"]))
         avg=round(sum(t["progress"] for t in rows)/len(rows)) if rows else 0
-        blocked=sum(1 for t in rows if t["status"]=="Blocked")
-        in_progress=sum(1 for t in rows if t["status"]=="In progress")
+        blocked=sum(1 for t in rows if is_blocked_task_status(t["status"]))
+        in_progress=sum(1 for t in rows if is_in_progress_task_status(t["status"]))
         # Pending excludes completed/submitted, cancelled, blocked, and in-progress
-        pending=sum(1 for t in rows if t["status"] not in ("Completed", "Submitted", "Cancelled", "Blocked", "In progress"))
+        pending=sum(1 for t in rows if not is_explicitly_completed_task_status(t["status"])
+                    and not is_cancelled_task_status(t["status"])
+                    and not is_blocked_task_status(t["status"])
+                    and not is_in_progress_task_status(t["status"]))
         self.tracker_summary.setText(f"{len(rows)} tasks  •  {completed} completed/submitted  •  {in_progress} in progress  •  {pending} pending  •  {blocked} blocked")
         self.tracker_progress.setValue(avg)
         for t in rows:
@@ -3980,7 +3998,8 @@ class MainWindow(QMainWindow):
             elif status.lower() == "leave":
                 leave += 1
             attendance_rows.append((employee["name"], status, check_in))
-        open_tasks = sum(1 for task in tasks if not is_explicitly_completed_task_status(task["status"]) and str(task["status"] or "").strip().casefold() != "cancelled")
+        open_tasks = sum(1 for task in tasks if not is_explicitly_completed_task_status(task["status"])
+                         and not is_cancelled_task_status(task["status"]))
         for label, value in zip(self.kpi_labels, [len(employees), present, absent, open_tasks, checked_in]):
             label.setText(str(value))
         if hasattr(self, "dashboard_clock"):
@@ -4100,7 +4119,7 @@ class MainWindow(QMainWindow):
             if proof_urls(task["proof_url"]):
                 return "Link(s) attached"
             return task["proof_url"]
-        if task["status"] in ("Pending", "Not started", "In progress", "Blocked", "Pending review"):
+        if normalized_task_status(task["status"]) in {"pending", "not started", "in progress", "blocked", "pending review"}:
             return "Not provided (task is pending or in progress)"
         source_missing = self.source_status(employee, "missing_proof", report_date)
         if source_missing and source_missing.startswith("No"):
@@ -4215,7 +4234,7 @@ class MainWindow(QMainWindow):
             data=self.report_data(report_date,employee_id)
             all_tasks=[t for _,ts,_ in data for t in ts]
             completed=sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))
-            pending_count=sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))
+            pending_count=sum(1 for t in all_tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"]))
             missing=sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,report_date).startswith("Yes"))
             if opts.get("summary",True):
                 doc.add_heading("DAILY SUMMARY",level=1)
@@ -4261,7 +4280,7 @@ class MainWindow(QMainWindow):
                     else:
                         doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
                 if opts.get("pending",True):
-                    pending_titles=[t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")]
+                    pending_titles=[t["title"] for t in tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"])]
                     doc.add_paragraph("PENDING",style="Heading 2")
                     doc.add_paragraph("; ".join(pending_titles) if pending_titles else "No",style="List Bullet")
         doc.save(path)
@@ -4407,7 +4426,7 @@ class MainWindow(QMainWindow):
             data = self.report_data(report_date, employee_id)
             all_tasks = [t for _, tasks, _ in data for t in tasks]
             completed = sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))
-            pending_count = sum(1 for t in all_tasks if t["status"] not in ("Completed", "Submitted", "Cancelled"))
+            pending_count = sum(1 for t in all_tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"]))
             missing = sum(1 for e, tasks, _ in data if self.employee_missing_proof(e, tasks, report_date).startswith("Yes"))
             if opts.get("summary", True):
                 story.extend([Paragraph("DAILY SUMMARY", styles["RSSection"]),
@@ -4459,7 +4478,7 @@ class MainWindow(QMainWindow):
                     else:
                         story.append(bullet("No tasks recorded for this date."))
                 if opts.get("pending", True):
-                    pending_titles = [t["title"] for t in tasks if t["status"] not in ("Completed", "Submitted", "Cancelled")]
+                    pending_titles = [t["title"] for t in tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"])]
                     story.extend([Paragraph("PENDING", styles["RSSection"]), bullet("; ".join(pending_titles) if pending_titles else "No")])
                 story.extend([Spacer(1, 5), HRFlowable(width="100%", thickness=.4, color=colors.HexColor("#D4DEE7"), spaceAfter=5)])
 
@@ -4573,7 +4592,7 @@ class MainWindow(QMainWindow):
                             "Due time":t["due_time"] or "N/A" if t else "N/A",
                             "Proof notes":(re.sub(r"https?://[^\s<>]+", "[link]", str(t["proof_note"])).strip() or "N/A") if t and t["proof_note"] else "N/A",
                             "Manager remarks":t["manager_note"] or "N/A" if t else "N/A",
-                            "Pending items":"; ".join(x["title"] for x in tasks if x["status"] not in ("Completed","Submitted","Cancelled")) or "No",
+                            "Pending items":"; ".join(x["title"] for x in tasks if not is_explicitly_completed_task_status(x["status"]) and not is_cancelled_task_status(x["status"])) or "No",
                         }
                         row=base+[values[label] for key,label in field_keys if key!="proof" and opts.get(key,True)]
                         if opts.get("proof",True):
@@ -4661,7 +4680,7 @@ class MainWindow(QMainWindow):
         if opts.get("summary",True):
             lines.extend(["DAILY SUMMARY",f"• Employees: {len(data)}",f"• Tasks recorded: {len(all_tasks)}",
                 f'• Completed / submitted tasks: {sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))}',
-                f'• Pending / other tasks: {sum(1 for t in all_tasks if t["status"] not in ("Completed","Submitted","Cancelled"))}',
+                f'• Pending / other tasks: {sum(1 for t in all_tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"]))}',
                 f'• Employees flagged for missing proof: {sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,d).startswith("Yes"))}',""])
         for e,tasks,_att in data:
             lines.append(e["name"].upper())
@@ -4686,7 +4705,7 @@ class MainWindow(QMainWindow):
                         if opts.get("remarks",True): lines.append(f'  • Manager remarks: {t["manager_note"] or "N/A"}')
                 else: lines.append("• No tasks recorded for this date.")
             if opts.get("pending",True):
-                pending=[t["title"] for t in tasks if t["status"] not in ("Completed","Submitted","Cancelled")]
+                pending=[t["title"] for t in tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"])]
                 lines.append("PENDING: " + ("; ".join(pending) if pending else "No"))
             lines.append("")
         return "\n".join(lines)
