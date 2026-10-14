@@ -2156,12 +2156,29 @@ class MainWindow(QMainWindow):
             return
         self.update_button.setEnabled(False)
         self.update_button.setText("Checking for updates...")
-        self._update_progress = QProgressDialog("Checking for an update...", "", 0, 0, self)
+        self._update_progress = QProgressDialog(self)
         self._update_progress.setWindowTitle("Application Update")
+        self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        update_label = QLabel("Checking for an update...")
+        update_label.setWordWrap(True)
+        update_label.setMinimumWidth(390)
+        update_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        update_label.setMargin(4)
+        self._update_progress.setLabel(update_label)
+        self._update_progress.setMinimumWidth(440)
+        self._update_progress.setMinimumHeight(132)
         self._update_progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._update_progress.setCancelButton(None)
         self._update_progress.setMinimumDuration(0)
+        self._update_progress.setStyleSheet("""
+            QProgressDialog { background: #FFFFFF; color: #0F172A; }
+            QLabel { background: transparent; color: #0F172A; padding: 8px; }
+            QProgressBar { min-height: 14px; border: 1px solid #CBD5E1; border-radius: 7px;
+                background: #F1F5F9; text-align: center; color: #0F172A; }
+            QProgressBar::chunk { background: #7C3AED; border-radius: 6px; }
+        """)
         self._update_progress.show()
+        self._update_progress.adjustSize()
         thread = QThread(self)
         worker = UpdateWorker(APP_VERSION)
         worker.moveToThread(thread)
@@ -2525,13 +2542,20 @@ class MainWindow(QMainWindow):
         att_header.setSectionResizeMode(QHeaderView.Interactive)
         att_header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         att_header.setMinimumSectionSize(82)
-        for col in range(6):
-            att_header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        att_header.setSectionResizeMode(6, QHeaderView.Stretch)
+        # Inline editors must never exceed their cells. Use stable widths and
+        # horizontal scrolling on laptop-sized windows instead of overlapping.
+        att_header.setSectionResizeMode(QHeaderView.Interactive)
+        for col, width in enumerate((145, 112, 136, 118, 118, 90, 190)):
+            self.att_table.setColumnWidth(col, width)
+        self.att_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.att_table.setMinimumHeight(230)
+        self.att_table.verticalHeader().setDefaultSectionSize(46)
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
-        self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row.")
+        self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row. Scroll horizontally to see every column on smaller screens.")
         l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
@@ -2549,6 +2573,8 @@ class MainWindow(QMainWindow):
             header.setSectionResizeMode(col, QHeaderView.Stretch)
         self.attendance_summary_table.setWordWrap(False)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.attendance_summary_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.attendance_summary_table.setMinimumHeight(150)
         for i, h in enumerate(headers):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -3413,7 +3439,8 @@ class MainWindow(QMainWindow):
             status_combo = QComboBox()
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
-            status_combo.setMinimumWidth(104)
+            status_combo.setMinimumWidth(0)
+            status_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
             status_combo.currentTextChanged.connect(
@@ -3429,7 +3456,8 @@ class MainWindow(QMainWindow):
                 (6, a["attendance_note"] if a else "", "note"),
             ):
                 editor = QLineEdit(str(value or ""))
-                editor.setMinimumWidth(90 if column != 6 else 140)
+                editor.setMinimumWidth(0)
+                editor.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
                 editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
                 editor.setToolTip(
                     "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")

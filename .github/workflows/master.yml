@@ -80,7 +80,7 @@ jobs:
       - name: Build standalone Windows installer
         shell: pwsh
         env:
-          APP_VERSION: "1.2.48"
+          APP_VERSION: "1.2.49"
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
@@ -101,7 +101,7 @@ jobs:
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.2.48
+          name: RawStrengthEmployeeAuditManager-Setup-v1.2.49
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
@@ -110,8 +110,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.48
-          name: Raw Strength Employee Audit Manager v1.2.48
+          tag_name: v1.2.49
+          name: Raw Strength Employee Audit Manager v1.2.49
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe

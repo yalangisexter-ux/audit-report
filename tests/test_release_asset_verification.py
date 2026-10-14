@@ -117,6 +117,11 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'final_veil.setColorAt(1.0, QColor(255, 255, 255, 249))' in source
     assert 'QWidget#homeContent { background: #FFFFFF;' in source
     assert 'QWidget#pageContent { background: #FFFFFF;' in source
+    assert 'for col, width in enumerate((145, 112, 136, 118, 118, 90, 190))' in source
+    assert 'Scroll horizontally to see every column on smaller screens.' in source
+    assert 'update_label.setWordWrap(True)' in source
+    assert 'self._update_progress.setMinimumWidth(440)' in source
+    assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
     assert 'QListView::item:selected { background: #6D28D9; color: #FFFFFF; }' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
