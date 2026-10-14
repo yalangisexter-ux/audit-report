@@ -135,3 +135,16 @@ def test_release_build_bundles_photo_wallpapers_for_offline_use():
     assert '"love_couples.jpg"' in workflow
     assert 'Path("assets") / "wallpapers" / "photos" / filename' in app_source
     assert '--add-data "assets;assets"' in workflow
+
+
+def test_dashboard_clock_colorful_icons_and_print_preview_regression():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+    assert "def refresh_dashboard_clock(self):" in source
+    assert "self._dashboard_clock_timer.start(1000)" in source
+    assert '"🟢"' in source and '"🔴"' in source and '"🟣"' in source
+    assert "Live print preview — updates when report options change" in source
+    assert "self.report_summary.setMinimumHeight(220)" in source
+    assert "def preview_report(self):" in source
+    assert "def print_report(self):" in source
