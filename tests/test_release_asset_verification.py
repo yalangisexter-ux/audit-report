@@ -97,8 +97,8 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QComboBox QListView::item:selected' in source
     assert 'page.setObjectName("appPageSurface")' in source
     assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
-    assert 'QWidget#homeContent, QWidget#pageContent { background: rgba(248,250,252,0.97)' in source
-    assert 'QWidget#homeContent, QWidget#pageContent { background: rgba(17,24,39,0.97)' in source
+    assert 'QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC' in source
+    assert 'QWidget#homeContent, QWidget#pageContent { background-color: #111827' in source
     assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
     assert 'QComboBox QAbstractItemView::item:selected' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
