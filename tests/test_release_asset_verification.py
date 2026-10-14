@@ -91,8 +91,8 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QPixmap' in source
     assert 'QWidget#appPageSurface { background: transparent; color: #0F172A; }' in source
     assert 'QWidget#appPageSurface { background: transparent; color: #F8FAFC; }' in source
-    assert 'background: rgba(248,250,252,0.88)' in source
-    assert 'background: rgba(17,24,39,0.90)' in source
+    assert 'background: rgba(248,250,252,0.97)' in source
+    assert 'background: rgba(17,24,39,0.97)' in source
     assert 'combobox-popup: 0' in source
     assert 'QComboBox QListView::item:selected' in source
     assert 'page.setObjectName("appPageSurface")' in source
@@ -103,6 +103,9 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QComboBox QAbstractItemView::item:selected' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
+    assert 'QPrintPreviewDialog' in source
+    assert 'def open_print_preview(self):' in source
+    assert 'QPrintPreviewDialog(printer, self)' in source
 
 
 def test_live_wallpapers_use_high_resolution_photos_with_animation():
