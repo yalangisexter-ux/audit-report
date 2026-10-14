@@ -2115,7 +2115,7 @@ class MainWindow(QMainWindow):
         animation_row = QHBoxLayout()
         animation_label = QLabel("Live wallpaper")
         self.animation_combo = QComboBox()
-        self.animation_combo.addItems(["Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift"])
+        self.animation_combo.addItems(list(AnimatedBackground.STYLES))
         saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
         if self.animation_combo.findText(saved_animation) >= 0:
             self.animation_combo.setCurrentText(saved_animation)
