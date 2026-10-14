@@ -259,7 +259,9 @@ class UpdateWorker(QObject):
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         })
-        with urlopen(request, timeout=60) as response:
+        # Keep a failed network request from leaving the UI in a checking state
+        # for a full minute per attempt.
+        with urlopen(request, timeout=20) as response:
             return response.read()
 
     def run(self):
@@ -270,8 +272,11 @@ class UpdateWorker(QObject):
             latest_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
             latest_payload = None
             latest_error = None
+            self.progress.emit(0, "Connecting to GitHub to check the latest release...")
             for attempt in range(3):
                 try:
+                    if attempt:
+                        self.progress.emit(0, f"GitHub did not respond; retrying update check ({attempt + 1}/3)...")
                     latest_payload = json.loads(self.request_bytes(latest_url).decode("utf-8"))
                     if not isinstance(latest_payload, dict):
                         raise ValueError("GitHub returned an invalid latest-release response.")
@@ -740,11 +745,35 @@ class Database:
 def ask(parent, title, message):
     return QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
 
+def _show_message(parent, message, icon):
+    """Show readable, word-wrapped app messages without clipped native dialogs."""
+    box = QMessageBox(parent)
+    box.setWindowTitle(APP_NAME)
+    box.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+    box.setIcon(icon)
+    box.setText(str(message))
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    box.setMinimumWidth(500)
+    box.setStyleSheet("""
+        QMessageBox { background: #FFFFFF; color: #0F172A; }
+        QLabel#qt_msgbox_label { min-width: 440px; max-width: 680px; color: #0F172A;
+            background: transparent; padding: 8px; }
+        QPushButton { min-width: 84px; min-height: 30px; padding: 4px 12px; }
+    """)
+    label = box.findChild(QLabel, "qt_msgbox_label")
+    if label is not None:
+        label.setWordWrap(True)
+        label.setMinimumWidth(440)
+        label.setMaximumWidth(680)
+    box.adjustSize()
+    box.exec()
+
 def info(parent, message):
-    QMessageBox.information(parent, APP_NAME, message)
+    _show_message(parent, message, QMessageBox.Icon.Information)
 
 def error(parent, message):
-    QMessageBox.critical(parent, APP_NAME, message)
+    _show_message(parent, message, QMessageBox.Icon.Critical)
 
 SECURITY_QUESTIONS = [
     "What was the name of your first school?",
@@ -1170,7 +1199,9 @@ class ProductivityChart(QWidget):
             painter.setPen(QColor("#0f172a"))
             painter.drawText(x - 8, max(top + 12, y - 5), f"{score}%")
             painter.setPen(QColor("#475569"))
-            painter.drawText(int(left + slot * i), top + h + 18, int(slot), 22, Qt.AlignHCenter | Qt.TextSingleLine, name[:13])
+            label_rect = QRectF(left + slot * i + 1, top + h + 5, max(1, slot - 2), 36)
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, name)
 
 
 
@@ -1210,20 +1241,20 @@ class WallpaperPhotoLoader(QThread):
 
 class AnimatedBackground(QWidget):
     """High-resolution photographic wallpapers with gentle Ken Burns motion and particles."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Shiva", "Lord Shiva", "Love & Couples")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Lord Shiva", "Love & Couples")
     PHOTO_WALLPAPERS = {
         "Galaxy": ("galaxy.jpg", "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Milky Way": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Milky Way Waves": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Ocean Waves": ("ocean_waves.jpg", "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
-        "Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Lord Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Love & Couples": ("love_couples.jpg", "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
     }
 
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
-        self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        # Normalize the former duplicate option for existing saved preferences.
+        self.mode = "Lord Shiva" if mode == "Shiva" else (mode if mode in self.STYLES else "Ambient Glow")
         self.wallpaper_pixmap = QPixmap()
         self.photo_loader = None
         self.phase = 0.0
@@ -1284,7 +1315,7 @@ class AnimatedBackground(QWidget):
             QTimer.singleShot(0, self._load_wallpaper_image)
 
     def set_mode(self, mode):
-        self.mode = mode if mode in self.STYLES else "Ambient Glow"
+        self.mode = "Lord Shiva" if mode == "Shiva" else (mode if mode in self.STYLES else "Ambient Glow")
         self.init_particles()
         self._load_wallpaper_image()
         self.update()
@@ -1325,9 +1356,11 @@ class AnimatedBackground(QWidget):
             pass
         base = QLinearGradient(0, 0, w, h)
         if is_day:
-            base.setColorAt(0.0, QColor("#DCEBFA"))
-            base.setColorAt(0.48, QColor("#F2E9FF"))
-            base.setColorAt(1.0, QColor("#D9F5F4"))
+            # Keep the overall workspace white; the selected wallpaper and
+            # restrained glow provide only a soft moving watermark underneath.
+            base.setColorAt(0.0, QColor("#FFFFFF"))
+            base.setColorAt(0.48, QColor("#FFFFFF"))
+            base.setColorAt(1.0, QColor("#FFFFFF"))
         else:
             base.setColorAt(0.0, QColor("#050811"))
             base.setColorAt(0.52, QColor("#0B1020"))
@@ -1362,16 +1395,21 @@ class AnimatedBackground(QWidget):
             # opaque/light, so moving photos never reduce text contrast.
             veil = QLinearGradient(0, 0, 0, h)
             if is_day:
-                fade = 78 + int(22 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
-                veil.setColorAt(0.0, QColor(255, 255, 255, max(62, fade - 12)))
-                veil.setColorAt(1.0, QColor(255, 255, 255, min(145, fade + 28)))
+                # Keep wallpaper motion visible only as a subtle backdrop, never
+                # as competing detail behind text and controls.
+                # One gentle wash only. A second near-opaque wash used to
+                # completely hide the photo on Day mode.
+                fade = 30 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
+                veil.setColorAt(0.0, QColor(255, 255, 255, max(24, fade - 3)))
+                veil.setColorAt(1.0, QColor(255, 255, 255, min(38, fade + 3)))
             else:
                 veil.setColorAt(0.0, QColor(3, 7, 18, 52))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 92))
             painter.fillRect(rect, veil)
 
         if self.mode in ("Ambient Glow", "Aurora Waves"):
-            colors = [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)]
+            colors = ([(124, 92, 252, 30), (34, 211, 238, 22), (232, 121, 249, 16)]
+                      if is_day else [(124, 92, 252, 42), (34, 211, 238, 30), (232, 121, 249, 22)])
             for i, color in enumerate(colors):
                 x = int(w * (0.18 + i * 0.30 + 0.08 * math.sin(self.phase * (0.7 + i * 0.12))))
                 y = int(h * (0.25 + i * 0.24 + 0.10 * math.cos(self.phase * (0.6 + i * 0.15))))
@@ -1411,6 +1449,17 @@ class AnimatedBackground(QWidget):
             else:
                 painter.setBrush(QColor(167, 139, 250, alpha))
                 painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
+        # Apply the Day-mode veil after wallpaper, glows, and particles. Applying
+        # it earlier lets later effects draw over text and controls, as seen in
+        # customer screenshots. Keep the animation moving, but reduce it to a
+        # barely visible tint behind the white UI.
+        if is_day:
+            final_veil = QLinearGradient(0, 0, 0, h)
+            # Leave the selected animated wallpaper visible as a very light
+            # watermark while keeping foreground controls high contrast.
+            final_veil.setColorAt(0.0, QColor(255, 255, 255, 202))
+            final_veil.setColorAt(1.0, QColor(255, 255, 255, 218))
+            painter.fillRect(rect, final_veil)
         painter.end()
 
 class MainWindow(QMainWindow):
@@ -1443,7 +1492,9 @@ class MainWindow(QMainWindow):
         self.header_logo_menu.setFixedSize(36, 32)
         self.header_logo_menu.setToolTip("Go to Home")
         self.header_logo_menu.setAccessibleName("Application menu")
-        title_layout.addWidget(self.header_logo_menu)
+        # Keep the original icon for the Windows taskbar/window, but remove the
+        # redundant icon button from the visible title bar.
+        self.header_logo_menu.hide()
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("titleLabel")
         self.title_label.setMinimumWidth(0)
@@ -1455,7 +1506,7 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
-        title_layout.addWidget(self.header_clock)
+        # The clock belongs to the shared branded banner, not the top title strip.
         self.header_prev = QPushButton("‹")
         self.header_prev.setObjectName("headerNavButton")
         self.header_prev.setToolTip("Previous page")
@@ -1519,6 +1570,36 @@ class MainWindow(QMainWindow):
         main_content_layout.setSpacing(0)
         main_content_layout.addWidget(self.title_bar)
         self.title_bar.raise_()
+
+        # Persistent brand banner shared by every page; keep the original logo
+        # and the single live clock together in the same colored surface.
+        self.brand_banner = QFrame()
+        self.brand_banner.setObjectName("brandBanner")
+        self.brand_banner.setMinimumHeight(104)
+        brand_layout = QHBoxLayout(self.brand_banner)
+        brand_layout.setContentsMargins(18, 10, 18, 10)
+        brand_layout.setSpacing(14)
+        self.brand_logo = QLabel()
+        self.brand_logo.setObjectName("brandLogo")
+        self.brand_logo.setFixedSize(76, 76)
+        self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.brand_logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(68, 68))
+        brand_layout.addWidget(self.brand_logo)
+        brand_copy = QVBoxLayout()
+        brand_copy.setSpacing(3)
+        self.brand_heading = QLabel("Raw Strength Calisthenics")
+        self.brand_heading.setObjectName("brandHeading")
+        self.brand_subheading = QLabel("Employee Audit Manager")
+        self.brand_subheading.setObjectName("brandSubheading")
+        brand_copy.addWidget(self.brand_heading)
+        brand_copy.addWidget(self.brand_subheading)
+        brand_layout.addLayout(brand_copy, 1)
+        self.header_clock.setMinimumWidth(210)
+        self.header_clock.setMinimumHeight(42)
+        self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_layout.addWidget(self.header_clock)
+        self.header_clock.show()
+        main_content_layout.addWidget(self.brand_banner)
 
         self.tabs = QTabWidget()
         self.tabs.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -1611,6 +1692,13 @@ class MainWindow(QMainWindow):
             QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
             QWidget#mainContentSurface { background: transparent; }
             QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #263FAE,stop:0.52 #4F46E5,stop:1 #BE347E);
+                border: 1px solid #A5B4FC; border-radius: 16px; margin: 8px 10px; }
+            QLabel#brandLogo { background: rgba(15,23,42,110); border: 2px solid #A5B4FC; border-radius: 13px; padding: 3px; }
+            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 19pt; font-weight: 800; }
+            QLabel#brandSubheading { background: transparent; color: #F1F5F9; font-size: 10pt; }
+            QFrame#brandBanner QWidget#headerClock { background: rgba(15,23,42,145); color: #FFFFFF;
+                border: 1px solid rgba(255,255,255,100); border-radius: 10px; padding: 7px 12px; font-size: 10pt; font-weight: 700; }
             QWidget#pageHeader { background: #FFFFFF; color: #0F172A; }
             QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
                 border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
@@ -1705,7 +1793,7 @@ class MainWindow(QMainWindow):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
                 widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-                if widget.text() and (len(widget.text()) > 28 or "\n" in widget.text()):
+                if widget.text() and (len(widget.text()) > 22 or "\n" in widget.text()):
                     widget.setWordWrap(True)
                     widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for widget in self.findChildren(QLineEdit):
@@ -1714,10 +1802,24 @@ class MainWindow(QMainWindow):
             widget.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
         for widget in self.findChildren(QComboBox):
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            widget.setMinimumWidth(0)
             view = widget.view()
             if view is not None:
                 view.setMinimumWidth(max(widget.width(), widget.minimumWidth(), 180))
                 view.setUniformItemSizes(False)
+                # Explicit popup styling avoids low-contrast/solid-looking options.
+                if self.current_theme() == "night":
+                    view.setStyleSheet("""
+                        QListView { background: #111827; color: #F8FAFC; border: 1px solid #475569; }
+                        QListView::item { background: #111827; color: #F8FAFC; padding: 7px 10px; min-height: 24px; }
+                        QListView::item:selected { background: #6D28D9; color: #FFFFFF; }
+                    """)
+                else:
+                    view.setStyleSheet("""
+                        QListView { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; }
+                        QListView::item { background: #FFFFFF; color: #0F172A; padding: 7px 10px; min-height: 24px; }
+                        QListView::item:selected { background: #6D28D9; color: #FFFFFF; }
+                    """)
         for widget in self.findChildren(QDateEdit):
             widget.setCalendarPopup(True)
             calendar = widget.calendarWidget()
@@ -1977,30 +2079,6 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(22, 18, 22, 18)
         content_layout.setSpacing(16)
 
-        welcome = QWidget()
-        welcome.setObjectName("welcomeHero")
-        welcome_layout = QHBoxLayout(welcome)
-        welcome_layout.setContentsMargins(18, 14, 18, 14)
-        welcome_layout.setSpacing(14)
-        brand_mark = QLabel()
-        brand_mark.setObjectName("welcomeMark")
-        brand_mark.setFixedSize(80, 80)
-        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(72, 72))
-        welcome_layout.addWidget(brand_mark)
-        welcome_copy = QVBoxLayout()
-        welcome_title = QLabel(f"Welcome, {self.current_user.get('display_name') or self.current_user.get('username')}")
-        welcome_title.setProperty("welcomeTitle", True)
-        welcome_title.setWordWrap(True)
-        welcome_title.setMinimumWidth(0)
-        welcome_copy.addWidget(welcome_title)
-        welcome_subtitle = QLabel("Raw Strength Calisthenics · Employee Audit Manager")
-        welcome_subtitle.setProperty("welcomeSubtitle", True)
-        welcome_subtitle.setWordWrap(True)
-        welcome_subtitle.setMinimumWidth(0)
-        welcome_copy.addWidget(welcome_subtitle)
-        welcome_layout.addLayout(welcome_copy, 1)
-
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
         session_layout = QGridLayout(session_strip)
@@ -2116,7 +2194,7 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(guide_grid)
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
-        page_layout.addWidget(welcome)
+        # The shared branded banner above the tabs is the only app header.
         page_layout.addWidget(self.home_scroll)
 
     def check_for_updates(self):
@@ -2124,12 +2202,29 @@ class MainWindow(QMainWindow):
             return
         self.update_button.setEnabled(False)
         self.update_button.setText("Checking for updates...")
-        self._update_progress = QProgressDialog("Checking for an update...", "", 0, 0, self)
+        self._update_progress = QProgressDialog(self)
         self._update_progress.setWindowTitle("Application Update")
+        self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
+        update_label = QLabel("Checking for an update...")
+        update_label.setWordWrap(True)
+        update_label.setMinimumWidth(390)
+        update_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        update_label.setMargin(4)
+        self._update_progress.setLabel(update_label)
+        self._update_progress.setMinimumWidth(440)
+        self._update_progress.setMinimumHeight(132)
         self._update_progress.setWindowModality(Qt.WindowModality.WindowModal)
         self._update_progress.setCancelButton(None)
         self._update_progress.setMinimumDuration(0)
+        self._update_progress.setStyleSheet("""
+            QProgressDialog { background: #FFFFFF; color: #0F172A; }
+            QLabel { background: transparent; color: #0F172A; padding: 8px; }
+            QProgressBar { min-height: 14px; border: 1px solid #CBD5E1; border-radius: 7px;
+                background: #F1F5F9; text-align: center; color: #0F172A; }
+            QProgressBar::chunk { background: #7C3AED; border-radius: 6px; }
+        """)
         self._update_progress.show()
+        self._update_progress.adjustSize()
         thread = QThread(self)
         worker = UpdateWorker(APP_VERSION)
         worker.moveToThread(thread)
@@ -2231,33 +2326,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(12)
 
-        hero = QWidget()
-        hero.setObjectName("dashboardHero")
-        hero.setMinimumHeight(112)
-        hero_layout = QHBoxLayout(hero)
-        hero_layout.setContentsMargins(18, 12, 18, 12)
-        mark = QLabel()
-        mark.setFixedSize(82, 82)
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(76, 76))
-        hero_layout.addWidget(mark)
-        copy = QVBoxLayout()
-        title = QLabel("Welcome, Administrator")
-        title.setProperty("heroTitle", True)
-        copy.addWidget(title)
-        subtitle = QLabel("Raw Strength Calisthenics  ·  Employee Audit Manager")
-        subtitle.setProperty("heroSubtitle", True)
-        copy.addWidget(subtitle)
-        hero_layout.addLayout(copy, 1)
-        self.dashboard_clock = QLabel()
-        self.dashboard_clock.setProperty("heroSubtitle", True)
-        self.dashboard_clock.setMinimumHeight(24)
-        hero_layout.addWidget(self.dashboard_clock)
-        self._dashboard_clock_timer = QTimer(self)
-        self._dashboard_clock_timer.timeout.connect(self.refresh_dashboard_clock)
-        self._dashboard_clock_timer.start(1000)
-        self.refresh_dashboard_clock()
-        self._wrap_page_in_scroll(self.dashboard, root, fixed_header=hero)
+        self._wrap_page_in_scroll(self.dashboard, root)
 
         self.kpis = QHBoxLayout()
         self.kpis.setSpacing(10)
@@ -2351,7 +2420,9 @@ class MainWindow(QMainWindow):
         productivity_layout.addWidget(note)
         self.productivity_chart = ProductivityChart()
         productivity_layout.addWidget(self.productivity_chart)
-        grid.addWidget(productivity, 1, 2)
+        self.productivity_chart.setMinimumHeight(270)
+        productivity_layout.setContentsMargins(14, 12, 14, 14)
+        grid.addWidget(productivity, 1, 1, 1, 2)
 
         self.productivity_table = QTableWidget(0, 7)
         self.productivity_table.setHorizontalHeaderLabels(["Employee", "Joined / tracking start", "Working days", "Present days", "Tasks", "Completed", "Score"])
@@ -2493,13 +2564,20 @@ class MainWindow(QMainWindow):
         att_header.setSectionResizeMode(QHeaderView.Interactive)
         att_header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         att_header.setMinimumSectionSize(82)
-        for col in range(6):
-            att_header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
-        att_header.setSectionResizeMode(6, QHeaderView.Stretch)
+        # Inline editors must never exceed their cells. Use stable widths and
+        # horizontal scrolling on laptop-sized windows instead of overlapping.
+        att_header.setSectionResizeMode(QHeaderView.Interactive)
+        for col, width in enumerate((145, 112, 136, 118, 118, 90, 190)):
+            self.att_table.setColumnWidth(col, width)
+        self.att_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.att_table.setMinimumHeight(230)
+        self.att_table.verticalHeader().setDefaultSectionSize(46)
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
-        self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row.")
+        self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row. Scroll horizontally to see every column on smaller screens.")
         l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
@@ -2517,6 +2595,8 @@ class MainWindow(QMainWindow):
             header.setSectionResizeMode(col, QHeaderView.Stretch)
         self.attendance_summary_table.setWordWrap(False)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.attendance_summary_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.attendance_summary_table.setMinimumHeight(150)
         for i, h in enumerate(headers):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -3381,7 +3461,8 @@ class MainWindow(QMainWindow):
             status_combo = QComboBox()
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
-            status_combo.setMinimumWidth(104)
+            status_combo.setMinimumWidth(0)
+            status_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
             status_combo.currentTextChanged.connect(
@@ -3397,7 +3478,8 @@ class MainWindow(QMainWindow):
                 (6, a["attendance_note"] if a else "", "note"),
             ):
                 editor = QLineEdit(str(value or ""))
-                editor.setMinimumWidth(90 if column != 6 else 140)
+                editor.setMinimumWidth(0)
+                editor.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
                 editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
                 editor.setToolTip(
                     "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")
@@ -4521,15 +4603,15 @@ QWidget#kpiCard { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#dashboardPanel { border: 1px solid #94A3B8; border-radius: 14px; }
 QWidget#welcomeHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #5B21B6, stop:1 #DB2777); border-radius: 14px; }
 QScrollArea#homeScroll { border: 0; background: transparent; }
-QWidget#homeContent { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.78); border-radius: 18px; }
+QWidget#homeContent { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 18px; }
 QScrollArea#pageScroll { border: 0; background: transparent; }
-QWidget#pageContent { background: rgba(255,255,255,0.38); border: 1px solid rgba(255,255,255,0.70); border-radius: 18px; }
+QWidget#pageContent { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 18px; }
 QTextEdit#reportPreview { background: #F1F5F9; border: 0; border-radius: 14px; }
-QWidget#sessionStrip { background: rgba(255,255,255,0.38); border: 1px solid rgba(255,255,255,0.70); border-radius: 16px; }
+QWidget#sessionStrip { background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 16px; }
 QLabel[sessionLabel="true"] { color: #64748B; font-size: 8pt; font-weight: 700; }
 QLabel[roleBadge="true"] { background: #EDE9FE; color: #5B21B6; border-radius: 8px; padding: 4px 10px; font-weight: 700; }
 QLabel[sectionHeading="true"] { color: #0F172A; font-size: 12.5pt; font-weight: 700; }
-QWidget#guideItem { background: rgba(255,255,255,0.42); border: 1px solid rgba(255,255,255,0.68); border-left: 4px solid #7C5CFC; border-radius: 16px; }
+QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 16px; }
 QLabel[guideTitle="true"] { color: #0F172A; font-size: 10.5pt; font-weight: 700; }
 QLabel[metricValue="true"] { font-size: 26pt; font-weight: 700; color: #7C5CFC; min-height: 32px; }
 QLabel[statusSummary="true"] { background: #EEF2FF; border: 0; border-radius: 14px; color: #312E81; font-weight: 600; padding: 11px 14px; }
@@ -4557,7 +4639,7 @@ QCalendarWidget QToolButton:hover { background: #7C5CFC; }
 QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
 QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
-QWidget#appPageSurface { background: transparent; color: #0F172A; }
+QWidget#appPageSurface { background: #FFFFFF; color: #0F172A; }
 QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
 QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
 QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }
@@ -4573,7 +4655,10 @@ QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
 QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #94A3B8; }
 QWidget#guideItem { background: #F1F5F9; border: 1px solid #94A3B8; }
-QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit { border: 1px solid #94A3B8; }
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit {
+    background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus,
+QTimeEdit:focus, QComboBox:focus, QDateEdit:focus { border: 1px solid #6D28D9; }
 QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
 QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
 QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }

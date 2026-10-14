@@ -97,7 +97,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert "homeWallpaperDropdown" in source
     assert 'icon_label = QLabel(symbol)' in source
     assert 'QPixmap' in source
-    assert 'QWidget#appPageSurface { background: transparent; color: #0F172A; }' in source
+    assert 'QWidget#appPageSurface { background: #FFFFFF; color: #0F172A; }' in source
     assert 'QWidget#appPageSurface { background: transparent; color: #F8FAFC; }' in source
     assert 'background-color: #F8FAFC' in source
     assert 'background-color: #111827' in source
@@ -109,6 +109,32 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QWidget#homeContent, QWidget#pageContent { background-color: #111827' in source
     assert 'page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)' in source
     assert 'QComboBox QAbstractItemView::item:selected' in source
+    assert 'self.header_logo_menu.hide()' in source
+    assert 'mode == "Shiva"' in source
+    assert '"Lord Shiva": ("lord_shiva.jpg"' in source
+    assert '"Shiva": ("lord_shiva.jpg"' not in source
+    assert 'fade = 30 +' in source
+    assert 'final_veil.setColorAt(1.0, QColor(255, 255, 255, 218))' in source
+    assert 'QWidget#homeContent { background: #FFFFFF;' in source
+    assert 'QWidget#pageContent { background: #FFFFFF;' in source
+    assert 'base.setColorAt(0.0, QColor("#FFFFFF"))' in source
+    assert 'if is_day else [(124, 92, 252, 42)' in source
+    assert 'for col, width in enumerate((145, 112, 136, 118, 118, 90, 190))' in source
+    assert 'Scroll horizontally to see every column on smaller screens.' in source
+    assert 'update_label.setWordWrap(True)' in source
+    assert 'self._update_progress.setMinimumWidth(440)' in source
+    assert 'self.brand_banner = QFrame()' in source
+    assert 'main_content_layout.addWidget(self.brand_banner)' in source
+    assert 'page_layout.addWidget(welcome)' not in source
+    assert 'def _show_message(parent, message, icon):' in source
+    assert 'label.setWordWrap(True)' in source
+    assert 'box.setMinimumWidth(500)' in source
+    assert 'self.header_clock.show()' in source
+    assert 'self._wrap_page_in_scroll(self.dashboard, root)' in source
+    assert 'grid.addWidget(productivity, 1, 1, 1, 2)' in source
+    assert 'Qt.TextFlag.TextWordWrap, name)' in source
+    assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
+    assert 'QListView::item:selected { background: #6D28D9; color: #FFFFFF; }' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
     assert 'QTextEdit#reportPreview { background: #111827' in source
     assert 'QPrintPreviewDialog' in source
@@ -119,7 +145,7 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC;' in source
     assert 'QWidget#settingsContent { background-color: #F8FAFC; color: #0F172A; }' in source
     assert 'QWidget#settingsContent { background-color: #111827; color: #F8FAFC; }' in source
-    assert 'background, foreground, border = "#F8FAFC", "#0F172A", "#94A3B8"' in source
+    assert 'background, foreground, border = "#FFFFFF", "#0F172A", "#E2E8F0"' in source
     assert 'background, foreground, border = "#111827", "#F8FAFC", "#64748B"' in source
     assert "self.apply_content_surface_styles(theme_name)" in source
 
@@ -159,8 +185,17 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
-    assert "def refresh_dashboard_clock(self):" in source
-    assert "self._dashboard_clock_timer.start(1000)" in source
+    assert "def refresh_header_clock(self):" in source
+    assert "self.header_clock = QLabel()" in source
+    assert "main_content_layout.addWidget(self.brand_banner)" in source
+    assert "self._header_clock_timer.start(1000)" in source
+    assert "self.header_clock.show()" in source
+    assert "self._dashboard_clock_timer.start(1000)" not in source
+    assert 'page_layout.addWidget(self.home_scroll)' in source
+    assert 'page_layout.addWidget(welcome)' not in source
+    assert 'def _show_message(parent, message, icon):' in source
+    assert 'label.setWordWrap(True)' in source
+    assert 'box.setMinimumWidth(500)' in source
     assert '"🟢"' in source and '"🔴"' in source and '"🟣"' in source
     assert "Live print preview — updates when report options change" in source
     assert "self.report_summary.setMinimumHeight(220)" in source
@@ -207,6 +242,35 @@ def test_update_worker_uses_latest_published_stable_release(monkeypatch):
     assert emitted
     assert emitted[0][0] == "failed"
     assert "missing a trusted installer" in emitted[0][1]
+def test_update_request_uses_bounded_timeout_and_reports_check_progress(monkeypatch):
+    import urllib.request
+    import app
+
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+        headers = {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout):
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(app, "urlopen", fake_urlopen)
+    payload = app.UpdateWorker.request_bytes("https://api.github.com/test")
+    assert payload == b'{"ok": true}'
+    assert captured["timeout"] == 20
+
+
 def test_update_worker_retries_after_a_read_timeout(monkeypatch):
     release = {
         "tag_name": "v1.2.36",
