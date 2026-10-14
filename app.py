@@ -206,23 +206,43 @@ class UpdateWorker(QObject):
 
     def run(self):
         try:
-            release = json.loads(self.request_bytes(GITHUB_RELEASES_API).decode("utf-8"))
-            latest_version = release.get("tag_name", "")
-            latest_parts = release_version_tuple(latest_version)
+            # Query the release list instead of trusting a single /latest response.
+            # Ignore drafts, prereleases, malformed tags, and unpublished releases.
+            releases_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases?per_page=100"
+            payload = json.loads(self.request_bytes(releases_url).decode("utf-8"))
+            if not isinstance(payload, list):
+                raise ValueError("GitHub returned an invalid releases response.")
+            stable_releases = []
+            for candidate in payload:
+                if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
+                    continue
+                try:
+                    candidate_version = release_version_tuple(candidate.get("tag_name", ""))
+                except ValueError:
+                    continue
+                if not candidate.get("published_at"):
+                    continue
+                stable_releases.append((candidate_version, candidate))
+            if not stable_releases:
+                raise ValueError("No published stable application release was found.")
+            latest_parts, release = max(stable_releases, key=lambda item: item[0])
             if latest_parts <= release_version_tuple(self.current_version):
                 self.current.emit(self.current_version)
                 return
 
             assets = {asset.get("name"): asset
-                      for asset in release.get("assets", [])}
+                      for asset in release.get("assets", []) if isinstance(asset, dict)}
             installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
             installer_asset = assets.get(installer_name, {})
             installer_url = installer_asset.get("browser_download_url", "")
             if not installer_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
                 raise ValueError("The latest release is missing a trusted installer.")
             expected_digest = str(installer_asset.get("digest") or "")
-            if not expected_digest.startswith("sha256:"):
-                raise ValueError("The latest release has no SHA-256 installer checksum; update cancelled.")
+            if not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", expected_digest):
+                raise ValueError("The latest release has no valid SHA-256 installer checksum; update cancelled.")
+            asset_size = installer_asset.get("size")
+            if not isinstance(asset_size, int) or asset_size < 1000000:
+                raise ValueError("The latest release installer metadata is invalid or incomplete.")
 
             version_text = ".".join(str(part) for part in latest_parts)
             update_dir = APP_DIR / "updates" / version_text
@@ -248,8 +268,11 @@ class UpdateWorker(QObject):
                             self.progress.emit(percent, f"Downloading update installer... {percent}%")
                         else:
                             self.progress.emit(0, f"Downloading update installer... ({downloaded // 1024} KB)")
-                if partial_path.stat().st_size < 1000000:
+                actual_size = partial_path.stat().st_size
+                if actual_size < 1000000:
                     raise ValueError("The downloaded installer is missing or incomplete.")
+                if actual_size != asset_size:
+                    raise ValueError("Downloaded installer size does not match GitHub release metadata.")
                 expected = expected_digest.partition(":")[2].lower()
                 if not secrets.compare_digest(digest.hexdigest().lower(), expected):
                     raise ValueError("Installer checksum verification failed; the download was rejected.")

@@ -166,3 +166,40 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
     assert "self.report_summary.setMinimumHeight(220)" in source
     assert "def preview_report(self):" in source
     assert "def print_report(self):" in source
+
+
+def test_release_version_tuple_normalizes_v_prefix_and_rejects_invalid_tags():
+    assert app.release_version_tuple("v1.2.31") == (1, 2, 31)
+    assert app.release_version_tuple("1.2.32") == (1, 2, 32)
+    with pytest.raises(ValueError):
+        app.release_version_tuple("v1.2")
+    with pytest.raises(ValueError):
+        app.release_version_tuple("v1.2.3-rc1")
+
+
+def test_update_worker_selects_newest_published_stable_release(monkeypatch):
+    releases = [
+        {"tag_name": "v1.2.31", "draft": False, "prerelease": False,
+         "published_at": "2026-10-14T07:00:00Z", "assets": []},
+        {"tag_name": "v1.2.99", "draft": False, "prerelease": True,
+         "published_at": "2026-10-15T07:00:00Z", "assets": []},
+        {"tag_name": "v9.9.9", "draft": True, "prerelease": False,
+         "published_at": "2026-10-16T07:00:00Z", "assets": []},
+        {"tag_name": "not-a-version", "draft": False, "prerelease": False,
+         "published_at": "2026-10-17T07:00:00Z", "assets": []},
+        {"tag_name": "v1.2.32", "draft": False, "prerelease": False,
+         "published_at": "2026-10-18T07:00:00Z", "assets": []},
+    ]
+    monkeypatch.setattr(app.UpdateWorker, "request_bytes",
+                        staticmethod(lambda url, accept="application/vnd.github+json": __import__("json").dumps(releases).encode()))
+    worker = app.UpdateWorker("1.2.31")
+    emitted = []
+    worker.current.connect(lambda version: emitted.append(("current", version)))
+    worker.failed.connect(lambda message: emitted.append(("failed", message)))
+    worker.ready.connect(lambda path, version: emitted.append(("ready", version)))
+    # The selected release has no installer, so selection must not declare the
+    # application current merely because the first API item is v1.2.31.
+    worker.run()
+    assert emitted
+    assert emitted[0][0] == "failed"
+    assert "missing a trusted installer" in emitted[0][1]
