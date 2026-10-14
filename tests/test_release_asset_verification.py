@@ -208,6 +208,16 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
     assert '"ABSENT TODAY", "×", "#BE123C"' in source
     assert 'class AnimatedDashboardIcon(QLabel)' in source
     assert 'self._hover_animation.start()' in source
+    assert 'class AnimatedRGBFrame(QFrame)' in source
+    assert 'QConicalGradient(bounds.center(), self._rotation)' in source
+    assert 'self.brand_logo_frame = AnimatedRGBFrame(hover_only=True, outline_inset=2)' in source
+    assert 'self.brand_logo_frame.setFixedSize(92, 92)' in source
+    assert 'self.header_clock_frame.setFixedSize(254, 66)' in source
+    assert 'class InteractionFeedback(QObject)' in source
+    assert 'QEvent.Type.MouseButtonPress' in source and 'QEvent.Type.MouseButtonRelease' in source
+    assert 'self.findChildren(QAbstractItemView)' in source
+    assert 'self.findChildren(QProgressBar)' in source and 'self.findChildren(ProductivityChart)' in source
+    assert 'self.apply_interaction_animations()' in source
     assert 'not is_explicitly_completed_task_status(task["status"])' in source
     assert 'def is_explicitly_completed_task_status(status):' in source
     assert 'not_checked = max(0, total - present - absent - leave)' in source

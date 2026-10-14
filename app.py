@@ -1,19 +1,19 @@
-import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re
+import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re, math
 from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, date
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QSize, QDate, QTime, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QDate, QTime, QEvent, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QToolTip,
-    QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect,
+    QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
     QToolButton, QMenu, QSizePolicy, QFrame, QListView
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QFont, QFontDatabase, QIcon, QPixmap, QPalette
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -1461,6 +1461,134 @@ class AnimatedDashboardIcon(QLabel):
         super().enterEvent(event)
 
 
+class AnimatedRGBFrame(QFrame):
+    """Paint a soft, animated RGB outline for the clock and the unchanged app mark."""
+    def __init__(self, *, hover_only=False, outline_inset=8, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self._hover_only = hover_only
+        self._outline_inset = outline_inset
+        self._active = not hover_only
+        self._rotation = 0.0
+        self._phase = 0.0
+        self._tick = QTimer(self)
+        self._tick.setInterval(72)
+        self._tick.timeout.connect(self._advance_glow)
+        if self._active:
+            self._tick.start()
+
+    def _advance_glow(self):
+        self._rotation = (self._rotation + 3.0) % 360.0
+        self._phase = (self._phase + 0.10) % (2.0 * 3.141592653589793)
+        self.update()
+
+    def enterEvent(self, event):
+        if self._hover_only:
+            self._active = True
+            self._tick.start()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if self._hover_only:
+            self._active = False
+            self._tick.stop()
+            self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        inset = self._outline_inset
+        bounds = QRectF(self.rect()).adjusted(inset, inset, -inset, -inset)
+        if bounds.width() <= 0 or bounds.height() <= 0:
+            return
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(15, 23, 42, 226))
+        painter.drawRoundedRect(bounds, 13, 13)
+
+        pulse = (0.5 + 0.5 * math.sin(self._phase)) if self._active else 0.0
+        glow_alpha = 20 + round(18 * pulse) if self._active else 76
+        for width, alpha in ((9.0, glow_alpha), (5.0, 80 if self._active else 100), (2.0, 235)):
+            gradient = QConicalGradient(bounds.center(), self._rotation)
+            for stop, offset in ((0.0, 0), (0.25, 90), (0.5, 180), (0.75, 270), (1.0, 360)):
+                hue = int(self._rotation + offset) % 360
+                gradient.setColorAt(stop, QColor.fromHsv(hue, 240, 255, alpha))
+            pen = QPen(QBrush(gradient), width, Qt.PenStyle.SolidLine,
+                       Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            inset = width / 2 + 0.5
+            painter.drawRoundedRect(bounds.adjusted(inset, inset, -inset, -inset), 11, 11)
+
+
+class InteractionFeedback(QObject):
+    """Animate a small accent glow on buttons and cards without moving layout."""
+    def __init__(self, widget, accent):
+        super().__init__(widget)
+        self.widget = widget
+        self._accent = QColor(accent)
+        self._level = 0.0
+        self.effect = QGraphicsDropShadowEffect(widget)
+        self.effect.setOffset(0, 2)
+        self.effect.setBlurRadius(0)
+        self.effect.setColor(QColor(self._accent.red(), self._accent.green(), self._accent.blue(), 0))
+        widget.setGraphicsEffect(self.effect)
+        widget.installEventFilter(self)
+        self.animation = QVariantAnimation(self)
+        self.animation.setDuration(190)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.animation.valueChanged.connect(self._apply_level)
+        self._settle_timer = QTimer(self)
+        self._settle_timer.setSingleShot(True)
+        self._settle_timer.timeout.connect(self._settle_after_click)
+        if isinstance(widget, (QPushButton, QToolButton)):
+            widget.clicked.connect(self._pulse_on_click)
+
+    def set_accent(self, accent):
+        self._accent = QColor(accent)
+        self._apply_level(self._level)
+
+    def _apply_level(self, value):
+        self._level = max(0.0, min(1.35, float(value)))
+        alpha = 0 if self._level <= 0.01 else min(150, 36 + round(78 * self._level))
+        self.effect.setColor(QColor(self._accent.red(), self._accent.green(), self._accent.blue(), alpha))
+        self.effect.setBlurRadius(1 + 12 * self._level if alpha else 0)
+        self.effect.setOffset(0, 2 + 2.5 * self._level)
+
+    def _animate_to(self, target, duration=190):
+        self.animation.stop()
+        self.animation.setDuration(duration)
+        self.animation.setStartValue(self._level)
+        self.animation.setEndValue(target)
+        self.animation.start()
+
+    def _pulse_on_click(self, *_args):
+        self._settle_timer.stop()
+        self._animate_to(1.25, 105)
+        self._settle_timer.start(145)
+
+    def _settle_after_click(self):
+        self._animate_to(0.62 if self.widget.underMouse() else 0.0)
+
+    def eventFilter(self, watched, event):
+        event_type = event.type()
+        if event_type == QEvent.Type.Enter:
+            self._animate_to(0.62)
+        elif event_type == QEvent.Type.Leave:
+            self._settle_timer.stop()
+            self._animate_to(0.0)
+        elif event_type == QEvent.Type.MouseButtonPress:
+            self._animate_to(1.0, 100)
+        elif event_type == QEvent.Type.MouseButtonRelease:
+            self._animate_to(0.72 if watched.underMouse() else 0.0)
+        elif event_type == QEvent.Type.FocusIn:
+            self._animate_to(0.5)
+        elif event_type == QEvent.Type.FocusOut:
+            self._animate_to(0.62 if watched.underMouse() else 0.0)
+        return False
+
+
 
 class WallpaperPhotoLoader(QThread):
     """Download a high-resolution wallpaper once, then keep it available offline."""
@@ -1836,12 +1964,20 @@ class MainWindow(QMainWindow):
         brand_layout = QHBoxLayout(self.brand_banner)
         brand_layout.setContentsMargins(18, 10, 18, 10)
         brand_layout.setSpacing(14)
+        self.brand_logo_frame = AnimatedRGBFrame(hover_only=True, outline_inset=2)
+        self.brand_logo_frame.setObjectName("brandLogoFrame")
+        self.brand_logo_frame.setFixedSize(92, 92)
+        logo_frame_layout = QHBoxLayout(self.brand_logo_frame)
+        logo_frame_layout.setContentsMargins(8, 8, 8, 8)
+        logo_frame_layout.setSpacing(0)
         self.brand_logo = QLabel()
         self.brand_logo.setObjectName("brandLogo")
         self.brand_logo.setFixedSize(76, 76)
         self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.brand_logo.setToolTip("Raw Strength Calisthenics application logo")
         self.brand_logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(68, 68))
-        brand_layout.addWidget(self.brand_logo)
+        logo_frame_layout.addWidget(self.brand_logo)
+        brand_layout.addWidget(self.brand_logo_frame)
         brand_copy = QVBoxLayout()
         brand_copy.setSpacing(3)
         self.brand_heading = QLabel("Raw Strength Calisthenics")
@@ -1854,7 +1990,14 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumWidth(210)
         self.header_clock.setMinimumHeight(42)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_layout.addWidget(self.header_clock)
+        self.header_clock_frame = AnimatedRGBFrame()
+        self.header_clock_frame.setObjectName("headerClockFrame")
+        self.header_clock_frame.setFixedSize(254, 66)
+        clock_frame_layout = QHBoxLayout(self.header_clock_frame)
+        clock_frame_layout.setContentsMargins(11, 9, 11, 9)
+        clock_frame_layout.setSpacing(0)
+        clock_frame_layout.addWidget(self.header_clock)
+        brand_layout.addWidget(self.header_clock_frame)
         self.header_clock.show()
         main_content_layout.addWidget(self.brand_banner)
 
@@ -1924,6 +2067,7 @@ class MainWindow(QMainWindow):
         self.polish_tables()
         self.apply_global_control_polish()
         self.apply_hover_messages()
+        self.apply_interaction_animations()
         self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
         # Hide native menu bar (frameless window)
@@ -2034,6 +2178,9 @@ class MainWindow(QMainWindow):
             QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #263FAE,stop:0.52 #4F46E5,stop:1 #BE347E);
                 border: 1px solid #A5B4FC; border-radius: 16px; margin: 8px 10px; }
             QLabel#brandLogo { background: rgba(15,23,42,110); border: 2px solid #A5B4FC; border-radius: 13px; padding: 3px; }
+            QFrame#headerClockFrame { background: transparent; border: 0; }
+            QFrame#headerClockFrame QLabel#headerClock { background: rgba(15,23,42,205); color: #FFFFFF;
+                border: 1px solid rgba(255,255,255,145); border-radius: 10px; padding: 7px 12px; font-size: 10pt; font-weight: 700; }
             QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 19pt; font-weight: 800; }
             QLabel#brandSubheading { background: transparent; color: #F1F5F9; font-size: 10pt; }
             QFrame#brandBanner QWidget#headerClock { background: rgba(15,23,42,145); color: #FFFFFF;
@@ -2349,6 +2496,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "tabs"):
             self.apply_global_control_polish()
         self._refresh_dashboard_action_styles(theme_name)
+        self.apply_interaction_animations()
         if hasattr(self, "productivity_chart"):
             self.productivity_chart.update()
         # Reapply title button styles so they stay visible after theme change
@@ -3325,6 +3473,27 @@ class MainWindow(QMainWindow):
             else:
                 message = f"Click to {label}."
             button.setToolTip(message)
+
+    def apply_interaction_animations(self):
+        """Add animated hover/click feedback without resizing controls or changing actions."""
+        accent = self._ui_chrome_palette(self.current_theme())["accent"]
+        targets = self.findChildren(QPushButton) + self.findChildren(QToolButton)
+        targets += self.findChildren(QGroupBox) + self.findChildren(QAbstractItemView)
+        targets += self.findChildren(QProgressBar) + self.findChildren(ProductivityChart)
+        brand_logo = getattr(self, "brand_logo", None)
+        if brand_logo is not None:
+            targets.append(brand_logo)
+        for widget in targets:
+            feedback = getattr(widget, "_interaction_feedback", None)
+            if feedback is not None:
+                feedback.set_accent(accent)
+                continue
+            # Preserve any screen-transition or widget-specific effect already in use.
+            if widget.graphicsEffect() is not None:
+                continue
+            feedback = InteractionFeedback(widget, accent)
+            widget._interaction_feedback = feedback
+            widget.setProperty("interactionAnimation", "enabled")
 
     def selected_id(self, table, col=0):
         rows=table.selectionModel().selectedRows()
