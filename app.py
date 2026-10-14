@@ -227,14 +227,6 @@ class UpdateWorker(QObject):
     progress = Signal(int, str)
     completed = Signal()
 
-
-class UpdateWorker(QObject):
-    ready = Signal(str, str)
-    current = Signal(str)
-    failed = Signal(str)
-    progress = Signal(int, str)
-    completed = Signal()
-
     def __init__(self, current_version):
         super().__init__()
         self.current_version = current_version
@@ -252,27 +244,28 @@ class UpdateWorker(QObject):
 
     def run(self):
         try:
-            # Query the release list instead of trusting a single /latest response.
-            # Ignore drafts, prereleases, malformed tags, and unpublished releases.
-            releases_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases?per_page=100"
+            # Use the small /releases/latest response as the primary endpoint.
+            # The paginated releases list can be hundreds of KB and is prone to
+            # IncompleteRead on customer networks; it is unnecessary for updates.
             latest_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
-            try:
-                payload = json.loads(self.request_bytes(releases_url).decode("utf-8"))
-                if not isinstance(payload, list):
-                    raise ValueError("GitHub returned an invalid releases response.")
-            except Exception as list_error:
-                # Some networks/proxies block paginated API endpoints or return
-                # transient errors. Retry via GitHub's stable latest-release endpoint.
+            latest_payload = None
+            latest_error = None
+            for attempt in range(3):
                 try:
                     latest_payload = json.loads(self.request_bytes(latest_url).decode("utf-8"))
                     if not isinstance(latest_payload, dict):
                         raise ValueError("GitHub returned an invalid latest-release response.")
-                    payload = [latest_payload]
-                except Exception as latest_error:
-                    raise RuntimeError(
-                        "GitHub update check failed using both release endpoints. "
-                        f"Releases API: {list_error}; latest API: {latest_error}"
-                    ) from latest_error
+                    break
+                except Exception as exc:
+                    latest_error = exc
+                    if attempt == 2:
+                        raise RuntimeError(
+                            "Unable to fetch the latest release from GitHub after 3 attempts. "
+                            f"Details: {latest_error}"
+                        ) from latest_error
+                    import time
+                    time.sleep(attempt + 1)
+            payload = [latest_payload]
             stable_releases = []
             for candidate in payload:
                 if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
