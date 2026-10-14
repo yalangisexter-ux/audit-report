@@ -265,29 +265,73 @@ class UpdateWorker(QObject):
             installer_path = update_dir / installer_name
             partial_path = update_dir / (installer_name + ".part")
             try:
-                request = Request(installer_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager"})
-                with urlopen(request, timeout=60) as response, partial_path.open("wb") as output:
-                    total_bytes = int(response.headers.get("Content-Length") or 0)
-                    downloaded = 0
-                    digest = hashlib.sha256()
-                    self.progress.emit(0, "Downloading update installer...")
-                    while True:
-                        chunk = response.read(256 * 1024)
-                        if not chunk:
+                # Large installer downloads can be interrupted by customer networks.
+                # Keep verified partial bytes and resume with HTTP Range instead of
+                # failing permanently on urllib's IncompleteRead exception.
+                import time
+                last_error = None
+                for attempt in range(1, 7):
+                    downloaded = partial_path.stat().st_size if partial_path.exists() else 0
+                    headers = {"User-Agent": "RawStrengthEmployeeAuditManager"}
+                    if downloaded:
+                        headers["Range"] = f"bytes={downloaded}-"
+                    request = Request(installer_url, headers=headers)
+                    try:
+                        with urlopen(request, timeout=90) as response:
+                            status = getattr(response, "status", response.getcode())
+                            if downloaded and status != 206:
+                                # Server ignored Range; restart cleanly to avoid corrupting the file.
+                                downloaded = 0
+                                partial_path.unlink(missing_ok=True)
+                                if status != 200:
+                                    raise ValueError(f"Unexpected HTTP status while restarting download: {status}")
+                            mode = "ab" if downloaded and status == 206 else "wb"
+                            response_length = int(response.headers.get("Content-Length") or 0)
+                            expected_response_size = asset_size - downloaded if mode == "ab" else asset_size
+                            if response_length and response_length != expected_response_size:
+                                raise ValueError("Server returned an unexpected installer content length.")
+                            self.progress.emit(min(99, int(downloaded * 100 / asset_size)),
+                                               f"Downloading update installer... {int(downloaded * 100 / asset_size)}%")
+                            with partial_path.open(mode) as output:
+                                while True:
+                                    try:
+                                        chunk = response.read(256 * 1024)
+                                    except Exception as read_error:
+                                        # urllib.error.IncompleteRead carries bytes received
+                                        # by the final failed read; preserve them for resume.
+                                        partial = getattr(read_error, "partial", b"")
+                                        if partial:
+                                            output.write(partial)
+                                            downloaded += len(partial)
+                                        raise
+                                    if not chunk:
+                                        break
+                                    output.write(chunk)
+                                    downloaded += len(chunk)
+                                    percent = min(99, int(downloaded * 100 / asset_size))
+                                    self.progress.emit(percent, f"Downloading update installer... {percent}%")
+                        if partial_path.stat().st_size == asset_size:
                             break
-                        output.write(chunk)
-                        digest.update(chunk)
-                        downloaded += len(chunk)
-                        if total_bytes > 0:
-                            percent = min(99, int(downloaded * 100 / total_bytes))
-                            self.progress.emit(percent, f"Downloading update installer... {percent}%")
-                        else:
-                            self.progress.emit(0, f"Downloading update installer... ({downloaded // 1024} KB)")
-                actual_size = partial_path.stat().st_size
-                if actual_size < 1000000:
-                    raise ValueError("The downloaded installer is missing or incomplete.")
+                        last_error = ValueError(
+                            f"Installer download ended early ({partial_path.stat().st_size} of {asset_size} bytes)."
+                        )
+                    except Exception as download_error:
+                        last_error = download_error
+                        if partial_path.exists() and partial_path.stat().st_size >= asset_size:
+                            break
+                        if attempt < 6:
+                            self.progress.emit(0, f"Download interrupted; resuming ({attempt}/5)...")
+                            time.sleep(min(attempt * 2, 8))
+                actual_size = partial_path.stat().st_size if partial_path.exists() else 0
                 if actual_size != asset_size:
-                    raise ValueError("Downloaded installer size does not match GitHub release metadata.")
+                    raise RuntimeError(
+                        f"Could not download the complete installer after 6 attempts "
+                        f"({actual_size} of {asset_size} bytes). Last error: {last_error}"
+                    )
+                digest = hashlib.sha256()
+                with partial_path.open("rb") as downloaded_file:
+                    for chunk in iter(lambda: downloaded_file.read(1024 * 1024), b""):
+                        digest.update(chunk)
                 expected = expected_digest.partition(":")[2].lower()
                 if not secrets.compare_digest(digest.hexdigest().lower(), expected):
                     raise ValueError("Installer checksum verification failed; the download was rejected.")
