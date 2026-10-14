@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes
+import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re
 from pathlib import Path
 from datetime import datetime, date
 from urllib.request import Request, urlopen
