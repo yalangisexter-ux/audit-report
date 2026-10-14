@@ -121,6 +121,12 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert 'Scroll horizontally to see every column on smaller screens.' in source
     assert 'update_label.setWordWrap(True)' in source
     assert 'self._update_progress.setMinimumWidth(440)' in source
+    assert 'self.brand_banner = QFrame()' in source
+    assert 'main_content_layout.addWidget(self.brand_banner)' in source
+    assert 'self.header_clock.hide()' in source
+    assert 'self._wrap_page_in_scroll(self.dashboard, root)' in source
+    assert 'grid.addWidget(productivity, 1, 1, 1, 2)' in source
+    assert 'Qt.TextFlag.TextWordWrap, name)' in source
     assert 'self._update_progress.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))' in source
     assert 'QListView::item:selected { background: #6D28D9; color: #FFFFFF; }' in source
     assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source

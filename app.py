@@ -1175,7 +1175,9 @@ class ProductivityChart(QWidget):
             painter.setPen(QColor("#0f172a"))
             painter.drawText(x - 8, max(top + 12, y - 5), f"{score}%")
             painter.setPen(QColor("#475569"))
-            painter.drawText(int(left + slot * i), top + h + 18, int(slot), 22, Qt.AlignHCenter | Qt.TextSingleLine, name[:13])
+            label_rect = QRectF(left + slot * i + 1, top + h + 5, max(1, slot - 2), 36)
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, name)
 
 
 
@@ -1473,7 +1475,8 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
-        title_layout.addWidget(self.header_clock)
+        # The live clock is shown only inside the shared branded banner, not twice.
+        self.header_clock.hide()
         self.header_prev = QPushButton("‹")
         self.header_prev.setObjectName("headerNavButton")
         self.header_prev.setToolTip("Previous page")
@@ -1537,6 +1540,35 @@ class MainWindow(QMainWindow):
         main_content_layout.setSpacing(0)
         main_content_layout.addWidget(self.title_bar)
         self.title_bar.raise_()
+
+        # Persistent brand banner shared by every page; keep the original logo
+        # and the single live clock together in the same colored surface.
+        self.brand_banner = QFrame()
+        self.brand_banner.setObjectName("brandBanner")
+        self.brand_banner.setMinimumHeight(104)
+        brand_layout = QHBoxLayout(self.brand_banner)
+        brand_layout.setContentsMargins(18, 10, 18, 10)
+        brand_layout.setSpacing(14)
+        self.brand_logo = QLabel()
+        self.brand_logo.setObjectName("brandLogo")
+        self.brand_logo.setFixedSize(76, 76)
+        self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.brand_logo.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(68, 68))
+        brand_layout.addWidget(self.brand_logo)
+        brand_copy = QVBoxLayout()
+        brand_copy.setSpacing(3)
+        self.brand_heading = QLabel("Raw Strength Calisthenics")
+        self.brand_heading.setObjectName("brandHeading")
+        self.brand_subheading = QLabel("Employee Audit Manager")
+        self.brand_subheading.setObjectName("brandSubheading")
+        brand_copy.addWidget(self.brand_heading)
+        brand_copy.addWidget(self.brand_subheading)
+        brand_layout.addLayout(brand_copy, 1)
+        self.header_clock.setMinimumWidth(210)
+        self.header_clock.setMinimumHeight(42)
+        self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        brand_layout.addWidget(self.header_clock)
+        main_content_layout.addWidget(self.brand_banner)
 
         self.tabs = QTabWidget()
         self.tabs.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -1629,6 +1661,13 @@ class MainWindow(QMainWindow):
             QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
             QWidget#mainContentSurface { background: transparent; }
             QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #263FAE,stop:0.52 #4F46E5,stop:1 #BE347E);
+                border: 1px solid #A5B4FC; border-radius: 16px; margin: 8px 10px; }
+            QLabel#brandLogo { background: rgba(15,23,42,110); border: 2px solid #A5B4FC; border-radius: 13px; padding: 3px; }
+            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 19pt; font-weight: 800; }
+            QLabel#brandSubheading { background: transparent; color: #F1F5F9; font-size: 10pt; }
+            QFrame#brandBanner QWidget#headerClock { background: rgba(15,23,42,145); color: #FFFFFF;
+                border: 1px solid rgba(255,255,255,100); border-radius: 10px; padding: 7px 12px; font-size: 10pt; font-weight: 700; }
             QWidget#pageHeader { background: #FFFFFF; color: #0F172A; }
             QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
                 border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
@@ -2280,33 +2319,7 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(12)
 
-        hero = QWidget()
-        hero.setObjectName("dashboardHero")
-        hero.setMinimumHeight(112)
-        hero_layout = QHBoxLayout(hero)
-        hero_layout.setContentsMargins(18, 12, 18, 12)
-        mark = QLabel()
-        mark.setFixedSize(82, 82)
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setPixmap(QIcon(resource_path("assets/raw_strength_icon.ico")).pixmap(76, 76))
-        hero_layout.addWidget(mark)
-        copy = QVBoxLayout()
-        title = QLabel("Welcome, Administrator")
-        title.setProperty("heroTitle", True)
-        copy.addWidget(title)
-        subtitle = QLabel("Raw Strength Calisthenics  ·  Employee Audit Manager")
-        subtitle.setProperty("heroSubtitle", True)
-        copy.addWidget(subtitle)
-        hero_layout.addLayout(copy, 1)
-        self.dashboard_clock = QLabel()
-        self.dashboard_clock.setProperty("heroSubtitle", True)
-        self.dashboard_clock.setMinimumHeight(24)
-        hero_layout.addWidget(self.dashboard_clock)
-        self._dashboard_clock_timer = QTimer(self)
-        self._dashboard_clock_timer.timeout.connect(self.refresh_dashboard_clock)
-        self._dashboard_clock_timer.start(1000)
-        self.refresh_dashboard_clock()
-        self._wrap_page_in_scroll(self.dashboard, root, fixed_header=hero)
+        self._wrap_page_in_scroll(self.dashboard, root)
 
         self.kpis = QHBoxLayout()
         self.kpis.setSpacing(10)
@@ -2400,7 +2413,9 @@ class MainWindow(QMainWindow):
         productivity_layout.addWidget(note)
         self.productivity_chart = ProductivityChart()
         productivity_layout.addWidget(self.productivity_chart)
-        grid.addWidget(productivity, 1, 2)
+        self.productivity_chart.setMinimumHeight(270)
+        productivity_layout.setContentsMargins(14, 12, 14, 14)
+        grid.addWidget(productivity, 1, 1, 1, 2)
 
         self.productivity_table = QTableWidget(0, 7)
         self.productivity_table.setHorizontalHeaderLabels(["Employee", "Joined / tracking start", "Working days", "Present days", "Tasks", "Completed", "Score"])
