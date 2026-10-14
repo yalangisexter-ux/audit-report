@@ -4009,8 +4009,15 @@ QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-co
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
 QWidget#appPageSurface { background: transparent; color: #0F172A; }
 QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
-QGroupBox { background: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
-QGroupBox::title { color: #334155; }
+QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
+QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }
+QWidget#kpiCard, QWidget#dashboardPanel { background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 14px; }
+QWidget#sessionStrip, QWidget#guideItem { background-color: #F1F5F9; color: #0F172A; border: 1px solid #94A3B8; }
+QWidget#settingsContent { background-color: #F8FAFC; color: #0F172A; }
+QWidget#settingsContent QGroupBox { background-color: #FFFFFF; color: #0F172A; }
+QWidget#settingsContent QLabel { color: #1E293B; }
+QWidget#settingsContent QPushButton { background-color: #E2E8F0; color: #0F172A; }
+QWidget#settingsContent QComboBox { background-color: #FFFFFF; color: #0F172A; }
 QLabel { color: #1E293B; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
@@ -4144,8 +4151,15 @@ QCalendarWidget QAbstractItemView { background: #111827; alternate-background-co
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
 QWidget#appPageSurface { background: transparent; color: #F8FAFC; }
 QWidget#homeContent, QWidget#pageContent { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; }
-QGroupBox { background: #0F172A; color: #F8FAFC; border: 1px solid #475569; }
-QGroupBox::title { color: #CBD5E1; }
+QGroupBox { background-color: #0F172A; color: #F8FAFC; border: 1px solid #475569; border-radius: 12px; }
+QGroupBox::title { color: #F1F5F9; background-color: #0F172A; }
+QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC; border: 1px solid #475569; border-radius: 14px; }
+QWidget#sessionStrip, QWidget#guideItem { background-color: #0B1220; color: #F8FAFC; border: 1px solid #475569; }
+QWidget#settingsContent { background-color: #111827; color: #F8FAFC; }
+QWidget#settingsContent QGroupBox { background-color: #0F172A; color: #F8FAFC; }
+QWidget#settingsContent QLabel { color: #E2E8F0; }
+QWidget#settingsContent QPushButton { background-color: #1E293B; color: #F8FAFC; }
+QWidget#settingsContent QComboBox { background-color: #0F172A; color: #F8FAFC; }
 QLabel { color: #E2E8F0; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #F8FAFC; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #CBD5E1; }
