@@ -239,7 +239,7 @@ class UpdateWorker(QObject):
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         })
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=60) as response:
             return response.read()
 
     def run(self):

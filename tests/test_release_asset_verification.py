@@ -207,6 +207,35 @@ def test_update_worker_uses_latest_published_stable_release(monkeypatch):
     assert emitted
     assert emitted[0][0] == "failed"
     assert "missing a trusted installer" in emitted[0][1]
+def test_update_worker_retries_after_a_read_timeout(monkeypatch):
+    release = {
+        "tag_name": "v1.2.36",
+        "draft": False,
+        "prerelease": False,
+        "published_at": "2026-10-14T08:00:00Z",
+        "assets": [],
+    }
+    attempts = []
+
+    def request(url, accept="application/vnd.github+json"):
+        attempts.append(url)
+        if len(attempts) == 1:
+            raise TimeoutError("The read operation timed out")
+        return __import__("json").dumps(release).encode()
+
+    monkeypatch.setattr(app.UpdateWorker, "request_bytes", staticmethod(request))
+    monkeypatch.setattr(__import__("time"), "sleep", lambda _seconds: None)
+    worker = app.UpdateWorker("1.2.35")
+    emitted = []
+    worker.failed.connect(lambda message: emitted.append(message))
+
+    worker.run()
+
+    assert len(attempts) == 2
+    assert emitted
+    assert "missing a trusted installer" in emitted[0]
+
+
 def test_previous_release_choices_only_returns_installable_stable_versions_sorted_newest_first():
     def release(tag, *, draft=False, prerelease=False, published=True, size=1000000, url=None):
         return {
