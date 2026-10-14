@@ -44,3 +44,4 @@ def test_csv_evidence_urls_are_clickable_spreadsheet_hyperlink_formulas():
     url = "https://docs.google.com/spreadsheets/d/example/edit?usp=sharing"
     formula = app.csv_hyperlink_formula(url)
     assert formula == f'=HYPERLINK("{url}","Tap here to view content")'
+    assert app.csv_hyperlink_formula(url, url) == '=HYPERLINK("' + url + '","' + url + '")'
