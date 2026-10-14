@@ -180,7 +180,11 @@ def test_dashboard_clock_colorful_icons_and_print_preview_regression():
 
     source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
     assert "def refresh_dashboard_clock(self):" in source
-    assert "self._dashboard_clock_timer.start(1000)" in source
+    assert "self.header_clock = QLabel()" in source
+    assert "main_content_layout.addWidget(self.brand_banner)" in source
+    assert "self._header_clock_timer.start(1000)" in source
+    assert "self.header_clock.hide()" in source
+    assert "self._dashboard_clock_timer.start(1000)" not in source
     assert '"🟢"' in source and '"🔴"' in source and '"🟣"' in source
     assert "Live print preview — updates when report options change" in source
     assert "self.report_summary.setMinimumHeight(220)" in source
