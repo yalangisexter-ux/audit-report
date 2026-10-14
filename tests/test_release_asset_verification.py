@@ -89,11 +89,13 @@ def test_home_ui_restores_icons_and_quick_dropdowns():
     assert "homeWallpaperDropdown" in source
     assert 'icon_label = QLabel(symbol)' in source
     assert 'QPixmap' in source
-    assert 'QWidget#homeContent { background: rgba(15,23,42,0.94)' in source
-    assert 'QWidget#pageContent { background: rgba(15,23,42,0.92)' in source
-    assert 'QWidget#sessionStrip { background: rgba(11,18,32,0.94)' in source
-    assert 'QWidget#guideItem { background: rgba(17,24,39,0.92)' in source
-    assert 'background: rgba(248,250,252,0.96)' in source
+    assert 'QWidget#homeContent, QWidget#pageContent { background: #F8FAFC' in source
+    assert 'QWidget#homeContent, QWidget#pageContent { background: #111827' in source
+    assert 'content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)' in source
+    assert 'content.setAutoFillBackground(True)' in source
+    assert 'QWidget#sessionStrip { background: #E2E8F0' in source
+    assert 'QWidget#guideItem { background: #F1F5F9' in source
+    assert 'QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9' in source
 
 
 def test_live_wallpapers_use_high_resolution_photos_with_animation():
