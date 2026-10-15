@@ -20,24 +20,17 @@ REPOSITORY = "yalangisexter-ux/audit-report"
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download and decrypt an encrypted customer or developer database snapshot."
+        description="Download and decrypt an encrypted customer database snapshot."
     )
     parser.add_argument("installation_id", help="32-character snapshot ID shown in the app's Settings")
-    parser.add_argument(
-        "--developer",
-        action="store_true",
-        help="Read from developer-data/ rather than customer-data/",
-    )
     parser.add_argument("--output", type=Path, help="Where to save the decrypted SQLite copy")
     args = parser.parse_args()
     if len(args.installation_id) != 32 or any(ch not in "0123456789abcdef" for ch in args.installation_id):
         parser.error("installation_id must be the 32-character ID shown in Settings")
 
-    snapshot_group = "developer-data" if args.developer else "customer-data"
-    snapshot_kind = "developer" if args.developer else "customer"
     url = (
         f"https://raw.githubusercontent.com/{REPOSITORY}/main/"
-        f"{snapshot_group}/{args.installation_id}.db.enc"
+        f"customer-data/{args.installation_id}.db.enc"
     )
     request = urllib.request.Request(
         url,
@@ -59,7 +52,7 @@ def main():
     except Exception as exc:
         parser.error(str(exc))
 
-    output = args.output or Path.cwd() / f"{snapshot_kind}-{args.installation_id}.db"
+    output = args.output or Path.cwd() / f"customer-{args.installation_id}.db"
     output = output.resolve()
     if output.exists():
         parser.error(f"Refusing to overwrite an existing file: {output}")

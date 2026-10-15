@@ -1,6 +1,5 @@
 import sqlite3
 import os
-import threading
 
 import pytest
 
@@ -84,58 +83,33 @@ def test_sync_token_is_protected_for_the_current_windows_user():
     assert unprotect_sync_token(protected) == TEST_TOKEN
 
 
-def test_successful_database_commits_request_sync_without_breaking_local_save():
-    connection = sqlite3.connect(":memory:", factory=SyncableSQLiteConnection)
-    requested = []
-    connection.set_commit_callback(lambda: requested.append(True))
+def test_successful_database_commits_stay_local_until_manual_push(tmp_path):
+    database_path = tmp_path / "customer.db"
+    sync = GitHubDatabaseSync(database_path, "example/repository", "a" * 32)
+    sync.set_token(TEST_TOKEN)
+    connection = sqlite3.connect(database_path, factory=SyncableSQLiteConnection)
+    connection.set_commit_callback(sync.mark_pending)
     connection.execute("CREATE TABLE entries(value TEXT)")
     connection.execute("INSERT INTO entries VALUES('saved locally')")
 
     connection.commit()
 
     assert connection.execute("SELECT value FROM entries").fetchone()[0] == "saved locally"
-    assert requested == [True]
-    connection.close()
-
-
-def test_developer_pause_blocks_uploads_until_a_new_sync_request(tmp_path):
-    sync = GitHubDatabaseSync(
-        tmp_path / "customer.db", "example/repository", "a" * 32, paused=True
-    )
-    sync.set_token(TEST_TOKEN)
-    completed = threading.Event()
-    calls = []
-
-    def fake_sync_once():
-        calls.append(True)
-        completed.set()
-
-    sync._sync_once = fake_sync_once
-    sync.request_sync(force=True)
+    assert sync.is_dirty
     assert sync._thread is None
-    assert calls == []
-
-    sync.set_paused(False)
-    sync.request_sync(force=True)
-    try:
-        assert completed.wait(2)
-        assert calls == [True]
-        sync.set_paused(True)
-        assert "uploads are paused" in sync.status
-    finally:
-        sync.close()
+    assert sync.status == "Changes waiting to push to Git DB"
+    connection.close()
+    sync.close()
 
 
-def test_manual_developer_sync_reports_branch_conflict_without_retry(tmp_path, monkeypatch):
+def test_manual_customer_sync_reports_branch_conflict_without_retry(tmp_path, monkeypatch):
     import database_sync
 
     sync = GitHubDatabaseSync(
-        tmp_path / "developer.db",
+        tmp_path / "customer.db",
         "example/repository",
         "b" * 32,
-        auto_retry=False,
         retry_conflicts=False,
-        remote_directory="developer-data",
     )
     sync.set_token(TEST_TOKEN)
     monkeypatch.setattr(database_sync, "create_encrypted_database_snapshot", lambda *_: b"encrypted")
@@ -163,5 +137,5 @@ def test_manual_developer_sync_reports_branch_conflict_without_retry(tmp_path, m
 
     assert [request[1] for request in requests].count("/git/refs/heads/main") == 1
     tree_request = next(request for request in requests if request[1] == "/git/trees")
-    assert tree_request[2]["tree"][0]["path"].startswith("developer-data/")
+    assert tree_request[2]["tree"][0]["path"].startswith("customer-data/")
     sync.close()

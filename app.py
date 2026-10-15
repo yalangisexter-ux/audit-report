@@ -594,12 +594,6 @@ def hash_pin(pin, salt=None):
     return salt, digest
 
 
-# This verifier is bundled with the public source, so it is a casual-use gate,
-# not a secret that can protect access from someone who can inspect the app.
-_DEVELOPER_MODE_PASSWORD_SALT = "1b27c755c7247587ca7013801b423dc3"
-_DEVELOPER_MODE_PASSWORD_HASH = "0bb1d96e561fca8b807d053e053c38eb3057fe9a0b69c6a524d1fdcf790febf0"
-
-
 def migrate_legacy_task_employee_links(conn):
     """Restore task links only when a unique employee match exists."""
     task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
@@ -717,7 +711,7 @@ def restore_validated_sqlite_copy(source_path, destination_connection):
 
 
 def remove_local_sync_metadata(database_path):
-    """Make a developer copy unable to reuse customer credentials or identity."""
+    """Strip machine-specific sync and retired mode settings from an archive."""
     connection = sqlite3.connect(str(database_path), timeout=20)
     try:
         tables = {
@@ -748,16 +742,12 @@ def remove_local_sync_metadata(database_path):
 class Database:
     def __init__(self):
         try:
-            self.developer_mode_restore_path = Path(DB_PATH).with_name(
+            self.legacy_mode_restore_path = Path(DB_PATH).with_name(
                 Path(DB_PATH).stem + ".developer-mode-restore.db"
             )
-            self.developer_mode_state_path = Path(DB_PATH).with_name(
+            self.legacy_mode_state_path = Path(DB_PATH).with_name(
                 Path(DB_PATH).stem + ".developer-mode.state"
             )
-            self.developer_installation_id_path = Path(DB_PATH).with_name(
-                Path(DB_PATH).stem + ".developer-installation-id"
-            )
-            self.developer_database_sync = None
             # Do not run schema migrations unless the existing database was backed up.
             db_path = Path(DB_PATH)
             create_pre_migration_backup(db_path, BACKUP_DIR)
@@ -765,7 +755,7 @@ class Database:
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.setup()
-            self._recover_developer_mode_state()
+            self._recover_legacy_developer_mode()
             self._initialize_github_sync()
         except Exception as exc:
             # Attempt to close and re-raise with context
@@ -776,43 +766,56 @@ class Database:
                     pass
             raise RuntimeError(f"Database initialization failed: {exc}") from exc
 
-    def _write_developer_mode_state(self, state):
-        temporary = self.developer_mode_state_path.with_name(
-            self.developer_mode_state_path.name + ".tmp"
-        )
-        temporary.write_text(state, encoding="ascii")
-        os.replace(temporary, self.developer_mode_state_path)
-
-    def _recover_developer_mode_state(self):
+    def _recover_legacy_developer_mode(self):
+        """Restore customer data from the retired isolation mode without losing edits."""
         try:
-            state = self.developer_mode_state_path.read_text(encoding="ascii").strip()
+            state = self.legacy_mode_state_path.read_text(encoding="ascii").strip()
         except FileNotFoundError:
             state = ""
         setting_enabled = self.get_setting("developer_mode_enabled", "0") == "1"
-        if state == "restoring":
-            if self.developer_mode_restore_path.exists():
-                restore_validated_sqlite_copy(self.developer_mode_restore_path, self.conn)
-                self.conn.execute(
-                    "INSERT INTO settings(key,value) VALUES('developer_mode_enabled','0') "
-                    "ON CONFLICT(key) DO UPDATE SET value='0'"
-                )
-                self.conn.commit()
-                self.developer_mode_restore_path.unlink(missing_ok=True)
-            elif setting_enabled:
-                # Keep uploads paused if the only recovery copy has disappeared.
-                self.developer_mode_enabled = True
-                return
-            self.developer_mode_state_path.unlink(missing_ok=True)
-            self.developer_mode_enabled = False
-            return
+        restore_exists = self.legacy_mode_restore_path.is_file()
+
+        if state not in ("", "active", "restoring", "legacy-restoring"):
+            raise RuntimeError(
+                "A retired database-isolation state is unrecognized. The database was left unchanged."
+            )
         if state == "active" or setting_enabled:
-            self.developer_mode_enabled = True
-            return
-        # An interrupted enable may leave a snapshot before the active marker
-        # was written. It is not in use and is safe to clear while sync is off.
-        self.developer_mode_restore_path.unlink(missing_ok=True)
-        self.developer_mode_state_path.unlink(missing_ok=True)
-        self.developer_mode_enabled = False
+            if not restore_exists:
+                raise RuntimeError(
+                    "The retired isolated mode is active, but its customer recovery database is missing. "
+                    "The current database was left unchanged and syncing was not started."
+                )
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_path = Path(DB_PATH).with_name(
+                f"{Path(DB_PATH).stem}.developer-work-{stamp}-{secrets.token_hex(3)}.db"
+            )
+            create_validated_sqlite_copy(self.conn, archive_path)
+            remove_local_sync_metadata(archive_path)
+            self.legacy_mode_state_path.write_text("legacy-restoring", encoding="ascii")
+        elif state in ("restoring", "legacy-restoring"):
+            if not restore_exists and setting_enabled:
+                raise RuntimeError(
+                    "The retired mode is still marked active, but its customer recovery database is missing. "
+                    "The current database was left unchanged and syncing was not started."
+                )
+
+        if restore_exists and state in ("active", "restoring", "legacy-restoring") or (
+            restore_exists and setting_enabled
+        ):
+            restore_validated_sqlite_copy(self.legacy_mode_restore_path, self.conn)
+
+        self.conn.execute(
+            "DELETE FROM settings WHERE key IN (?, ?, ?) ",
+            (
+                "developer_mode_enabled",
+                "developer_mode_password_salt",
+                "developer_mode_password_hash",
+            ),
+        )
+        self.conn.commit()
+        if restore_exists and self.legacy_mode_restore_path.exists():
+            self.legacy_mode_restore_path.unlink()
+        self.legacy_mode_state_path.unlink(missing_ok=True)
 
     def _initialize_github_sync(self):
         install_id = self.get_setting("github_sync_install_id", "")
@@ -825,21 +828,16 @@ class Database:
             )
             self.conn.commit()
         self.github_sync_install_id = install_id
-        developer_mode = self.developer_mode_enabled
         self.github_sync = GitHubDatabaseSync(
-            DB_PATH, GITHUB_REPOSITORY, install_id, paused=developer_mode
+            DB_PATH, GITHUB_REPOSITORY, install_id
         )
-        self.developer_mode_enabled = developer_mode
         saved_token = self.get_setting("github_sync_token_dpapi", "")
         if saved_token:
             try:
                 self.github_sync.set_token(unprotect_sync_token(saved_token))
             except ValueError as exc:
                 self.github_sync.set_status(str(exc))
-        self.conn.set_commit_callback(self.github_sync.request_sync)
-        if self.github_sync.has_token:
-            # Retry the latest local state after an offline period or an app restart.
-            self.github_sync.request_sync(force=True)
+        self.conn.set_commit_callback(self.github_sync.mark_pending)
 
     def set_github_sync_token(self, token):
         protected = protect_sync_token(token)
@@ -850,7 +848,6 @@ class Database:
         )
         self.github_sync.set_token(token)
         self.conn.commit()
-        self.github_sync.request_sync(force=True)
 
     def clear_github_sync_token(self):
         self.github_sync.set_token("")
@@ -861,169 +858,6 @@ class Database:
         sync = getattr(self, "github_sync", None)
         if sync is not None:
             sync.close(timeout=timeout)
-        self.close_developer_database_sync(timeout=timeout)
-
-    def close_developer_database_sync(self, timeout=3):
-        sync = getattr(self, "developer_database_sync", None)
-        self.developer_database_sync = None
-        if sync is not None:
-            sync.close(timeout=timeout)
-
-    def developer_database_source_path(self):
-        """Return the isolated working DB without ever falling back to customer data."""
-        if self.developer_mode_enabled:
-            source = Path(DB_PATH)
-        else:
-            candidates = list(Path(DB_PATH).parent.glob(
-                Path(DB_PATH).stem + ".developer-work-*.db"
-            ))
-            candidates = [path for path in candidates if path.is_file()]
-            if not candidates:
-                raise FileNotFoundError(
-                    "No saved Developer Mode database exists yet. Turn Developer Mode on, "
-                    "make or review developer changes, then turn it off to save the isolated copy."
-                )
-            source = max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.name))
-        if not source.is_file():
-            raise FileNotFoundError("The isolated Developer Mode database file is missing.")
-        return source
-
-    def developer_sync_installation_id(self):
-        try:
-            value = self.developer_installation_id_path.read_text(encoding="ascii").strip()
-        except OSError:
-            value = ""
-        if re.fullmatch(r"[0-9a-f]{32}", value):
-            return value
-        value = secrets.token_hex(16)
-        temporary = self.developer_installation_id_path.with_name(
-            self.developer_installation_id_path.name + ".tmp"
-        )
-        temporary.write_text(value, encoding="ascii")
-        os.replace(temporary, self.developer_installation_id_path)
-        return value
-
-    def saved_developer_sync_installation_id(self):
-        try:
-            value = self.developer_installation_id_path.read_text(encoding="ascii").strip()
-        except OSError:
-            return ""
-        return value if re.fullmatch(r"[0-9a-f]{32}", value) else ""
-
-    def start_developer_database_sync(self):
-        if not self.github_sync.has_token:
-            raise ValueError("Configure the GitHub sync token first.")
-        source = self.developer_database_source_path()
-        current = self.developer_database_sync
-        if current is not None and current.is_busy:
-            raise RuntimeError("A Developer DB sync is already in progress.")
-        self.close_developer_database_sync()
-        sync = GitHubDatabaseSync(
-            source,
-            GITHUB_REPOSITORY,
-            self.developer_sync_installation_id(),
-            auto_retry=False,
-            retry_conflicts=False,
-            remote_directory="developer-data",
-        )
-        sync.set_token(self.github_sync.token_for_local_sync())
-        self.developer_database_sync = sync
-        sync.request_sync(force=True)
-        return sync
-
-    def developer_mode_password_is_set(self):
-        return True
-
-    def verify_developer_mode_password(self, password):
-        _, actual = hash_pin(str(password), _DEVELOPER_MODE_PASSWORD_SALT)
-        return secrets.compare_digest(actual, _DEVELOPER_MODE_PASSWORD_HASH)
-
-    def set_developer_mode(self, enabled):
-        enabled = bool(enabled)
-        if enabled and not self.developer_mode_password_is_set():
-            raise ValueError("The built-in Developer Mode password verifier is unavailable.")
-        previous = self.developer_mode_enabled
-        if enabled:
-            if previous:
-                return None
-            active_developer_sync = getattr(self, "developer_database_sync", None)
-            if active_developer_sync is not None and active_developer_sync.is_busy:
-                raise RuntimeError("Wait for the Developer DB sync to finish before changing Developer Mode.")
-            self.close_developer_database_sync()
-            # Wait for any final GitHub ref update to finish before confirming
-            # that uploads are paused and snapshot the customer database.
-            self.github_sync.set_paused(True)
-            try:
-                if self.developer_mode_restore_path.exists():
-                    raise FileExistsError(
-                        "A Developer Mode recovery database already exists. "
-                        "Restore or move it before enabling Developer Mode again."
-                    )
-                self.conn.commit()
-                create_validated_sqlite_copy(
-                    self.conn, self.developer_mode_restore_path
-                )
-                self._write_developer_mode_state("active")
-                self.conn.execute(
-                    "INSERT INTO settings(key,value) VALUES('developer_mode_enabled','1') "
-                    "ON CONFLICT(key) DO UPDATE SET value='1'"
-                )
-                self.conn.commit()
-                self.developer_mode_enabled = True
-                return None
-            except Exception:
-                try:
-                    state = self.developer_mode_state_path.read_text(encoding="ascii").strip()
-                except OSError:
-                    state = ""
-                if state == "active":
-                    # Preserve pause and recovery files if activation reached
-                    # its durable marker before a later write failed.
-                    self.developer_mode_enabled = True
-                else:
-                    self.developer_mode_restore_path.unlink(missing_ok=True)
-                    self.github_sync.set_paused(previous)
-                raise
-
-        if not previous:
-            self.github_sync.set_paused(False)
-            return None
-        active_developer_sync = getattr(self, "developer_database_sync", None)
-        if active_developer_sync is not None and active_developer_sync.is_busy:
-            raise RuntimeError("Wait for the Developer DB sync to finish before changing Developer Mode.")
-        self.close_developer_database_sync()
-        if not self.developer_mode_restore_path.exists():
-            raise RuntimeError(
-                "The saved customer database copy is missing. GitHub sync remains paused "
-                "so the Developer Mode database cannot overwrite customer data."
-            )
-
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        developer_copy = Path(DB_PATH).with_name(
-            f"{Path(DB_PATH).stem}.developer-work-{stamp}-{secrets.token_hex(3)}.db"
-        )
-        self.conn.commit()
-        create_validated_sqlite_copy(self.conn, developer_copy)
-        remove_local_sync_metadata(developer_copy)
-        self._write_developer_mode_state("restoring")
-        try:
-            restore_validated_sqlite_copy(
-                self.developer_mode_restore_path, self.conn
-            )
-            self.conn.execute(
-                "INSERT INTO settings(key,value) VALUES('developer_mode_enabled','0') "
-                "ON CONFLICT(key) DO UPDATE SET value='0'"
-            )
-            self.conn.commit()
-            self.developer_mode_restore_path.unlink()
-            self.developer_mode_state_path.unlink(missing_ok=True)
-        except Exception:
-            # Leave the recovery copy and pause state in place. Startup will
-            # finish the restore from the durable 'restoring' marker.
-            raise
-        self.developer_mode_enabled = False
-        self.github_sync.set_paused(False)
-        return developer_copy
 
     def setup(self):
         c = self.conn.cursor()
@@ -3883,60 +3717,13 @@ class MainWindow(QMainWindow):
             storage_form.addRow(label, path_label)
         l.addWidget(storage_box)
 
-        developer_box = QGroupBox("Developer Mode")
-        developer_layout = QVBoxLayout(developer_box)
-        developer_note = QLabel(
-            "The button is available to every user. Developer Mode pauses GitHub uploads and "
-            "keeps your work in a separate local copy. Turning it off restores the saved customer "
-            "database; developer changes are kept in a separate file and cannot overwrite it."
-        )
-        developer_note.setWordWrap(True)
-        developer_note.setMinimumWidth(0)
-        developer_note.setProperty("mutedText", True)
-        developer_layout.addWidget(developer_note)
-        self.developer_mode_status_label = QLabel()
-        self.developer_mode_status_label.setWordWrap(True)
-        self.developer_mode_status_label.setMinimumWidth(0)
-        developer_layout.addWidget(self.developer_mode_status_label)
-        self.developer_mode_button = QPushButton()
-        self.developer_mode_button.setMinimumHeight(38)
-        self.developer_mode_button.clicked.connect(self.toggle_developer_mode)
-        developer_layout.addWidget(self.developer_mode_button)
-        self._refresh_developer_mode_controls()
-        developer_sync_note = QLabel(
-            "Developer DB uploads are manual and require the Developer Mode password each time. "
-            "They use a separate GitHub snapshot identity and report branch conflicts without "
-            "changing the local database."
-        )
-        developer_sync_note.setWordWrap(True)
-        developer_sync_note.setMinimumWidth(0)
-        developer_sync_note.setProperty("mutedText", True)
-        developer_layout.addWidget(developer_sync_note)
-        self.developer_sync_id_label = QLabel()
-        self.developer_sync_id_label.setWordWrap(True)
-        self.developer_sync_id_label.setMinimumWidth(0)
-        self.developer_sync_id_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.developer_sync_id_label.setProperty("mutedText", True)
-        developer_layout.addWidget(self.developer_sync_id_label)
-        developer_sync_row = QHBoxLayout()
-        self.developer_database_sync_button = QPushButton("Sync Developer DB")
-        self.developer_database_sync_button.setMinimumHeight(38)
-        self.developer_database_sync_button.clicked.connect(self.sync_developer_database_now)
-        developer_sync_row.addWidget(self.developer_database_sync_button)
-        self.developer_database_sync_status_label = QLabel()
-        self.developer_database_sync_status_label.setWordWrap(True)
-        self.developer_database_sync_status_label.setMinimumWidth(0)
-        self.developer_database_sync_status_label.setProperty("mutedText", True)
-        developer_sync_row.addWidget(self.developer_database_sync_status_label, 1)
-        developer_layout.addLayout(developer_sync_row)
-        l.addWidget(developer_box)
-
         sync_box = QGroupBox("Encrypted GitHub database sync")
         sync_layout = QVBoxLayout(sync_box)
         sync_note = QLabel(
-            "When the database changes, the app creates an encrypted business-data snapshot and "
-            "uploads it to the public GitHub repository. Login and recovery credentials and local "
-            "settings are excluded. The token is protected for this Windows account."
+            "Database changes stay on this computer until you select Push to Git DB. That action "
+            "uploads an encrypted business-data snapshot to the public GitHub repository. Login "
+            "and recovery credentials and local settings are excluded. The token is protected for "
+            "this Windows account."
         )
         sync_note.setWordWrap(True)
         sync_note.setMinimumWidth(0)
@@ -3959,13 +3746,16 @@ class MainWindow(QMainWindow):
             "Token is saved using Windows DPAPI and is not included in the uploaded database."
         )
         sync_token_row.addWidget(self.github_sync_token_input, 1)
-        self.github_sync_save_button = QPushButton("Save token & sync")
+        self.github_sync_save_button = QPushButton("Save token")
         self.github_sync_save_button.clicked.connect(self.save_github_sync_token)
         sync_token_row.addWidget(self.github_sync_save_button)
         sync_layout.addLayout(sync_token_row)
 
         sync_actions = QHBoxLayout()
-        self.github_sync_now_button = QPushButton("Sync now")
+        self.github_sync_now_button = QPushButton("Push to Git DB")
+        self.github_sync_now_button.setToolTip(
+            "Upload the current encrypted database snapshot to GitHub. Local edits are not uploaded until you click this button."
+        )
         self.github_sync_now_button.clicked.connect(self.sync_github_database_now)
         self.github_sync_remove_button = QPushButton("Remove token")
         self.github_sync_remove_button.clicked.connect(self.remove_github_sync_token)
@@ -3989,10 +3779,7 @@ class MainWindow(QMainWindow):
         self.github_sync_status_timer = QTimer(self)
         self.github_sync_status_timer.setInterval(1000)
         self.github_sync_status_timer.timeout.connect(self._refresh_github_sync_status)
-        self.github_sync_status_timer.timeout.connect(self._refresh_developer_mode_controls)
-        self.github_sync_status_timer.timeout.connect(self._refresh_developer_database_sync_status)
         self.github_sync_status_timer.start()
-        self._refresh_developer_database_sync_status()
         l.addWidget(sync_box)
 
         actions_box = QGroupBox("Data & account actions")
@@ -4088,124 +3875,9 @@ class MainWindow(QMainWindow):
             return
         credential_state = "Token saved for this Windows account." if sync.has_token else "No GitHub token configured."
         label.setText(credential_state + " " + sync.status)
-
-    def _refresh_developer_mode_controls(self):
-        status = getattr(self, "developer_mode_status_label", None)
-        button = getattr(self, "developer_mode_button", None)
-        if status is None or button is None:
-            return
-        if not self.db.developer_mode_password_is_set():
-            status.setText("Developer Mode requires the built-in password.")
-            button.setText("Enter password to enable Developer Mode")
-            button.setToolTip("Enter the fixed Developer Mode password to pause GitHub uploads.")
-        elif self.db.developer_mode_enabled:
-            status.setText(
-                "ON — local changes are isolated. GitHub uploads are paused until you turn this off."
-            )
-            button.setText("Turn Developer Mode off")
-            button.setToolTip("Restore the saved customer database and resume normal syncing.")
-        else:
-            status.setText(
-                "OFF — sync resumes for future database changes when a GitHub token is configured."
-            )
-            button.setText("Turn Developer Mode on")
-            button.setToolTip("Work in an isolated local copy without uploading it to GitHub.")
-
-    def _refresh_developer_database_sync_status(self):
-        label = getattr(self, "developer_database_sync_status_label", None)
-        button = getattr(self, "developer_database_sync_button", None)
-        if label is None or button is None:
-            return
-        developer_id_label = getattr(self, "developer_sync_id_label", None)
-        developer_id = self.db.saved_developer_sync_installation_id()
-        if developer_id_label is not None:
-            developer_id_label.setText(
-                "Developer snapshot ID: " + developer_id
-                if developer_id
-                else "Developer snapshot ID: created on first sync attempt"
-            )
-        sync = getattr(self.db, "developer_database_sync", None)
-        if sync is None:
-            if not self.db.github_sync.has_token:
-                label.setText("Configure a GitHub token in the section below before syncing.")
-            elif self.db.developer_mode_enabled:
-                label.setText("Ready to sync the current isolated Developer Mode database.")
-            else:
-                label.setText("Ready to sync the most recently saved isolated developer database.")
-            button.setEnabled(True)
-            return
-
-        button.setEnabled(not sync.is_busy)
-        label.setText("Error: " + sync.last_error if sync.last_error else sync.status)
-        service_identity = id(sync)
-        if getattr(self, "_developer_sync_error_service", None) != service_identity:
-            self._developer_sync_error_service = service_identity
-            self._developer_sync_error_serial = 0
-        if sync.error_serial > self._developer_sync_error_serial:
-            self._developer_sync_error_serial = sync.error_serial
-            error(self, "Developer DB sync failed.\n" + (sync.last_error or sync.status))
-
-    def toggle_developer_mode(self):
-        password, ok = QInputDialog.getText(
-            self,
-            "Developer Mode password",
-            "Enter the fixed Developer Mode password:",
-            QLineEdit.EchoMode.Password,
-        )
-        if not ok:
-            return
-        if not self.db.verify_developer_mode_password(password):
-            return error(self, "The Developer Mode password is incorrect.")
-
-        enabling = not self.db.developer_mode_enabled
-        try:
-            developer_copy = self.db.set_developer_mode(enabling)
-        except Exception as exc:
-            self._refresh_developer_mode_controls()
-            return error(self, "Could not change Developer Mode.\n" + str(exc))
-        self._refresh_developer_mode_controls()
-        if enabling:
-            info(
-                self,
-                "Developer Mode is on. GitHub uploads are paused, and the saved customer database "
-                "will be restored when you turn Developer Mode off.",
-            )
-        else:
-            self.refresh_all()
-            info(
-                self,
-                "Developer Mode is off. The customer database has been restored, and developer "
-                "changes were saved separately to:\n" + str(developer_copy) +
-                "\nGitHub sync resumes with the next customer-database change.",
-            )
-
-    def sync_developer_database_now(self):
-        if not self.db.developer_mode_password_is_set():
-            return error(
-                self,
-                "The built-in Developer Mode password verifier is unavailable. Update the app before syncing.",
-            )
-        if not self.db.github_sync.has_token:
-            return error(self, "Configure a GitHub token in Settings before syncing the Developer DB.")
-        try:
-            self.db.developer_database_source_path()
-        except Exception as exc:
-            return error(self, str(exc))
-        password, ok = QInputDialog.getText(
-            self,
-            "Confirm Developer DB sync",
-            "Enter the Developer Mode password to upload the isolated developer database:",
-            QLineEdit.EchoMode.Password,
-        )
-        if not ok:
-            return
-        if not self.db.verify_developer_mode_password(password):
-            return error(self, "The Developer Mode password is incorrect. No database was uploaded.")
-        try:
-            self.db.start_developer_database_sync()
-        except Exception as exc:
-            return error(self, "Could not start Developer DB sync.\n" + str(exc))
-        self._refresh_developer_database_sync_status()
+        push_button = getattr(self, "github_sync_now_button", None)
+        if push_button is not None:
+            push_button.setEnabled(sync.has_token and not sync.is_busy and self.user_role == "Admin")
 
     def save_github_sync_token(self):
         token = self.github_sync_token_input.text().strip()
@@ -4217,7 +3889,7 @@ class MainWindow(QMainWindow):
             self._refresh_github_sync_status()
             info(
                 self,
-                "Token saved for this Windows account. The encrypted database snapshot will sync in the background.",
+                "Token saved for this Windows account. Nothing was uploaded; use Push to Git DB when you want to sync.",
             )
         except Exception as exc:
             error(self, "Could not protect or save the GitHub token.\n" + str(exc))
@@ -4225,7 +3897,8 @@ class MainWindow(QMainWindow):
     def sync_github_database_now(self):
         if not self.db.github_sync.has_token:
             return error(self, "Save a GitHub token first.")
-        self.db.github_sync.request_sync(force=True)
+        if not self.db.github_sync.request_sync():
+            return error(self, "Could not queue the Git DB push. Check the saved token and try again.")
         self._refresh_github_sync_status()
 
     def remove_github_sync_token(self):
@@ -4234,7 +3907,7 @@ class MainWindow(QMainWindow):
         if not ask(
             self,
             "Remove GitHub sync token",
-            "Automatic uploads will stop on this computer. Local database data will remain unchanged.",
+            "The saved GitHub credential will be removed. Local database data will remain unchanged.",
         ):
             return
         self.db.clear_github_sync_token()
