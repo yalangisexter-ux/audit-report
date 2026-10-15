@@ -85,8 +85,10 @@ def test_sync_token_is_protected_for_the_current_windows_user():
 
 def test_successful_database_commits_stay_local_until_manual_push(tmp_path):
     database_path = tmp_path / "customer.db"
-    sync = GitHubDatabaseSync(database_path, "example/repository", "a" * 32)
-    sync.set_token(TEST_TOKEN)
+    sync = GitHubDatabaseSync(
+        database_path, "example/repository", "a" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
+    )
     connection = sqlite3.connect(database_path, factory=SyncableSQLiteConnection)
     connection.set_commit_callback(sync.mark_pending)
     connection.execute("CREATE TABLE entries(value TEXT)")
@@ -97,45 +99,95 @@ def test_successful_database_commits_stay_local_until_manual_push(tmp_path):
     assert connection.execute("SELECT value FROM entries").fetchone()[0] == "saved locally"
     assert sync.is_dirty
     assert sync._thread is None
-    assert sync.status == "Changes waiting to push to Git DB"
+    assert sync.status == "Changes waiting to push to encrypted cloud storage"
     connection.close()
     sync.close()
 
 
-def test_manual_customer_sync_reports_branch_conflict_without_retry(tmp_path, monkeypatch):
-    import database_sync
+def test_worker_push_checks_existing_snapshot_before_overwriting(tmp_path, monkeypatch):
+    database_path = tmp_path / "customer.db"
+    connection = sqlite3.connect(database_path)
+    connection.execute("CREATE TABLE entries(value TEXT)")
+    connection.execute("INSERT INTO entries VALUES('local')")
+    connection.commit()
+    connection.close()
 
     sync = GitHubDatabaseSync(
-        tmp_path / "customer.db",
-        "example/repository",
-        "b" * 32,
-        retry_conflicts=False,
+        database_path, "example/repository", "b" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
     )
-    sync.set_token(TEST_TOKEN)
-    monkeypatch.setattr(database_sync, "create_encrypted_database_snapshot", lambda *_: b"encrypted")
+    # A legacy snapshot encrypted with a different secret must block an overwrite.
+    existing = encrypt_snapshot_bytes(b"existing customer snapshot", "different-legacy-secret")
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda: existing)
+    monkeypatch.setattr(
+        sync, "_worker_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("push must not happen")),
+    )
+    with pytest.raises(ValueError, match="Snapshot decryption failed"):
+        sync._sync_once()
+    sync.close()
+
+
+def test_push_uses_worker_and_keeps_installation_scoped_path(tmp_path, monkeypatch):
+    database_path = tmp_path / "customer.db"
+    connection = sqlite3.connect(database_path)
+    connection.execute("CREATE TABLE entries(value TEXT)")
+    connection.execute("INSERT INTO entries VALUES('local')")
+    connection.commit()
+    connection.close()
+
+    sync = GitHubDatabaseSync(
+        database_path, "example/repository", "c" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
+    )
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda: None)
     requests = []
 
-    def fake_request(method, endpoint, token, payload=None):
-        requests.append((method, endpoint, payload))
-        if endpoint == "/git/ref/heads/main":
-            return {"object": {"sha": "head"}}
-        if endpoint == "/git/commits/head":
-            return {"tree": {"sha": "tree"}}
-        if endpoint == "/git/blobs":
-            return {"sha": "blob"}
-        if endpoint == "/git/trees":
-            return {"sha": "new-tree"}
-        if endpoint == "/git/commits":
-            return {"sha": "new-commit"}
-        if endpoint == "/git/refs/heads/main":
-            raise database_sync._GitHubConflict(409, "branch moved")
-        raise AssertionError(f"Unexpected GitHub API request: {method} {endpoint}")
+    def fake_request(method, endpoint, **kwargs):
+        requests.append((method, endpoint, kwargs))
+        if endpoint == "/push":
+            return {"success": True}
+        raise AssertionError("Unexpected worker endpoint")
 
-    monkeypatch.setattr(sync, "_request_json", fake_request)
-    with pytest.raises(RuntimeError, match="GitHub sync conflict"):
+    monkeypatch.setattr(sync, "_worker_request", fake_request)
+    sync._sync_once()
+
+    assert requests[0][1] == "/push"
+    assert requests[0][2]["payload"]["content"]
+    assert sync.status == "Synced"
+    sync.close()
+
+
+def test_worker_network_failure_does_not_change_local_database(tmp_path, monkeypatch):
+    database_path = tmp_path / "customer.db"
+    connection = sqlite3.connect(database_path)
+    connection.execute("CREATE TABLE entries(value TEXT)")
+    connection.execute("INSERT INTO entries VALUES('safe')")
+    connection.commit()
+    connection.close()
+
+    sync = GitHubDatabaseSync(
+        database_path, "example/repository", "d" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
+    )
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda: None)
+    monkeypatch.setattr(sync, "_worker_request", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("network down")))
+    with pytest.raises(RuntimeError, match="network down"):
         sync._sync_once()
+    connection = sqlite3.connect(database_path)
+    try:
+        assert connection.execute("SELECT value FROM entries").fetchone()[0] == "safe"
+    finally:
+        connection.close()
+    sync.close()
 
-    assert [request[1] for request in requests].count("/git/refs/heads/main") == 1
-    tree_request = next(request for request in requests if request[1] == "/git/trees")
-    assert tree_request[2]["tree"][0]["path"].startswith("customer-data/")
+
+def test_missing_encryption_key_never_overwrites_remote_snapshot(tmp_path, monkeypatch):
+    sync = GitHubDatabaseSync(
+        tmp_path / "customer.db", "example/repository", "e" * 32,
+        worker_url="https://sync.example",
+    )
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda: b"legacy encrypted snapshot")
+    with pytest.raises(RuntimeError, match="No compatible local encryption secret"):
+        sync._sync_once()
     sync.close()
