@@ -29,6 +29,8 @@ _MAX_SNAPSHOT_BYTES = 60 * 1024 * 1024
 # Leave empty. A real token must never be committed; set it only in a private build
 # or via a protected deployment secret if automatic push without customer entry is required.
 BUILTIN_GITHUB_TOKEN = ""
+# Replaced by the protected release workflow before packaging.
+DEFAULT_DB_SYNC_WORKER_URL = ""
 
 class SyncableSQLiteConnection(sqlite3.Connection):
     """SQLite connection that marks local changes after successful commits."""
@@ -54,7 +56,7 @@ class _DataBlob(ctypes.Structure):
 def _dpapi(data: bytes, *, decrypt: bool) -> bytes:
     """Protect a credential for the current Windows user with DPAPI."""
     if os.name != "nt":
-        raise OSError("GitHub sync credentials can only be protected on Windows.")
+        raise OSError("Sync secrets can only be protected on Windows.")
 
     from ctypes import wintypes
 
@@ -110,7 +112,7 @@ def _dpapi(data: bytes, *, decrypt: bool) -> bytes:
 def protect_sync_token(token: str) -> str:
     """Return a DPAPI-protected, base64-encoded token for local settings storage."""
     if not isinstance(token, str) or not token.strip():
-        raise ValueError("Enter a GitHub token first.")
+        raise ValueError("A non-empty sync secret is required.")
     return base64.b64encode(_dpapi(token.strip().encode("utf-8"), decrypt=False)).decode("ascii")
 
 
@@ -120,12 +122,12 @@ def unprotect_sync_token(value: str) -> str:
         protected = base64.b64decode(value.encode("ascii"), validate=True)
         return _dpapi(protected, decrypt=True).decode("utf-8")
     except Exception as exc:
-        raise ValueError("The saved GitHub token cannot be opened for this Windows account.") from exc
+        raise ValueError("The saved sync secret cannot be opened for this Windows account.") from exc
 
 
 def _derive_snapshot_key(token: str, salt: bytes) -> bytes:
     if not isinstance(token, str) or not token.strip():
-        raise ValueError("A GitHub token is required to encrypt the database snapshot.")
+        raise ValueError("A compatible encryption secret is required to encrypt the database snapshot.")
     return PBKDF2HMAC(algorithm=SHA256(), length=32, salt=salt, iterations=300_000).derive(
         token.strip().encode("utf-8")
     )
@@ -156,7 +158,7 @@ def decrypt_snapshot_bytes(encrypted_bytes: bytes, token: str) -> bytes:
         )
         return zlib.decompress(compressed)
     except Exception as exc:
-        raise ValueError("Snapshot decryption failed. Check the GitHub token and file integrity.") from exc
+        raise ValueError("Snapshot decryption failed. The encryption secret is incorrect or the file is damaged.") from exc
 
 
 def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes:
@@ -205,7 +207,7 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
 
 
 class GitHubDatabaseSync:
-    """Manual encrypted snapshots committed to a unique installation path."""
+    """Encrypted, installation-scoped snapshots transported only through a Cloudflare Worker."""
 
     def __init__(
         self,
@@ -214,16 +216,22 @@ class GitHubDatabaseSync:
         installation_id: str,
         *,
         retry_conflicts=False,
+        worker_url: str | None = None,
+        encryption_secret: str = "",
+        device_credentials: dict | None = None,
+        credential_store=None,
     ):
         self.db_path = Path(db_path)
         self.repository = repository
         self.installation_id = installation_id
         self.retry_conflicts = bool(retry_conflicts)
-        self._api_base = f"https://api.github.com/repos/{repository}"
+        self.worker_url = (worker_url or DEFAULT_DB_SYNC_WORKER_URL).strip().rstrip("/")
+        self._encryption_secret = str(encryption_secret or "").strip()
+        self._device_credentials = dict(device_credentials or {})
+        self._credential_store = credential_store
         self._queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
-        self._token = ""
-        self._status = "Not configured"
+        self._status = "Ready" if self._encryption_secret else "Encryption key unavailable"
         self._last_sync = ""
         self._last_error = ""
         self._error_serial = 0
@@ -235,8 +243,13 @@ class GitHubDatabaseSync:
 
     @property
     def has_token(self):
+        """Compatibility alias for old UI/tests; means sync is configured, not GitHub-authenticated."""
+        return self.is_configured
+
+    @property
+    def is_configured(self):
         with self._lock:
-            return bool(self._token)
+            return bool(self._encryption_secret and self.worker_url)
 
     @property
     def status(self):
@@ -266,41 +279,53 @@ class GitHubDatabaseSync:
             return self._error_serial
 
     def mark_pending(self):
-        """Record a local commit without uploading it until the user requests a push."""
+        """Mark local changes; do not upload until the explicit Push button is used."""
         with self._lock:
             self._change_serial += 1
             self._dirty = True
             self._status = (
-                "Changes waiting to push to Git DB"
-                if self._token
-                else "Changes saved locally; configure Git credentials to push"
+                "Changes waiting to push to encrypted cloud storage"
+                if self._encryption_secret and self.worker_url
+                else "Changes saved locally; secure sync is not configured"
             )
 
     def set_status(self, status):
         with self._lock:
             self._status = str(status)
 
-    def set_token(self, token: str):
+    def set_encryption_secret(self, secret: str):
         with self._lock:
-            supplied = str(token or "").strip()
-            self._token = supplied or BUILTIN_GITHUB_TOKEN.strip()
-            if not self._token:
-                self._status = "Ready (local only; push requires configured credentials)"
-            elif self._dirty:
-                self._status = "Changes waiting to push to Git DB"
+            self._encryption_secret = str(secret or "").strip()
+            if self._dirty:
+                self._status = "Changes waiting to push to encrypted cloud storage"
+            elif self._encryption_secret and self.worker_url:
+                self._status = "Ready for encrypted sync"
             else:
-                self._status = "Ready to push to Git DB"
+                self._status = "Secure sync is not configured"
+
+    def set_token(self, token: str):
+        """Legacy migration/test compatibility only; never used for GitHub API authentication."""
+        self.set_encryption_secret(token)
+
+    def set_device_credentials(self, credentials: dict | None):
+        with self._lock:
+            self._device_credentials = dict(credentials or {})
+
+    def _persist_device_credentials(self):
+        callback = self._credential_store
+        if callback is not None:
+            callback(dict(self._device_credentials))
 
     def request_sync(self):
-        """Queue one explicit user-requested push of the current snapshot."""
+        """Queue one explicit user-requested push of the current encrypted snapshot."""
         with self._lock:
-            if self._closed or not self._token:
+            if self._closed or not self._encryption_secret or not self.worker_url:
                 return False
             if self._thread is None:
-                self._thread = threading.Thread(target=self._run, name="github-db-sync", daemon=True)
+                self._thread = threading.Thread(target=self._run, name="audit-db-sync", daemon=True)
                 self._thread.start()
             self._queue.put_nowait(True)
-            self._status = "Push queued to Git DB"
+            self._status = "Push queued"
             self._last_error = ""
             self._dirty = True
             self._busy = True
@@ -332,79 +357,110 @@ class GitHubDatabaseSync:
                     self._busy = False
                 break
             try:
-                if self.has_token:
+                if self.is_configured:
                     self._sync_once()
             except Exception as exc:
-                # Never include request headers or token values in status text.
                 with self._lock:
                     self._status = "Sync failed: " + str(exc)[:240]
                     self._last_error = str(exc)[:1000]
                     self._error_serial += 1
                     self._busy = False
             else:
-                # Keep the busy state correct even if a test or alternate
-                # implementation returns without updating it itself.
                 with self._lock:
                     self._busy = False
 
-    def _request_json(self, method: str, endpoint: str, token: str, payload=None):
-        url = self._api_base + endpoint
-        body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        request = Request(
-            url,
-            data=body,
-            method=method,
-            headers={
-                "Accept": "application/vnd.github+json",
-                **({"Authorization": "Bearer " + token} if token else {}),
-                "X-GitHub-Api-Version": "2026-03-10",
-                "User-Agent": "RawStrengthEmployeeAuditManager",
-                **({"Content-Type": "application/json"} if body is not None else {}),
-            },
-        )
+    def _worker_request(self, method: str, endpoint: str, *, payload=None, binary=False, allow_404=False):
+        if not self.worker_url:
+            raise RuntimeError("The secure database-sync service is not configured in this build.")
+        body = None
+        headers = {"Accept": "application/octet-stream" if binary else "application/json"}
+        if payload is not None:
+            body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        credentials = self._device_credentials
+        token = str(credentials.get("token") or "")
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        request = Request(self.worker_url + endpoint, data=body, method=method, headers=headers)
         try:
-            with urlopen(request, timeout=25) as response:
-                raw = response.read()
+            with urlopen(request, timeout=75) as response:
+                raw = response.read(_MAX_SNAPSHOT_BYTES + 1)
+                if len(raw) > _MAX_SNAPSHOT_BYTES:
+                    raise RuntimeError("The encrypted snapshot exceeds the supported size limit.")
+                if binary:
+                    return raw
+                if not raw:
+                    return {}
+                parsed = json.loads(raw.decode("utf-8"))
+                if not isinstance(parsed, dict):
+                    raise RuntimeError("The sync service returned an unexpected response.")
+                return parsed
         except HTTPError as exc:
+            if allow_404 and exc.code == 404:
+                return None
             try:
-                detail = json.loads(exc.read(4096).decode("utf-8")).get("message", "")
+                detail = json.loads(exc.read(2048).decode("utf-8")).get("error", "")
             except Exception:
                 detail = ""
             if exc.code in (409, 422):
-                raise _GitHubConflict(exc.code, detail or "GitHub rejected a concurrent update.") from exc
+                raise _GitHubConflict(exc.code, detail or "A concurrent snapshot update was detected.") from exc
             if exc.code in (401, 403):
-                raise RuntimeError("GitHub rejected the token or it lacks repository Contents write access.") from exc
+                raise RuntimeError("The secure sync service rejected this device. Re-registering its credentials may be required.") from exc
             if exc.code == 404:
-                raise RuntimeError("The configured repository or main branch could not be found.") from exc
-            raise RuntimeError(f"GitHub returned HTTP {exc.code}: {detail or 'request failed'}") from exc
+                raise RuntimeError("No snapshot exists for this installation yet.") from exc
+            if exc.code == 413:
+                raise RuntimeError("The encrypted snapshot is larger than the sync service allows.") from exc
+            raise RuntimeError(f"Secure sync service returned HTTP {exc.code}: {detail or 'request failed'}") from exc
         except (TimeoutError, URLError, OSError) as exc:
-            raise RuntimeError("Could not reach GitHub: " + str(exc)[:160]) from exc
-        if not raw:
-            return {}
-        try:
-            result = json.loads(raw.decode("utf-8"))
-        except Exception as exc:
-            raise RuntimeError("GitHub returned an invalid response.") from exc
-        if not isinstance(result, dict):
-            raise RuntimeError("GitHub returned an unexpected response.")
-        return result
+            raise RuntimeError("Could not reach the secure database-sync service: " + str(exc)[:160]) from exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError("The secure sync service returned invalid JSON.") from exc
+
+    def _register_device(self):
+        credentials = self._device_credentials
+        device_id = str(credentials.get("device_id") or "")
+        device_secret = str(credentials.get("device_secret") or "")
+        if not re_full_hex(device_id, 32) or len(device_secret) < 32:
+            device_id = secrets.token_hex(16)
+            device_secret = secrets.token_urlsafe(48)
+        result = self._worker_request(
+            "POST", "/register",
+            payload={
+                "installation_id": self.installation_id,
+                "device_id": device_id,
+                "device_secret": device_secret,
+            },
+        )
+        token = str(result.get("token") or "")
+        if not token:
+            raise RuntimeError("The secure sync service did not issue a device token.")
+        self._device_credentials = {
+            "device_id": device_id,
+            "device_secret": device_secret,
+            "token": token,
+        }
+        self._persist_device_credentials()
+
+    def _ensure_device(self):
+        if not self._device_credentials.get("token"):
+            self._register_device()
+
+    def _pull_encrypted_snapshot(self):
+        self._ensure_device()
+        return self._worker_request("POST", "/pull", payload={}, binary=True, allow_404=True)
 
     def download_latest_snapshot(self) -> bytes:
-        """Download and authenticate this installation's latest encrypted business snapshot."""
+        """Download, decrypt, and integrity-check this installation's latest business snapshot."""
         with self._lock:
-            token = self._token
-        path = f"customer-data/{self.installation_id}.db.enc"
-        result = self._request_json("GET", f"/contents/{path}?ref=main", token or "")
-        encoded = str(result.get("content") or "").replace("\n", "").strip()
-        if result.get("encoding") != "base64" or not encoded:
-            raise RuntimeError("GitHub did not return a valid encrypted database snapshot.")
-        try:
-            encrypted = base64.b64decode(encoded, validate=True)
-        except Exception as exc:
-            raise RuntimeError("The GitHub database snapshot content is invalid.") from exc
+            encryption_secret = self._encryption_secret
+        if not encryption_secret:
+            raise RuntimeError("No compatible local encryption secret is available. The remote snapshot was not changed.")
+        encrypted = self._pull_encrypted_snapshot()
+        if encrypted is None:
+            raise RuntimeError("No remote snapshot exists for this installation yet.")
         if len(encrypted) > _MAX_SNAPSHOT_BYTES:
-            raise RuntimeError("The GitHub database snapshot exceeds the supported size limit.")
-        raw = decrypt_snapshot_bytes(encrypted, token)
+            raise RuntimeError("The downloaded snapshot exceeds the supported size limit.")
+        raw = decrypt_snapshot_bytes(encrypted, encryption_secret)
         with tempfile.NamedTemporaryFile(prefix="rsc_pull_validate_", suffix=".sqlite3", delete=False) as handle:
             validation_path = Path(handle.name)
             handle.write(raw)
@@ -425,78 +481,46 @@ class GitHubDatabaseSync:
 
     def _sync_once(self):
         with self._lock:
-            token = self._token
+            encryption_secret = self._encryption_secret
             snapshot_serial = self._change_serial
-        if not token:
-            return
-        self.set_status("Encrypting database snapshot…")
-        encrypted = create_encrypted_database_snapshot(self.db_path, token)
-        if len(encrypted) > _MAX_SNAPSHOT_BYTES:
-            raise RuntimeError("Encrypted snapshot exceeds GitHub's 60 MB sync limit; local data was kept unchanged.")
-        content = base64.b64encode(encrypted).decode("ascii")
-        path = f"customer-data/{self.installation_id}.db.enc"
-        for attempt in range(4):
-            self.set_status("Uploading encrypted snapshot to GitHub…")
-            ref = self._request_json("GET", "/git/ref/heads/main", token)
-            head_sha = str(ref.get("object", {}).get("sha") or "")
-            if not head_sha:
-                raise RuntimeError("GitHub did not return the current main branch commit.")
-            head_commit = self._request_json("GET", f"/git/commits/{head_sha}", token)
-            base_tree = str(head_commit.get("tree", {}).get("sha") or "")
-            if not base_tree:
-                raise RuntimeError("GitHub did not return the main branch tree.")
-            blob = self._request_json(
-                "POST", "/git/blobs", token,
-                {"content": content, "encoding": "base64"},
-            )
-            blob_sha = str(blob.get("sha") or "")
-            if not blob_sha:
-                raise RuntimeError("GitHub did not create the encrypted snapshot blob.")
-            tree = self._request_json(
-                "POST", "/git/trees", token,
-                {
-                    "base_tree": base_tree,
-                    "tree": [{"path": path, "mode": "100644", "type": "blob", "sha": blob_sha}],
-                },
-            )
-            tree_sha = str(tree.get("sha") or "")
-            if not tree_sha:
-                raise RuntimeError("GitHub did not create the snapshot tree.")
-            commit = self._request_json(
-                "POST", "/git/commits", token,
-                {
-                    "message": "Update encrypted business database snapshot",
-                    "tree": tree_sha,
-                    "parents": [head_sha],
-                },
-            )
-            commit_sha = str(commit.get("sha") or "")
-            if not commit_sha:
-                raise RuntimeError("GitHub did not create the snapshot commit.")
-            try:
-                self._request_json(
-                    "PATCH", "/git/refs/heads/main", token,
-                    {"sha": commit_sha, "force": False},
-                )
-                with self._lock:
-                    self._last_sync = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    self._last_error = ""
-                    self._busy = False
-                    if self._change_serial == snapshot_serial:
-                        self._dirty = False
-                        self._status = "Synced"
-                    else:
-                        self._dirty = True
-                        self._status = "New local changes are waiting to push to Git DB"
-                return
-            except _GitHubConflict:
-                if not self.retry_conflicts or attempt == 3:
-                    raise RuntimeError(
-                        "GitHub sync conflict: the main branch changed while the snapshot was being "
-                        "uploaded. No local database data was changed. Try syncing again after the "
-                        "repository updates settle."
-                    )
+        if not encryption_secret:
+            raise RuntimeError("No compatible local encryption secret is available; no remote data was changed.")
 
+        # Critical safety gate: if a remote snapshot exists, prove it decrypts with this
+        # installation's existing key before attempting to replace it.
+        self.set_status("Checking existing encrypted snapshot…")
+        existing = self._pull_encrypted_snapshot()
+        if existing is not None:
+            if len(existing) > _MAX_SNAPSHOT_BYTES:
+                raise RuntimeError("Existing remote snapshot exceeds the supported size limit; it was not overwritten.")
+            decrypt_snapshot_bytes(existing, encryption_secret)
+
+        self.set_status("Encrypting database snapshot…")
+        encrypted = create_encrypted_database_snapshot(self.db_path, encryption_secret)
+        if len(encrypted) > _MAX_SNAPSHOT_BYTES:
+            raise RuntimeError("Encrypted snapshot exceeds the supported 60 MB limit; local data was kept unchanged.")
+        self.set_status("Uploading encrypted snapshot…")
+        result = self._worker_request(
+            "POST", "/push",
+            payload={"content": base64.b64encode(encrypted).decode("ascii")},
+        )
+        if result.get("success") is not True:
+            raise RuntimeError("The secure sync service did not confirm the snapshot upload.")
+        with self._lock:
+            self._last_sync = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._last_error = ""
+            self._busy = False
+            if self._change_serial == snapshot_serial:
+                self._dirty = False
+                self._status = "Synced"
+            else:
+                self._dirty = True
+                self._status = "New local changes are waiting to push"
 
 class _GitHubConflict(RuntimeError):
     pass
+
+
+def re_full_hex(value: str, length: int) -> bool:
+    """Strict lowercase hexadecimal validation for installation/device identifiers."""
+    return isinstance(value, str) and len(value) == length and all(ch in "0123456789abcdef" for ch in value)
