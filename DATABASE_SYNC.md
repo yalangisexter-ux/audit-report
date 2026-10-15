@@ -27,16 +27,45 @@ installation ID, commit times, and encrypted file sizes. Git history retains pre
 encrypted snapshots. Uploads are debounced after database commits and retried on a later
 save or app launch when offline. Local saves remain available if GitHub sync fails.
 
+## Developer Mode
+
+Every app user can see the Developer Mode control in **Settings & Backup**. The first user
+sets a fixed local password of at least 12 characters; only its salted password hash is
+stored, and the setting is excluded from uploaded snapshots. The password is not embedded
+in the public source or installer.
+
+Enabling Developer Mode pauses GitHub uploads and saves a validated local recovery copy of
+the current customer database. When Developer Mode is turned off, the saved customer
+database is restored, the Developer Mode database is retained as a separate local
+`*.developer-work-*.db` file, and syncing resumes for the next change to the restored
+customer database. The isolated file has its GitHub token, installation ID, password
+verifier, and mode flag removed, so restoring that file cannot reuse the customer's sync
+identity. Turning Developer Mode off does not publish the developer copy.
+
+**Sync Developer DB** is a separate manual action. It requires the fixed Developer Mode
+password on every upload, uses a random developer-only installation ID, and writes to
+`developer-data/<developer-id>.db.enc`; it never updates the customer snapshot path. It can
+sync the active isolated database while Developer Mode is on or the most recently saved
+developer-work copy while it is off. Mode switching is blocked during an upload. Developer
+uploads do not retry automatically: a GitHub branch conflict is shown as an error so the
+developer can review the repository state and retry deliberately.
+
 Snapshots omit `auth_users` and all local `settings` except the business `working_weekdays`
 setting. Employee, task, attendance, audit, report-source, and archived-document data remain
 in the encrypted database so an authorized developer can inspect the customer state.
 
 ## Decrypt a snapshot for debugging
 
-Download the `.db.enc` file from the repository or run:
+For a customer snapshot, run:
 
 ```powershell
 python tools/decrypt_customer_snapshot.py <installation-id>
+```
+
+For the developer snapshot ID shown in Settings, pass `--developer`:
+
+```powershell
+python tools/decrypt_customer_snapshot.py <developer-id> --developer
 ```
 
 The utility prompts for the token without echoing it, verifies/decrypts the snapshot, checks

@@ -29,6 +29,10 @@ _MAX_SNAPSHOT_BYTES = 60 * 1024 * 1024
 _SYNC_DEBOUNCE_SECONDS = 2.0
 
 
+class _SyncPaused(RuntimeError):
+    """Raised when Developer Mode pauses an upload before it updates main."""
+
+
 class SyncableSQLiteConnection(sqlite3.Connection):
     """SQLite connection that notifies the sync queue after successful commits."""
 
@@ -206,16 +210,36 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
 class GitHubDatabaseSync:
     """Debounced background snapshots, committed to a unique installation path."""
 
-    def __init__(self, db_path: str | Path, repository: str, installation_id: str):
+    def __init__(
+        self,
+        db_path: str | Path,
+        repository: str,
+        installation_id: str,
+        *,
+        paused=False,
+        auto_retry=True,
+        retry_conflicts=True,
+        remote_directory="customer-data",
+    ):
         self.db_path = Path(db_path)
         self.repository = repository
         self.installation_id = installation_id
+        self.auto_retry = bool(auto_retry)
+        self.retry_conflicts = bool(retry_conflicts)
+        self.remote_directory = str(remote_directory).strip("/") or "customer-data"
         self._api_base = f"https://api.github.com/repos/{repository}"
         self._queue: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
+        # Serializes the final ref update against enabling Developer Mode, so
+        # once pause is acknowledged, no in-flight upload can advance main.
+        self._ref_update_lock = threading.Lock()
         self._token = ""
         self._status = "Not configured"
         self._last_sync = ""
+        self._last_error = ""
+        self._error_serial = 0
+        self._busy = False
+        self._developer_paused = bool(paused)
         self._closed = False
         self._thread = None
         self._retry_attempt = 0
@@ -229,25 +253,69 @@ class GitHubDatabaseSync:
     @property
     def status(self):
         with self._lock:
+            if self._developer_paused:
+                return "Developer Mode is on; GitHub uploads are paused"
             if self._last_sync and self._status == "Synced":
                 return f"Last synced {self._last_sync}"
             return self._status
 
+    @property
+    def is_paused(self):
+        with self._lock:
+            return self._developer_paused
+
+    @property
+    def is_busy(self):
+        with self._lock:
+            return self._busy
+
+    @property
+    def last_error(self):
+        with self._lock:
+            return self._last_error
+
+    @property
+    def error_serial(self):
+        with self._lock:
+            return self._error_serial
+
+    def token_for_local_sync(self):
+        """Return the configured token to another in-process sync service."""
+        with self._lock:
+            return self._token
+
+    def set_paused(self, paused):
+        """Pause or resume GitHub writes; resuming waits for a future DB edit."""
+        retry_timer = None
+        with self._ref_update_lock:
+            with self._lock:
+                self._developer_paused = bool(paused)
+                if paused:
+                    retry_timer = self._retry_timer
+                    self._retry_timer = None
+                else:
+                    self._status = "Ready to sync" if self._token else "Not configured"
+        if retry_timer is not None:
+            retry_timer.cancel()
+
     def set_status(self, status):
         with self._lock:
+            if self._developer_paused:
+                return
             self._status = str(status)
 
     def set_token(self, token: str, *, sync_now=False):
         with self._lock:
             self._token = str(token or "").strip()
-            self._status = "Ready to sync" if self._token else "Not configured"
+            if not self._developer_paused:
+                self._status = "Ready to sync" if self._token else "Not configured"
         if self._token and sync_now:
             self.request_sync(force=True)
 
     def request_sync(self, force=False):
         timer = None
         with self._lock:
-            if self._closed or not self._token:
+            if self._closed or self._developer_paused or not self._token:
                 return
             timer = self._retry_timer
             self._retry_timer = None
@@ -256,13 +324,15 @@ class GitHubDatabaseSync:
                 self._thread.start()
             self._queue.put_nowait(bool(force))
             self._status = "Sync queued"
+            self._last_error = ""
+            self._busy = True
         if timer is not None:
             timer.cancel()
 
     def _schedule_retry(self):
         old_timer = None
         with self._lock:
-            if self._closed or not self._token:
+            if self._closed or self._developer_paused or not self._token:
                 return
             self._retry_attempt = min(self._retry_attempt + 1, 5)
             delay = min(15 * (2 ** (self._retry_attempt - 1)), 300)
@@ -297,6 +367,8 @@ class GitHubDatabaseSync:
             except queue.Empty:
                 continue
             if force is None:
+                with self._lock:
+                    self._busy = False
                 break
             deadline = time.monotonic() if force else time.monotonic() + _SYNC_DEBOUNCE_SECONDS
             while True:
@@ -314,13 +386,33 @@ class GitHubDatabaseSync:
                     deadline = time.monotonic() + _SYNC_DEBOUNCE_SECONDS
                 except queue.Empty:
                     break
+            if stopping:
+                with self._lock:
+                    self._busy = False
+                break
             try:
                 if self.has_token:
                     self._sync_once()
+            except _SyncPaused:
+                # Pausing intentionally drops this snapshot. Turning sync back
+                # on must not publish Developer Mode edits by itself.
+                with self._lock:
+                    self._busy = False
+                continue
             except Exception as exc:
                 # Never include request headers or token values in status text.
-                self.set_status("Sync failed: " + str(exc)[:240])
-                self._schedule_retry()
+                with self._lock:
+                    self._status = "Sync failed: " + str(exc)[:240]
+                    self._last_error = str(exc)[:1000]
+                    self._error_serial += 1
+                    self._busy = False
+                if self.auto_retry:
+                    self._schedule_retry()
+            else:
+                # Keep the busy state correct even if a test or alternate
+                # implementation returns without updating it itself.
+                with self._lock:
+                    self._busy = False
 
     def _request_json(self, method: str, endpoint: str, token: str, payload=None):
         url = self._api_base + endpoint
@@ -366,6 +458,8 @@ class GitHubDatabaseSync:
 
     def _sync_once(self):
         with self._lock:
+            if self._developer_paused:
+                raise _SyncPaused()
             token = self._token
         if not token:
             return
@@ -374,7 +468,7 @@ class GitHubDatabaseSync:
         if len(encrypted) > _MAX_SNAPSHOT_BYTES:
             raise RuntimeError("Encrypted snapshot exceeds GitHub's 60 MB sync limit; local data was kept unchanged.")
         content = base64.b64encode(encrypted).decode("ascii")
-        path = f"customer-data/{self.installation_id}.db.enc"
+        path = f"{self.remote_directory}/{self.installation_id}.db.enc"
         for attempt in range(4):
             self.set_status("Uploading encrypted snapshot to GitHub…")
             ref = self._request_json("GET", "/git/ref/heads/main", token)
@@ -405,7 +499,7 @@ class GitHubDatabaseSync:
             commit = self._request_json(
                 "POST", "/git/commits", token,
                 {
-                    "message": "Update encrypted customer database snapshot",
+                    "message": "Update encrypted business database snapshot",
                     "tree": tree_sha,
                     "parents": [head_sha],
                 },
@@ -414,22 +508,32 @@ class GitHubDatabaseSync:
             if not commit_sha:
                 raise RuntimeError("GitHub did not create the snapshot commit.")
             try:
-                self._request_json(
-                    "PATCH", "/git/refs/heads/main", token,
-                    {"sha": commit_sha, "force": False},
-                )
-                with self._lock:
-                    self._status = "Synced"
-                    self._last_sync = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    self._retry_attempt = 0
-                    retry_timer = self._retry_timer
-                    self._retry_timer = None
+                with self._ref_update_lock:
+                    with self._lock:
+                        if self._developer_paused:
+                            raise _SyncPaused()
+                    self._request_json(
+                        "PATCH", "/git/refs/heads/main", token,
+                        {"sha": commit_sha, "force": False},
+                    )
+                    with self._lock:
+                        self._status = "Synced"
+                        self._last_sync = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        self._last_error = ""
+                        self._busy = False
+                        self._retry_attempt = 0
+                        retry_timer = self._retry_timer
+                        self._retry_timer = None
                 if retry_timer is not None:
                     retry_timer.cancel()
                 return
             except _GitHubConflict:
-                if attempt == 3:
-                    raise RuntimeError("GitHub kept changing during sync; the next save or app launch will retry.")
+                if not self.retry_conflicts or attempt == 3:
+                    raise RuntimeError(
+                        "GitHub sync conflict: the main branch changed while the snapshot was being "
+                        "uploaded. No local database data was changed. Try syncing again after the "
+                        "repository updates settle."
+                    )
 
 
 class _GitHubConflict(RuntimeError):
