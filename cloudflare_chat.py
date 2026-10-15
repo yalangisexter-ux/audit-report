@@ -281,6 +281,9 @@ class CloudflareChatTab(QWidget):
         self.logout_button = QPushButton("Sign out of Live Chat")
         self.logout_button.clicked.connect(self._logout)
         left.addWidget(self.logout_button)
+        self.change_password_button = QPushButton("Change chat password")
+        self.change_password_button.clicked.connect(self._change_password)
+        left.addWidget(self.change_password_button)
 
         right = QVBoxLayout()
         right.setSpacing(8)
@@ -435,6 +438,12 @@ class CloudflareChatTab(QWidget):
                 return
             self._preferred_conversation_id = str(data.get("conversationId") or "")
             self._request("conversations", "/api/conversations")
+            return
+        if request_id == "change-password":
+            if error:
+                QMessageBox.warning(self, "Change chat password", error)
+            else:
+                QMessageBox.information(self, "Change chat password", "Your chat password has been changed.")
             return
         if request_id == "create-user":
             if error:
@@ -637,6 +646,22 @@ class CloudflareChatTab(QWidget):
             return
         path = "/api/conversations/" + urllib.parse.quote(str(conversation["id"]), safe="") + "/members"
         self._request("add-member", path, "POST", {"username": username.strip()})
+
+    def _change_password(self):
+        current, accepted = QInputDialog.getText(
+            self, "Change chat password", "Current chat password", QLineEdit.EchoMode.Password
+        )
+        if not accepted or not current:
+            return
+        new_password, accepted = QInputDialog.getText(
+            self, "Change chat password", "New password (10+ characters, letters and numbers)",
+            QLineEdit.EchoMode.Password,
+        )
+        if not accepted or not new_password:
+            return
+        self._request("change-password", "/api/auth/password", "POST", {
+            "currentPassword": current, "newPassword": new_password,
+        })
 
     def _create_chat_account(self):
         username, accepted = QInputDialog.getText(self, "Create chat account", "Username")
