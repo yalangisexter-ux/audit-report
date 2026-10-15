@@ -35,6 +35,18 @@ jobs:
         run: |
           node --check cloudflare-chat/src/index.js
           node --check chat-web/app.js
+          node --check audit-db-sync/src/index.js
+
+      - name: Install and test isolated database-sync Worker
+        shell: pwsh
+        run: |
+          Push-Location audit-db-sync
+          try {
+            npm install --no-audit --no-fund
+            npm run check
+            npm test
+          }
+          finally { Pop-Location }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -140,17 +152,63 @@ jobs:
             Write-Host "Configured production Live Chat endpoint: $($uri.GetLeftPart([System.UriPartial]::Authority))"
           }
 
+      - name: Deploy isolated database-sync Worker
+        id: deploy_db_sync
+        shell: pwsh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          RELEASE_TOKEN_2: ${{ secrets.RELEASE_TOKEN_2 }}
+          DB_SYNC_JWT_SECRET: ${{ secrets.DB_SYNC_JWT_SECRET }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) { throw "Missing Actions secret CLOUDFLARE_API_TOKEN." }
+          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) { throw "Missing Actions variable CLOUDFLARE_ACCOUNT_ID." }
+          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TOKEN_2)) { throw "Missing Actions secret RELEASE_TOKEN_2 (database sync only)." }
+          if ([string]::IsNullOrWhiteSpace($env:DB_SYNC_JWT_SECRET) -or $env:DB_SYNC_JWT_SECRET.Length -lt 32) { throw "Missing or weak Actions secret DB_SYNC_JWT_SECRET (minimum 32 characters)." }
+          Push-Location audit-db-sync
+          try {
+            # Deploy once to establish the Worker, then set secrets and deploy the live configuration.
+            $firstDeploy = npm run deploy 2>&1
+            $firstDeploy | ForEach-Object { Write-Host $_ }
+            $env:RELEASE_TOKEN_2 | npx wrangler secret put RELEASE_TOKEN_2 --config wrangler.toml
+            $env:DB_SYNC_JWT_SECRET | npx wrangler secret put JWT_SECRET --config wrangler.toml
+            $deployLog = npm run deploy 2>&1
+            $deployLog | ForEach-Object { Write-Host $_ }
+            $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-audit-db-sync[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
+            if ($null -eq $workerUrl) { throw "Database-sync Worker deploy did not expose its URL. Configure DB_SYNC_WORKER_URL with the exact deployed HTTPS URL." }
+            "worker_url=$($workerUrl.Value)" >> $env:GITHUB_OUTPUT
+          }
+          finally { Pop-Location }
+
+      - name: Configure the database-sync Worker endpoint for this build
+        shell: pwsh
+        env:
+          DEPLOYED_DB_SYNC_WORKER_URL: ${{ steps.deploy_db_sync.outputs.worker_url }}
+          DB_SYNC_WORKER_URL: ${{ vars.DB_SYNC_WORKER_URL }}
+        run: |
+          $workerUrl = $env:DEPLOYED_DB_SYNC_WORKER_URL
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) { throw "No database-sync Worker URL was resolved; refusing to package a build with broken sync." }
+          $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
+          if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "DB_SYNC_WORKER_URL must be a plain HTTPS Worker base URL." }
+          $sourcePath = "database_sync.py"
+          $source = Get-Content $sourcePath -Raw
+          $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL = ""', ('DEFAULT_DB_SYNC_WORKER_URL = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
+          if ($source -notmatch ('DEFAULT_DB_SYNC_WORKER_URL = "' + [regex]::Escape($uri.Host))) { throw "Could not inject database-sync Worker URL." }
+          Set-Content -Path $sourcePath -Value $source -Encoding utf8
+          Write-Host "Configured secure database-sync Worker endpoint."
+
       - name: Compile Python application with bundled assets
         shell: pwsh
         run: |
-          python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py
+          python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py database_sync.py
           pyinstaller --noconfirm --clean --onedir --windowed --hidden-import websocket --name RawStrengthEmployeeAuditManager --icon assets/raw_strength_icon.ico --add-data "assets;assets" --version-file version_info.txt app.py
           if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe")) { throw "Application executable was not created." }
 
       - name: Build standalone Windows installer
         shell: pwsh
         env:
-          APP_VERSION: "1.2.77"
+          APP_VERSION: "1.2.78"
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
@@ -188,4 +246,4 @@ jobs:
           fail_on_unmatched_files: true
           # Prefer a repository-configured PAT when the default Actions token is
           # restricted from creating releases by repository/organization policy.
-          token: ${{ secrets.RELEASE_TOKEN_2 || secrets.RELEASE_TOKEN || github.token }}
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
