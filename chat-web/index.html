@@ -29,7 +29,7 @@ button,input,select{font:inherit}button{cursor:pointer;border:1px solid var(--li
 </section>
 <section id="appView" class="hidden">
   <aside id="sidebar" class="sidebar">
-    <div class="sidebar-head"><div class="brand"><div class="logo">RSC</div><div><h1>Live Chat</h1><p id="signedInAs">Signed in</p></div></div><button id="logoutBtn" class="subtle" aria-label="Sign out">↪</button></div>
+    <div class="sidebar-head"><div class="brand"><div class="logo">RSC</div><div><h1>Live Chat</h1><p id="signedInAs">Signed in</p></div></div><button id="changePasswordBtn" class="subtle" aria-label="Change chat password">Password</button><button id="logoutBtn" class="subtle" aria-label="Sign out">↪</button></div>
     <div class="sidebar-actions"><button id="newPrivateBtn">＋ Private</button><button id="newGroupBtn">＋ Group</button></div>
     <div id="adminPanel" class="hidden" style="border:1px solid var(--line);border-radius:14px;padding:12px">
       <strong style="font-size:13px">Admin tools</strong><p class="muted" style="font-size:12px;margin:4px 0 9px">Create a chat account</p>
@@ -238,6 +238,15 @@ button,input,select{font:inherit}button{cursor:pointer;border:1px solid var(--li
       await loadConversations();
     } catch (error) { setError("loginError", error.message); }
     finally { button.disabled = false; button.textContent = "Sign in securely"; }
+  });
+  $("changePasswordBtn").addEventListener("click", () => {
+    showDialog("Change chat password", [
+      {id:"currentPassword",label:"Current password",type:"password",maxLength:256},
+      {id:"newPassword",label:"New password (10+ characters, letters and numbers)",type:"password",maxLength:256}
+    ], async values => {
+      await api("/api/auth/password",{method:"POST",body:JSON.stringify({currentPassword:values.currentPassword,newPassword:values.newPassword})});
+      alert("Password changed successfully.");
+    });
   });
   $("logoutBtn").addEventListener("click", () => {
     stopSocket(); state.token = ""; state.user = null; state.conversations = []; state.users = []; state.activeId = "";
