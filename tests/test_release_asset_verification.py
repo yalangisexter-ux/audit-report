@@ -259,13 +259,13 @@ def test_release_metadata_is_consistent_and_newer_than_installed_version():
 
 
 def test_update_worker_uses_latest_published_stable_release(monkeypatch):
-    release = {
+    release = [{
         "tag_name": "v1.2.36",
         "draft": False,
         "prerelease": False,
         "published_at": "2026-10-14T08:00:00Z",
         "assets": [],
-    }
+    }]
     requested = []
     monkeypatch.setattr(
         app.UpdateWorker,
@@ -283,7 +283,7 @@ def test_update_worker_uses_latest_published_stable_release(monkeypatch):
     worker.run()
 
     assert requested == [
-        "https://api.github.com/repos/yalangisexter-ux/audit-report/releases/latest"
+        "https://api.github.com/repos/yalangisexter-ux/audit-report/releases?per_page=100"
     ]
     assert emitted
     assert emitted[0][0] == "failed"
@@ -318,13 +318,13 @@ def test_update_request_uses_bounded_timeout_and_reports_check_progress(monkeypa
 
 
 def test_update_worker_retries_after_a_read_timeout(monkeypatch):
-    release = {
+    release = [{
         "tag_name": "v1.2.36",
         "draft": False,
         "prerelease": False,
         "published_at": "2026-10-14T08:00:00Z",
         "assets": [],
-    }
+    }]
     attempts = []
 
     def request(url, accept="application/vnd.github+json"):
