@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 
 const encoder = new TextEncoder();
 const MAX_BODY_BYTES = 16 * 1024;
-const TOKEN_TTL_SECONDS = 12 * 60 * 60;
+const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 const SOCKET_TICKET_TTL_SECONDS = 60;
 const MAX_MESSAGE_LENGTH = 4000;
 const PASSWORD_ITERATIONS = 310000;
