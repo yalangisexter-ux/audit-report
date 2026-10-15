@@ -3351,11 +3351,11 @@ class MainWindow(QMainWindow):
         self.task_filter=QComboBox(); self.task_filter.addItem("All employees",None)
         row.addWidget(self.task_filter)
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
-        task_tips = {"Add Task": "Create a new task for the selected date", "Edit Selected": "Edit the selected task", "Delete Selected": "Delete the selected task", "Open Proof": "Open proof/evidence link in browser"}
-        for label,slot in [("Add Task",self.add_task),("Edit Selected",self.edit_task),("Delete Selected",self.delete_task),("Open Proof",self.open_proof)]:
+        task_tips = {"Add Task": "Create a new task for the selected date", "Edit Selected": "Edit one selected task", "Bulk Edit Selected": "Apply chosen fields to multiple selected tasks", "Select All": "Select every task shown for the selected date and employee filter", "Delete Selected": "Delete the selected task", "Open Proof": "Open proof/evidence link in browser"}
+        for label,slot in [("Add Task",self.add_task),("Edit Selected",self.edit_task),("Bulk Edit Selected",self.bulk_edit_tasks),("Select All",self.task_table_select_all),("Delete Selected",self.delete_task),("Open Proof",self.open_proof)]:
             b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(task_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
         self.task_table=QTableWidget(0,9); self.task_table.setHorizontalHeaderLabels(["ID","Employee","Task","Priority","Status","Progress","Due","Proof","Manager remarks"])
-        self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
+        self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
 
     def build_tracker(self):
         l=QVBoxLayout()
@@ -3457,6 +3457,14 @@ class MainWindow(QMainWindow):
             self.att_employee_filter.addItem(e["name"], e["id"])
         self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
         emp_row.addWidget(self.att_employee_filter)
+        self.att_select_all_button = QPushButton("Select All")
+        self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
+        self.att_select_all_button.clicked.connect(self.attendance_select_all)
+        emp_row.addWidget(self.att_select_all_button)
+        self.att_bulk_edit_button = QPushButton("Bulk Edit Selected")
+        self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
+        self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
+        emp_row.addWidget(self.att_bulk_edit_button)
         emp_row.addStretch(1)
         l.addLayout(emp_row)
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
@@ -3476,6 +3484,7 @@ class MainWindow(QMainWindow):
         self.att_table.setMinimumHeight(230)
         self.att_table.verticalHeader().setDefaultSectionSize(54)
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.att_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
         self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row. Scroll horizontally to see every column on smaller screens.")
@@ -4333,6 +4342,77 @@ class MainWindow(QMainWindow):
         self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
         self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
 
+    def task_table_select_all(self):
+        if hasattr(self, "task_table"):
+            self.task_table.selectAll()
+
+    def _selected_task_ids(self, table=None):
+        table = table or self.task_table
+        ids = []
+        for index in table.selectionModel().selectedRows():
+            item = table.item(index.row(), 0)
+            if item:
+                try: ids.append(int(item.text()))
+                except (TypeError, ValueError): pass
+        return list(dict.fromkeys(ids))
+
+    def bulk_edit_tasks(self):
+        task_ids = self._selected_task_ids()
+        if not task_ids:
+            return error(self, "Select one or more tasks first. Use Select All to edit every task shown for the current date/filter.")
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Bulk edit selected tasks")
+        dialog.setMinimumWidth(560)
+        form = QFormLayout(dialog)
+        form.addRow(QLabel(f"Apply selected fields to {len(task_ids)} task(s). Leave a field unchecked to preserve its current value."))
+        fields = {}
+        def field_row(label, widget):
+            check = QCheckBox("Apply")
+            wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.addWidget(check); row.addWidget(widget,1)
+            form.addRow(label, wrap); fields[label] = (check, widget)
+        title = QLineEdit(); field_row("Task title", title)
+        priority = QComboBox(); priority.addItems(["Low","Normal","High","Urgent"]); field_row("Priority", priority)
+        status = QComboBox()
+        for label, value in TaskDialog.STATUSES: status.addItem(label, value)
+        field_row("Status", status)
+        progress = QSpinBox(); progress.setRange(0,100); progress.setSuffix("%"); field_row("Progress", progress)
+        due = QLineEdit(); due.setPlaceholderText("HH:MM"); field_row("Due time", due)
+        manager_note = QLineEdit(); field_row("Manager remarks", manager_note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        if dialog.exec() != QDialog.Accepted: return
+        updates = {}
+        if fields["Task title"][0].isChecked():
+            value = title.text().strip()
+            if not value: return error(self, "Task title cannot be blank.")
+            updates["title"] = value
+        if fields["Priority"][0].isChecked(): updates["priority"] = priority.currentText()
+        if fields["Status"][0].isChecked(): updates["status"] = status.currentData()
+        if fields["Progress"][0].isChecked(): updates["progress"] = progress.value()
+        if fields["Due time"][0].isChecked():
+            value = due.text().strip()
+            if value and not valid_hhmm(value): return error(self, "Due time must use 24-hour HH:MM format.")
+            updates["due_time"] = value
+        if fields["Manager remarks"][0].isChecked(): updates["manager_note"] = manager_note.text().strip()
+        if not updates: return info(self, "No fields were selected to update.")
+        if updates.get("status") == "Completed": updates["progress"] = 100
+        if "status" in updates and updates["status"] in ("Submitted","Completed"):
+            updates["submitted_at"] = now_text()
+        updates["updated_at"] = now_text()
+        columns = list(updates)
+        placeholders = ", ".join(f"{column}=?" for column in columns)
+        try:
+            self.db.conn.execute("BEGIN")
+            for task_id in task_ids:
+                self.db.conn.execute(f"UPDATE tasks SET {placeholders} WHERE id=?", [updates[c] for c in columns] + [task_id])
+            self.db.conn.commit()
+        except sqlite3.Error as exc:
+            self.db.conn.rollback()
+            return error(self, f"Bulk task update failed; no changes were saved. {exc}")
+        self.db.log("Bulk tasks edited", f"count={len(task_ids)}, fields={','.join(columns)}")
+        self.refresh_all()
+        info(self, f"Updated {len(task_ids)} selected task(s).")
+
     def delete_task(self, table=None):
         table=table or self.task_table
         tid=self.selected_id(table)
@@ -4371,6 +4451,90 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self.att_employee_filter.setCurrentIndex(idx)
         self.att_employee_filter.blockSignals(False)
+
+    def attendance_select_all(self):
+        if hasattr(self, "att_table"):
+            self.att_table.selectAll()
+
+    def _selected_attendance_employee_ids(self):
+        ids = []
+        for index in self.att_table.selectionModel().selectedRows():
+            item = self.att_table.item(index.row(), 0)
+            if item:
+                try: ids.append(int(item.data(Qt.UserRole)))
+                except (TypeError, ValueError): pass
+        return list(dict.fromkeys(ids))
+
+    def bulk_edit_attendance(self):
+        employee_ids = self._selected_attendance_employee_ids()
+        if not employee_ids:
+            return error(self, "Select one or more employee rows first. Use Select All to edit every employee shown for this date.")
+        work_date = self.att_date.date().toString("yyyy-MM-dd")
+        if self.db.is_holiday(work_date):
+            return error(self, "This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Bulk edit attendance")
+        dialog.setMinimumWidth(540)
+        form = QFormLayout(dialog)
+        form.addRow(QLabel(f"Apply checked fields to {len(employee_ids)} employee(s) on {work_date}. Unchecked fields remain unchanged."))
+        fields = {}
+        def field_row(label, widget):
+            check = QCheckBox("Apply")
+            wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.addWidget(check); row.addWidget(widget,1)
+            form.addRow(label, wrap); fields[label] = (check, widget)
+        status = QComboBox(); status.addItems(["Unmarked","Present","Absent","Leave"]); field_row("Attendance status", status)
+        check_in = QLineEdit(); check_in.setPlaceholderText("HH:MM (blank clears)"); field_row("Check-in", check_in)
+        check_out = QLineEdit(); check_out.setPlaceholderText("HH:MM (blank clears)"); field_row("Check-out", check_out)
+        note = QLineEdit(); note.setPlaceholderText("Attendance note"); field_row("Note", note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        if dialog.exec() != QDialog.Accepted: return
+        changes = {}
+        if fields["Attendance status"][0].isChecked(): changes["attendance_status"] = status.currentText()
+        if fields["Check-in"][0].isChecked(): changes["check_in"] = check_in.text().strip()
+        if fields["Check-out"][0].isChecked(): changes["check_out"] = check_out.text().strip()
+        if fields["Note"][0].isChecked(): changes["attendance_note"] = note.text().strip()
+        if not changes: return info(self, "No fields were selected to update.")
+        for field in ("check_in","check_out"):
+            value = changes.get(field, "")
+            if value and not valid_hhmm(value): return error(self, f"{field.replace('_',' ').title()} must use 24-hour HH:MM format.")
+        if changes.get("check_out") and not changes.get("check_in"):
+            # Existing records may already have a check-in; validate per employee below.
+            pass
+        if changes.get("attendance_status") in ("Absent","Leave","Unmarked"):
+            changes.setdefault("check_in", "")
+            changes.setdefault("check_out", "")
+        now = now_text()
+        try:
+            self.db.conn.execute("BEGIN")
+            for employee_id in employee_ids:
+                old = self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (employee_id, work_date)).fetchone()
+                current_in = changes.get("check_in", old["check_in"] if old else "")
+                current_out = changes.get("check_out", old["check_out"] if old else "")
+                if current_out and not current_in:
+                    raise ValueError(f"Employee ID {employee_id}: check-out requires a check-in.")
+                current_status = changes.get("attendance_status", old["attendance_status"] if old else "Unmarked")
+                current_note = changes.get("attendance_note", old["attendance_note"] if old else "")
+                if current_in or current_out:
+                    current_status = "Present"
+                if current_status in ("Absent","Leave","Unmarked"):
+                    current_in = current_out = ""
+                self.db.conn.execute(
+                    """INSERT INTO attendance(employee_id,work_date,check_in,check_out,attendance_note,attendance_status,updated_at)
+                       VALUES(?,?,?,?,?,?,?)
+                       ON CONFLICT(employee_id,work_date) DO UPDATE SET
+                       check_in=excluded.check_in,check_out=excluded.check_out,
+                       attendance_note=excluded.attendance_note,attendance_status=excluded.attendance_status,
+                       updated_at=excluded.updated_at""",
+                    (employee_id,work_date,current_in,current_out,current_note,current_status,now)
+                )
+            self.db.conn.commit()
+        except (sqlite3.Error, ValueError) as exc:
+            self.db.conn.rollback()
+            return error(self, f"Bulk attendance update failed; no changes were saved. {exc}")
+        self.db.log("Bulk attendance edited", f"date={work_date}, employees={len(employee_ids)}, fields={','.join(changes)}")
+        self.refresh_all()
+        info(self, f"Updated attendance for {len(employee_ids)} employee(s).")
 
     def attendance_selected_employee(self):
         # A specific employee in the filter is the source of truth for attendance actions.
