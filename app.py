@@ -878,31 +878,72 @@ class Database:
             )
             self.conn.commit()
         self.github_sync_install_id = install_id
-        self.github_sync = GitHubDatabaseSync(
-            DB_PATH, GITHUB_REPOSITORY, install_id
-        )
-        saved_token = self.get_setting("github_sync_token_dpapi", "")
-        if saved_token:
+
+        # Keep legacy snapshot compatibility: if the old GitHub token is still
+        # available, it remains the encryption passphrase. It is never sent to the Worker.
+        legacy_secret = ""
+        saved_legacy = self.get_setting("github_sync_token_dpapi", "")
+        if saved_legacy:
             try:
-                self.github_sync.set_token(unprotect_sync_token(saved_token))
-            except ValueError as exc:
-                self.github_sync.set_status(str(exc))
+                legacy_secret = unprotect_sync_token(saved_legacy)
+            except ValueError:
+                legacy_secret = ""
+        if not legacy_secret:
+            legacy_secret = str(os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "").strip()
+
+        protected_key = self.get_setting("github_sync_encryption_secret_dpapi", "")
+        encryption_secret = ""
+        if protected_key:
+            try:
+                encryption_secret = unprotect_sync_token(protected_key)
+            except ValueError:
+                encryption_secret = ""
+        if not encryption_secret:
+            # First-run migration: preserve the exact old passphrase if available.
+            # Fresh installations get a random installation-local passphrase; the
+            # RSCDB1 format and PBKDF2/AES-GCM derivation remain unchanged.
+            encryption_secret = legacy_secret or secrets.token_urlsafe(48)
+            protected = protect_sync_token(encryption_secret)
+            self.conn.execute(
+                "INSERT INTO settings(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("github_sync_encryption_secret_dpapi", protected),
+            )
+            self.conn.commit()
+
+        saved_device = self.get_setting("github_sync_device_credentials_dpapi", "")
+        device_credentials = {}
+        if saved_device:
+            try:
+                device_credentials = json.loads(unprotect_sync_token(saved_device))
+                if not isinstance(device_credentials, dict):
+                    device_credentials = {}
+            except (ValueError, json.JSONDecodeError):
+                device_credentials = {}
+
+        self.github_sync = GitHubDatabaseSync(
+            DB_PATH,
+            GITHUB_REPOSITORY,
+            install_id,
+            encryption_secret=encryption_secret,
+            device_credentials=device_credentials,
+            credential_store=self._store_sync_device_credentials,
+        )
         self.conn.set_commit_callback(self.github_sync.mark_pending)
 
-    def set_github_sync_token(self, token):
-        protected = protect_sync_token(token)
-        self.conn.execute(
-            "INSERT INTO settings(key,value) VALUES(?,?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            ("github_sync_token_dpapi", protected),
-        )
-        self.github_sync.set_token(token)
-        self.conn.commit()
-
-    def clear_github_sync_token(self):
-        self.github_sync.set_token("")
-        self.conn.execute("DELETE FROM settings WHERE key='github_sync_token_dpapi'")
-        self.conn.commit()
+    def _store_sync_device_credentials(self, credentials):
+        protected = protect_sync_token(json.dumps(credentials, separators=(",", ":")))
+        callback = getattr(self.conn, "_commit_callback", None)
+        try:
+            self.conn.set_commit_callback(None)
+            self.conn.execute(
+                "INSERT INTO settings(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("github_sync_device_credentials_dpapi", protected),
+            )
+            self.conn.commit()
+        finally:
+            self.conn.set_commit_callback(callback)
 
     def close_github_sync(self, timeout=3):
         sync = getattr(self, "github_sync", None)
@@ -3829,11 +3870,11 @@ class MainWindow(QMainWindow):
             storage_form.addRow(label, path_label)
         l.addWidget(storage_box)
 
-        sync_box = QGroupBox("Encrypted GitHub database sync")
+        sync_box = QGroupBox("Encrypted cloud database sync")
         sync_layout = QVBoxLayout(sync_box)
         sync_note = QLabel(
             "Database changes stay on this computer until you select Push to Git DB. That action "
-            "uploads an encrypted business-data snapshot. Login and recovery credentials and local "
+            "sends an encrypted business-data snapshot through the secure sync service. Login and recovery credentials and local "
             "settings are excluded. Pull Latest Data requires the emergency developer password."
         )
         sync_note.setWordWrap(True)
@@ -3859,7 +3900,7 @@ class MainWindow(QMainWindow):
         sync_actions = QHBoxLayout()
         self.github_sync_now_button = QPushButton("Push to Git DB")
         self.github_sync_now_button.setToolTip(
-            "Upload the current encrypted database snapshot to GitHub. Local edits are not uploaded until you click this button."
+            "Upload this installation’s encrypted database snapshot. Local edits are not uploaded until you click this button."
         )
         self.github_sync_now_button.clicked.connect(self.sync_github_database_now)
         self.github_sync_pull_button = QPushButton("Pull Latest Data")
@@ -3981,9 +4022,9 @@ class MainWindow(QMainWindow):
         sync = getattr(self.db, "github_sync", None)
         if label is None or sync is None:
             return
-        credential_state = "Token saved for this Windows account." if sync.has_token else "No GitHub token configured."
+        credential_state = "Secure sync is ready." if sync.is_configured else "Secure sync is not configured in this build."
         label.setText(credential_state + " " + sync.status)
-        push_enabled = sync.has_token and not sync.is_busy and self.user_role == "Admin"
+        push_enabled = sync.is_configured and not sync.is_busy and self.user_role == "Admin"
         push_button = getattr(self, "github_sync_now_button", None)
         if push_button is not None:
             push_button.setEnabled(push_enabled)
@@ -3997,24 +4038,9 @@ class MainWindow(QMainWindow):
         if shared_pull is not None:
             shared_pull.setEnabled(self.user_role == "Admin" and not sync.is_busy)
 
-    def save_github_sync_token(self):
-        token = self.github_sync_token_input.text().strip()
-        if not token:
-            return error(self, "Enter a GitHub token with repository Contents write access to enable database sync.")
-        try:
-            self.db.set_github_sync_token(token)
-            self.github_sync_token_input.clear()
-            self._refresh_github_sync_status()
-            info(
-                self,
-                "Token saved for this Windows account. Nothing was uploaded; use Push to Git DB when you want to sync.",
-            )
-        except Exception as exc:
-            error(self, "Could not protect or save the GitHub token.\n" + str(exc))
-
     def sync_github_database_now(self):
-        if not self.db.github_sync.has_token:
-            return error(self, "Save a GitHub token first.")
+        if not self.db.github_sync.is_configured:
+            return error(self, "Secure database sync is not configured in this build.")
         if not self.db.github_sync.request_sync():
             return error(self, "Could not queue the Git DB push. Check the saved token and try again.")
         self._refresh_github_sync_status()
@@ -4034,8 +4060,8 @@ class MainWindow(QMainWindow):
         if not secrets.compare_digest(actual, expected):
             return error(self, "Developer authorization failed.")
         sync = self.db.github_sync
-        if not sync.has_token:
-            return error(self, "Configure the GitHub sync token before pulling latest data.")
+        if not sync.is_configured:
+            return error(self, "Secure database sync is not configured in this build.")
         if sync.is_busy:
             return error(self, "A GitHub database sync is already running. Wait for it to finish.")
         if not ask(
