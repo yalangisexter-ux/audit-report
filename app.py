@@ -2362,6 +2362,31 @@ class MainWindow(QMainWindow):
         self.header_clock.show()
         main_content_layout.addWidget(self.brand_banner)
 
+        # Persistent database actions stay visible regardless of the selected input tab.
+        self.shared_sync_bar = QFrame()
+        self.shared_sync_bar.setObjectName("sharedDatabaseSyncBar")
+        self.shared_sync_bar.setStyleSheet("#sharedDatabaseSyncBar{background:rgba(15,23,42,210);border-bottom:1px solid rgba(148,163,184,110);}")
+        shared_sync_layout = QHBoxLayout(self.shared_sync_bar)
+        shared_sync_layout.setContentsMargins(14, 6, 14, 6)
+        shared_sync_layout.setSpacing(8)
+        self.shared_sync_status = QLabel("Database sync status loads in Settings & Backup.")
+        self.shared_sync_status.setWordWrap(True)
+        self.shared_sync_status.setMinimumWidth(0)
+        self.shared_sync_status.setStyleSheet("color:#F8FAFC;font-size:11px;")
+        shared_sync_layout.addWidget(self.shared_sync_status, 1)
+        self.shared_sync_push_button = QPushButton("Push to Git DB")
+        self.shared_sync_pull_button = QPushButton("Pull Latest Data")
+        for sync_button in (self.shared_sync_push_button, self.shared_sync_pull_button):
+            sync_button.setMinimumHeight(32)
+            sync_button.setStyleSheet("QPushButton{background:#334155;color:#FFFFFF;border:1px solid #64748B;border-radius:7px;padding:5px 11px;font-weight:600;} QPushButton:hover{background:#475569;}")
+        self.shared_sync_push_button.setToolTip("Push the current encrypted business-data snapshot.")
+        self.shared_sync_pull_button.setToolTip("Pull the latest snapshot after developer-password authorization.")
+        self.shared_sync_push_button.clicked.connect(self.sync_github_database_now)
+        self.shared_sync_pull_button.clicked.connect(self.pull_latest_github_database)
+        shared_sync_layout.addWidget(self.shared_sync_push_button)
+        shared_sync_layout.addWidget(self.shared_sync_pull_button)
+        main_content_layout.addWidget(self.shared_sync_bar)
+
         self.tabs = QTabWidget()
         self.tabs.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.tabs.setAutoFillBackground(False)
@@ -4002,9 +4027,19 @@ class MainWindow(QMainWindow):
         credential_state = "Token saved for this Windows account." if sync.has_token else "No GitHub token configured."
         label.setText(credential_state + " " + sync.status)
         self._refresh_shared_sync_controls()
+        push_enabled = sync.has_token and not sync.is_busy and self.user_role == "Admin"
         push_button = getattr(self, "github_sync_now_button", None)
         if push_button is not None:
-            push_button.setEnabled(sync.has_token and not sync.is_busy and self.user_role == "Admin")
+            push_button.setEnabled(push_enabled)
+        shared_status = getattr(self, "shared_sync_status", None)
+        if shared_status is not None:
+            shared_status.setText(label.text())
+        shared_push = getattr(self, "shared_sync_push_button", None)
+        if shared_push is not None:
+            shared_push.setEnabled(push_enabled)
+        shared_pull = getattr(self, "shared_sync_pull_button", None)
+        if shared_pull is not None:
+            shared_pull.setEnabled(self.user_role == "Admin" and not sync.is_busy)
 
     def save_github_sync_token(self):
         token = self.github_sync_token_input.text().strip()
