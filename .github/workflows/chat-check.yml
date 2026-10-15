@@ -1,0 +1,48 @@
+name: Cloudflare Live Chat Checks
+
+on:
+  push:
+    branches:
+      - feature/cloudflare-live-chat
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-chat:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Validate Worker JavaScript
+        run: node --check cloudflare-chat/src/index.js
+
+      - name: Validate browser chat JavaScript
+        run: node --check chat-web/app.js
+
+      - name: Compile desktop modules
+        run: python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py
+
+      - name: Run regression and chat tests
+        run: python -m pytest -q

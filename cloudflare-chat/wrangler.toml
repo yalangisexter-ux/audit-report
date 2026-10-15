@@ -1,0 +1,25 @@
+name = "raw-strength-employee-chat"
+main = "src/index.js"
+compatibility_date = "2026-10-15"
+
+[assets]
+directory = "../chat-web"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rsc-employee-chat-livescreen-sharing"
+database_id = "b662a1fb-69d2-4f2c-a239-05583a1ea7b0"
+migrations_dir = "migrations"
+
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChatRoom"]
+
+[vars]
+CHAT_ALLOWED_ORIGINS = ""
