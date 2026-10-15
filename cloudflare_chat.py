@@ -14,7 +14,8 @@ import urllib.request
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit,
     QPushButton, QListWidget, QListWidgetItem, QTextEdit, QInputDialog,
@@ -296,7 +297,15 @@ class CloudflareChatTab(QWidget):
         right.setSpacing(8)
         self.conversation_heading = QLabel("Choose a conversation")
         self.conversation_heading.setStyleSheet("font-size:16px;font-weight:700;color:#1e1b4b;")
-        right.addWidget(self.conversation_heading)
+        heading_actions = QHBoxLayout()
+        heading_actions.addWidget(self.conversation_heading, 1)
+        self.screen_share_button = QPushButton("▣ Screen share (browser)")
+        self.screen_share_button.setToolTip("Open the secure browser chat to start or receive a live screen share.")
+        self.screen_share_button.setMinimumHeight(34)
+        self.screen_share_button.setStyleSheet("QPushButton{background:#0f766e;color:white;border:0;border-radius:8px;padding:6px 10px;font-weight:700;} QPushButton:hover{background:#115e59;}")
+        self.screen_share_button.clicked.connect(self._open_screen_share_browser)
+        heading_actions.addWidget(self.screen_share_button)
+        right.addLayout(heading_actions)
         self.history = QTextEdit()
         self.history.setReadOnly(True)
         self.history.setAcceptRichText(False)
@@ -328,6 +337,21 @@ class CloudflareChatTab(QWidget):
         self.private_button.clicked.connect(self._new_private)
         self.group_button.clicked.connect(self._new_group)
         self.admin_button.clicked.connect(self._create_chat_account)
+
+    def _open_screen_share_browser(self):
+        """Open the responsive browser client for WebRTC screen sharing."""
+        base = self.api_base or self._base()
+        if not base:
+            QMessageBox.warning(self, "Screen sharing", "Enter and save the deployed Cloudflare Worker URL first.")
+            return
+        if QDesktopServices.openUrl(QUrl(base)):
+            QMessageBox.information(
+                self, "Screen sharing",
+                "The browser chat is opening. Sign in with your chat account, open the same conversation, "
+                "then use Share screen. The browser will ask you to choose what to share."
+            )
+        else:
+            QMessageBox.warning(self, "Screen sharing", "Could not open your default browser. Open this URL manually:\n" + base)
 
     def _base(self):
         try:
