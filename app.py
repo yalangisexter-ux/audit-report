@@ -300,6 +300,18 @@ def proof_urls(value):
     return list(dict.fromkeys(found))
 
 
+def task_evidence_urls(task):
+    """Collect evidence URLs from both the dedicated link field and evidence notes."""
+    urls = []
+    for field in ("proof_url", "proof_note"):
+        try:
+            value = task[field] or ""
+        except (KeyError, TypeError, IndexError):
+            value = ""
+        urls.extend(proof_urls(value))
+    return list(dict.fromkeys(urls))
+
+
 def add_docx_linkified_text(paragraph, text, expose_full_url=False):
     """Append text while formatting any embedded HTTP(S) URL as a hyperlink."""
     raw = str(text or "")
@@ -5297,12 +5309,13 @@ class MainWindow(QMainWindow):
         source_value = self.source_status(employee, "missing_proof", report_date)
         if source_value:
             return source_value
-        return "Yes" if any(is_explicitly_completed_task_status(t["status"]) and not t["proof_url"] for t in tasks) else "No"
+        return "Yes" if any(is_explicitly_completed_task_status(t["status"]) and not task_evidence_urls(t) for t in tasks) else "No"
 
     def task_proof_label(self, employee, task, report_date):
+        evidence_urls = task_evidence_urls(task)
+        if evidence_urls:
+            return "Link(s) attached"
         if task["proof_url"]:
-            if proof_urls(task["proof_url"]):
-                return "Link(s) attached"
             return task["proof_url"]
         if normalized_task_status(task["status"]) in {"pending", "not started", "in progress", "blocked", "pending review"}:
             return "Not provided (task is pending or in progress)"
@@ -5504,7 +5517,7 @@ class MainWindow(QMainWindow):
                             if opts.get("details",True) and t["details"]: doc.add_paragraph(f'Details: {t["details"]}',style="List Bullet 2")
                             if opts.get("due_time",True) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
                             if opts.get("proof",True):
-                                task_links = proof_urls(t["proof_url"])
+                                task_links = task_evidence_urls(t)
                                 if task_links:
                                     proof_paragraph = doc.add_paragraph(style="List Bullet 2")
                                     proof_paragraph.add_run("Proof / Evidence: ")
