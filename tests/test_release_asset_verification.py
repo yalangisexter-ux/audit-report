@@ -509,6 +509,11 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
     try:
         window.eod_checks["proof_notes"].setChecked(True)
         options = window.selected_eod_options()
+        preview = window.report_preview_text(today, employee_id)
+        assert exposed_url in preview
+        assert exposed_note_url in preview
+        assert "https://example.net/note" not in preview
+        assert preview.count("Tap here to view content") == 3
         docx_path = tmp_path / "proof-links.docx"
         pdf_path = tmp_path / "proof-links.pdf"
         csv_path = tmp_path / "proof-links.csv"
