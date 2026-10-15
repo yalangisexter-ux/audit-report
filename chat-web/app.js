@@ -436,7 +436,7 @@
       state.peers.add(id);
       if (state.localShareStream) sendShareOffer(id);\n      if (state.localAVStream) sendAVOffer(id);
     } else if (packet.type === "peer-left") {
-      state.peers.delete(id); closePeer(id);
+      state.peers.delete(id); closePeer(id); closeAVPeer(id);
     } else if (packet.type === "peers") {
       state.peers = new Set((packet.peers || []).map(Number).filter(value => value && value !== Number(state.user?.id)));
     }
@@ -556,7 +556,7 @@
     });
   });
   $("logoutBtn").addEventListener("click", () => {
-    stopSocket(); state.token = ""; state.user = null; state.conversations = []; state.users = []; state.activeId = "";
+    stopScreenShare(); hangupCall(); stopSocket(); state.token = ""; state.user = null; state.conversations = []; state.users = []; state.activeId = "";
     $("appView").classList.add("hidden"); $("loginView").classList.remove("hidden"); $("password").value = ""; $("username").focus();
   });
   $("newPrivateBtn").addEventListener("click", () => {
