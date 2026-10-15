@@ -1,6 +1,7 @@
 {
   "name": "raw-strength-employee-chat",
   "private": true,
+  "type": "module",
   "version": "1.0.0",
   "description": "Cloudflare Workers, Durable Objects and D1 backend for Raw Strength Employee Audit Manager live chat",
   "scripts": {
