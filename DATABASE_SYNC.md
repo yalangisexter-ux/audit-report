@@ -29,10 +29,10 @@ save or app launch when offline. Local saves remain available if GitHub sync fai
 
 ## Developer Mode
 
-Every app user can see the Developer Mode control in **Settings & Backup**. The first user
-sets a fixed local password of at least 12 characters; only its salted password hash is
-stored, and the setting is excluded from uploaded snapshots. The password is not embedded
-in the public source or installer.
+Every app user can see the Developer Mode control in **Settings & Backup**. Enabling the
+mode and every manual developer upload require the fixed built-in password. The application
+contains only a salted PBKDF2 verifier, not the password text; because this repository and
+installer are public, this is a casual-use gate and not strong access control.
 
 Enabling Developer Mode pauses GitHub uploads and saves a validated local recovery copy of
 the current customer database. When Developer Mode is turned off, the saved customer

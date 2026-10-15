@@ -16,8 +16,6 @@ def test_developer_mode_restores_customer_database_and_keeps_isolated_copy(
         "INSERT INTO developer_mode_fixture(value) VALUES('customer database')"
     )
     database.conn.commit()
-    database.set_developer_mode_password("Developer-mode-pass-123")
-    assert database.verify_developer_mode_password("Developer-mode-pass-123")
     assert not database.verify_developer_mode_password("wrong-password")
     database.set_developer_mode(True)
 

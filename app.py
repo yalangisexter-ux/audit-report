@@ -594,6 +594,12 @@ def hash_pin(pin, salt=None):
     return salt, digest
 
 
+# This verifier is bundled with the public source, so it is a casual-use gate,
+# not a secret that can protect access from someone who can inspect the app.
+_DEVELOPER_MODE_PASSWORD_SALT = "1b27c755c7247587ca7013801b423dc3"
+_DEVELOPER_MODE_PASSWORD_HASH = "0bb1d96e561fca8b807d053e053c38eb3057fe9a0b69c6a524d1fdcf790febf0"
+
+
 def migrate_legacy_task_employee_links(conn):
     """Restore task links only when a unique employee match exists."""
     task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
@@ -926,37 +932,16 @@ class Database:
         return sync
 
     def developer_mode_password_is_set(self):
-        return bool(self.get_setting("developer_mode_password_hash", ""))
+        return True
 
     def verify_developer_mode_password(self, password):
-        salt = self.get_setting("developer_mode_password_salt", "")
-        expected = self.get_setting("developer_mode_password_hash", "")
-        if not salt or not expected:
-            return False
-        _, actual = hash_pin(password, salt)
-        return secrets.compare_digest(actual, expected)
-
-    def set_developer_mode_password(self, password):
-        if self.developer_mode_password_is_set():
-            raise ValueError("The Developer Mode password is already fixed on this computer.")
-        if len(password) < 12 or not password_is_strong(password):
-            raise ValueError("Use at least 12 characters, including letters and numbers.")
-        salt, digest = hash_pin(password)
-        for key, value in (
-            ("developer_mode_password_salt", salt),
-            ("developer_mode_password_hash", digest),
-        ):
-            self.conn.execute(
-                "INSERT INTO settings(key,value) VALUES(?,?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (key, value),
-            )
-        self.conn.commit()
+        _, actual = hash_pin(str(password), _DEVELOPER_MODE_PASSWORD_SALT)
+        return secrets.compare_digest(actual, _DEVELOPER_MODE_PASSWORD_HASH)
 
     def set_developer_mode(self, enabled):
         enabled = bool(enabled)
         if enabled and not self.developer_mode_password_is_set():
-            raise ValueError("Set the Developer Mode password before enabling it.")
+            raise ValueError("The built-in Developer Mode password verifier is unavailable.")
         previous = self.developer_mode_enabled
         if enabled:
             if previous:
@@ -4110,9 +4095,9 @@ class MainWindow(QMainWindow):
         if status is None or button is None:
             return
         if not self.db.developer_mode_password_is_set():
-            status.setText("No Developer Mode password has been set on this computer.")
-            button.setText("Set password and enable Developer Mode")
-            button.setToolTip("Set a fixed local password once, then pause GitHub uploads.")
+            status.setText("Developer Mode requires the built-in password.")
+            button.setText("Enter password to enable Developer Mode")
+            button.setToolTip("Enter the fixed Developer Mode password to pause GitHub uploads.")
         elif self.db.developer_mode_enabled:
             status.setText(
                 "ON — local changes are isolated. GitHub uploads are paused until you turn this off."
@@ -4161,42 +4146,10 @@ class MainWindow(QMainWindow):
             error(self, "Developer DB sync failed.\n" + (sync.last_error or sync.status))
 
     def toggle_developer_mode(self):
-        if not self.db.developer_mode_password_is_set():
-            password, ok = QInputDialog.getText(
-                self,
-                "Set Developer Mode password",
-                "Create a fixed local password (12+ characters, including letters and numbers):",
-                QLineEdit.EchoMode.Password,
-            )
-            if not ok:
-                return
-            confirm, ok = QInputDialog.getText(
-                self,
-                "Confirm Developer Mode password",
-                "Enter the password again:",
-                QLineEdit.EchoMode.Password,
-            )
-            if not ok:
-                return
-            if password != confirm:
-                return error(self, "The Developer Mode passwords do not match.")
-            try:
-                self.db.set_developer_mode_password(password)
-                self.db.set_developer_mode(True)
-            except Exception as exc:
-                self._refresh_developer_mode_controls()
-                return error(self, "Could not enable Developer Mode.\n" + str(exc))
-            self._refresh_developer_mode_controls()
-            return info(
-                self,
-                "Developer Mode is on. GitHub uploads are paused, and the saved customer database "
-                "will be restored when you turn Developer Mode off.",
-            )
-
         password, ok = QInputDialog.getText(
             self,
             "Developer Mode password",
-            "Enter the fixed local password:",
+            "Enter the fixed Developer Mode password:",
             QLineEdit.EchoMode.Password,
         )
         if not ok:
@@ -4230,7 +4183,7 @@ class MainWindow(QMainWindow):
         if not self.db.developer_mode_password_is_set():
             return error(
                 self,
-                "Set the Developer Mode password before syncing a developer database.",
+                "The built-in Developer Mode password verifier is unavailable. Update the app before syncing.",
             )
         if not self.db.github_sync.has_token:
             return error(self, "Configure a GitHub token in Settings before syncing the Developer DB.")
