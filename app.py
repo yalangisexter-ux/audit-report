@@ -2500,7 +2500,6 @@ class MainWindow(QMainWindow):
             (self.business_tab, "Business Tracking"),
             (self.settings_tab, "Settings & Backup"),
         ):
-            self._add_shared_database_sync_action(sync_page, sync_title)
         self.polish_tables()
         self.apply_global_control_polish()
         self.apply_hover_messages()
@@ -2509,75 +2508,6 @@ class MainWindow(QMainWindow):
         self.refresh_all()
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
-
-    def _add_shared_database_sync_action(self, page, page_title):
-        """Place the same all-database sync action on each data management tab."""
-        layout = page.layout()
-        if layout is None:
-            return
-        toolbar = QWidget(page)
-        toolbar.setObjectName("sharedDatabaseSyncToolbar")
-        row = QHBoxLayout(toolbar)
-        row.setContentsMargins(8, 4, 8, 4)
-        row.setSpacing(8)
-        label = QLabel("Database sync")
-        label.setProperty("mutedText", True)
-        row.addWidget(label)
-        status = QLabel("Sync saves all committed tabs together")
-        status.setWordWrap(True)
-        status.setProperty("mutedText", True)
-        row.addWidget(status, 1)
-        button = QPushButton("Sync all data")
-        button.setProperty("primary", True)
-        button.setToolTip("Push all saved business data from every tab in one encrypted database snapshot.")
-        button.clicked.connect(lambda _checked=False, title=page_title: self.sync_all_database_data(title))
-        row.addWidget(button)
-        layout.insertWidget(0, toolbar)
-        if not hasattr(self, "_shared_sync_status_labels"):
-            self._shared_sync_status_labels = []
-        self._shared_sync_status_labels.append(status)
-        if not hasattr(self, "_shared_sync_buttons"):
-            self._shared_sync_buttons = []
-        self._shared_sync_buttons.append(button)
-        self._refresh_shared_sync_controls()
-
-    def sync_all_database_data(self, source_tab="the current tab"):
-        """Queue the same whole-database snapshot regardless of which tab initiated sync."""
-        sync = getattr(self.db, "github_sync", None)
-        if sync is None:
-            return error(self, "Database sync is unavailable. Your local data remains saved.")
-        if not sync.has_token:
-            return error(
-                self,
-                "GitHub database sync is not configured on this installation. Your data is safe locally. "
-                "An administrator must configure the approved sync service once; do not paste credentials into chat."
-            )
-        if sync.is_busy:
-            info(self, "A database sync is already running. It includes all committed data across tabs.")
-            return
-        if not sync.request_sync():
-            return error(self, "Could not start database sync. Your local data remains saved; try again.")
-        self._refresh_github_sync_status()
-        for label in getattr(self, "_shared_sync_status_labels", []):
-            label.setText(f"Sync requested from {source_tab}; all committed tabs are included.")
-
-    def _refresh_shared_sync_controls(self):
-        sync = getattr(getattr(self, "db", None), "github_sync", None)
-        if sync is None:
-            return
-        if hasattr(self, "_shared_sync_status_labels"):
-            for label in self._shared_sync_status_labels:
-                label.setText(sync.status)
-        if hasattr(self, "_shared_sync_buttons"):
-            enabled = self.user_role == "Admin" and sync.has_token and not sync.is_busy
-            for button in self._shared_sync_buttons:
-                button.setEnabled(enabled)
-                if not sync.has_token:
-                    button.setToolTip("Sync all committed data. The approved sync service must be configured first.")
-                elif sync.is_busy:
-                    button.setToolTip("A whole-database sync is already running.")
-                else:
-                    button.setToolTip("Push all saved data from every tab in one encrypted snapshot.")
 
     def refresh_header_clock(self):
         if hasattr(self, "header_clock"):
@@ -4064,7 +3994,6 @@ class MainWindow(QMainWindow):
             return
         credential_state = "Token saved for this Windows account." if sync.has_token else "No GitHub token configured."
         label.setText(credential_state + " " + sync.status)
-        self._refresh_shared_sync_controls()
         push_enabled = sync.has_token and not sync.is_busy and self.user_role == "Admin"
         push_button = getattr(self, "github_sync_now_button", None)
         if push_button is not None:
