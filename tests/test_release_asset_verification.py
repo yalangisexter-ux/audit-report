@@ -604,3 +604,24 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
         window.close()
         db.conn.close()
     qt_app.processEvents()
+
+
+def test_proof_urls_recognizes_non_http_uri_schemes():
+    value = (
+        "ftp://files.example.test/evidence.txt "
+        "mailto:auditor@example.test "
+        "file:///C:/audit/evidence.pdf "
+        "teams://tenant/channel/123 "
+        "custom+source:record-42"
+    )
+    assert app.proof_urls(value) == [
+        "ftp://files.example.test/evidence.txt",
+        "mailto:auditor@example.test",
+        "file:///C:/audit/evidence.pdf",
+        "teams://tenant/channel/123",
+        "custom+source:record-42",
+    ]
+
+
+def test_proof_urls_ignores_plain_colon_labels_without_uri_payload():
+    assert app.proof_urls("Source: evidence attached; Status: complete") == []
