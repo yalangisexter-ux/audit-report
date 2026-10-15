@@ -229,7 +229,7 @@ jobs:
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.2.77
+          name: RawStrengthEmployeeAuditManager-Setup-v1.2.78
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
@@ -238,8 +238,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.77
-          name: Raw Strength Employee Audit Manager v1.2.77
+          tag_name: v1.2.78
+          name: Raw Strength Employee Audit Manager v1.2.78
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
