@@ -43,6 +43,9 @@ jobs:
         working-directory: cloudflare-chat
         run: npm run check
 
+      - name: Validate browser chat JavaScript
+        run: node --check chat-web/app.js
+
       - name: Compile desktop modules
         run: python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py
 
