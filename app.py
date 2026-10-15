@@ -2488,18 +2488,7 @@ class MainWindow(QMainWindow):
         self._header_clock_timer.start(1000)
         self.refresh_header_clock()
         self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
-        # One shared database snapshot sync action on every data-entry/management tab.
-        # Each button pushes the entire committed database snapshot, not just that tab.
-        for sync_page, sync_title in (
-            (self.employees_tab, "Employees"),
-            (self.tasks_tab, "Task Manager"),
-            (self.tracker_tab, "Employee Tracker"),
-            (self.attendance_tab, "Attendance"),
-            (self.reports_tab, "Print Center"),
-            (self.archive_tab, "EOD Archive"),
-            (self.business_tab, "Business Tracking"),
-            (self.settings_tab, "Settings & Backup"),
-        ):
+        # Database sync controls remain in the dedicated sync/settings area.
         self.polish_tables()
         self.apply_global_control_polish()
         self.apply_hover_messages()
