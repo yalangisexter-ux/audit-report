@@ -3446,8 +3446,30 @@ class MainWindow(QMainWindow):
         row.addWidget(self.task_filter)
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
         task_tips = {"Add Task": "Create a new task for the selected date", "Edit Selected": "Edit one selected task", "Bulk Edit Selected": "Apply chosen fields to multiple selected tasks", "Select All": "Select every task shown for the selected date and employee filter", "Delete Selected": "Delete the selected task", "Open Proof": "Open proof/evidence link in browser"}
+        # Keep task actions readable at the app's minimum window width. A
+        # horizontal toolbar scrolls rather than squeezing labels into buttons.
+        task_toolbar_scroll = QScrollArea()
+        task_toolbar_scroll.setWidgetResizable(True)
+        task_toolbar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        task_toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        task_toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        task_toolbar_scroll.setFixedHeight(48)
+        task_toolbar_scroll.setStyleSheet("QScrollArea { background: transparent; border: 0; } QWidget#taskToolbarInner { background: transparent; }")
+        task_toolbar_inner = QWidget()
+        task_toolbar_inner.setObjectName("taskToolbarInner")
+        task_toolbar_layout = QHBoxLayout(task_toolbar_inner)
+        task_toolbar_layout.setContentsMargins(0, 2, 0, 2)
+        task_toolbar_layout.setSpacing(8)
         for label,slot in [("Add Task",self.add_task),("Edit Selected",self.edit_task),("Bulk Edit Selected",self.bulk_edit_tasks),("Select All",self.task_table_select_all),("Delete Selected",self.delete_task),("Open Proof",self.open_proof)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(task_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
+            b=QPushButton(label)
+            b.clicked.connect(slot)
+            b.setToolTip(task_tips.get(label, ""))
+            b.setMinimumWidth(max(94, b.fontMetrics().horizontalAdvance(label) + 28))
+            b.setMinimumHeight(34)
+            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            task_toolbar_layout.addWidget(b)
+        task_toolbar_scroll.setWidget(task_toolbar_inner)
+        row.addWidget(task_toolbar_scroll, 1)
         self.task_table=QTableWidget(0,9); self.task_table.setHorizontalHeaderLabels(["ID","Employee","Task","Priority","Status","Progress","Due","Proof","Manager remarks"])
         self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
 
