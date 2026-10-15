@@ -3920,6 +3920,9 @@ class MainWindow(QMainWindow):
         timer = getattr(self, "github_sync_status_timer", None)
         if timer is not None:
             timer.stop()
+        chat_tab = getattr(self, "chat_tab", None)
+        if chat_tab is not None:
+            chat_tab.shutdown()
         self.db.close_github_sync(timeout=3)
         super().closeEvent(event)
 
