@@ -420,7 +420,8 @@ class CloudflareChatTab(QWidget):
                 return
             if not self.active_conversation or self.active_conversation.get("id") != conversation_id:
                 return
-            self.messages = {int(item["id"]): item for item in (data.get("messages") or [])}
+            for item in (data.get("messages") or []):
+                self.messages[int(item["id"])] = item
             self._render_messages()
             return
         if request_id.startswith("ticket:"):
