@@ -625,3 +625,32 @@ def test_proof_urls_recognizes_non_http_uri_schemes():
 
 def test_proof_urls_ignores_plain_colon_labels_without_uri_payload():
     assert app.proof_urls("Source: evidence attached; Status: complete") == []
+
+
+
+def test_database_sync_worker_endpoint_injection_has_safe_validation_and_fallback():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    sync_source = (root / "database_sync.py").read_text(encoding="utf-8")
+
+    # Regression guard for the prior deployment failure: endpoint injection must
+    # replace both an empty default and a previously populated URL, then verify
+    # the deployed host before packaging. Do not silently package a broken URL.
+    assert "if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }" in workflow
+    assert """[regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL = \".*?\"'""" in workflow
+    assert """if ($source -notmatch ('DEFAULT_DB_SYNC_WORKER_URL = \"https://' + [regex]::Escape($uri.Host))) { throw \"Could not inject database-sync Worker URL.\" }""" in workflow
+    assert 'DEFAULT_DB_SYNC_WORKER_URL = ""' in sync_source
+
+
+def test_proof_evidence_compatibility_regression_is_required_for_every_build():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    tests = (root / "tests" / "test_release_asset_verification.py").read_text(encoding="utf-8")
+    assert "python -m pytest -q" in workflow
+    assert "def test_print_center_options_and_proof_links_work_in_exports" in tests
+    assert "def test_proof_urls_recognizes_non_http_uri_schemes" in tests
+    assert "expose_link" in tests
