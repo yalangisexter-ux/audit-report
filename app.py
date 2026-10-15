@@ -286,17 +286,24 @@ def is_known_task_status(status):
     }
 
 
+URI_PATTERN = r"\b[a-z][a-z0-9+.-]*:[^\s<>]+"
+
+
 def proof_urls(value):
-    """Extract safe web links from a proof field while ignoring non-URL text."""
+    """Extract source URIs using any valid URI scheme, not only HTTP(S)."""
     found = []
-    for match in re.findall(r"https?://[^\s<>]+", str(value or ""), flags=re.IGNORECASE):
+    for match in re.findall(URI_PATTERN, str(value or ""), flags=re.IGNORECASE):
         candidate = match.rstrip(".,;:!?)]}")
         try:
             parsed = urlsplit(candidate)
         except ValueError:
             continue
-        if parsed.scheme.lower() in ("http", "https") and parsed.hostname:
-            found.append(candidate)
+        scheme = parsed.scheme.lower()
+        if not scheme or not candidate.partition(":")[2]:
+            continue
+        if scheme in ("http", "https") and not parsed.hostname:
+            continue
+        found.append(candidate)
     return list(dict.fromkeys(found))
 
 
@@ -322,7 +329,7 @@ def proof_note_display_text(task, evidence_links_included=False):
         return note
     known_urls = set(task_evidence_urls(task))
     return re.sub(
-        r"https?://[^\s<>]+",
+        URI_PATTERN,
         lambda match: "[link listed above]"
         if match.group(0).rstrip(".,;:!?)]}") in known_urls
         else match.group(0),
@@ -334,7 +341,7 @@ def proof_note_display_text(task, evidence_links_included=False):
 def add_docx_linkified_text(paragraph, text, expose_full_url=False):
     """Append text while formatting any embedded HTTP(S) URL as a hyperlink."""
     raw = str(text or "")
-    matches = list(re.finditer(r"https?://[^\s<>]+", raw, flags=re.IGNORECASE))
+    matches = list(re.finditer(URI_PATTERN, raw, flags=re.IGNORECASE))
     position = 0
     for match in matches:
         url = match.group(0).rstrip(".,;:!?)]}")
@@ -5632,7 +5639,7 @@ class MainWindow(QMainWindow):
                 suffix = matched[len(url):]
                 label = url if expose_full_url else "Tap here to view content"
                 return f'{report_pdf_hyperlink(url, label)}{escape(suffix)}'
-            result = re.sub(r"https?://[^\s<>]+", as_link, raw, flags=re.IGNORECASE)
+            result = re.sub(URI_PATTERN, as_link, raw, flags=re.IGNORECASE)
             return result.replace("\r\n", "\n").replace("\n", "<br/>")
 
         def para(label, value, style="RSBody"):
@@ -5889,7 +5896,7 @@ class MainWindow(QMainWindow):
                             "Task details":t["details"] if t else "N/A",
                             "Task status":task_status_label(t["status"]) if t else "N/A",
                             "Due time":t["due_time"] or "N/A" if t else "N/A",
-                            "Proof notes":(re.sub(r"https?://[^\s<>]+", "[link]", str(t["proof_note"])).strip() or "N/A") if t and t["proof_note"] else "N/A",
+                            "Proof notes":(re.sub(URI_PATTERN, "[link]", str(t["proof_note"]), flags=re.IGNORECASE).strip() or "N/A") if t and t["proof_note"] else "N/A",
                             "Manager remarks":t["manager_note"] or "N/A" if t else "N/A",
                             "Pending items":"; ".join(x["title"] for x in tasks if not is_explicitly_completed_task_status(x["status"]) and not is_cancelled_task_status(x["status"])) or "No",
                         }
