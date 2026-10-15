@@ -213,3 +213,48 @@ def test_tracker_add_task_persists_exposed_proof_link(tmp_path, monkeypatch):
         window.close()
         database.conn.close()
         qt_app.processEvents()
+
+
+def test_combobox_wheel_rotation_does_not_change_selection(monkeypatch):
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QComboBox, QScrollArea, QVBoxLayout, QWidget
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    app.ensure_combobox_wheel_filter(qt_app)
+
+    scroll = QScrollArea()
+    container = QWidget()
+    container.setMinimumHeight(2000)
+    layout = QVBoxLayout(container)
+    combo = QComboBox()
+    combo.addItems(["Option A", "Option B", "Option C"])
+    combo.setCurrentIndex(0)
+    layout.addWidget(combo)
+    scroll.setWidget(container)
+    scroll.resize(300, 300)
+    scroll.show()
+
+    # Rotating mouse wheel over closed combobox should NOT change selection
+    wheel_ev = QWheelEvent(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(0, 0),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    qt_app.sendEvent(combo, wheel_ev)
+
+    assert combo.currentIndex() == 0
+    assert combo.currentText() == "Option A"
+    assert scroll.verticalScrollBar().value() > 0
+
+    # User explicitly selecting an option changes the value normally
+    combo.setCurrentIndex(1)
+    assert combo.currentIndex() == 1
+    assert combo.currentText() == "Option B"
+

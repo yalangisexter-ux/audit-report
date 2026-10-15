@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QToolTip,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
-    QToolButton, QMenu, QSizePolicy, QFrame, QListView
+    QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
@@ -1657,6 +1657,40 @@ class TaskDialog(QDialog):
                 self.manager_note.text().strip(), int(self.expose_link.isChecked()))
 
 _ACCESSIBLE_TOOLTIP_CONTROLLER = None
+_COMBOBOX_WHEEL_FILTER = None
+
+
+class ComboBoxWheelFilter(QObject):
+    """
+    Prevents mouse wheel / spinner rotation from changing QComboBox selection.
+    Dropdown values only change when the user explicitly clicks the dropdown and
+    selects an item. If inside a scrollable area, the wheel event is forwarded to
+    the enclosing scroll viewport so page scrolling remains fluid.
+    """
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Wheel:
+            combo = watched if isinstance(watched, QComboBox) else None
+            if combo is None and hasattr(watched, "parent") and isinstance(watched.parent(), QComboBox):
+                combo = watched.parent()
+            if combo is not None:
+                event.ignore()
+                parent = combo.parentWidget()
+                while parent is not None:
+                    if isinstance(parent, QAbstractScrollArea):
+                        QApplication.sendEvent(parent.viewport(), event)
+                        break
+                    parent = parent.parentWidget()
+                return True
+        return super().eventFilter(watched, event)
+
+
+def ensure_combobox_wheel_filter(application=None):
+    global _COMBOBOX_WHEEL_FILTER
+    application = application or QApplication.instance()
+    if application is not None and _COMBOBOX_WHEEL_FILTER is None:
+        _COMBOBOX_WHEEL_FILTER = ComboBoxWheelFilter(application)
+        application.installEventFilter(_COMBOBOX_WHEEL_FILTER)
+    return _COMBOBOX_WHEEL_FILTER
 
 
 class AccessibleTooltipController(QObject):
@@ -2337,7 +2371,7 @@ class AnimatedBackground(QWidget):
 
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
-        super().__init__(); ensure_accessible_tooltip_controller(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
+        super().__init__(); ensure_accessible_tooltip_controller(); ensure_combobox_wheel_filter(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
         self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(brand_mark_pixmap(128)))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         screen = QApplication.primaryScreen()
@@ -2810,6 +2844,7 @@ class MainWindow(QMainWindow):
             widget.setMinimumWidth(max(90, widget.minimumWidth()))
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             widget.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
+        ensure_combobox_wheel_filter()
         for widget in self.findChildren(QComboBox):
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             widget.setMinimumWidth(0)
@@ -6748,7 +6783,7 @@ def resource_path(relative_path):
 
 
 def main():
-    app=QApplication(sys.argv); app.setStyle("Fusion")
+    app=QApplication(sys.argv); app.setStyle("Fusion"); ensure_combobox_wheel_filter(app)
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans-Bold.ttf"))
     app.setFont(QFont("DejaVu Sans", 9))
