@@ -250,5 +250,6 @@
   });
   $("mobileMenuBtn").addEventListener("click", () => $("sidebar").classList.toggle("open"));
   window.addEventListener("online", () => { if (state.activeId && state.user && (!state.socket || state.socket.readyState > WebSocket.OPEN)) openConversation(state.activeId); });
+  window.setInterval(() => { if (state.token) loadConversations().catch(error => setStatus(error.message, "offline")); }, 15000);
   window.addEventListener("beforeunload", stopSocket);
 })();
