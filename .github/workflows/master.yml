@@ -188,4 +188,4 @@ jobs:
           fail_on_unmatched_files: true
           # Prefer a repository-configured PAT when the default Actions token is
           # restricted from creating releases by repository/organization policy.
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          token: ${{ secrets.RELEASE_TOKEN_2 || secrets.RELEASE_TOKEN || github.token }}
