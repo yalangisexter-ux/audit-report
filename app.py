@@ -29,6 +29,12 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from build_info import APP_VERSION
 from business_tracking import BusinessTrackingTab, available_stock
+from database_sync import (
+    GitHubDatabaseSync,
+    SyncableSQLiteConnection,
+    protect_sync_token,
+    unprotect_sync_token,
+)
 
 
 def brand_mark_pixmap(size):
@@ -668,10 +674,11 @@ class Database:
             # Do not run schema migrations unless the existing database was backed up.
             db_path = Path(DB_PATH)
             create_pre_migration_backup(db_path, BACKUP_DIR)
-            self.conn = sqlite3.connect(DB_PATH)
+            self.conn = sqlite3.connect(DB_PATH, factory=SyncableSQLiteConnection)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.setup()
+            self._initialize_github_sync()
         except Exception as exc:
             # Attempt to close and re-raise with context
             if hasattr(self, "conn") and self.conn:
@@ -680,6 +687,50 @@ class Database:
                 except Exception:
                     pass
             raise RuntimeError(f"Database initialization failed: {exc}") from exc
+
+    def _initialize_github_sync(self):
+        install_id = self.get_setting("github_sync_install_id", "")
+        if not re.fullmatch(r"[0-9a-f]{32}", install_id):
+            install_id = secrets.token_hex(16)
+            self.conn.execute(
+                "INSERT INTO settings(key,value) VALUES(?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                ("github_sync_install_id", install_id),
+            )
+            self.conn.commit()
+        self.github_sync_install_id = install_id
+        self.github_sync = GitHubDatabaseSync(DB_PATH, GITHUB_REPOSITORY, install_id)
+        saved_token = self.get_setting("github_sync_token_dpapi", "")
+        if saved_token:
+            try:
+                self.github_sync.set_token(unprotect_sync_token(saved_token))
+            except ValueError as exc:
+                self.github_sync.set_status(str(exc))
+        self.conn.set_commit_callback(self.github_sync.request_sync)
+        if self.github_sync.has_token:
+            # Retry the latest local state after an offline period or an app restart.
+            self.github_sync.request_sync(force=True)
+
+    def set_github_sync_token(self, token):
+        protected = protect_sync_token(token)
+        self.conn.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ("github_sync_token_dpapi", protected),
+        )
+        self.github_sync.set_token(token)
+        self.conn.commit()
+        self.github_sync.request_sync(force=True)
+
+    def clear_github_sync_token(self):
+        self.github_sync.set_token("")
+        self.conn.execute("DELETE FROM settings WHERE key='github_sync_token_dpapi'")
+        self.conn.commit()
+
+    def close_github_sync(self, timeout=3):
+        sync = getattr(self, "github_sync", None)
+        if sync is not None:
+            sync.close(timeout=timeout)
 
     def setup(self):
         c = self.conn.cursor()
@@ -3539,6 +3590,67 @@ class MainWindow(QMainWindow):
             storage_form.addRow(label, path_label)
         l.addWidget(storage_box)
 
+        sync_box = QGroupBox("Encrypted GitHub database sync")
+        sync_layout = QVBoxLayout(sync_box)
+        sync_note = QLabel(
+            "When the database changes, the app creates an encrypted business-data snapshot and "
+            "uploads it to the public GitHub repository. Login and recovery credentials and local "
+            "settings are excluded. The token is protected for this Windows account."
+        )
+        sync_note.setWordWrap(True)
+        sync_note.setMinimumWidth(0)
+        sync_note.setProperty("mutedText", True)
+        sync_layout.addWidget(sync_note)
+        self.github_sync_install_label = QLabel(
+            f"Installation ID: {self.db.github_sync_install_id}"
+        )
+        self.github_sync_install_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.github_sync_install_label.setProperty("mutedText", True)
+        sync_layout.addWidget(self.github_sync_install_label)
+
+        sync_token_row = QHBoxLayout()
+        self.github_sync_token_input = QLineEdit()
+        self.github_sync_token_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.github_sync_token_input.setPlaceholderText(
+            "GitHub token with repository Contents read/write access"
+        )
+        self.github_sync_token_input.setToolTip(
+            "Token is saved using Windows DPAPI and is not included in the uploaded database."
+        )
+        sync_token_row.addWidget(self.github_sync_token_input, 1)
+        self.github_sync_save_button = QPushButton("Save token & sync")
+        self.github_sync_save_button.clicked.connect(self.save_github_sync_token)
+        sync_token_row.addWidget(self.github_sync_save_button)
+        sync_layout.addLayout(sync_token_row)
+
+        sync_actions = QHBoxLayout()
+        self.github_sync_now_button = QPushButton("Sync now")
+        self.github_sync_now_button.clicked.connect(self.sync_github_database_now)
+        self.github_sync_remove_button = QPushButton("Remove token")
+        self.github_sync_remove_button.clicked.connect(self.remove_github_sync_token)
+        sync_actions.addWidget(self.github_sync_now_button)
+        sync_actions.addWidget(self.github_sync_remove_button)
+        sync_actions.addStretch(1)
+        sync_layout.addLayout(sync_actions)
+
+        self.github_sync_status_label = QLabel()
+        self.github_sync_status_label.setWordWrap(True)
+        self.github_sync_status_label.setMinimumWidth(0)
+        self.github_sync_status_label.setProperty("mutedText", True)
+        sync_layout.addWidget(self.github_sync_status_label)
+        if self.user_role != "Admin":
+            self.github_sync_token_input.setEnabled(False)
+            self.github_sync_save_button.setEnabled(False)
+            self.github_sync_now_button.setEnabled(False)
+            self.github_sync_remove_button.setEnabled(False)
+            self.github_sync_token_input.setToolTip("Only an Admin can configure GitHub database sync.")
+        self._refresh_github_sync_status()
+        self.github_sync_status_timer = QTimer(self)
+        self.github_sync_status_timer.setInterval(1000)
+        self.github_sync_status_timer.timeout.connect(self._refresh_github_sync_status)
+        self.github_sync_status_timer.start()
+        l.addWidget(sync_box)
+
         actions_box = QGroupBox("Data & account actions")
         actions_grid = QGridLayout(actions_box)
         actions_grid.setContentsMargins(12, 18, 12, 12)
@@ -3624,6 +3736,55 @@ class MainWindow(QMainWindow):
         appearance_layout.addWidget(note)
         l.addWidget(appearance_box)
         l.addStretch()
+
+    def _refresh_github_sync_status(self):
+        label = getattr(self, "github_sync_status_label", None)
+        sync = getattr(self.db, "github_sync", None)
+        if label is None or sync is None:
+            return
+        credential_state = "Token saved for this Windows account." if sync.has_token else "No GitHub token configured."
+        label.setText(credential_state + " " + sync.status)
+
+    def save_github_sync_token(self):
+        token = self.github_sync_token_input.text().strip()
+        if not token:
+            return error(self, "Enter a GitHub token with repository Contents write access to enable database sync.")
+        try:
+            self.db.set_github_sync_token(token)
+            self.github_sync_token_input.clear()
+            self._refresh_github_sync_status()
+            info(
+                self,
+                "Token saved for this Windows account. The encrypted database snapshot will sync in the background.",
+            )
+        except Exception as exc:
+            error(self, "Could not protect or save the GitHub token.\n" + str(exc))
+
+    def sync_github_database_now(self):
+        if not self.db.github_sync.has_token:
+            return error(self, "Save a GitHub token first.")
+        self.db.github_sync.request_sync(force=True)
+        self._refresh_github_sync_status()
+
+    def remove_github_sync_token(self):
+        if not self.db.github_sync.has_token and not self.db.get_setting("github_sync_token_dpapi", ""):
+            return info(self, "No GitHub sync token is saved on this Windows account.")
+        if not ask(
+            self,
+            "Remove GitHub sync token",
+            "Automatic uploads will stop on this computer. Local database data will remain unchanged.",
+        ):
+            return
+        self.db.clear_github_sync_token()
+        self.github_sync_token_input.clear()
+        self._refresh_github_sync_status()
+
+    def closeEvent(self, event):
+        timer = getattr(self, "github_sync_status_timer", None)
+        if timer is not None:
+            timer.stop()
+        self.db.close_github_sync(timeout=3)
+        super().closeEvent(event)
 
     def polish_tables(self):
         """Apply shared table styling without overriding per-screen layout rules."""
@@ -5466,6 +5627,7 @@ class MainWindow(QMainWindow):
                 raise ValueError("Temporary restore copy is missing required tables.")
             # Preserve original for recovery
             shutil.copy2(DB_PATH, original_copy)
+            self.db.close_github_sync(timeout=3)
             self.db.conn.close()
             os.replace(temp_path, DB_PATH)
             try:
