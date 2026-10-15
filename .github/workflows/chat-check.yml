@@ -35,13 +35,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pytest
 
-      - name: Install Wrangler
-        working-directory: cloudflare-chat
-        run: npm install --no-audit --no-fund
-
       - name: Validate Worker JavaScript
-        working-directory: cloudflare-chat
-        run: npm run check
+        run: node --check cloudflare-chat/src/index.js
 
       - name: Validate browser chat JavaScript
         run: node --check chat-web/app.js
