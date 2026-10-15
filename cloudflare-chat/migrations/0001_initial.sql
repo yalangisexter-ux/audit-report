@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS socket_tickets (
  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
  expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bootstrap_guard (
+ id INTEGER PRIMARY KEY CHECK(id = 1),
+ used_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS login_attempts (
  attempt_key TEXT PRIMARY KEY,
  window_started INTEGER NOT NULL,
