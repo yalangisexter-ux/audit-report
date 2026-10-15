@@ -190,7 +190,7 @@ async function routeApi(request, env) {
     const next = await makePasswordRecord(body.newPassword);
     await env.DB.prepare("UPDATE chat_users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?")
       .bind(next.salt, next.hash, new Date().toISOString(), user.id).run();
-    return json({ ok: true, message: "Password changed. Sign in again on your other devices." });
+    return json({ ok: true, message: "Password changed successfully." });
   }
 
   if (path === "/api/auth/me" && method === "GET") {
