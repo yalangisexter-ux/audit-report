@@ -234,7 +234,7 @@ def seed_initial_audit(db):
 
 APP_NAME = "Raw Strength Calisthenics — Employee Audit Manager"
 GITHUB_REPOSITORY = "yalangisexter-ux/audit-report"
-GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
+GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases?per_page=100"
 GITHUB_RELEASE_DOWNLOAD_PREFIX = f"https://github.com/{GITHUB_REPOSITORY}/releases/download/"
 APP_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "EmployeeAuditManager"
 DB_PATH = APP_DIR / "employee_audit.db"
@@ -444,31 +444,30 @@ class UpdateWorker(QObject):
 
     def run(self):
         try:
-            # Use the small /releases/latest response as the primary endpoint.
-            # The paginated releases list can be hundreds of KB and is prone to
-            # IncompleteRead on customer networks; it is unnecessary for updates.
-            latest_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
-            latest_payload = None
+            # Use the published releases list, as the previous updater did.
+            # Select the highest published stable semantic version rather than relying
+            # on GitHub's /releases/latest alias.
+            releases_url = GITHUB_RELEASES_API
+            payload = None
             latest_error = None
             self.progress.emit(0, "Connecting to GitHub to check the latest release...")
             for attempt in range(3):
                 try:
                     if attempt:
                         self.progress.emit(0, f"GitHub did not respond; retrying update check ({attempt + 1}/3)...")
-                    latest_payload = json.loads(self.request_bytes(latest_url).decode("utf-8"))
-                    if not isinstance(latest_payload, dict):
-                        raise ValueError("GitHub returned an invalid latest-release response.")
+                    payload = json.loads(self.request_bytes(releases_url).decode("utf-8"))
+                    if not isinstance(payload, list):
+                        raise ValueError("GitHub returned an invalid releases list.")
                     break
                 except Exception as exc:
                     latest_error = exc
                     if attempt == 2:
                         raise RuntimeError(
-                            "Unable to fetch the latest release from GitHub after 3 attempts. "
+                            "Unable to fetch the published releases from GitHub after 3 attempts. "
                             f"Details: {latest_error}"
                         ) from latest_error
                     import time
                     time.sleep(attempt + 1)
-            payload = [latest_payload]
             stable_releases = []
             for candidate in payload:
                 if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
