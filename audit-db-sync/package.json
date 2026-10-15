@@ -1,0 +1,14 @@
+{
+  "name": "raw-strength-audit-db-sync",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "check": "node --check src/index.js",
+    "test": "node --test test/*.test.js",
+    "deploy": "wrangler deploy --config wrangler.toml"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}
