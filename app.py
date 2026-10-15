@@ -395,6 +395,22 @@ def valid_hhmm(value):
         return False
 
 
+def calculate_net_working_hours(check_in, check_out, break_minutes=0):
+    """Calculate net working hours string from check-in, check-out, and break minutes."""
+    if not check_in or not check_out:
+        return ""
+    try:
+        st = datetime.strptime(str(check_in).strip(), "%H:%M")
+        en = datetime.strptime(str(check_out).strip(), "%H:%M")
+        mins = int((en - st).total_seconds() / 60)
+        if mins < 0:
+            mins += 1440
+        mins = max(0, mins - int(break_minutes or 0))
+        return f"{mins / 60:.2f}"
+    except (TypeError, ValueError, OverflowError):
+        return ""
+
+
 def release_version_tuple(version):
     parts = str(version).strip().removeprefix("v").split(".")
     if len(parts) != 3 or not all(part.isdigit() for part in parts):
@@ -1009,7 +1025,14 @@ class Database:
         );
         """)
         # Additive migrations only — never drop existing data.
-        employee_columns = {r["name"] for r in c.execute("PRAGMA table_info(employees)").fetchall()}
+        def apply_column_migrations(table_name, migrations):
+            existing = {r["name"] for r in c.execute(f"PRAGMA table_info({table_name})").fetchall()}
+            for col, decl in migrations:
+                if col not in existing:
+                    c.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} {decl}")
+                    existing.add(col)
+            return existing
+
         employee_migrations = (
             ("employee_code", "TEXT"),
             ("name", "TEXT NOT NULL DEFAULT ''"),
@@ -1022,11 +1045,7 @@ class Database:
             ("notes", "TEXT DEFAULT ''"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
         )
-        for column, declaration in employee_migrations:
-            if column not in employee_columns:
-                c.execute(f"ALTER TABLE employees ADD COLUMN {column} {declaration}")
-        # Re-read columns after adding any missing columns.
-        employee_columns = {row["name"] for row in c.execute("PRAGMA table_info(employees)").fetchall()}
+        employee_columns = apply_column_migrations("employees", employee_migrations)
         # Preserve employee names from older database schemas.
         if "employee_name" in employee_columns:
             c.execute("""
@@ -1043,7 +1062,6 @@ class Database:
                   AND COALESCE(full_name, '') <> ''
             """)
 
-        task_columns = {r["name"] for r in c.execute("PRAGMA table_info(tasks)").fetchall()}
         task_migrations = (
             ("employee_id", "INTEGER"),
             ("task_date", "TEXT NOT NULL DEFAULT ''"),
@@ -1061,9 +1079,7 @@ class Database:
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
-        for column, declaration in task_migrations:
-            if column not in task_columns:
-                c.execute(f"ALTER TABLE tasks ADD COLUMN {column} {declaration}")
+        apply_column_migrations("tasks", task_migrations)
 
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
 
@@ -1083,7 +1099,6 @@ class Database:
                     "WHERE COALESCE(work_date, '') = '' "
                     f"AND COALESCE(CAST({legacy_date_column} AS TEXT), '') <> ''"
                 )
-            attendance_columns.add("work_date")
 
         # Ensure columns used by the current attendance screen and reports exist.
         attendance_migrations = (
@@ -1094,10 +1109,7 @@ class Database:
             ("attendance_note", "TEXT DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
-        for column, declaration in attendance_migrations:
-            if column not in attendance_columns:
-                c.execute(f"ALTER TABLE attendance ADD COLUMN {column} {declaration}")
-                attendance_columns.add(column)
+        apply_column_migrations("attendance", attendance_migrations)
 
         c.execute(
             "UPDATE attendance SET attendance_status='Present' "
@@ -1172,8 +1184,12 @@ class Database:
         try: return {int(x) for x in raw.split(",") if x.strip() != ""}
         except ValueError: return {0,1,2,3,4}
 
+    def get_holiday(self, day_text):
+        row = self.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (day_text,)).fetchone()
+        return row["holiday_name"] if row else None
+
     def is_holiday(self, day_text):
-        return self.conn.execute("SELECT 1 FROM holidays WHERE holiday_date=?", (day_text,)).fetchone() is not None
+        return self.get_holiday(day_text) is not None
 
     def holidays_between(self, start_date, end_date):
         return self.conn.execute("SELECT * FROM holidays WHERE holiday_date BETWEEN ? AND ? ORDER BY holiday_date", (start_date, end_date)).fetchall()
@@ -1234,6 +1250,38 @@ def normalized_answer(value):
 
 def password_is_strong(value):
     return len(value) >= 8 and any(c.isalpha() for c in value) and any(c.isdigit() for c in value)
+
+
+def _prompt_and_update_password(parent, db, user_row, success_message="Your password has been changed."):
+    """Prompt for current and new password, validate, hash, and persist to auth_users."""
+    echo_mode = QLineEdit.EchoMode.Password if hasattr(QLineEdit, "EchoMode") else QLineEdit.Password
+    current, ok = QInputDialog.getText(parent, "Change password", "Current password:", echo_mode)
+    if not ok:
+        return False
+    _, digest = hash_pin(current, user_row["password_salt"])
+    if not secrets.compare_digest(digest, user_row["password_hash"]):
+        error(parent, "Current password is incorrect.")
+        return False
+    new, ok = QInputDialog.getText(parent, "Change password", "New password (8+ characters, letters and numbers):", echo_mode)
+    if not ok:
+        return False
+    if not password_is_strong(new):
+        error(parent, "Use at least 8 characters, including a letter and a number.")
+        return False
+    confirm, ok = QInputDialog.getText(parent, "Change password", "Confirm new password:", echo_mode)
+    if not ok or confirm != new:
+        error(parent, "The passwords do not match.")
+        return False
+    salt, digest = hash_pin(new)
+    db.conn.execute(
+        "UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?",
+        (salt, digest, now_text(), user_row["id"]),
+    )
+    db.conn.commit()
+    db.log("Password changed", user_row["username"])
+    info(parent, success_message)
+    return True
+
 
 def add_theme_selector(dialog, db, layout):
     """Expose the saved application theme on entry dialogs as well as Settings."""
@@ -1493,20 +1541,7 @@ class LoginDialog(QDialog):
         row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)).fetchone()
         if not row:
             return error(self, "No active account found for that username.")
-        current, ok = QInputDialog.getText(self, "Change password", "Current password:", QLineEdit.Password)
-        if not ok: return
-        _, digest = hash_pin(current, row["password_salt"])
-        if not secrets.compare_digest(digest, row["password_hash"]):
-            return error(self, "Current password is incorrect.")
-        new, ok = QInputDialog.getText(self, "Change password", "New password (8+ characters, letters and numbers):", QLineEdit.Password)
-        if not ok: return
-        if not password_is_strong(new): return error(self, "Use at least 8 characters, including a letter and a number.")
-        confirm, ok = QInputDialog.getText(self, "Change password", "Confirm new password:", QLineEdit.Password)
-        if not ok or confirm != new: return error(self, "The passwords do not match.")
-        salt, digest = hash_pin(new)
-        self.db.conn.execute("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?", (salt,digest,now_text(),row["id"]))
-        self.db.conn.commit(); self.db.log("Password changed", username)
-        info(self, "Password changed. Sign in with your new password.")
+        _prompt_and_update_password(self, self.db, row, "Password changed. Sign in with your new password.")
 
 class EmployeeDialog(QDialog):
     def __init__(self, parent=None, row=None):
@@ -4999,8 +5034,8 @@ class MainWindow(QMainWindow):
         # Remember selected employee so check-in/out stay on the same row
         selected_eid = self.attendance_selected_employee()
         d=self.att_date.date().toString("yyyy-MM-dd")
-        holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(d,)).fetchone()
-        self.holiday_banner.setText(f"HOLIDAY: {holiday['holiday_name']} — excluded from all working-day counts" if holiday else "No holiday declared for the selected date.")
+        holiday=self.db.get_holiday(d)
+        self.holiday_banner.setText(f"HOLIDAY: {holiday} — excluded from all working-day counts" if holiday else "No holiday declared for the selected date.")
         rows={a["employee_id"]:a for a in self.db.attendance(d)}
         emps=self.db.employees(False)
         if hasattr(self, "att_employee_filter") and self.att_employee_filter.currentData() is not None:
@@ -5016,15 +5051,7 @@ class MainWindow(QMainWindow):
             ci=a["check_in"] if a else ""; co=a["check_out"] if a else ""
             status="Holiday" if holiday else (a["attendance_status"] if a else "Unmarked")
             if a and status=="Unmarked" and ci: status="Present"
-            hours=""
-            if ci and co:
-                try:
-                    start=datetime.strptime(ci,"%H:%M"); end=datetime.strptime(co,"%H:%M")
-                    mins=int((end-start).total_seconds()/60)
-                    if mins<0: mins+=1440
-                    mins=max(0,mins-int(a["break_minutes"] or 0))
-                    hours=f"{mins/60:.2f}"
-                except Exception: pass
+            hours=calculate_net_working_hours(ci, co, a["break_minutes"] if a else 0)
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
             # Inline editors make attendance updates visible and discoverable.
             date_item = QTableWidgetItem(d)
@@ -5357,7 +5384,7 @@ class MainWindow(QMainWindow):
 
     def _attendance_report_rows(self, report_date, employee_id=None):
         rows=[]
-        holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(report_date,)).fetchone()
+        holiday=self.db.get_holiday(report_date)
         for e in self._report_employees(employee_id):
             if not e: continue
             a=self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?",(e["id"],report_date)).fetchone()
@@ -5365,15 +5392,7 @@ class MainWindow(QMainWindow):
             if a and status=="Unmarked" and a["check_in"]: status="Present"
             ci=a["check_in"] if a and a["check_in"] else ""
             co=a["check_out"] if a and a["check_out"] else ""
-            net=""
-            if ci and co:
-                try:
-                    st=datetime.strptime(ci,"%H:%M"); en=datetime.strptime(co,"%H:%M")
-                    mins=int((en-st).total_seconds()/60)
-                    if mins<0: mins+=1440
-                    mins=max(0,mins-int(a["break_minutes"] or 0))
-                    net=f"{mins/60:.2f}"
-                except Exception: pass
+            net=calculate_net_working_hours(ci, co, a["break_minutes"] if a else 0)
             rows.append({"employee":e,"status":status,"check_in":ci,"check_out":co,"net_hours":net,"note":a["attendance_note"] if a else ""})
         return rows
 
@@ -5410,9 +5429,9 @@ class MainWindow(QMainWindow):
                 for c,v in zip(cells,vals): c.text=str(v)
             doc.add_paragraph(f"Total employees: {len(emps)}")
         elif report_type=="Employee Attendance":
-            if self.db.is_holiday(report_date):
-                holiday=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(report_date,)).fetchone()
-                doc.add_paragraph(f"Declared holiday: {holiday['holiday_name'] if holiday else 'Holiday'}")
+            holiday_name = self.db.get_holiday(report_date)
+            if holiday_name:
+                doc.add_paragraph(f"Declared holiday: {holiday_name}")
             rows=self._attendance_report_rows(report_date,employee_id)
             fields=[("Employee",lambda item:item["employee"]["name"])]
             if opts.get("attendance_identity",True): fields.extend([("Employee ID",lambda item:item["employee"]["employee_code"] or "N/A"),("Department",lambda item:item["employee"]["department"] or "N/A")])
@@ -5617,9 +5636,9 @@ class MainWindow(QMainWindow):
 
         elif report_type == "Employee Attendance":
             rows = self._attendance_report_rows(report_date, employee_id)
-            holiday = self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (report_date,)).fetchone()
-            if holiday and opts.get("attendance_summary", True):
-                story.append(para("DECLARED HOLIDAY:", holiday["holiday_name"], "RSSection"))
+            holiday_name = self.db.get_holiday(report_date)
+            if holiday_name and opts.get("attendance_summary", True):
+                story.append(para("DECLARED HOLIDAY:", holiday_name, "RSSection"))
             present = sum(x["status"] == "Present" for x in rows)
             absent = sum(x["status"] == "Absent" for x in rows)
             leave = sum(x["status"] == "Leave" for x in rows)
@@ -5806,9 +5825,7 @@ class MainWindow(QMainWindow):
                 headers=["Report date","Employee ID","Employee","Department","Role"]
                 report_rows=self.report_data(report_date,employee_id)
                 def task_proof_links(task):
-                    if not task:
-                        return []
-                    return list(dict.fromkeys(proof_urls(task["proof_url"]) + proof_urls(task["proof_note"])))
+                    return task_evidence_urls(task) if task else []
                 max_proof_links=max([len(task_proof_links(t)) for _e,tasks,_a in report_rows for t in tasks] or [1])
                 max_proof_links=max(1,max_proof_links)
                 proof_headers=["Proof link"] if max_proof_links==1 else [f"Proof link {index+1}" for index in range(max_proof_links)]
@@ -6281,20 +6298,7 @@ class MainWindow(QMainWindow):
         row = self.db.conn.execute("SELECT * FROM auth_users WHERE id=?", (user_id,)).fetchone()
         if not row:
             return error(self, "Your account could not be found.")
-        old, ok = QInputDialog.getText(self, "Change password", "Current password:", QLineEdit.Password)
-        if not ok: return
-        _, test = hash_pin(old, row["password_salt"])
-        if not secrets.compare_digest(test, row["password_hash"]):
-            return error(self, "Current password is incorrect.")
-        new, ok = QInputDialog.getText(self, "Change password", "New password (8+ characters, letters and numbers):", QLineEdit.Password)
-        if not ok: return
-        if not password_is_strong(new): return error(self, "Use at least 8 characters, including a letter and a number.")
-        confirm, ok = QInputDialog.getText(self, "Change password", "Confirm new password:", QLineEdit.Password)
-        if not ok or confirm != new: return error(self, "The passwords do not match.")
-        salt, digest = hash_pin(new)
-        self.db.conn.execute("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?", (salt,digest,now_text(),user_id))
-        self.db.conn.commit(); self.db.log("Password changed", row["username"])
-        info(self, "Your password has been changed.")
+        _prompt_and_update_password(self, self.db, row, "Your password has been changed.")
 
     def update_recovery_question(self):
         row = self.db.conn.execute("SELECT * FROM auth_users WHERE id=?", (self.current_user.get("id"),)).fetchone()
