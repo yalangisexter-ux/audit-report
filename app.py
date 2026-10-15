@@ -4519,15 +4519,16 @@ class MainWindow(QMainWindow):
                     current_status = "Present"
                 if current_status in ("Absent","Leave","Unmarked"):
                     current_in = current_out = ""
-                self.db.conn.execute(
-                    """INSERT INTO attendance(employee_id,work_date,check_in,check_out,attendance_note,attendance_status,updated_at)
-                       VALUES(?,?,?,?,?,?,?)
-                       ON CONFLICT(employee_id,work_date) DO UPDATE SET
-                       check_in=excluded.check_in,check_out=excluded.check_out,
-                       attendance_note=excluded.attendance_note,attendance_status=excluded.attendance_status,
-                       updated_at=excluded.updated_at""",
-                    (employee_id,work_date,current_in,current_out,current_note,current_status,now)
-                )
+                if old:
+                    self.db.conn.execute(
+                        "UPDATE attendance SET check_in=?,check_out=?,attendance_note=?,attendance_status=?,updated_at=? WHERE id=?",
+                        (current_in,current_out,current_note,current_status,now,old["id"])
+                    )
+                else:
+                    self.db.conn.execute(
+                        "INSERT INTO attendance(employee_id,work_date,check_in,check_out,attendance_note,attendance_status,updated_at) VALUES(?,?,?,?,?,?,?)",
+                        (employee_id,work_date,current_in,current_out,current_note,current_status,now)
+                    )
             self.db.conn.commit()
         except (sqlite3.Error, ValueError) as exc:
             self.db.conn.rollback()
