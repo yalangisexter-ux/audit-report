@@ -35,6 +35,7 @@ from database_sync import (
     protect_sync_token,
     unprotect_sync_token,
 )
+from cloudflare_chat import CloudflareChatTab
 
 
 def brand_mark_pixmap(size):
@@ -2378,12 +2379,13 @@ class MainWindow(QMainWindow):
             page.setAutoFillBackground(False)
             page.setObjectName("appPageSurface")
         self.business_tab = BusinessTrackingTab(self.db)
+        self.chat_tab = CloudflareChatTab(self.db, self.current_user)
         tab_items = [
             (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
             (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
             (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
             (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
-            (self.business_tab, "💼  Business Tracking"), (self.settings_tab, "⚙️  Settings & Backup"),
+            (self.business_tab, "💼  Business Tracking"), (self.chat_tab, "💬  Live Chat"), (self.settings_tab, "⚙️  Settings & Backup"),
         ]
         self.sidebar_buttons = []
         for index, (widget, title) in enumerate(tab_items):
