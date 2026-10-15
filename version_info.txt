@@ -16,11 +16,11 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'Raw Strength Calisthenics'),
           StringStruct('FileDescription', 'Raw Strength Calisthenics Employee Audit Manager'),
-          StringStruct('FileVersion', '1.2.75.0'),
+          StringStruct('FileVersion', '1.2.76.0'),
           StringStruct('InternalName', 'RawStrengthEmployeeAuditManager'),
           StringStruct('OriginalFilename', 'RawStrengthEmployeeAuditManager.exe'),
           StringStruct('ProductName', 'Raw Strength Calisthenics - Employee Audit Manager'),
-          StringStruct('ProductVersion', '1.2.75.0')
+          StringStruct('ProductVersion', '1.2.76.0')
         ]
       )
     ]),
