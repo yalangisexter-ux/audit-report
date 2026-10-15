@@ -5731,7 +5731,7 @@ class MainWindow(QMainWindow):
                             if opts.get("due_time", True) and t["due_time"]:
                                 story.append(bullet(f'Due time: {t["due_time"]}'))
                             if opts.get("proof", True):
-                                task_links = proof_urls(t["proof_url"])
+                                task_links = task_evidence_urls(t)
                                 if task_links:
                                     link_markup=[]
                                     for task_link_index,url in enumerate(task_links):
