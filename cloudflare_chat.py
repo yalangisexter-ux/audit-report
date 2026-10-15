@@ -21,6 +21,9 @@ from PySide6.QtWidgets import (
     QMessageBox, QFrame, QSizePolicy
 )
 
+_ACTIVE_REQUESTS = set()
+_ACTIVE_SOCKETS = set()
+
 try:
     import websocket
 except ImportError:  # The packaged build installs websocket-client from requirements.txt.
@@ -339,8 +342,10 @@ class CloudflareChatTab(QWidget):
             return
         worker = _ApiRequest(request_id, base, path, self.token if token is None else token, method, payload)
         self._workers.add(worker)
+        _ACTIVE_REQUESTS.add(worker)
         worker.completed.connect(self._on_api_result)
         worker.finished.connect(lambda w=worker: self._cleanup_worker(w))
+        worker.finished.connect(lambda w=worker: _ACTIVE_REQUESTS.discard(w))
         worker.start()
 
     def _cleanup_worker(self, worker):
@@ -493,7 +498,8 @@ class CloudflareChatTab(QWidget):
             worker.stop()
             if worker.isRunning():
                 worker.wait(1200)
-            worker.deleteLater()
+            else:
+                worker.deleteLater()
 
     def _open_conversation(self, conversation):
         if not conversation or conversation.get("id") == (self.active_conversation or {}).get("id"):
@@ -532,8 +538,11 @@ class CloudflareChatTab(QWidget):
             self.status_label.setText(str(exc))
             return
         worker = _ChatSocket(url)
+        _ACTIVE_SOCKETS.add(worker)
         worker.event_received.connect(lambda packet, g=generation: self._on_socket_event(g, packet))
         worker.state_changed.connect(lambda message, g=generation: self._on_socket_state(g, message, conversation_id))
+        worker.finished.connect(lambda w=worker: _ACTIVE_SOCKETS.discard(w))
+        worker.finished.connect(worker.deleteLater)
         self._socket = worker
         worker.start()
         self.status_label.setText("Connecting to live chat…")
@@ -700,6 +709,10 @@ class CloudflareChatTab(QWidget):
         self.login_panel.show()
         self.admin_button.hide()
         self.status_label.setText("Signed out of Live Chat")
+
+    def shutdown(self):
+        """Stop the live socket before the parent application closes."""
+        self._close_socket()
 
     def closeEvent(self, event):
         self._close_socket()
