@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
 _ACTIVE_REQUESTS = set()
 _ACTIVE_SOCKETS = set()
 
-# Production Worker base URL. Leave empty until the real deployed endpoint is known.
-# Do not invent a workers.dev hostname.
+# The release workflow injects the deployed Worker HTTPS URL at build time.
+# Keep this empty in source control; never guess a production workers.dev hostname.
 DEFAULT_CHAT_API_BASE = ""
 
 try:
@@ -261,11 +261,6 @@ class CloudflareChatTab(QWidget):
         info.setStyleSheet("color:#475569;")
         login_layout.addWidget(info)
         form = QFormLayout()
-        self.endpoint_edit = QLineEdit(self.api_base)
-        self.endpoint_edit.setPlaceholderText("https://your-worker.your-subdomain.workers.dev")
-        self.endpoint_edit.setClearButtonEnabled(True)
-        if self.api_base:
-            self.endpoint_edit.hide()
         self.username_edit = QLineEdit()
         self.username_edit.setPlaceholderText("Chat username")
         self.username_edit.setText(str(self.current_user.get("username", "") or ""))
@@ -273,8 +268,6 @@ class CloudflareChatTab(QWidget):
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_edit.setPlaceholderText("Chat password")
         self.password_edit.returnPressed.connect(self._login)
-        if not self.api_base:
-            form.addRow("Cloudflare Worker URL", self.endpoint_edit)
         form.addRow("Chat username", self.username_edit)
         form.addRow("Chat password", self.password_edit)
         login_layout.addLayout(form)
@@ -379,7 +372,7 @@ class CloudflareChatTab(QWidget):
         """Open the responsive browser client for WebRTC screen sharing."""
         base = self.api_base or self._base()
         if not base:
-            QMessageBox.warning(self, "Screen sharing", "Enter and save the deployed Cloudflare Worker URL first.")
+            QMessageBox.warning(self, "Screen sharing", "Live Chat is not configured for this release. Contact the application administrator.")
             return
         if QDesktopServices.openUrl(QUrl(base)):
             QMessageBox.information(
@@ -391,14 +384,21 @@ class CloudflareChatTab(QWidget):
             QMessageBox.warning(self, "Screen sharing", "Could not open your default browser. Open this URL manually:\n" + base)
 
     def _base(self):
+        """Use the centrally configured release endpoint; never ask customers for a URL."""
+        candidate = self.api_base or DEFAULT_CHAT_API_BASE
+        if not candidate:
+            self.login_error.setText("Live Chat is not configured in this release. Contact the application administrator.")
+            return ""
         try:
-            base = normalize_api_base(self.endpoint_edit.text())
+            base = normalize_api_base(candidate)
             self.api_base = base
-            self.db.set_setting("cloudflare_chat_api_url", base)
+            # Keep existing saved settings compatible, but prefer the centrally configured URL.
+            if self.db.get_setting("cloudflare_chat_api_url", "") != base:
+                self.db.set_setting("cloudflare_chat_api_url", base)
             self.login_error.setText("")
             return base
         except ValueError as exc:
-            self.login_error.setText(str(exc))
+            self.login_error.setText("Live Chat endpoint configuration is invalid. Contact the application administrator.")
             return ""
 
     def _request(self, request_id, path, method="GET", payload=None, token=None):
