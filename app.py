@@ -322,7 +322,7 @@ def proof_note_display_text(task, evidence_links_included=False):
         return note
     known_urls = set(task_evidence_urls(task))
     return re.sub(
-        r"https?://[^\\s<>]+",
+        r"https?://[^\s<>]+",
         lambda match: "[link listed above]"
         if match.group(0).rstrip(".,;:!?)]}") in known_urls
         else match.group(0),
