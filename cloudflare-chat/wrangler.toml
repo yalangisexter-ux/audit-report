@@ -9,8 +9,8 @@ run_worker_first = ["/api/*"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "rsc-employee-chat"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_name = "rsc-employee-chat-livescreen-sharing"
+database_id = "b662a1fb-69d2-4f2c-a239-05583a1ea7b0"
 migrations_dir = "migrations"
 
 [[durable_objects.bindings]]
