@@ -183,6 +183,7 @@ class CloudflareChatTab(QWidget):
         self._retry_count = 0
         self._reconnect_pending = False
         self._current_ticket_request = ""
+        self._preferred_conversation_id = ""
         self._build_ui()
         if websocket is None:
             self.status_label.setText("Install websocket-client to enable live delivery.")
@@ -316,6 +317,7 @@ class CloudflareChatTab(QWidget):
         self.message_edit.setEnabled(False)
         self.private_button.clicked.connect(self._new_private)
         self.group_button.clicked.connect(self._new_group)
+        self.admin_button.clicked.connect(self._create_chat_account)
 
     def _base(self):
         try:
@@ -390,10 +392,11 @@ class CloudflareChatTab(QWidget):
                 return
             self.conversations = data.get("conversations") or []
             self._render_conversations()
-            desired = self.active_conversation.get("id") if self.active_conversation else None
+            desired = self._preferred_conversation_id or (self.active_conversation.get("id") if self.active_conversation else None)
             target = next((c for c in self.conversations if c.get("id") == desired), None)
             if target is None and self.conversations:
                 target = self.conversations[0]
+            self._preferred_conversation_id = ""
             if target:
                 self._open_conversation(target)
             else:
@@ -430,6 +433,7 @@ class CloudflareChatTab(QWidget):
                 self.status_label.setText(error)
                 QMessageBox.warning(self, "Live Chat", error)
                 return
+            self._preferred_conversation_id = str(data.get("conversationId") or "")
             self._request("conversations", "/api/conversations")
             return
         if request_id == "create-user":
@@ -522,7 +526,6 @@ class CloudflareChatTab(QWidget):
         worker.event_received.connect(lambda packet, g=generation: self._on_socket_event(g, packet))
         worker.state_changed.connect(lambda message, g=generation: self._on_socket_state(g, message, conversation_id))
         self._socket = worker
-        self._retry_count = 0
         worker.start()
         self.status_label.setText("Connecting to live chat…")
 
@@ -672,7 +675,6 @@ class CloudflareChatTab(QWidget):
         self.login_panel.show()
         self.admin_button.hide()
         self.status_label.setText("Signed out of Live Chat")
-        self._workers.clear()
 
     def closeEvent(self, event):
         self._close_socket()
