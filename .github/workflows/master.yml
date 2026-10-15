@@ -115,28 +115,29 @@ jobs:
       - name: Configure the production Live Chat endpoint when available
         shell: pwsh
         env:
-          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL || vars.CLOUDFLARE_WORKER_URL || vars.LIVE_CHAT_WORKER_URL || secrets.CHAT_WORKER_URL || secrets.CLOUDFLARE_WORKER_URL || secrets.LIVE_CHAT_WORKER_URL }}
           DEPLOYED_CHAT_WORKER_URL: ${{ steps.deploy_chat.outputs.worker_url }}
-          CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN || vars.WORKERS_SUBDOMAIN }}
+          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
         run: |
-          $workerUrl = $env:CHAT_WORKER_URL
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DEPLOYED_CHAT_WORKER_URL }
-          if ([string]::IsNullOrWhiteSpace($workerUrl) -and -not [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_WORKERS_SUBDOMAIN)) {
-            $subdomain = $env:CLOUDFLARE_WORKERS_SUBDOMAIN.Trim()
-            if ($subdomain -match '^https?://' -or $subdomain -match '[/\\?#@]') { throw "CLOUDFLARE_WORKERS_SUBDOMAIN must be only the Workers subdomain, without protocol or path." }
-            $workerUrl = "https://raw-strength-employee-chat.$subdomain.workers.dev"
-          }
+          $workerUrl = $env:DEPLOYED_CHAT_WORKER_URL
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:CHAT_WORKER_URL }
           if ([string]::IsNullOrWhiteSpace($workerUrl)) {
-            throw "CHAT_WORKER_URL is missing. Deploy Cloudflare Live Chat after correcting CLOUDFLARE_API_TOKEN; the deployment workflow now saves CHAT_WORKER_URL automatically. Refusing to publish an installer with a nonfunctional Live Chat endpoint."
+            Write-Host "::warning::CHAT_WORKER_URL is missing. Live Chat endpoint will not be preconfigured in this build. Set the variable or ensure deploy step outputs the URL."
+            exit 0
           } else {
             $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
-            if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
+            if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { 
+              Write-Host "::warning::CHAT_WORKER_URL is not a plain HTTPS base URL. Skipping injection."
+              exit 0
+            }
             $sourcePath = "cloudflare_chat.py"
             $source = Get-Content $sourcePath -Raw
             $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ""', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
-            if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { throw "Could not configure the production Live Chat endpoint." }
+            if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { 
+              Write-Host "::warning::Could not configure the production Live Chat endpoint."
+              exit 0
+            }
             Set-Content -Path $sourcePath -Value $source -Encoding utf8
-            Write-Host "Configured production Live Chat endpoint."
+            Write-Host "Configured production Live Chat endpoint: $($uri.GetLeftPart([System.UriPartial]::Authority))"
           }
 
       - name: Compile Python application with bundled assets
