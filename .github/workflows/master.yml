@@ -73,8 +73,8 @@ jobs:
       - name: Compile Python application with bundled assets
         shell: pwsh
         run: |
-          python -m py_compile app.py build_info.py business_tracking.py
-          pyinstaller --noconfirm --clean --onedir --windowed --name RawStrengthEmployeeAuditManager --icon assets/raw_strength_icon.ico --add-data "assets;assets" --version-file version_info.txt app.py
+          python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py
+          pyinstaller --noconfirm --clean --onedir --windowed --hidden-import websocket --name RawStrengthEmployeeAuditManager --icon assets/raw_strength_icon.ico --add-data "assets;assets" --version-file version_info.txt app.py
           if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe")) { throw "Application executable was not created." }
 
       - name: Build standalone Windows installer
