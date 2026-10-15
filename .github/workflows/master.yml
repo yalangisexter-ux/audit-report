@@ -84,9 +84,9 @@ jobs:
       - name: Configure the production Live Chat endpoint from repository variables
         shell: pwsh
         env:
-          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
+          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL || vars.CLOUDFLARE_WORKER_URL || vars.LIVE_CHAT_WORKER_URL }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CHAT_WORKER_URL)) { throw "Missing repository variable CHAT_WORKER_URL. Set it to the deployed HTTPS Cloudflare Worker base URL." }
+          if ([string]::IsNullOrWhiteSpace($env:CHAT_WORKER_URL)) { throw "Missing Worker URL repository variable. Set CHAT_WORKER_URL, CLOUDFLARE_WORKER_URL, or LIVE_CHAT_WORKER_URL to the deployed HTTPS Cloudflare Worker base URL." }
           $uri = [System.Uri]::new($env:CHAT_WORKER_URL.Trim().TrimEnd('/'))
           if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
           $sourcePath = "cloudflare_chat.py"
