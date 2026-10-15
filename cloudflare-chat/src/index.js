@@ -137,8 +137,15 @@ async function routeApi(request, env) {
     if (!validPassword(body.password)) return json({ error: "Use a password of at least 10 characters containing a letter and a number." }, 400);
     const password = await makePasswordRecord(body.password);
     const now = new Date().toISOString();
-    await env.DB.prepare("INSERT INTO chat_users(username, display_name, role, password_salt, password_hash, active, created_at, updated_at) VALUES(?, ?, 'Admin', ?, ?, 1, ?, ?)")
-      .bind(username, cleanDisplayName(body.displayName, username), password.salt, password.hash, now, now).run();
+    try {
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO bootstrap_guard(id, used_at) VALUES(1, ?)").bind(now),
+        env.DB.prepare("INSERT INTO chat_users(username, display_name, role, password_salt, password_hash, active, created_at, updated_at) VALUES(?, ?, 'Admin', ?, ?, 1, ?, ?)")
+          .bind(username, cleanDisplayName(body.displayName, username), password.salt, password.hash, now, now),
+      ]);
+    } catch {
+      return json({ error: "Bootstrap is already complete or another administrator was created concurrently." }, 409);
+    }
     const user = await env.DB.prepare("SELECT id, username, display_name, role, active FROM chat_users WHERE username = ?").bind(username).first();
     return json({ ok: true, user }, 201);
   }
