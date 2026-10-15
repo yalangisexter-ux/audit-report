@@ -1,0 +1,15 @@
+name = "raw-strength-audit-db-sync"
+main = "src/index.js"
+compatibility_date = "2026-10-15"
+
+[[durable_objects.bindings]]
+name = "DEVICE_REGISTRY"
+class_name = "DeviceRegistry"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DeviceRegistry"]
+
+[vars]
+GITHUB_OWNER = "yalangisexter-ux"
+GITHUB_REPO = "audit-report"
