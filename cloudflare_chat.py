@@ -187,7 +187,11 @@ class CloudflareChatTab(QWidget):
         self._reconnect_pending = False
         self._current_ticket_request = ""
         self._preferred_conversation_id = ""
+        self._refresh_inflight = False
         self._build_ui()
+        self._conversation_refresh_timer = QTimer(self)
+        self._conversation_refresh_timer.setInterval(15000)
+        self._conversation_refresh_timer.timeout.connect(lambda: self._request("conversations", "/api/conversations") if self.token else None)
         if websocket is None:
             self.status_label.setText("Install websocket-client to enable live delivery.")
             self.status_label.setStyleSheet("color:#b91c1c;")
@@ -340,6 +344,10 @@ class CloudflareChatTab(QWidget):
         base = self.api_base or self._base()
         if not base:
             return
+        if request_id == "conversations":
+            if self._refresh_inflight:
+                return
+            self._refresh_inflight = True
         worker = _ApiRequest(request_id, base, path, self.token if token is None else token, method, payload)
         self._workers.add(worker)
         _ACTIVE_REQUESTS.add(worker)
@@ -385,6 +393,7 @@ class CloudflareChatTab(QWidget):
                 return
             self.login_panel.hide()
             self.chat_panel.show()
+            self._conversation_refresh_timer.start()
             self.admin_button.setVisible(self.chat_user.get("role") == "Admin")
             self.status_label.setText("Signed in as %s" % (self.chat_user.get("displayName") or self.chat_user.get("username") or "employee"))
             self._request("users", "/api/users")
@@ -395,6 +404,7 @@ class CloudflareChatTab(QWidget):
                 self.users = data.get("users") or []
             return
         if request_id == "conversations":
+            self._refresh_inflight = False
             if error:
                 self.status_label.setText(error)
                 return
@@ -695,6 +705,8 @@ class CloudflareChatTab(QWidget):
         })
 
     def _logout(self):
+        self._conversation_refresh_timer.stop()
+        self._refresh_inflight = False
         self._close_socket()
         self.token = ""
         self.chat_user = None
