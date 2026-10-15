@@ -468,37 +468,49 @@ class UpdateWorker(QObject):
                         ) from latest_error
                     import time
                     time.sleep(attempt + 1)
-            stable_releases = []
+            # Only consider releases that have a complete, trusted installer asset.
+            # A newer release without its EXE/checksum must not block a usable older release.
+            installable_releases = []
+            installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
             for candidate in payload:
                 if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
+                    continue
+                if not candidate.get("published_at"):
                     continue
                 try:
                     candidate_version = release_version_tuple(candidate.get("tag_name", ""))
                 except ValueError:
                     continue
-                if not candidate.get("published_at"):
+                assets = candidate.get("assets", [])
+                if not isinstance(assets, list):
                     continue
-                stable_releases.append((candidate_version, candidate))
-            if not stable_releases:
-                raise ValueError("No published stable application release was found.")
-            latest_parts, release = max(stable_releases, key=lambda item: item[0])
+                installer_asset = next((asset for asset in assets
+                    if isinstance(asset, dict) and asset.get("name") == installer_name), None)
+                if not installer_asset:
+                    continue
+                installer_url = str(installer_asset.get("browser_download_url") or "")
+                expected_digest = str(installer_asset.get("digest") or "")
+                asset_size = installer_asset.get("size")
+                if not installer_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
+                    continue
+                if not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", expected_digest):
+                    continue
+                if not isinstance(asset_size, int) or asset_size < 1000000:
+                    continue
+                installable_releases.append((candidate_version, candidate, installer_asset))
+            if not installable_releases:
+                raise ValueError(
+                    "No published stable release has a verified Windows installer. "
+                    "Please try again later or contact your administrator."
+                )
+            latest_parts, release, installer_asset = max(installable_releases, key=lambda item: item[0])
             if latest_parts <= release_version_tuple(self.current_version):
                 self.current.emit(self.current_version)
                 return
 
-            assets = {asset.get("name"): asset
-                      for asset in release.get("assets", []) if isinstance(asset, dict)}
-            installer_name = "RawStrengthEmployeeAuditManager-Setup.exe"
-            installer_asset = assets.get(installer_name, {})
-            installer_url = installer_asset.get("browser_download_url", "")
-            if not installer_url.startswith(GITHUB_RELEASE_DOWNLOAD_PREFIX):
-                raise ValueError("The latest release is missing a trusted installer.")
-            expected_digest = str(installer_asset.get("digest") or "")
-            if not re.fullmatch(r"sha256:[0-9a-fA-F]{64}", expected_digest):
-                raise ValueError("The latest release has no valid SHA-256 installer checksum; update cancelled.")
-            asset_size = installer_asset.get("size")
-            if not isinstance(asset_size, int) or asset_size < 1000000:
-                raise ValueError("The latest release installer metadata is invalid or incomplete.")
+            installer_url = str(installer_asset["browser_download_url"])
+            expected_digest = str(installer_asset["digest"])
+            asset_size = installer_asset["size"]
 
             version_text = ".".join(str(part) for part in latest_parts)
             update_dir = APP_DIR / "updates" / version_text
