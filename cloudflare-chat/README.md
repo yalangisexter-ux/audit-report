@@ -12,27 +12,31 @@ This service adds employee-to-employee private conversations and authorized grou
 
 Chat accounts are separate from local Windows application accounts. This prevents the backend from trusting a username or role supplied by the desktop client. A chat administrator provisions accounts through the Live Chat page.
 
-## Prerequisites
+## Cloudflare resources
 
-- Cloudflare account with Workers, Durable Objects, and D1 enabled.
-- Node.js 20+ and npm.
-- Wrangler authentication: run **npx wrangler login**.
-- A unique strong JWT signing secret and one-time bootstrap token. Never commit these secrets or put them in the desktop app.
+The configured D1 database is `rsc-employee-chat-livescreen-sharing`. Its ID is configured in `wrangler.toml`. Keep the existing `my-llm-api` Worker unchanged; the chat uses a separate Worker named `raw-strength-employee-chat`.
 
-## First deployment
+## Deploy from GitHub Actions (Free plan)
 
-Run from this directory:
+The manual workflow is `.github/workflows/deploy-cloudflare-chat.yml`. It applies D1 migrations, sets Worker secrets, and deploys the chat Worker and web assets. It does not run automatically on every push.
 
-1. Install Wrangler: **npm install**.
-2. Create the D1 database: **npx wrangler d1 create rsc-employee-chat**.
-3. Copy the returned database ID into wrangler.toml, replacing **REPLACE_WITH_D1_DATABASE_ID**.
-4. Apply the D1 migration: **npm run db:remote**.
-5. Set a random JWT secret (at least 32 characters): **npx wrangler secret put CHAT_JWT_SECRET**.
-6. Set a separate bootstrap credential: **npx wrangler secret put CHAT_BOOTSTRAP_TOKEN**.
-7. If using a custom web domain, set CHAT_ALLOWED_ORIGINS in wrangler.toml to exact comma-separated HTTPS origins, without paths. The Worker automatically allows its own origin. Native Windows API calls do not send a browser Origin header.
-8. Deploy: **npm run deploy**.
+Before running it, configure these values in GitHub repository settings:
 
-The first deploy does not create an administrator automatically. After deploying, call the bootstrap endpoint exactly once to create the first chat Admin. Replace the URL and credentials locally. Do not paste the token or password into source control or chat:
+**Settings → Secrets and variables → Actions → Variables**
+- `CLOUDFLARE_ACCOUNT_ID`: the account ID shown in your Cloudflare dashboard URL/account details.
+
+**Settings → Secrets and variables → Actions → Secrets**
+- `CLOUDFLARE_API_TOKEN`: a Cloudflare API token with Workers Scripts edit, D1 edit, and account access needed for Durable Objects and Workers assets deployment.
+- `CHAT_JWT_SECRET`: a randomly generated secret of at least 32 characters.
+- `CHAT_BOOTSTRAP_TOKEN`: a separate long, random, one-time administrator-bootstrap token.
+
+Do not paste secrets into issues, commits, source files, or this chat. Prefer a narrowly scoped Cloudflare API token; never use your Cloudflare account password. The GitHub environment named `cloudflare-chat` may require approval depending on repository environment settings.
+
+Then open **Actions → Deploy Cloudflare Live Chat → Run workflow**, select the `feature/cloudflare-live-chat` branch, and run it. Review the logs for migration and deployment errors. The workflow must complete successfully before the Worker is considered deployed.
+
+## First administrator
+
+After deployment, use the bootstrap endpoint exactly once to create the first chat Admin. Replace the URL and credentials locally. Do not paste the token or password into source control or chat:
 
 ~~~sh
 curl -X POST "https://YOUR-WORKER-URL/api/auth/bootstrap" \
@@ -41,11 +45,11 @@ curl -X POST "https://YOUR-WORKER-URL/api/auth/bootstrap" \
   --data '{"username":"admin","displayName":"Chat Administrator","password":"CHOOSE_A_STRONG_PASSWORD"}'
 ~~~
 
-After the first administrator exists, bootstrap permanently refuses further attempts. Remove or rotate CHAT_BOOTSTRAP_TOKEN after initialization using Wrangler secrets. The administrator can then create employee chat accounts from the desktop app or web interface.
+After the first administrator exists, bootstrap permanently refuses further attempts. Rotate or remove the bootstrap token after initialization. Do not re-run deployment with a new bootstrap token after bootstrap unless you intentionally plan its rotation.
 
 ## Desktop application
 
-Open the Live Chat page, enter the deployed Worker base URL (for example, https://raw-strength-employee-chat.YOUR-SUBDOMAIN.workers.dev), and sign in with a chat account. The URL is stored in the existing local settings table. Chat passwords and session tokens are not written to the business database. Sessions last up to 12 hours; sign in again when a session expires.
+Open the Live Chat page, enter the deployed Worker base URL (for example, `https://raw-strength-employee-chat.YOUR-SUBDOMAIN.workers.dev`), and sign in with a chat account. The URL is stored in the existing local settings table. Chat passwords and session tokens are not written to the business database. Sessions last up to 12 hours; sign in again when a session expires.
 
 The desktop client uses HTTPS for API calls and WSS for live delivery. If Cloudflare is unavailable, the rest of the Audit Manager remains usable.
 
@@ -69,4 +73,4 @@ Open the deployed Worker URL in a browser. The responsive page supports sign-in,
 - **npm run check** validates Worker JavaScript syntax.
 - **python -m pytest -q** runs the Windows application regression tests.
 - Test sign-in, account provisioning, private/group access isolation, persisted history, reconnects, and a packaged Windows build before production rollout.
-- Deployment requires a Cloudflare account and a real D1 database ID. The committed configuration intentionally has a placeholder until the customer-owned Cloudflare account is configured. A GitHub source commit does not deploy the Worker.
+- A successful GitHub workflow is not proof of functional end-to-end chat. Verify login, admin provisioning, private and group messages, persistence after refresh, unauthorized membership denial, and reconnect behavior before calling it production-ready.
