@@ -84,13 +84,27 @@ jobs:
             Write-Host "Verified photo wallpaper $name ($($bytes.Length) bytes)"
           }
 
-      - name: Configure the production Live Chat endpoint from repository variables
+      - name: Configure the production Live Chat endpoint
         shell: pwsh
         env:
           CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL || vars.CLOUDFLARE_WORKER_URL || vars.LIVE_CHAT_WORKER_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CHAT_WORKER_URL)) { throw "Missing Worker URL repository variable. Set CHAT_WORKER_URL, CLOUDFLARE_WORKER_URL, or LIVE_CHAT_WORKER_URL to the deployed HTTPS Cloudflare Worker base URL." }
-          $uri = [System.Uri]::new($env:CHAT_WORKER_URL.Trim().TrimEnd('/'))
+          $workerUrl = $env:CHAT_WORKER_URL
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) {
+            if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) {
+              throw "Live Chat URL is not set and Cloudflare account credentials are unavailable. Configure CHAT_WORKER_URL or provide CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the cloudflare-chat environment."
+            }
+            $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)"; "Content-Type" = "application/json" }
+            $subdomainResponse = Invoke-RestMethod -Method Get -Uri ("https://api.cloudflare.com/client/v4/accounts/{0}/workers/subdomain" -f $env:CLOUDFLARE_ACCOUNT_ID) -Headers $headers
+            if (-not $subdomainResponse.success -or [string]::IsNullOrWhiteSpace($subdomainResponse.result.subdomain)) {
+              throw "Cloudflare did not return a Workers subdomain. Set CHAT_WORKER_URL to the deployed Worker HTTPS URL."
+            }
+            $workerUrl = "https://raw-strength-employee-chat.$($subdomainResponse.result.subdomain).workers.dev"
+            Write-Host "Resolved Live Chat Worker endpoint from Cloudflare account configuration."
+          }
+          $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
           if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
           $sourcePath = "cloudflare_chat.py"
           $source = Get-Content $sourcePath -Raw
