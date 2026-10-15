@@ -4024,7 +4024,7 @@ class MainWindow(QMainWindow):
             shared_push.setEnabled(push_enabled)
         shared_pull = getattr(self, "shared_sync_pull_button", None)
         if shared_pull is not None:
-            shared_pull.setEnabled(self.user_role == "Admin" and not sync.is_busy)
+            shared_pull.setEnabled(sync.is_configured and self.user_role == "Admin" and not sync.is_busy)
 
     def sync_github_database_now(self):
         if not self.db.github_sync.is_configured:
