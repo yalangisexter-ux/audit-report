@@ -182,11 +182,25 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           RELEASE_TOKEN_2: ${{ secrets.RELEASE_TOKEN_2 }}
           DB_SYNC_JWT_SECRET: ${{ secrets.DB_SYNC_JWT_SECRET }}
+          CHAT_JWT_SECRET: ${{ secrets.CHAT_JWT_SECRET }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) { throw "Missing Actions secret CLOUDFLARE_API_TOKEN." }
           if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) { throw "Missing Actions variable CLOUDFLARE_ACCOUNT_ID." }
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_TOKEN_2)) { throw "Missing Actions secret RELEASE_TOKEN_2 (database sync only)." }
-          if ([string]::IsNullOrWhiteSpace($env:DB_SYNC_JWT_SECRET) -or $env:DB_SYNC_JWT_SECRET.Length -lt 32) { throw "Missing or weak Actions secret DB_SYNC_JWT_SECRET (minimum 32 characters)." }
+          # Prefer a dedicated database-sync secret. If it is not configured, derive a
+          # stable, domain-separated secret from the existing chat JWT secret so first
+          # deployment does not fail and the database-sync Worker never shares the raw
+          # chat secret. The same input always produces the same key across deployments.
+          if ([string]::IsNullOrWhiteSpace($env:DB_SYNC_JWT_SECRET)) {
+            if ([string]::IsNullOrWhiteSpace($env:CHAT_JWT_SECRET) -or $env:CHAT_JWT_SECRET.Length -lt 32) {
+              throw "Set DB_SYNC_JWT_SECRET or provide a strong CHAT_JWT_SECRET for domain-separated fallback."
+            }
+            $material = [System.Text.Encoding]::UTF8.GetBytes("RawStrengthEmployeeAuditManager:database-sync-worker-jwt:v1:" + $env:CHAT_JWT_SECRET)
+            $sha256 = [System.Security.Cryptography.SHA256]::Create()
+            try { $env:DB_SYNC_JWT_SECRET = [Convert]::ToHexString($sha256.ComputeHash($material)).ToLowerInvariant() }
+            finally { $sha256.Dispose() }
+          }
+          if ($env:DB_SYNC_JWT_SECRET.Length -lt 32) { throw "Resolved database-sync JWT secret is too weak." }
           Push-Location audit-db-sync
           try {
             # Deploy once to establish the Worker, then set secrets and deploy the live configuration.
