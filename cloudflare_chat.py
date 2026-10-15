@@ -182,8 +182,10 @@ class CloudflareChatTab(QWidget):
         self.token = ""
         self.chat_user = None
         stored = str(self.db.get_setting("cloudflare_chat_api_url", "") or "")
-        self.api_base = stored or DEFAULT_CHAT_API_BASE
-        if DEFAULT_CHAT_API_BASE and not stored:
+        # The packaged release endpoint is authoritative; legacy per-customer URLs
+        # are only a fallback for development builds that have no configured default.
+        self.api_base = DEFAULT_CHAT_API_BASE or stored
+        if DEFAULT_CHAT_API_BASE and stored != DEFAULT_CHAT_API_BASE:
             self.db.set_setting("cloudflare_chat_api_url", DEFAULT_CHAT_API_BASE)
 
         self.conversations = []
