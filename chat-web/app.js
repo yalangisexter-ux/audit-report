@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const state = { token: "", user: null, conversations: [], users: [], activeId: "", activeConversation: null, messages: new Map(), socket: null, epoch: 0, reconnectTimer: null, retry: 0, pendingAction: null, workers: [], peers: new Set(), peerConnections: new Map(), localShareStream: null, pendingShareOffer: null, remoteShareActive: false, iceQueues: new Map() };
+  const state = { token: "", user: null, conversations: [], users: [], activeId: "", activeConversation: null, messages: new Map(), socket: null, epoch: 0, reconnectTimer: null, retry: 0, pendingAction: null, workers: [], peers: new Set(), peerConnections: new Map(), localShareStream: null, pendingShareOffer: null, remoteShareActive: false, iceQueues: new Map(), localAVStream: null, avPeerConnections: new Map(), avIceQueues: new Map(), pendingAvOffers: new Map(), remoteAVStreams: new Map(), micMuted: false, cameraDisabled: false };
   const $ = id => document.getElementById(id);
   const base = window.location.origin.replace(/\/+$/u, "");
   function setError(id, message) { $(id).textContent = message || ""; }
@@ -79,7 +79,7 @@
     } else if (state.conversations.length) {
       await openConversation(state.conversations[0].id);
     } else {
-      stopScreenShare(); for (const id of state.peerConnections.keys()) closePeer(id); state.peers.clear(); state.pendingShareOffer = null; renderShareControls(); stopSocket(); state.activeId = ""; state.activeConversation = null; state.messages.clear();
+      stopScreenShare(); hangupCall(); for (const id of state.peerConnections.keys()) closePeer(id); state.peers.clear(); state.pendingShareOffer = null; renderShareControls(); stopSocket(); state.activeId = ""; state.activeConversation = null; state.messages.clear();
       $("conversationTitle").textContent = "No conversations yet";
       $("messages").innerHTML = '<div class="empty"><div class="big">✦</div><strong>Start a private chat or create a group</strong></div>';
       $("messageInput").disabled = true; $("sendBtn").disabled = true;
@@ -148,6 +148,183 @@
       for (const track of state.localShareStream.getTracks()) pc.addTrack(track,state.localShareStream);
     }
     return pc;
+  }
+  function setCallStatus(message) { $("callStatus").textContent = message; }
+  function renderCallControls() {
+    const active = !!state.localAVStream || state.remoteAVStreams.size > 0;
+    $("startCallBtn").classList.toggle("hidden", !!state.localAVStream || state.remoteAVStreams.size > 0);
+    $("muteMicBtn").classList.toggle("hidden", !state.localAVStream);
+    $("toggleCameraBtn").classList.toggle("hidden", !state.localAVStream);
+    $("hangupCallBtn").classList.toggle("hidden", !active);
+    $("acceptCallBtn").classList.toggle("hidden", state.pendingAvOffers.size === 0);
+    $("declineCallBtn").classList.toggle("hidden", state.pendingAvOffers.size === 0);
+    $("callVideos").classList.toggle("hidden", !active);
+  }
+  function renderRemoteAVTile(userId, stream, displayName) {
+    const id = Number(userId);
+    state.remoteAVStreams.set(id, {stream, displayName:displayName || "Employee"});
+    let tile = $("callVideos").querySelector('[data-call-peer="' + id + '"]');
+    if (!tile) {
+      tile = document.createElement("div"); tile.className = "call-tile"; tile.dataset.callPeer = String(id);
+      const video = document.createElement("video"); video.autoplay = true; video.playsInline = true; video.dataset.callVideo = String(id);
+      const audio = document.createElement("audio"); audio.autoplay = true; audio.dataset.callAudio = String(id);
+      const caption = document.createElement("span"); caption.dataset.callCaption = String(id);
+      tile.append(video,audio,caption); $("callVideos").append(tile);
+    }
+    const video = tile.querySelector("video");
+    const audio = tile.querySelector("audio");
+    video.srcObject = stream;
+    audio.srcObject = stream;
+    video.classList.toggle("hidden", !stream.getVideoTracks().length);
+    audio.classList.toggle("hidden", !stream.getAudioTracks().length);
+    tile.querySelector("span").textContent = (displayName || "Employee") + (stream.getVideoTracks().length ? " · camera" : " · voice only");
+    video.play().catch(()=>{}); audio.play().catch(()=>{});
+    renderCallControls();
+  }
+  function removeRemoteAVTile(userId) {
+    const id = Number(userId);
+    const item = state.remoteAVStreams.get(id);
+    if (item) for (const track of item.stream.getTracks()) track.stop();
+    state.remoteAVStreams.delete(id);
+    const tile = $("callVideos").querySelector('[data-call-peer="' + id + '"]');
+    if (tile) tile.remove();
+    renderCallControls();
+  }
+  function makeAVPeerConnection(userId) {
+    const id = Number(userId);
+    if (state.avPeerConnections.has(id)) return state.avPeerConnections.get(id);
+    const pc = new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"}]});
+    state.avPeerConnections.set(id,pc);
+    pc.onicecandidate = event => { if (event.candidate) sendSignal(id,{mode:"av",kind:"ice",candidate:event.candidate.toJSON()}); };
+    pc.ontrack = event => {
+      let stream = event.streams && event.streams[0];
+      if (!stream) {
+        stream = state.remoteAVStreams.get(id)?.stream || new MediaStream();
+        if (!stream.getTracks().some(track => track.id === event.track.id)) stream.addTrack(event.track);
+      }
+      renderRemoteAVTile(id,stream,state.pendingAvOffers.get(id)?.displayName || state.remoteAVStreams.get(id)?.displayName || "Employee");
+    };
+    pc.onconnectionstatechange = () => {
+      if (["failed","closed"].includes(pc.connectionState)) closeAVPeer(id);
+      else if (pc.connectionState === "connected") setCallStatus("Voice/video call connected.");
+    };
+    if (state.localAVStream) for (const track of state.localAVStream.getTracks()) pc.addTrack(track,state.localAVStream);
+    return pc;
+  }
+  async function startCameraVoiceCall() {
+    if (!state.activeConversation || !state.socket || state.socket.readyState !== WebSocket.OPEN) {
+      setCallStatus("Connect to a conversation before starting a call."); return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCallStatus("Camera and microphone access requires a supported browser over HTTPS."); return;
+    }
+    if (!state.peers.size) { setCallStatus("No other conversation members are online to receive the call."); return; }
+    if (state.localShareStream || state.remoteShareActive) { setCallStatus("End screen sharing before starting a camera/voice call."); return; }
+    try {
+      state.localAVStream = await navigator.mediaDevices.getUserMedia({audio:true,video:true});
+      state.micMuted = false; state.cameraDisabled = false;
+      $("muteMicBtn").textContent = "🎙 Mute mic";
+      $("toggleCameraBtn").textContent = "Camera off";
+      for (const peerId of state.peers) await sendAVOffer(peerId);
+      setCallStatus("Calling online conversation members. Your browser may ask for camera and microphone permission.");
+      renderCallControls();
+    } catch (error) {
+      if (error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError") setCallStatus("Camera or microphone permission was denied. Allow access in browser settings and try again.");
+      else setCallStatus("Could not access camera/microphone: " + (error?.message || "device unavailable"));
+      state.localAVStream = null; renderCallControls();
+    }
+  }
+  async function sendAVOffer(peerId) {
+    if (!state.localAVStream || !state.peers.has(Number(peerId))) return;
+    const pc = makeAVPeerConnection(peerId);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal(peerId,{mode:"av",kind:"offer",description:pc.localDescription});
+    } catch (error) { setCallStatus("Could not start call: " + (error?.message || "connection error")); }
+  }
+  async function acceptAVCall(userId) {
+    const pending = state.pendingAvOffers.get(Number(userId));
+    if (!pending) return;
+    if (!navigator.mediaDevices?.getUserMedia) { setCallStatus("Camera and microphone access requires a supported browser over HTTPS."); return; }
+    try {
+      if (!state.localAVStream) {
+        state.localAVStream = await navigator.mediaDevices.getUserMedia({audio:true,video:true});
+        state.micMuted = false; state.cameraDisabled = false;
+      }
+      const pc = makeAVPeerConnection(userId);
+      await pc.setRemoteDescription(new RTCSessionDescription(pending.description));
+      const queued = state.avIceQueues.get(Number(userId)) || [];
+      for (const candidate of queued) await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(()=>{});
+      state.avIceQueues.delete(Number(userId));
+      const answer = await pc.createAnswer(); await pc.setLocalDescription(answer);
+      sendSignal(userId,{mode:"av",kind:"answer",description:pc.localDescription});
+      state.pendingAvOffers.delete(Number(userId));
+      setCallStatus("Connecting to " + (pending.displayName || "employee") + "…");
+      renderCallControls();
+    } catch (error) {
+      setCallStatus("Could not accept call: " + (error?.message || "permission/device error"));
+    }
+  }
+  function declineAVCall(userId) {
+    const id = Number(userId);
+    if (state.pendingAvOffers.has(id)) sendSignal(id,{mode:"av",kind:"reject"});
+    state.pendingAvOffers.delete(id);
+    closeAVPeer(id); renderCallControls();
+    setCallStatus("Incoming call declined.");
+  }
+  async function handleAVSignal(fromId, packet) {
+    const signal = packet.signal || {};
+    const id = Number(fromId);
+    if (signal.kind === "offer") {
+      if (state.localAVStream || state.pendingAvOffers.size || state.localShareStream || state.remoteShareActive) {
+        sendSignal(id,{mode:"av",kind:"busy"}); return;
+      }
+      state.pendingAvOffers.set(id,{fromUserId:id,displayName:packet.fromDisplayName || "Employee",description:signal.description});
+      setCallStatus((packet.fromDisplayName || "A participant") + " is calling. Accept to grant camera/microphone access.");
+      renderCallControls(); return;
+    }
+    if (signal.kind === "reject") { closeAVPeer(id); setCallStatus("A participant declined the call."); return; }
+    if (signal.kind === "busy") { closeAVPeer(id); setCallStatus("A participant is busy."); return; }
+    if (signal.kind === "end") { closeAVPeer(id); setCallStatus("The other participant ended the call."); return; }
+    const pc = state.avPeerConnections.get(id);
+    if (signal.kind === "answer" && pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal.description));
+      const queued = state.avIceQueues.get(id) || [];
+      for (const candidate of queued) await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(()=>{});
+      state.avIceQueues.delete(id);
+    } else if (signal.kind === "ice") {
+      if (pc?.remoteDescription) await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(()=>{});
+      else { const q = state.avIceQueues.get(id) || []; if (q.length < 64) q.push(signal.candidate); state.avIceQueues.set(id,q); }
+    }
+  }
+  function closeAVPeer(userId) {
+    const id = Number(userId), pc = state.avPeerConnections.get(id);
+    if (pc) { try { pc.close(); } catch {} state.avPeerConnections.delete(id); }
+    state.avIceQueues.delete(id); state.pendingAvOffers.delete(id); removeRemoteAVTile(id);
+  }
+  function toggleMic() {
+    if (!state.localAVStream) return;
+    state.micMuted = !state.micMuted;
+    for (const track of state.localAVStream.getAudioTracks()) track.enabled = !state.micMuted;
+    $("muteMicBtn").textContent = state.micMuted ? "🎙 Unmute mic" : "🎙 Mute mic";
+    setCallStatus(state.micMuted ? "Microphone muted." : "Microphone enabled.");
+  }
+  function toggleCamera() {
+    if (!state.localAVStream) return;
+    state.cameraDisabled = !state.cameraDisabled;
+    for (const track of state.localAVStream.getVideoTracks()) track.enabled = !state.cameraDisabled;
+    $("toggleCameraBtn").textContent = state.cameraDisabled ? "Camera on" : "Camera off";
+    setCallStatus(state.cameraDisabled ? "Camera disabled." : "Camera enabled.");
+  }
+  function hangupCall() {
+    for (const peerId of state.avPeerConnections.keys()) sendSignal(peerId,{mode:"av",kind:"end"});
+    for (const id of Array.from(state.avPeerConnections.keys())) closeAVPeer(id);
+    if (state.localAVStream) for (const track of state.localAVStream.getTracks()) track.stop();
+    state.localAVStream = null; state.pendingAvOffers.clear();
+    $("callVideos").replaceChildren();
+    setCallStatus("Call ended. Camera and microphone are off.");
+    renderCallControls();
   }
   async function startScreenShare() {
     if (!state.activeConversation || !state.socket || state.socket.readyState !== WebSocket.OPEN) {
@@ -256,7 +433,7 @@
     if (!id || id === Number(state.user?.id)) return;
     if (packet.type === "peer-joined") {
       state.peers.add(id);
-      if (state.localShareStream) sendShareOffer(id);
+      if (state.localShareStream) sendShareOffer(id);\n      if (state.localAVStream) sendAVOffer(id);
     } else if (packet.type === "peer-left") {
       state.peers.delete(id); closePeer(id);
     } else if (packet.type === "peers") {
@@ -315,7 +492,7 @@
   async function openConversation(id) {
     const conversation = state.conversations.find(c => c.id === id);
     if (!conversation) return;
-    stopScreenShare(); for (const peerId of state.peerConnections.keys()) closePeer(peerId); state.peers.clear(); state.pendingShareOffer = null; state.remoteShareActive = false; renderShareControls();
+    stopScreenShare(); hangupCall(); for (const peerId of state.peerConnections.keys()) closePeer(peerId); state.peers.clear(); state.pendingShareOffer = null; state.remoteShareActive = false; renderShareControls();
     stopSocket(); const epoch = state.epoch;
     state.activeId = id; state.activeConversation = conversation; state.messages.clear(); state.retry = 0;
     $("conversationTitle").textContent = conversation.title || conversation.name || "Conversation";
@@ -425,12 +602,12 @@
       $("messageInput").value = "";
     } catch { setStatus("Message not sent · reconnecting", "offline"); }
   });
-  $("startShareBtn").addEventListener("click", startScreenShare);
+  $("startCallBtn").addEventListener("click", startCameraVoiceCall);\n  $("muteMicBtn").addEventListener("click", toggleMic);\n  $("toggleCameraBtn").addEventListener("click", toggleCamera);\n  $("hangupCallBtn").addEventListener("click", hangupCall);\n  $("acceptCallBtn").addEventListener("click", () => { const first = state.pendingAvOffers.keys().next().value; if (first !== undefined) acceptAVCall(first); });\n  $("declineCallBtn").addEventListener("click", () => { const first = state.pendingAvOffers.keys().next().value; if (first !== undefined) declineAVCall(first); });\n  $("startShareBtn").addEventListener("click", startScreenShare);
   $("stopShareBtn").addEventListener("click", stopScreenShare);
   $("acceptShareBtn").addEventListener("click", () => acceptIncomingShare().catch(error => setShareStatus(error.message)));
   $("declineShareBtn").addEventListener("click", declineIncomingShare);
   $("mobileMenuBtn").addEventListener("click", () => $("sidebar").classList.toggle("open"));
   window.addEventListener("online", () => { if (state.activeId && state.user && (!state.socket || state.socket.readyState > WebSocket.OPEN)) openConversation(state.activeId); });
   window.setInterval(() => { if (state.token) loadConversations().catch(error => setStatus(error.message, "offline")); }, 15000);
-  window.addEventListener("beforeunload", () => { stopScreenShare(); for (const id of state.peerConnections.keys()) closePeer(id); stopSocket(); });
+  window.addEventListener("beforeunload", () => { stopScreenShare(); hangupCall(); for (const id of state.peerConnections.keys()) closePeer(id); stopSocket(); });
 })();
