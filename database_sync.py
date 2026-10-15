@@ -398,6 +398,10 @@ class GitHubDatabaseSync:
         except HTTPError as exc:
             if allow_404 and exc.code == 404:
                 return None
+            if exc.code == 401 and endpoint != "/register" and self._device_credentials.get("device_secret"):
+                # Device JWTs expire; re-registration proves possession of the stored device secret.
+                self._register_device()
+                return self._worker_request(method, endpoint, payload=payload, binary=binary, allow_404=allow_404)
             try:
                 detail = json.loads(exc.read(2048).decode("utf-8")).get("error", "")
             except Exception:
