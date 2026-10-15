@@ -84,13 +84,43 @@ jobs:
             Write-Host "Verified photo wallpaper $name ($($bytes.Length) bytes)"
           }
 
+      - name: Deploy production Live Chat Worker
+        id: deploy_chat
+        shell: pwsh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CHAT_JWT_SECRET: ${{ secrets.CHAT_JWT_SECRET }}
+          CHAT_BOOTSTRAP_TOKEN: ${{ secrets.CHAT_BOOTSTRAP_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) { throw "Missing Actions secret CLOUDFLARE_API_TOKEN." }
+          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) { throw "Missing Actions variable CLOUDFLARE_ACCOUNT_ID." }
+          if ([string]::IsNullOrWhiteSpace($env:CHAT_JWT_SECRET) -or $env:CHAT_JWT_SECRET.Length -lt 32) { throw "CHAT_JWT_SECRET is missing or shorter than 32 characters." }
+          if ([string]::IsNullOrWhiteSpace($env:CHAT_BOOTSTRAP_TOKEN)) { throw "Missing Actions secret CHAT_BOOTSTRAP_TOKEN." }
+          Push-Location cloudflare-chat
+          try {
+            npm install --no-audit --no-fund
+            npm run check
+            npx wrangler d1 migrations apply rsc-employee-chat-livescreen-sharing --remote --config wrangler.toml
+            $env:CHAT_JWT_SECRET | npx wrangler secret put CHAT_JWT_SECRET --config wrangler.toml
+            $env:CHAT_BOOTSTRAP_TOKEN | npx wrangler secret put CHAT_BOOTSTRAP_TOKEN --config wrangler.toml
+            $deployLog = npm run deploy 2>&1
+            $deployLog | ForEach-Object { Write-Host $_ }
+            $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-employee-chat[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
+            if ($null -eq $workerUrl) { throw "Worker deploy succeeded but Wrangler output did not expose its URL. Set CHAT_WORKER_URL to the deployed HTTPS URL." }
+            "worker_url=$($workerUrl.Value)" >> $env:GITHUB_OUTPUT
+          }
+          finally { Pop-Location }
+
       - name: Configure the production Live Chat endpoint when available
         shell: pwsh
         env:
           CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL || vars.CLOUDFLARE_WORKER_URL || vars.LIVE_CHAT_WORKER_URL || secrets.CHAT_WORKER_URL || secrets.CLOUDFLARE_WORKER_URL || secrets.LIVE_CHAT_WORKER_URL }}
+          DEPLOYED_CHAT_WORKER_URL: ${{ steps.deploy_chat.outputs.worker_url }}
           CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN || vars.WORKERS_SUBDOMAIN }}
         run: |
           $workerUrl = $env:CHAT_WORKER_URL
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DEPLOYED_CHAT_WORKER_URL }
           if ([string]::IsNullOrWhiteSpace($workerUrl) -and -not [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_WORKERS_SUBDOMAIN)) {
             $subdomain = $env:CLOUDFLARE_WORKERS_SUBDOMAIN.Trim()
             if ($subdomain -match '^https?://' -or $subdomain -match '[/\\?#@]') { throw "CLOUDFLARE_WORKERS_SUBDOMAIN must be only the Workers subdomain, without protocol or path." }
@@ -119,7 +149,7 @@ jobs:
       - name: Build standalone Windows installer
         shell: pwsh
         env:
-          APP_VERSION: "1.2.75"
+          APP_VERSION: "1.2.76"
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
@@ -140,7 +170,7 @@ jobs:
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.2.75
+          name: RawStrengthEmployeeAuditManager-Setup-v1.2.76
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
@@ -149,8 +179,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.75
-          name: Raw Strength Employee Audit Manager v1.2.75
+          tag_name: v1.2.76
+          name: Raw Strength Employee Audit Manager v1.2.76
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
