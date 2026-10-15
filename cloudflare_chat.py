@@ -26,6 +26,10 @@ from PySide6.QtWidgets import (
 _ACTIVE_REQUESTS = set()
 _ACTIVE_SOCKETS = set()
 
+# Production Worker base URL. Leave empty until the real deployed endpoint is known.
+# Do not invent a workers.dev hostname.
+DEFAULT_CHAT_API_BASE = ""
+
 try:
     import websocket
 except ImportError:  # The packaged build installs websocket-client from requirements.txt.
@@ -177,7 +181,11 @@ class CloudflareChatTab(QWidget):
         self.current_user = dict(current_user or {})
         self.token = ""
         self.chat_user = None
-        self.api_base = str(self.db.get_setting("cloudflare_chat_api_url", "") or "")
+        stored = str(self.db.get_setting("cloudflare_chat_api_url", "") or "")
+        self.api_base = stored or DEFAULT_CHAT_API_BASE
+        if DEFAULT_CHAT_API_BASE and not stored:
+            self.db.set_setting("cloudflare_chat_api_url", DEFAULT_CHAT_API_BASE)
+
         self.conversations = []
         self.users = []
         self.active_conversation = None
@@ -256,6 +264,8 @@ class CloudflareChatTab(QWidget):
         self.endpoint_edit = QLineEdit(self.api_base)
         self.endpoint_edit.setPlaceholderText("https://your-worker.your-subdomain.workers.dev")
         self.endpoint_edit.setClearButtonEnabled(True)
+        if self.api_base:
+            self.endpoint_edit.hide()
         self.username_edit = QLineEdit()
         self.username_edit.setPlaceholderText("Chat username")
         self.username_edit.setText(str(self.current_user.get("username", "") or ""))
@@ -263,7 +273,8 @@ class CloudflareChatTab(QWidget):
         self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_edit.setPlaceholderText("Chat password")
         self.password_edit.returnPressed.connect(self._login)
-        form.addRow("Cloudflare Worker URL", self.endpoint_edit)
+        if not self.api_base:
+            form.addRow("Cloudflare Worker URL", self.endpoint_edit)
         form.addRow("Chat username", self.username_edit)
         form.addRow("Chat password", self.password_edit)
         login_layout.addLayout(form)
@@ -322,8 +333,11 @@ class CloudflareChatTab(QWidget):
         self.conversation_heading.setStyleSheet("font-size:16px;font-weight:700;color:#1e1b4b;")
         heading_actions = QHBoxLayout()
         heading_actions.addWidget(self.conversation_heading, 1)
-        self.screen_share_button = QPushButton("▣ Screen share (browser)")
-        self.screen_share_button.setToolTip("Open the secure browser chat to start or receive a live screen share.")
+        self.screen_share_button = QPushButton("▣ Screen share & control")
+        self.screen_share_button.setToolTip(
+            "Open the secure browser chat. Sign in, open the conversation, then use Share screen. "
+            "Accept or decline incoming shares there. Camera, microphone, and stop controls are in the browser."
+        )
         self.screen_share_button.setMinimumHeight(34)
         self.screen_share_button.setStyleSheet("QPushButton{background:#0f766e;color:white;border:0;border-radius:8px;padding:6px 10px;font-weight:700;} QPushButton:hover{background:#115e59;}")
         self.screen_share_button.clicked.connect(self._open_screen_share_browser)

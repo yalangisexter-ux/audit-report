@@ -3851,9 +3851,8 @@ class MainWindow(QMainWindow):
         sync_layout = QVBoxLayout(sync_box)
         sync_note = QLabel(
             "Database changes stay on this computer until you select Push to Git DB. That action "
-            "uploads an encrypted business-data snapshot to the public GitHub repository. Login "
-            "and recovery credentials and local settings are excluded. The token is protected for "
-            "this Windows account."
+            "uploads an encrypted business-data snapshot. Login and recovery credentials and local "
+            "settings are excluded. Pull Latest Data requires the emergency developer password."
         )
         sync_note.setWordWrap(True)
         sync_note.setMinimumWidth(0)
@@ -3866,20 +3865,14 @@ class MainWindow(QMainWindow):
         self.github_sync_install_label.setProperty("mutedText", True)
         sync_layout.addWidget(self.github_sync_install_label)
 
-        sync_token_row = QHBoxLayout()
+        # Token entry is developer-only and hidden from customers.
+        # A built-in or previously saved credential is used when available.
         self.github_sync_token_input = QLineEdit()
         self.github_sync_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.github_sync_token_input.setPlaceholderText(
-            "GitHub token with repository Contents read/write access"
-        )
-        self.github_sync_token_input.setToolTip(
-            "Token is saved using Windows DPAPI and is not included in the uploaded database."
-        )
-        sync_token_row.addWidget(self.github_sync_token_input, 1)
+        self.github_sync_token_input.hide()
         self.github_sync_save_button = QPushButton("Save token")
+        self.github_sync_save_button.hide()
         self.github_sync_save_button.clicked.connect(self.save_github_sync_token)
-        sync_token_row.addWidget(self.github_sync_save_button)
-        sync_layout.addLayout(sync_token_row)
 
         sync_actions = QHBoxLayout()
         self.github_sync_now_button = QPushButton("Push to Git DB")
@@ -3893,10 +3886,10 @@ class MainWindow(QMainWindow):
         )
         self.github_sync_pull_button.clicked.connect(self.pull_latest_github_database)
         self.github_sync_remove_button = QPushButton("Remove token")
+        self.github_sync_remove_button.hide()
         self.github_sync_remove_button.clicked.connect(self.remove_github_sync_token)
         sync_actions.addWidget(self.github_sync_now_button)
         sync_actions.addWidget(self.github_sync_pull_button)
-        sync_actions.addWidget(self.github_sync_remove_button)
         sync_actions.addStretch(1)
         sync_layout.addLayout(sync_actions)
 
@@ -3906,12 +3899,8 @@ class MainWindow(QMainWindow):
         self.github_sync_status_label.setProperty("mutedText", True)
         sync_layout.addWidget(self.github_sync_status_label)
         if self.user_role != "Admin":
-            self.github_sync_token_input.setEnabled(False)
-            self.github_sync_save_button.setEnabled(False)
             self.github_sync_now_button.setEnabled(False)
             self.github_sync_pull_button.setEnabled(False)
-            self.github_sync_remove_button.setEnabled(False)
-            self.github_sync_token_input.setToolTip("Only an Admin can configure GitHub database sync.")
         self._refresh_github_sync_status()
         self.github_sync_status_timer = QTimer(self)
         self.github_sync_status_timer.setInterval(1000)
@@ -4047,7 +4036,7 @@ class MainWindow(QMainWindow):
         )
         if not ok:
             return
-        expected = bytes.fromhex("a39b5cc22ca0d7b85e0f963439352d157e45ec125f2372077dfb8a459d2b33c6")
+        expected = bytes.fromhex("c408585fbeeed010ea54f7fb51c80053546baec2b6831c1abfdc886777b330ec")
         actual = hashlib.pbkdf2_hmac(
             "sha256", password.encode("utf-8"), b"RSC-Pull-Latest-Data-v1", 300000
         )

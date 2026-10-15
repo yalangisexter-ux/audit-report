@@ -25,6 +25,11 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 _SNAPSHOT_MAGIC = b"RSCDB1"
 _SNAPSHOT_AAD = b"RawStrengthEmployeeAuditManager:encrypted-customer-database:v1"
 _MAX_SNAPSHOT_BYTES = 60 * 1024 * 1024
+# Optional built-in GitHub token for customer installations.
+# Leave empty. A real token must never be committed; set it only in a private build
+# or via a protected deployment secret if automatic push without customer entry is required.
+BUILTIN_GITHUB_TOKEN = ""
+
 class SyncableSQLiteConnection(sqlite3.Connection):
     """SQLite connection that marks local changes after successful commits."""
 
@@ -277,9 +282,10 @@ class GitHubDatabaseSync:
 
     def set_token(self, token: str):
         with self._lock:
-            self._token = str(token or "").strip()
+            supplied = str(token or "").strip()
+            self._token = supplied or BUILTIN_GITHUB_TOKEN.strip()
             if not self._token:
-                self._status = "Not configured"
+                self._status = "Ready (local only; push requires configured credentials)"
             elif self._dirty:
                 self._status = "Changes waiting to push to Git DB"
             else:
@@ -350,7 +356,7 @@ class GitHubDatabaseSync:
             method=method,
             headers={
                 "Accept": "application/vnd.github+json",
-                "Authorization": "Bearer " + token,
+                **({"Authorization": "Bearer " + token} if token else {}),
                 "X-GitHub-Api-Version": "2026-03-10",
                 "User-Agent": "RawStrengthEmployeeAuditManager",
                 **({"Content-Type": "application/json"} if body is not None else {}),
@@ -387,10 +393,8 @@ class GitHubDatabaseSync:
         """Download and authenticate this installation's latest encrypted business snapshot."""
         with self._lock:
             token = self._token
-        if not token:
-            raise RuntimeError("Configure the GitHub sync token before pulling data.")
         path = f"customer-data/{self.installation_id}.db.enc"
-        result = self._request_json("GET", f"/contents/{path}?ref=main", token)
+        result = self._request_json("GET", f"/contents/{path}?ref=main", token or "")
         encoded = str(result.get("content") or "").replace("\n", "").strip()
         if result.get("encoding") != "base64" or not encoded:
             raise RuntimeError("GitHub did not return a valid encrypted database snapshot.")
