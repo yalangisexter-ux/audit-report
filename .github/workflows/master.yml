@@ -84,33 +84,30 @@ jobs:
             Write-Host "Verified photo wallpaper $name ($($bytes.Length) bytes)"
           }
 
-      - name: Configure the production Live Chat endpoint
+      - name: Configure the production Live Chat endpoint when available
         shell: pwsh
         env:
           CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL || vars.CLOUDFLARE_WORKER_URL || vars.LIVE_CHAT_WORKER_URL || secrets.CHAT_WORKER_URL || secrets.CLOUDFLARE_WORKER_URL || secrets.LIVE_CHAT_WORKER_URL }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_WORKERS_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_SUBDOMAIN || vars.WORKERS_SUBDOMAIN }}
         run: |
           $workerUrl = $env:CHAT_WORKER_URL
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) {
-            if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID) -or [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) {
-              throw "Live Chat URL is not set and Cloudflare account credentials are unavailable. Configure CHAT_WORKER_URL or provide CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in the cloudflare-chat environment."
-            }
-            $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)"; "Content-Type" = "application/json" }
-            $subdomainResponse = Invoke-RestMethod -Method Get -Uri ("https://api.cloudflare.com/client/v4/accounts/{0}/workers/subdomain" -f $env:CLOUDFLARE_ACCOUNT_ID) -Headers $headers
-            if (-not $subdomainResponse.success -or [string]::IsNullOrWhiteSpace($subdomainResponse.result.subdomain)) {
-              throw "Cloudflare did not return a Workers subdomain. Set CHAT_WORKER_URL to the deployed Worker HTTPS URL."
-            }
-            $workerUrl = "https://raw-strength-employee-chat.$($subdomainResponse.result.subdomain).workers.dev"
-            Write-Host "Resolved Live Chat Worker endpoint from Cloudflare account configuration."
+          if ([string]::IsNullOrWhiteSpace($workerUrl) -and -not [string]::IsNullOrWhiteSpace($env:CLOUDFLARE_WORKERS_SUBDOMAIN)) {
+            $subdomain = $env:CLOUDFLARE_WORKERS_SUBDOMAIN.Trim()
+            if ($subdomain -match '^https?://' -or $subdomain -match '[/\\?#@]') { throw "CLOUDFLARE_WORKERS_SUBDOMAIN must be only the Workers subdomain, without protocol or path." }
+            $workerUrl = "https://raw-strength-employee-chat.$subdomain.workers.dev"
           }
-          $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
-          if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
-          $sourcePath = "cloudflare_chat.py"
-          $source = Get-Content $sourcePath -Raw
-          $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ""', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
-          if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { throw "Could not configure the production Live Chat endpoint." }
-          Set-Content -Path $sourcePath -Value $source -Encoding utf8
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) {
+            Write-Warning "No CHAT_WORKER_URL is configured. Packaging will continue; Live Chat will use its existing local endpoint setting until a Worker URL is configured."
+          } else {
+            $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
+            if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
+            $sourcePath = "cloudflare_chat.py"
+            $source = Get-Content $sourcePath -Raw
+            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ""', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
+            if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { throw "Could not configure the production Live Chat endpoint." }
+            Set-Content -Path $sourcePath -Value $source -Encoding utf8
+            Write-Host "Configured production Live Chat endpoint."
+          }
 
       - name: Compile Python application with bundled assets
         shell: pwsh
