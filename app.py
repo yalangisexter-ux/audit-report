@@ -3888,15 +3888,6 @@ class MainWindow(QMainWindow):
         self.github_sync_install_label.setProperty("mutedText", True)
         sync_layout.addWidget(self.github_sync_install_label)
 
-        # Token entry is developer-only and hidden from customers.
-        # A built-in or previously saved credential is used when available.
-        self.github_sync_token_input = QLineEdit()
-        self.github_sync_token_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.github_sync_token_input.hide()
-        self.github_sync_save_button = QPushButton("Save token")
-        self.github_sync_save_button.hide()
-        self.github_sync_save_button.clicked.connect(self.save_github_sync_token)
-
         sync_actions = QHBoxLayout()
         self.github_sync_now_button = QPushButton("Push to Git DB")
         self.github_sync_now_button.setToolTip(
@@ -3908,9 +3899,6 @@ class MainWindow(QMainWindow):
             "Developer-only: validate and pull the latest committed snapshot for this installation. A backup is created first."
         )
         self.github_sync_pull_button.clicked.connect(self.pull_latest_github_database)
-        self.github_sync_remove_button = QPushButton("Remove token")
-        self.github_sync_remove_button.hide()
-        self.github_sync_remove_button.clicked.connect(self.remove_github_sync_token)
         sync_actions.addWidget(self.github_sync_now_button)
         sync_actions.addWidget(self.github_sync_pull_button)
         sync_actions.addStretch(1)
@@ -4042,7 +4030,7 @@ class MainWindow(QMainWindow):
         if not self.db.github_sync.is_configured:
             return error(self, "Secure database sync is not configured in this build.")
         if not self.db.github_sync.request_sync():
-            return error(self, "Could not queue the Git DB push. Check the saved token and try again.")
+            return error(self, "Could not queue the encrypted database push. Check your network connection and try again.")
         self._refresh_github_sync_status()
 
     def pull_latest_github_database(self):
@@ -4063,7 +4051,7 @@ class MainWindow(QMainWindow):
         if not sync.is_configured:
             return error(self, "Secure database sync is not configured in this build.")
         if sync.is_busy:
-            return error(self, "A GitHub database sync is already running. Wait for it to finish.")
+            return error(self, "An encrypted database sync is already running. Wait for it to finish.")
         if not ask(
             self, "Pull latest database data",
             "This replaces local business records with the latest committed snapshot for this installation. "
@@ -4138,19 +4126,6 @@ class MainWindow(QMainWindow):
         finally:
             if snapshot_path is not None:
                 snapshot_path.unlink(missing_ok=True)
-        self._refresh_github_sync_status()
-
-    def remove_github_sync_token(self):
-        if not self.db.github_sync.has_token and not self.db.get_setting("github_sync_token_dpapi", ""):
-            return info(self, "No GitHub sync token is saved on this Windows account.")
-        if not ask(
-            self,
-            "Remove GitHub sync token",
-            "The saved GitHub credential will be removed. Local database data will remain unchanged.",
-        ):
-            return
-        self.db.clear_github_sync_token()
-        self.github_sync_token_input.clear()
         self._refresh_github_sync_status()
 
     def closeEvent(self, event):
