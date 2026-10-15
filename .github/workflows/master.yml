@@ -166,7 +166,7 @@ jobs:
             }
             $sourcePath = "cloudflare_chat.py"
             $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ".*?"', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
-            if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { 
+            if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "https://' + [regex]::Escape($uri.Host))) { 
               Write-Host "::warning::Could not configure the production Live Chat endpoint."
               exit 0
             }
@@ -211,6 +211,17 @@ jobs:
             $deployLog = npm run deploy 2>&1
             $deployLog | ForEach-Object { Write-Host $_ }
             $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-audit-db-sync[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
+            if ($null -eq $workerUrl) {
+              try {
+                $subRes = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/workers/subdomain" -Headers @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
+                if ($subRes.result -and $subRes.result.subdomain) {
+                  $workerUrl = [PSCustomObject]@{ Value = "https://raw-strength-audit-db-sync.$($subRes.result.subdomain).workers.dev" }
+                  Write-Host "Resolved Worker URL from Cloudflare subdomain API: $($workerUrl.Value)"
+                }
+              } catch {
+                Write-Host "Subdomain lookup note: $_"
+              }
+            }
             if ($null -eq $workerUrl) { throw "Database-sync Worker deploy did not expose its URL. Configure DB_SYNC_WORKER_URL with the exact deployed HTTPS URL." }
             "worker_url=$($workerUrl.Value)" >> $env:GITHUB_OUTPUT
           }
@@ -229,8 +240,8 @@ jobs:
           if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "DB_SYNC_WORKER_URL must be a plain HTTPS Worker base URL." }
           $sourcePath = "database_sync.py"
           $source = Get-Content $sourcePath -Raw
-          $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL = ""', ('DEFAULT_DB_SYNC_WORKER_URL = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
-          if ($source -notmatch ('DEFAULT_DB_SYNC_WORKER_URL = "' + [regex]::Escape($uri.Host))) { throw "Could not inject database-sync Worker URL." }
+          $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL = ".*?"', ('DEFAULT_DB_SYNC_WORKER_URL = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
+          if ($source -notmatch ('DEFAULT_DB_SYNC_WORKER_URL = "https://' + [regex]::Escape($uri.Host))) { throw "Could not inject database-sync Worker URL." }
           Set-Content -Path $sourcePath -Value $source -Encoding utf8
           Write-Host "Configured secure database-sync Worker endpoint."
 
