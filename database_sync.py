@@ -254,8 +254,6 @@ class GitHubDatabaseSync:
     @property
     def status(self):
         with self._lock:
-            if self._last_sync and self._status == "Synced":
-                return f"Last synced {self._last_sync}"
             return self._status
 
     @property
