@@ -1,7 +1,6 @@
 """Cloudflare-powered live chat tab for the Raw Strength desktop application.
 
-Chat credentials and bearer tokens remain in memory only. The existing local
-employee-audit login and SQLite business records are not sent to Cloudflare.
+Chat credentials are never persisted. Session tokens are stored only as Windows DPAPI-protected local settings so an existing session can reconnect without repeated sign-in. The existing local employee-audit login and SQLite business records are not sent to Cloudflare.
 """
 from __future__ import annotations
 
@@ -13,6 +12,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
+
+from database_sync import protect_sync_token, unprotect_sync_token
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -196,6 +197,28 @@ class CloudflareChatTab(QWidget):
         if websocket is None:
             self.status_label.setText("Install websocket-client to enable live delivery.")
             self.status_label.setStyleSheet("color:#b91c1c;")
+        else:
+            self._restore_session()
+
+    def _restore_session(self):
+        """Reconnect using the current Windows user's protected saved chat session."""
+        if not self.api_base:
+            return
+        try:
+            protected = str(self.db.get_setting("cloudflare_chat_session", "") or "")
+            if not protected:
+                return
+            self.token = unprotect_sync_token(protected)
+            self.login_panel.hide()
+            self.chat_panel.show()
+            self.status_label.setText("Reconnecting to Live Chat…")
+            self._conversation_refresh_timer.start()
+            self._request("session", "/api/users")
+            self._request("conversations", "/api/conversations")
+        except Exception:
+            self.token = ""
+            self.db.set_setting("cloudflare_chat_session", "")
+            self.status_label.setText("Chat session expired · sign in once to reconnect")
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -401,6 +424,19 @@ class CloudflareChatTab(QWidget):
         self._request("login", "/api/auth/login", "POST", {"username": username, "password": password}, token="")
 
     def _on_api_result(self, request_id, data, error):
+        if request_id == "session":
+            if error:
+                if "sign in" in error.lower() or "401" in error:
+                    self._logout()
+                    self.status_label.setText("Chat session expired · sign in once to reconnect")
+                else:
+                    self.status_label.setText(error)
+                return
+            self.users = data.get("users") or []
+            self.chat_user = data.get("user") or {}
+            self.admin_button.setVisible(self.chat_user.get("role") == "Admin")
+            self.status_label.setText("Connected as %s" % (self.chat_user.get("displayName") or self.chat_user.get("username") or "employee"))
+            return
         if request_id == "login":
             self.login_button.setEnabled(True)
             self.login_button.setText("Sign in to Live Chat")
@@ -411,6 +447,11 @@ class CloudflareChatTab(QWidget):
                 return
             self.token = str(data.get("token") or "")
             self.chat_user = data.get("user") or {}
+            if self.token:
+                try:
+                    self.db.set_setting("cloudflare_chat_session", protect_sync_token(self.token))
+                except Exception:
+                    pass
             if not self.token or not self.chat_user.get("id"):
                 self.login_error.setText("The chat service returned an invalid session.")
                 self.token = ""
@@ -733,6 +774,7 @@ class CloudflareChatTab(QWidget):
         self._refresh_inflight = False
         self._close_socket()
         self.token = ""
+        self.db.set_setting("cloudflare_chat_session", "")
         self.chat_user = None
         self.users = []
         self.conversations = []
