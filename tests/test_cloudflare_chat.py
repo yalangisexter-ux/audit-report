@@ -51,5 +51,6 @@ def test_chat_migration_creates_private_group_and_message_tables():
         "messages",
         "socket_tickets",
         "login_attempts",
+        "bootstrap_guard",
     }.issubset(table_names)
     connection.close()
