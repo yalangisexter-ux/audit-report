@@ -8,6 +8,13 @@
 4. Pushes to `main` / `master` publish a versioned GitHub Release. The Actions artifact `RawStrengthEmployeeAuditManager-Windows-Release` is also available for 14 days.
 5. Extract the artifact and run `RawStrengthEmployeeAuditManager-Setup.exe`. Setup installs the required Visual C++ runtime before launching the app.
 
+## Live Chat (Cloudflare)
+
+- The **Live Chat** page supports private employee conversations and authorized groups in the Windows app.
+- A responsive browser/mobile client is served from the Cloudflare Worker. The chat backend is separate from the local audit database.
+- Deploy the service using the instructions in [Cloudflare Live Chat setup](cloudflare-chat/README.md). Configure a real D1 database ID and Cloudflare secrets before deploying; source-control changes alone do not deploy the service.
+- Chat accounts are provisioned by the chat administrator and use separate credentials from the existing local Audit Manager login.
+
 ## In-app updates
 
 - Select **Update application** on the Home page to check the latest GitHub Release.
