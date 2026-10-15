@@ -97,7 +97,7 @@ jobs:
             $workerUrl = "https://raw-strength-employee-chat.$subdomain.workers.dev"
           }
           if ([string]::IsNullOrWhiteSpace($workerUrl)) {
-            Write-Warning "No CHAT_WORKER_URL is configured. Packaging will continue; Live Chat will use its existing local endpoint setting until a Worker URL is configured."
+            throw "CHAT_WORKER_URL is missing. Deploy Cloudflare Live Chat after correcting CLOUDFLARE_API_TOKEN; the deployment workflow now saves CHAT_WORKER_URL automatically. Refusing to publish an installer with a nonfunctional Live Chat endpoint."
           } else {
             $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
             if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
