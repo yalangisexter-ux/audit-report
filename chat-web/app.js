@@ -400,6 +400,7 @@
     const fromId = Number(packet.fromUserId);
     if (!fromId || fromId === Number(state.user?.id) || !state.activeConversation) return;
     const signal = packet.signal || {};
+    if (signal.mode === "av") { await handleAVSignal(fromId, packet); return; }
     if (signal.kind === "offer") {
       if (state.localShareStream || state.remoteShareActive || state.pendingShareOffer) {
         sendSignal(fromId,{kind:"busy"});
