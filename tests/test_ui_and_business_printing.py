@@ -172,3 +172,44 @@ def test_add_task_preserves_selected_employee_and_task_date(tmp_path, monkeypatc
         window.close()
         database.conn.close()
         qt_app.processEvents()
+
+
+def test_tracker_add_task_persists_exposed_proof_link(tmp_path, monkeypatch):
+    qt_app, database, window = _make_window(tmp_path, monkeypatch)
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor = database.conn.execute(
+            "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
+            ("Sai Teja", "", 1, timestamp),
+        )
+        employee_id = cursor.lastrowid
+        database.conn.commit()
+        window.refresh_tracker_employees()
+        window.tracker_employee.setCurrentIndex(window.tracker_employee.findData(employee_id))
+
+        proof_url = "https://docs.google.com/document/d/tracker-proof/edit?usp=sharing"
+        base_dialog = app.TaskDialog
+
+        class ExposedTaskDialog(base_dialog):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.title.setText("Tracker proof task")
+                self.proof.setPlainText(proof_url)
+                self.expose_link.setChecked(True)
+
+            def exec(self):
+                return app.QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(app, "TaskDialog", ExposedTaskDialog)
+        window.add_tracker_task()
+
+        saved = database.conn.execute(
+            "SELECT proof_url, expose_link FROM tasks WHERE employee_id=? AND title=?",
+            (employee_id, "Tracker proof task"),
+        ).fetchone()
+        assert saved["proof_url"] == proof_url
+        assert saved["expose_link"] == 1
+    finally:
+        window.close()
+        database.conn.close()
+        qt_app.processEvents()

@@ -293,7 +293,7 @@ def proof_urls(value):
     return list(dict.fromkeys(found))
 
 
-def add_docx_linkified_text(paragraph, text):
+def add_docx_linkified_text(paragraph, text, expose_full_url=False):
     """Append text while formatting any embedded HTTP(S) URL as a hyperlink."""
     raw = str(text or "")
     matches = list(re.finditer(r"https?://[^\s<>]+", raw, flags=re.IGNORECASE))
@@ -305,7 +305,8 @@ def add_docx_linkified_text(paragraph, text):
         trailing = match.group(0)[len(url):]
         if match.start() > position:
             paragraph.add_run(raw[position:match.start()])
-        add_docx_hyperlink(paragraph, url, "Tap here to view content")
+        label = url if expose_full_url else "Tap here to view content"
+        add_docx_hyperlink(paragraph, url, label)
         if trailing:
             paragraph.add_run(trailing)
         position = match.end()
@@ -3841,8 +3842,12 @@ class MainWindow(QMainWindow):
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
-        self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
-        self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
+        try:
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
+        except sqlite3.Error as ex:
+            error(self, f"Could not save task: {ex}")
 
     def edit_tracker_task(self):
         self.edit_task(self.tracker_table)
@@ -4800,7 +4805,7 @@ class MainWindow(QMainWindow):
                             if opts.get("proof_notes",False) and t["proof_note"]:
                                 note_paragraph=doc.add_paragraph(style="List Bullet 2")
                                 note_paragraph.add_run("Proof notes: ")
-                                add_docx_linkified_text(note_paragraph,t["proof_note"])
+                                add_docx_linkified_text(note_paragraph,t["proof_note"],bool(t["expose_link"]))
                             if opts.get("remarks",True): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
                     else:
                         doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
@@ -4870,7 +4875,7 @@ class MainWindow(QMainWindow):
             textColor=colors.HexColor("#1F2937"), leftIndent=13, firstLineIndent=-8,
             wordWrap="CJK", spaceAfter=3))
 
-        def clean(value):
+        def clean(value, expose_full_url=False):
             if value is None or str(value).strip() == "":
                 return "—"
             raw = str(value)
@@ -4880,15 +4885,16 @@ class MainWindow(QMainWindow):
                 if not proof_urls(url):
                     return escape(matched)
                 suffix = matched[len(url):]
-                return f'{report_pdf_hyperlink(url, "Tap here to view content")}{escape(suffix)}'
+                label = url if expose_full_url else "Tap here to view content"
+                return f'{report_pdf_hyperlink(url, label)}{escape(suffix)}'
             result = re.sub(r"https?://[^\s<>]+", as_link, raw, flags=re.IGNORECASE)
             return result.replace("\r\n", "\n").replace("\n", "<br/>")
 
         def para(label, value, style="RSBody"):
             return Paragraph(f"<b>{escape(label)}</b> {clean(value)}", styles[style])
 
-        def bullet(value, style="RSBullet"):
-            return Paragraph("&#8226;&nbsp; " + clean(value), styles[style])
+        def bullet(value, style="RSBullet", expose_full_url=False):
+            return Paragraph("&#8226;&nbsp; " + clean(value, expose_full_url), styles[style])
 
         def add_field(story, label, value):
             story.append(para(label, value))
@@ -5014,7 +5020,7 @@ class MainWindow(QMainWindow):
                                 else:
                                     story.append(bullet("Proof / Evidence: N/A"))
                             if opts.get("proof_notes", False) and t["proof_note"]:
-                                story.append(bullet(f'Proof notes: {t["proof_note"]}'))
+                                story.append(bullet(f'Proof notes: {t["proof_note"]}', expose_full_url=bool(t["expose_link"])))
                             if opts.get("remarks", True):
                                 story.append(bullet(f'Manager remarks: {t["manager_note"] or "N/A"}'))
                     else:

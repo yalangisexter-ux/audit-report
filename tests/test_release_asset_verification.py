@@ -491,9 +491,14 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
         "INSERT INTO tasks(employee_id,task_date,title,status,progress,proof_url,proof_note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
         (employee_id, today, "Linked task", "Submitted", 100, urls, "See https://example.net/note", timestamp, timestamp),
     )
+    exposed_url = (
+        "https://docs.google.com/spreadsheets/d/long-example-document-id-"
+        "0123456789abcdef0123456789abcdef/edit?gid=70451726&usp=sharing&resourcekey=sample-key"
+    )
+    exposed_note_url = "https://docs.google.com/document/d/exposed-note-proof/edit?usp=sharing"
     db.conn.execute(
-        "INSERT INTO tasks(employee_id,task_date,title,status,progress,proof_url,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
-        (employee_id, today, "Second linked task", "In progress", 50, "https://example.edu/second-task", timestamp, timestamp),
+        "INSERT INTO tasks(employee_id,task_date,title,status,progress,proof_url,proof_note,expose_link,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (employee_id, today, "Second linked task", "In progress", 50, exposed_url, f"Related proof: {exposed_note_url}", 1, timestamp, timestamp),
     )
     db.conn.execute(
         "INSERT INTO tasks(employee_id,task_date,title,status,progress,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
@@ -521,7 +526,7 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
         doc_root = ET.fromstring(document_xml)
         word_ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
         docx_link_labels = [node.text for node in doc_root.findall(".//w:hyperlink//w:t", word_ns)]
-        assert docx_link_labels == ["Tap here to view content"] * 4
+        assert docx_link_labels == [exposed_url, exposed_note_url] + ["Tap here to view content"] * 3
         from docx import Document
         assert any(paragraph.text == "Proof / Evidence: N/A" for paragraph in Document(docx_path).paragraphs)
         pdf_bytes = pdf_path.read_bytes()
@@ -547,9 +552,22 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
             fragment for paragraph in proof_paragraphs for fragment in paragraph.frags
             if getattr(fragment, "link", None)
         ]
-        assert [fragment.text for fragment in pdf_link_fragments] == [
-            "Tap here to view content"
-        ] * 4
+        visible_pdf_links = {}
+        for fragment in pdf_link_fragments:
+            target = fragment.link[0][1]
+            visible_pdf_links.setdefault(target, "")
+            visible_pdf_links[target] += fragment.text
+        assert list(visible_pdf_links) == [
+            exposed_url, exposed_note_url,
+            "https://example.com/proof?id=1&x=2", "https://example.org/second", "https://example.net/note",
+        ]
+        assert visible_pdf_links == {
+            exposed_url: exposed_url,
+            exposed_note_url: exposed_note_url,
+            "https://example.com/proof?id=1&x=2": "Tap here to view content",
+            "https://example.org/second": "Tap here to view content",
+            "https://example.net/note": "Tap here to view content",
+        }
         assert all(fragment.textColor.hexval() == "0x0563c1" and fragment.us_lines for fragment in pdf_link_fragments)
         evidence_line = next(paragraph for paragraph in proof_paragraphs if "Proof / Evidence:" in paragraph.getPlainText())
         evidence_prefix = next(fragment for fragment in evidence_line.frags if "Proof / Evidence:" in fragment.text)
@@ -562,7 +580,9 @@ def test_print_center_options_and_proof_links_work_in_exports(monkeypatch, tmp_p
         assert rows[1][proof_columns[0]] == "N/A"
         assert rows[1][proof_columns[1]] == ""
         assert rows[1][proof_columns[2]] == ""
-        assert rows[2][proof_columns[0]] == '=HYPERLINK("https://example.edu/second-task","Tap here to view content")'
+        assert rows[2][proof_columns[0]] == f'=HYPERLINK("{exposed_url}","{exposed_url}")'
+        assert rows[2][proof_columns[1]] == f'=HYPERLINK("{exposed_note_url}","{exposed_note_url}")'
+        assert rows[2][proof_columns[2]] == ""
         assert rows[3][proof_columns[0]] == '=HYPERLINK("https://example.com/proof?id=1&x=2","Tap here to view content")'
         assert rows[3][proof_columns[1]] == '=HYPERLINK("https://example.org/second","Tap here to view content")'
         assert rows[3][proof_columns[2]] == '=HYPERLINK("https://example.net/note","Tap here to view content")'
