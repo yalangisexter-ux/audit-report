@@ -3887,9 +3887,15 @@ class MainWindow(QMainWindow):
             "Upload the current encrypted database snapshot to GitHub. Local edits are not uploaded until you click this button."
         )
         self.github_sync_now_button.clicked.connect(self.sync_github_database_now)
+        self.github_sync_pull_button = QPushButton("Pull Latest Data")
+        self.github_sync_pull_button.setToolTip(
+            "Developer-only: validate and pull the latest committed snapshot for this installation. A backup is created first."
+        )
+        self.github_sync_pull_button.clicked.connect(self.pull_latest_github_database)
         self.github_sync_remove_button = QPushButton("Remove token")
         self.github_sync_remove_button.clicked.connect(self.remove_github_sync_token)
         sync_actions.addWidget(self.github_sync_now_button)
+        sync_actions.addWidget(self.github_sync_pull_button)
         sync_actions.addWidget(self.github_sync_remove_button)
         sync_actions.addStretch(1)
         sync_layout.addLayout(sync_actions)
@@ -3903,6 +3909,7 @@ class MainWindow(QMainWindow):
             self.github_sync_token_input.setEnabled(False)
             self.github_sync_save_button.setEnabled(False)
             self.github_sync_now_button.setEnabled(False)
+            self.github_sync_pull_button.setEnabled(False)
             self.github_sync_remove_button.setEnabled(False)
             self.github_sync_token_input.setToolTip("Only an Admin can configure GitHub database sync.")
         self._refresh_github_sync_status()
@@ -4030,6 +4037,101 @@ class MainWindow(QMainWindow):
             return error(self, "Save a GitHub token first.")
         if not self.db.github_sync.request_sync():
             return error(self, "Could not queue the Git DB push. Check the saved token and try again.")
+        self._refresh_github_sync_status()
+
+    def pull_latest_github_database(self):
+        """Developer-gated pull with validation, local backup, and account/settings preservation."""
+        password, ok = QInputDialog.getText(
+            self, "Developer authorization", "Enter developer password to pull latest data:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        expected = bytes.fromhex("a39b5cc22ca0d7b85e0f963439352d157e45ec125f2372077dfb8a459d2b33c6")
+        actual = hashlib.pbkdf2_hmac(
+            "sha256", password.encode("utf-8"), b"RSC-Pull-Latest-Data-v1", 300000
+        )
+        if not secrets.compare_digest(actual, expected):
+            return error(self, "Developer authorization failed.")
+        sync = self.db.github_sync
+        if not sync.has_token:
+            return error(self, "Configure the GitHub sync token before pulling latest data.")
+        if sync.is_busy:
+            return error(self, "A GitHub database sync is already running. Wait for it to finish.")
+        if not ask(
+            self, "Pull latest database data",
+            "This replaces local business records with the latest committed snapshot for this installation. "
+            "A backup will be created first. Local accounts and settings will be preserved. Continue?",
+        ):
+            return
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = Path(BACKUP_DIR) / f"pre_pull_{stamp}.db"
+        snapshot_path = None
+        try:
+            Path(BACKUP_DIR).mkdir(parents=True, exist_ok=True)
+            create_validated_sqlite_copy(self.db.conn, backup_path)
+            raw = sync.download_latest_snapshot()
+            import tempfile
+            with tempfile.NamedTemporaryFile(prefix="rsc_pull_", suffix=".sqlite3", delete=False) as handle:
+                snapshot_path = Path(handle.name)
+                handle.write(raw)
+            remote = sqlite3.connect(str(snapshot_path), timeout=20)
+            remote.row_factory = sqlite3.Row
+            try:
+                remote_tables = {
+                    row[0] for row in remote.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                    ).fetchall()
+                }
+                local_tables = {
+                    row[0] for row in self.db.conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                    ).fetchall()
+                }
+                table_names = sorted(
+                    (remote_tables & local_tables) - {"settings", "auth_users"}
+                )
+                if not table_names:
+                    raise RuntimeError("No compatible business tables were found in the downloaded snapshot.")
+                connection = self.db.conn
+                connection.execute("PRAGMA foreign_keys=OFF")
+                connection.execute("ATTACH DATABASE ? AS remote_snapshot", (str(snapshot_path),))
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    for table in table_names:
+                        quoted = '"' + table.replace('"', '""') + '"'
+                        columns = [
+                            row[1] for row in connection.execute(f"PRAGMA main.table_info({quoted})").fetchall()
+                        ]
+                        remote_columns = {
+                            row[1] for row in connection.execute(f"PRAGMA remote_snapshot.table_info({quoted})").fetchall()
+                        }
+                        common = [column for column in columns if column in remote_columns]
+                        if not common:
+                            continue
+                        column_sql = ", ".join('"' + name.replace('"', '""') + '"' for name in common)
+                        connection.execute(f"DELETE FROM main.{quoted}")
+                        connection.execute(
+                            f"INSERT INTO main.{quoted} ({column_sql}) SELECT {column_sql} FROM remote_snapshot.{quoted}"
+                        )
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                finally:
+                    connection.execute("DETACH DATABASE remote_snapshot")
+                    connection.execute("PRAGMA foreign_keys=ON")
+            finally:
+                remote.close()
+            self.db.github_sync.set_status("Pulled latest committed business data")
+            info(self, f"Latest business data pulled successfully. Local backup saved to:\n{backup_path}")
+            self.refresh_all()
+        except Exception as exc:
+            error(self, "Could not pull latest data. Local accounts/settings were preserved where the transaction completed; "
+                  f"backup: {backup_path}\n{exc}")
+        finally:
+            if snapshot_path is not None:
+                snapshot_path.unlink(missing_ok=True)
         self._refresh_github_sync_status()
 
     def remove_github_sync_token(self):
