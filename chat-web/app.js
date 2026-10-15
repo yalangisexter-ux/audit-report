@@ -434,7 +434,8 @@
     if (!id || id === Number(state.user?.id)) return;
     if (packet.type === "peer-joined") {
       state.peers.add(id);
-      if (state.localShareStream) sendShareOffer(id);\n      if (state.localAVStream) sendAVOffer(id);
+      if (state.localShareStream) sendShareOffer(id);
+      if (state.localAVStream) sendAVOffer(id);
     } else if (packet.type === "peer-left") {
       state.peers.delete(id); closePeer(id); closeAVPeer(id);
     } else if (packet.type === "peers") {
@@ -603,7 +604,13 @@
       $("messageInput").value = "";
     } catch { setStatus("Message not sent · reconnecting", "offline"); }
   });
-  $("startCallBtn").addEventListener("click", startCameraVoiceCall);\n  $("muteMicBtn").addEventListener("click", toggleMic);\n  $("toggleCameraBtn").addEventListener("click", toggleCamera);\n  $("hangupCallBtn").addEventListener("click", hangupCall);\n  $("acceptCallBtn").addEventListener("click", () => { const first = state.pendingAvOffers.keys().next().value; if (first !== undefined) acceptAVCall(first); });\n  $("declineCallBtn").addEventListener("click", () => { const first = state.pendingAvOffers.keys().next().value; if (first !== undefined) declineAVCall(first); });\n  $("startShareBtn").addEventListener("click", startScreenShare);
+  $("startCallBtn").addEventListener("click", startCameraVoiceCall);
+  $("muteMicBtn").addEventListener("click", toggleMic);
+  $("toggleCameraBtn").addEventListener("click", toggleCamera);
+  $("hangupCallBtn").addEventListener("click", hangupCall);
+  $("acceptCallBtn").addEventListener("click", () => { const first = state.pendingAvOffers.keys().next().value; if (first !== undefined) acceptAVCall(first); });
+  $("declineCallBtn").addEventListener("click", () => { const first = state.pendingAvOffers.keys().next().value; if (first !== undefined) declineAVCall(first); });
+  $("startShareBtn").addEventListener("click", startScreenShare);
   $("stopShareBtn").addEventListener("click", stopScreenShare);
   $("acceptShareBtn").addEventListener("click", () => acceptIncomingShare().catch(error => setShareStatus(error.message)));
   $("declineShareBtn").addEventListener("click", declineIncomingShare);
