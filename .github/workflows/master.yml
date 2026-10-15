@@ -2,7 +2,7 @@ name: Master Build and Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/cloudflare-live-chat]
   workflow_dispatch:
 
 permissions:
@@ -21,6 +21,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Node.js for chat syntax checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate Cloudflare Worker and browser chat JavaScript
+        shell: pwsh
+        run: |
+          node --check cloudflare-chat/src/index.js
+          node --check chat-web/app.js
 
       - name: Set up Python
         uses: actions/setup-python@v5
