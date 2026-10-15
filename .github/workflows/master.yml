@@ -81,6 +81,20 @@ jobs:
             Write-Host "Verified photo wallpaper $name ($($bytes.Length) bytes)"
           }
 
+      - name: Configure the production Live Chat endpoint from repository variables
+        shell: pwsh
+        env:
+          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CHAT_WORKER_URL)) { throw "Missing repository variable CHAT_WORKER_URL. Set it to the deployed HTTPS Cloudflare Worker base URL." }
+          $uri = [System.Uri]::new($env:CHAT_WORKER_URL.Trim().TrimEnd('/'))
+          if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "CHAT_WORKER_URL must be a plain HTTPS Worker base URL without a path, credentials, query, or fragment." }
+          $sourcePath = "cloudflare_chat.py"
+          $source = Get-Content $sourcePath -Raw
+          $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ""', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
+          if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { throw "Could not configure the production Live Chat endpoint." }
+          Set-Content -Path $sourcePath -Value $source -Encoding utf8
+
       - name: Compile Python application with bundled assets
         shell: pwsh
         run: |
