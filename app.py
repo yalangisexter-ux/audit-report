@@ -516,10 +516,22 @@ class UpdateWorker(QObject):
                 except Exception as exc:
                     latest_error = exc
                     if attempt == 2:
-                        raise RuntimeError(
-                            "Unable to fetch the published releases from GitHub after 3 attempts. "
-                            f"Details: {latest_error}"
-                        ) from latest_error
+                        # Fall back to the single-release endpoint if the list endpoint fails.
+                        fallback_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
+                        try:
+                            fallback_payload = json.loads(self.request_bytes(fallback_url).decode("utf-8"))
+                            if isinstance(fallback_payload, dict):
+                                payload = [fallback_payload]
+                            elif isinstance(fallback_payload, list):
+                                payload = fallback_payload
+                            else:
+                                raise ValueError("GitHub returned an invalid latest-release response.")
+                            break
+                        except Exception as fallback_error:
+                            raise RuntimeError(
+                                "Unable to fetch updates from GitHub. The releases list and latest-release "
+                                f"fallback both failed. List error: {latest_error}; fallback error: {fallback_error}"
+                            ) from fallback_error
                     import time
                     time.sleep(attempt + 1)
             # Only consider releases that have a complete, trusted installer asset.
