@@ -312,6 +312,25 @@ def task_evidence_urls(task):
     return list(dict.fromkeys(urls))
 
 
+def proof_note_display_text(task, evidence_links_included=False):
+    """Keep proof notes readable without printing the same URLs twice in reports."""
+    try:
+        note = str(task["proof_note"] or "")
+    except (KeyError, TypeError, IndexError):
+        return ""
+    if not evidence_links_included:
+        return note
+    known_urls = set(task_evidence_urls(task))
+    return re.sub(
+        r"https?://[^\\s<>]+",
+        lambda match: "[link listed above]"
+        if match.group(0).rstrip(".,;:!?)]}") in known_urls
+        else match.group(0),
+        note,
+        flags=re.IGNORECASE,
+    )
+
+
 def add_docx_linkified_text(paragraph, text, expose_full_url=False):
     """Append text while formatting any embedded HTTP(S) URL as a hyperlink."""
     raw = str(text or "")
@@ -5530,7 +5549,8 @@ class MainWindow(QMainWindow):
                             if opts.get("proof_notes",False) and t["proof_note"]:
                                 note_paragraph=doc.add_paragraph(style="List Bullet 2")
                                 note_paragraph.add_run("Proof notes: ")
-                                add_docx_linkified_text(note_paragraph,t["proof_note"],bool(t["expose_link"]))
+                                note_text = proof_note_display_text(t, opts.get("proof", True))
+                                add_docx_linkified_text(note_paragraph,note_text,bool(t["expose_link"]))
                             if opts.get("remarks",True): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
                     else:
                         doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
@@ -5745,7 +5765,8 @@ class MainWindow(QMainWindow):
                                 else:
                                     story.append(bullet("Proof / Evidence: N/A"))
                             if opts.get("proof_notes", False) and t["proof_note"]:
-                                story.append(bullet(f'Proof notes: {t["proof_note"]}', expose_full_url=bool(t["expose_link"])))
+                                note_text = proof_note_display_text(t, opts.get("proof", True))
+                                story.append(bullet(f'Proof notes: {note_text}', expose_full_url=bool(t["expose_link"])))
                             if opts.get("remarks", True):
                                 story.append(bullet(f'Manager remarks: {t["manager_note"] or "N/A"}'))
                     else:
@@ -5994,9 +6015,15 @@ class MainWindow(QMainWindow):
                         if opts.get("details",True) and t["details"]: lines.append(f'  • Details: {t["details"]}')
                         if opts.get("due_time",True) and t["due_time"]: lines.append(f'  • Due time: {t["due_time"]}')
                         if opts.get("proof",True):
+                            evidence_urls = task_evidence_urls(t)
                             lines.append(f'  • Proof / Evidence: {self.task_proof_label(e,t,d)}')
-                            if t["proof_url"]: lines.append(f'  • {t["proof_url"]}')
-                        if opts.get("proof_notes",False) and t["proof_note"]: lines.append(f'  • Proof notes: {t["proof_note"]}')
+                            if evidence_urls:
+                                for evidence_url in evidence_urls:
+                                    label = evidence_url if bool(t["expose_link"]) else "Tap here to view content"
+                                    lines.append(f'  • {label}')
+                        if opts.get("proof_notes",False) and t["proof_note"]:
+                            note_text = proof_note_display_text(t, opts.get("proof", True))
+                            lines.append(f'  • Proof notes: {note_text}')
                         if opts.get("remarks",True): lines.append(f'  • Manager remarks: {t["manager_note"] or "N/A"}')
                 else: lines.append("• No tasks recorded for this date.")
             if opts.get("pending",True):
