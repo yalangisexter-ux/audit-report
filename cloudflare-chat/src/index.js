@@ -177,6 +177,22 @@ async function routeApi(request, env) {
   try { user = await requireUser(request, env); }
   catch (error) { return json({ error: error.message }, error.status || 401); }
 
+  if (path === "/api/auth/password" && method === "POST") {
+    const body = await readJson(request);
+    const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
+    if (!validPassword(body.newPassword)) return json({ error: "Use a password of at least 10 characters containing a letter and a number." }, 400);
+    const record = await env.DB.prepare("SELECT password_salt, password_hash FROM chat_users WHERE id = ? AND active = 1").bind(user.id).first();
+    let accepted = false;
+    try {
+      accepted = !!record && equalBytes(await passwordHash(currentPassword, fromB64url(record.password_salt)), fromB64url(record.password_hash));
+    } catch { accepted = false; }
+    if (!accepted) return json({ error: "Current password is incorrect." }, 401);
+    const next = await makePasswordRecord(body.newPassword);
+    await env.DB.prepare("UPDATE chat_users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?")
+      .bind(next.salt, next.hash, new Date().toISOString(), user.id).run();
+    return json({ ok: true, message: "Password changed. Sign in again on your other devices." });
+  }
+
   if (path === "/api/auth/me" && method === "GET") {
     return json({ ok: true, user: { id: user.id, username: user.username, displayName: user.display_name, role: user.role } });
   }
@@ -392,8 +408,8 @@ export class ChatRoom extends DurableObject {
       .bind(attachment.conversationId, attachment.userId, text, new Date().toISOString(), clientMessageId).run();
     const message = await this.env.DB.prepare(
       "SELECT m.id, m.conversation_id, m.sender_user_id, u.username, u.display_name, m.text, m.created_at, m.client_message_id " +
-      "FROM messages m JOIN chat_users u ON u.id = m.sender_user_id WHERE m.sender_user_id = ? AND m.client_message_id = ?",
-    ).bind(attachment.userId, clientMessageId).first();
+      "FROM messages m JOIN chat_users u ON u.id = m.sender_user_id WHERE m.conversation_id = ? AND m.sender_user_id = ? AND m.client_message_id = ?",
+    ).bind(attachment.conversationId, attachment.userId, clientMessageId).first();
     if (!message) {
       socket.send(JSON.stringify({ type: "error", message: "Message could not be saved. Please retry." }));
       return;
