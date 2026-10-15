@@ -655,3 +655,11 @@ def test_proof_evidence_compatibility_regression_is_required_for_every_build():
     assert "def test_print_center_options_and_proof_links_work_in_exports" in tests
     assert "def test_proof_urls_recognizes_non_http_uri_schemes" in tests
     assert "expose_link" in tests
+
+
+def test_update_worker_has_latest_release_fallback_for_api_failures():
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "app.py").read_text(encoding="utf-8")
+    assert 'fallback_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"' in source
+    assert "The releases list and latest-release fallback both failed." in source
+    assert "verify_release_asset_bytes" in source
