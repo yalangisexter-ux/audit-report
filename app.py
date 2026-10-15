@@ -500,7 +500,7 @@ class UpdateWorker(QObject):
                 installable_releases.append((candidate_version, candidate, installer_asset))
             if not installable_releases:
                 raise ValueError(
-                    "No published stable release has a verified Windows installer. "
+                    "No published stable release is available: the latest release is missing a trusted installer or verified SHA-256 digest. "
                     "Please try again later or contact your administrator."
                 )
             latest_parts, release, installer_asset = max(installable_releases, key=lambda item: item[0])
