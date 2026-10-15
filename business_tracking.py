@@ -370,7 +370,7 @@ class BusinessTrackingTab(QWidget):
         rows = self.db.conn.execute("SELECT * FROM bt_products ORDER BY name").fetchall()
         self.prod_table.setRowCount(0)
         for p in rows:
-            if text and text not in f"{p['name']} {p['sku'] or ''}".lower():
+            if text and text not in f"{p['name'] or ''} {p['sku'] or ''}".lower():
                 continue
             r = self.prod_table.rowCount()
             self.prod_table.insertRow(r)
@@ -384,7 +384,7 @@ class BusinessTrackingTab(QWidget):
         rows = self.db.conn.execute("SELECT * FROM bt_orders ORDER BY id DESC").fetchall()
         self.order_table.setRowCount(0)
         for o in rows:
-            if text and text not in f"{o['external_order_id']} {o['customer_name']}".lower():
+            if text and text not in f"{o['external_order_id'] or ''} {o['customer_name'] or ''}".lower():
                 continue
             r = self.order_table.rowCount()
             self.order_table.insertRow(r)
@@ -447,7 +447,10 @@ class BusinessTrackingTab(QWidget):
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
         form.addRow(buttons)
-        if d.exec() != QDialog.Accepted or not name.text().strip():
+        if d.exec() != QDialog.Accepted:
+            return
+        if not name.text().strip():
+            QMessageBox.warning(self, "Missing Name", "Product name is required.")
             return
         open_qty = parse_quantity(opening.text())
         recv_qty = parse_quantity(received.text())
@@ -474,7 +477,10 @@ class BusinessTrackingTab(QWidget):
         item = self.order_table.item(row, 0)
         if item is None:
             return
-        order_id = int(item.text())
+        try:
+            order_id = int(item.text())
+        except (ValueError, TypeError):
+            return
         current = self.db.conn.execute("SELECT order_status FROM bt_orders WHERE id=?", (order_id,)).fetchone()
         if not current:
             return
@@ -538,7 +544,10 @@ class BusinessTrackingTab(QWidget):
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
         form.addRow(buttons)
-        if d.exec() != QDialog.Accepted or not name.text().strip():
+        if d.exec() != QDialog.Accepted:
+            return
+        if not name.text().strip():
+            QMessageBox.warning(self, "Missing Name", "Service name is required.")
             return
         try:
             self.db.conn.execute(
@@ -576,7 +585,10 @@ class BusinessTrackingTab(QWidget):
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
         form.addRow(buttons)
-        if d.exec() != QDialog.Accepted or not name.text().strip():
+        if d.exec() != QDialog.Accepted:
+            return
+        if not name.text().strip():
+            QMessageBox.warning(self, "Missing Name", "Member name is required.")
             return
         try:
             self.db.conn.execute(
@@ -612,7 +624,10 @@ class BusinessTrackingTab(QWidget):
         buttons.accepted.connect(d.accept)
         buttons.rejected.connect(d.reject)
         form.addRow(buttons)
-        if d.exec() != QDialog.Accepted or emp.count() == 0:
+        if d.exec() != QDialog.Accepted:
+            return
+        if emp.count() == 0 or emp.currentData() is None:
+            QMessageBox.warning(self, "Missing Employee", "Please select an employee.")
             return
         quantity = parse_quantity(qty.text())
         if quantity is None:

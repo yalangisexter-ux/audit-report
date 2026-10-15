@@ -1521,7 +1521,8 @@ class EmployeeDialog(QDialog):
         self.phone.setPlaceholderText("Optional")
         self.email.setPlaceholderText("Optional")
         self.join=QDateEdit(); configure_date_edit(self.join); self.join.setDisplayFormat("yyyy-MM-dd")
-        self.join.setDate(QDate.fromString(row["joining_date"], "yyyy-MM-dd") if row and row["joining_date"] else QDate.currentDate())
+        parsed_join = QDate.fromString(row["joining_date"], "yyyy-MM-dd") if row and row["joining_date"] else None
+        self.join.setDate(parsed_join if (parsed_join and parsed_join.isValid()) else QDate.currentDate())
         self.join_known=QCheckBox("Joining date is known")
         self.join_known.setChecked(bool(not row or row["joining_date"]))
         self.join.setEnabled(self.join_known.isChecked())
@@ -1559,10 +1560,13 @@ class TaskDialog(QDialog):
             idx=self.employee.findData(employee_id)
             if idx >= 0: self.employee.setCurrentIndex(idx)
         self.date=QDateEdit(); configure_date_edit(self.date); self.date.setDisplayFormat("yyyy-MM-dd")
-        self.date.setDate(QDate.fromString(row["task_date"],"yyyy-MM-dd") if row else QDate.currentDate())
+        parsed_task_date = QDate.fromString(row["task_date"], "yyyy-MM-dd") if row and row["task_date"] else None
+        self.date.setDate(parsed_task_date if (parsed_task_date and parsed_task_date.isValid()) else QDate.currentDate())
         self.title=QLineEdit(row["title"] if row else "")
         self.details=QTextEdit(row["details"] if row else ""); self.details.setMaximumHeight(70)
-        self.due=QTimeEdit(); self.due.setDisplayFormat("HH:mm"); self.due.setTime(QTime.fromString(row["due_time"],"HH:mm") if row and row["due_time"] else QTime(17,0))
+        self.due=QTimeEdit(); self.due.setDisplayFormat("HH:mm")
+        parsed_due_time = QTime.fromString(row["due_time"], "HH:mm") if row and row["due_time"] else None
+        self.due.setTime(parsed_due_time if (parsed_due_time and parsed_due_time.isValid()) else QTime(17, 0))
         self.priority=QComboBox(); self.priority.addItems(["Low","Normal","High","Urgent"])
         self.status=QComboBox()
         for label, value in self.STATUSES: self.status.addItem(label, value)
@@ -4513,11 +4517,16 @@ class MainWindow(QMainWindow):
         eid=self.selected_id(self.emp_table)
         if not eid: return error(self,"Select an employee first.")
         e=self.db.employee(eid)
+        if not e: return error(self, "Employee not found.")
         if not ask(self,"Delete employee",f'Delete {e["name"]} and permanently remove their tasks and attendance? A safety backup will be created first. This cannot be undone.'): return
         if not self.backup_db(silent=True):
             return error(self, "Safety backup failed. Employee deletion was cancelled.")
         self.db.conn.execute("DELETE FROM tasks WHERE employee_id=?",(eid,))
         self.db.conn.execute("DELETE FROM attendance WHERE employee_id=?",(eid,))
+        try:
+            self.db.conn.execute("DELETE FROM bt_activities WHERE employee_id=?",(eid,))
+        except Exception:
+            pass
         self.db.conn.execute("DELETE FROM employees WHERE id=?",(eid,)); self.db.conn.commit()
         self.db.log("Employee deleted",e["name"]); self.refresh_all()
 
@@ -4539,12 +4548,15 @@ class MainWindow(QMainWindow):
         tid=self.selected_id(table)
         if not tid: return error(self,"Select a task first.")
         row=self.db.conn.execute("SELECT * FROM tasks WHERE id=?",(tid,)).fetchone()
+        if not row: return error(self, "Task not found.")
         d=TaskDialog(self.db,self,row)
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
-        self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
-        self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
+        try:
+            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+            self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
+        except sqlite3.Error as ex: error(self, f"Could not update task: {ex}")
 
     def task_table_select_all(self):
         if hasattr(self, "task_table"):
@@ -4629,6 +4641,7 @@ class MainWindow(QMainWindow):
         tid=self.selected_id(table)
         if not tid: return error(self,"Select a task first.")
         row=self.db.conn.execute("SELECT proof_url FROM tasks WHERE id=?",(tid,)).fetchone()
+        if not row: return error(self, "Task not found.")
         target=row["proof_url"]
         if not target: return info(self,"No proof link or path has been entered.")
         targets=[line.strip() for line in target.splitlines() if line.strip()]
@@ -5092,7 +5105,12 @@ class MainWindow(QMainWindow):
             present=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"]))
             absent=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Absent")
             leave=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Leave")
-            holidays=sum(1 for h in self.db.holidays_between(effective_start.isoformat(),end.isoformat()) if date.fromisoformat(h["holiday_date"]).weekday() in self.db.working_weekdays()) if effective_start<=end else 0
+            def _is_working_weekday_holiday(h_item):
+                try:
+                    return date.fromisoformat(h_item["holiday_date"]).weekday() in self.db.working_weekdays()
+                except (ValueError, TypeError):
+                    return False
+            holidays=sum(1 for h in self.db.holidays_between(effective_start.isoformat(),end.isoformat()) if _is_working_weekday_holiday(h)) if effective_start<=end else 0
             since_end=min(selected,date.today())
             since_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],start.isoformat(),since_end.isoformat())).fetchall()
             since=sum(1 for a in since_rows if not self.db.is_holiday(a["work_date"]) and (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])))
@@ -6250,7 +6268,8 @@ class MainWindow(QMainWindow):
         if not hasattr(self,"archive_table"): return
         self.archive_table.setRowCount(0)
         for d in self.db.archive_documents():
-            size=self.db.conn.execute("SELECT length(content) FROM archived_documents WHERE id=?",(d["id"],)).fetchone()[0]
+            size_row=self.db.conn.execute("SELECT length(content) FROM archived_documents WHERE id=?",(d["id"],)).fetchone()
+            size=size_row[0] if size_row else 0
             vals=[d["id"],d["file_name"],d["employee_name"] or "Unassigned / All",d["report_date"] or "Unknown",d["uploaded_at"],d["notes"],f"{(size or 0)/1024:.1f} KB"]
             r=self.archive_table.rowCount(); self.archive_table.insertRow(r)
             for c,v in enumerate(vals):

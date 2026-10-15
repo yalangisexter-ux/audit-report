@@ -106,6 +106,18 @@ jobs:
           CHAT_BOOTSTRAP_TOKEN: ${{ secrets.CHAT_BOOTSTRAP_TOKEN }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) { throw "Missing Actions secret CLOUDFLARE_API_TOKEN." }
+          try {
+            $accRes = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts" -Headers @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
+            if ($accRes.result -and $accRes.result.Count -gt 0) {
+              $matched = $accRes.result | Where-Object { $_.id -eq $env:CLOUDFLARE_ACCOUNT_ID } | Select-Object -First 1
+              if ($null -eq $matched) {
+                $env:CLOUDFLARE_ACCOUNT_ID = $accRes.result[0].id
+                Write-Host "Resolved active Cloudflare Account ID: $($env:CLOUDFLARE_ACCOUNT_ID)"
+              }
+            }
+          } catch {
+            Write-Host "Account resolution check: $_"
+          }
           if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) { throw "Missing Actions variable CLOUDFLARE_ACCOUNT_ID." }
           if ([string]::IsNullOrWhiteSpace($env:CHAT_JWT_SECRET) -or $env:CHAT_JWT_SECRET.Length -lt 32) { throw "CHAT_JWT_SECRET is missing or shorter than 32 characters." }
           if ([string]::IsNullOrWhiteSpace($env:CHAT_BOOTSTRAP_TOKEN)) { throw "Missing Actions secret CHAT_BOOTSTRAP_TOKEN." }
@@ -119,6 +131,17 @@ jobs:
             $deployLog = npm run deploy 2>&1
             $deployLog | ForEach-Object { Write-Host $_ }
             $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-employee-chat[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
+            if ($null -eq $workerUrl) {
+              try {
+                $subRes = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/workers/subdomain" -Headers @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
+                if ($subRes.result -and $subRes.result.subdomain) {
+                  $workerUrl = [PSCustomObject]@{ Value = "https://raw-strength-employee-chat.$($subRes.result.subdomain).workers.dev" }
+                  Write-Host "Resolved Worker URL from Cloudflare subdomain API: $($workerUrl.Value)"
+                }
+              } catch {
+                Write-Host "Subdomain lookup: $_"
+              }
+            }
             if ($null -eq $workerUrl) { throw "Worker deploy succeeded but Wrangler output did not expose its URL. Set CHAT_WORKER_URL to the deployed HTTPS URL." }
             "worker_url=$($workerUrl.Value)" >> $env:GITHUB_OUTPUT
           }
@@ -142,8 +165,7 @@ jobs:
               exit 0
             }
             $sourcePath = "cloudflare_chat.py"
-            $source = Get-Content $sourcePath -Raw
-            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ""', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
+            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ".*?"', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
             if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "' + [regex]::Escape($uri.Host))) { 
               Write-Host "::warning::Could not configure the production Live Chat endpoint."
               exit 0
