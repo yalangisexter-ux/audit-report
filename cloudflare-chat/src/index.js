@@ -368,7 +368,17 @@ export class ChatRoom extends DurableObject {
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ userId, conversationId, username, displayName });
+    const peers = [];
+    for (const peer of this.ctx.getWebSockets()) {
+      if (peer === server || peer.readyState !== WebSocket.OPEN) continue;
+      const state = peer.deserializeAttachment();
+      if (state && state.conversationId === conversationId && Number(state.userId) !== userId) {
+        peers.push({ userId: Number(state.userId), displayName: state.displayName || state.username || "Employee" });
+      }
+    }
     server.send(JSON.stringify({ type: "ready", conversationId }));
+    server.send(JSON.stringify({ type: "peers", peers: peers.map(peer => peer.userId) }));
+    this.broadcastToConversation(conversationId, { type: "peer-joined", userId, displayName }, server);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -384,6 +394,45 @@ export class ChatRoom extends DurableObject {
       payload = JSON.parse(rawMessage);
     } catch {
       socket.send(JSON.stringify({ type: "error", message: "Invalid message payload." }));
+      return;
+    }
+    if (payload.type === "rtc-signal") {
+      const targetUserId = Number(payload.targetUserId);
+      const signal = payload.signal;
+      const allowedKinds = new Set(["offer", "answer", "ice", "end", "reject", "busy"]);
+      if (!targetUserId || targetUserId === Number(attachment.userId) || !signal || typeof signal !== "object" || !allowedKinds.has(String(signal.kind))) {
+        socket.send(JSON.stringify({ type: "error", message: "Invalid screen-share signal." }));
+        return;
+      }
+      const membership = await this.env.DB.prepare("SELECT 1 AS allowed FROM conversation_members WHERE conversation_id = ? AND user_id = ?")
+        .bind(attachment.conversationId, attachment.userId).first();
+      const targetMembership = await this.env.DB.prepare("SELECT 1 AS allowed FROM conversation_members WHERE conversation_id = ? AND user_id = ?")
+        .bind(attachment.conversationId, targetUserId).first();
+      if (!membership || !targetMembership) {
+        socket.send(JSON.stringify({ type: "error", message: "Screen sharing is restricted to conversation members." }));
+        return;
+      }
+      if (JSON.stringify(signal).length > 12000) {
+        socket.send(JSON.stringify({ type: "error", message: "Screen-share signal is too large." }));
+        return;
+      }
+      const signalRateKey = "rtc-rate:" + attachment.userId;
+      const signalNow = Date.now();
+      const signalPrior = await this.ctx.storage.get(signalRateKey) || [];
+      const signalRecent = signalPrior.filter(timestamp => Number(timestamp) > signalNow - 60000);
+      if (signalRecent.length >= 120) {
+        socket.send(JSON.stringify({ type: "error", message: "Screen-share signaling rate limit reached." }));
+        return;
+      }
+      signalRecent.push(signalNow);
+      await this.ctx.storage.put(signalRateKey, signalRecent);
+      const packet = {
+        type: "rtc-signal",
+        fromUserId: Number(attachment.userId),
+        fromDisplayName: String(attachment.displayName || attachment.username || "Employee").slice(0, 80),
+        signal,
+      };
+      this.broadcastToUser(attachment.conversationId, targetUserId, packet);
       return;
     }
     if (payload.type !== "message") return;
@@ -434,6 +483,36 @@ export class ChatRoom extends DurableObject {
       }
     }
   }
-  async webSocketClose(socket, code, reason) { try { socket.close(code, reason); } catch {} }
+  broadcastToConversation(conversationId, packet, exceptSocket = null) {
+    const event = JSON.stringify(packet);
+    for (const peer of this.ctx.getWebSockets()) {
+      if (peer === exceptSocket || peer.readyState !== WebSocket.OPEN) continue;
+      try {
+        const state = peer.deserializeAttachment();
+        if (state && state.conversationId === conversationId) peer.send(event);
+      } catch { try { peer.close(1011, "Delivery failed."); } catch {} }
+    }
+  }
+
+  broadcastToUser(conversationId, targetUserId, packet) {
+    const event = JSON.stringify(packet);
+    for (const peer of this.ctx.getWebSockets()) {
+      if (peer.readyState !== WebSocket.OPEN) continue;
+      try {
+        const state = peer.deserializeAttachment();
+        if (state && state.conversationId === conversationId && Number(state.userId) === Number(targetUserId)) peer.send(event);
+      } catch { try { peer.close(1011, "Delivery failed."); } catch {} }
+    }
+  }
+
+  async webSocketClose(socket, code, reason) {
+    try {
+      const state = socket.deserializeAttachment();
+      if (state?.conversationId && state?.userId) {
+        this.broadcastToConversation(state.conversationId, { type: "peer-left", userId: Number(state.userId) }, socket);
+      }
+    } catch {}
+    try { socket.close(code, reason); } catch {}
+  }
   async webSocketError(socket) { try { socket.close(1011, "Connection error."); } catch {} }
 }
