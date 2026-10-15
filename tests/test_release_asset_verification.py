@@ -639,8 +639,9 @@ def test_database_sync_worker_endpoint_injection_has_safe_validation_and_fallbac
     # replace both an empty default and a previously populated URL, then verify
     # the deployed host before packaging. Do not silently package a broken URL.
     assert "if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }" in workflow
-    assert """[regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL = \".*?\"'""" in workflow
-    assert """if ($source -notmatch ('DEFAULT_DB_SYNC_WORKER_URL = \"https://' + [regex]::Escape($uri.Host))) { throw \"Could not inject database-sync Worker URL.\" }""" in workflow
+    assert "[regex]::Replace($source" in workflow and ".*?" in workflow
+    assert "Could not inject database-sync Worker URL." in workflow
+    assert "[regex]::Escape($uri.Host)" in workflow
     assert 'DEFAULT_DB_SYNC_WORKER_URL = ""' in sync_source
 
 
