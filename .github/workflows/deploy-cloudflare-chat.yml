@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: cloudflare-live-chat-deploy
@@ -64,10 +65,33 @@ jobs:
           printf '%s' "$CHAT_BOOTSTRAP_TOKEN" | npx wrangler secret put CHAT_BOOTSTRAP_TOKEN --config wrangler.toml
 
       - name: Deploy Worker and web assets
+        id: deploy_worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run deploy
+        run: |
+          set -o pipefail
+          npm run deploy 2>&1 | tee deploy-output.log
+          worker_url="$(grep -Eo 'https://raw-strength-employee-chat\\.[A-Za-z0-9-]+\\.workers\\.dev' deploy-output.log | tail -n 1 || true)"
+          if [ -z "$worker_url" ]; then
+            echo "Could not determine the deployed Worker URL from Wrangler output."
+            echo "Set the CHAT_WORKER_URL repository/environment variable to the deployed HTTPS Worker URL."
+            exit 1
+          fi
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+          echo "Deployed Worker URL was detected."
+
+      - name: Save deployed Worker URL to GitHub Actions variables
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKER_URL: ${{ steps.deploy_worker.outputs.worker_url }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/actions/variables/CHAT_WORKER_URL" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/actions/variables/CHAT_WORKER_URL" -f value="$WORKER_URL" >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/actions/variables" -f name="CHAT_WORKER_URL" -f value="$WORKER_URL" >/dev/null
+          fi
+          echo "Saved CHAT_WORKER_URL for subsequent desktop release builds."
 
       - name: Deployment reminder
         run: |
