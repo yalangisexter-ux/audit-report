@@ -66,11 +66,12 @@ async function authenticate(request, env) {
   } catch { return null; }
 }
 async function readJson(request) {
-  if (Number(request.headers.get("content-length") || 0) > MAX_BODY_BYTES) throw new Error("Request body is too large.");
+  if (Number(request.headers.get("content-length") || 0) > MAX_BODY_BYTES) throw badRequest("Request body is too large.");
   const raw = await request.text();
-  if (encoder.encode(raw).byteLength > MAX_BODY_BYTES) throw new Error("Request body is too large.");
-  try { return JSON.parse(raw || "{}"); } catch { throw new Error("Invalid JSON request."); }
+  if (encoder.encode(raw).byteLength > MAX_BODY_BYTES) throw badRequest("Request body is too large.");
+  try { return JSON.parse(raw || "{}"); } catch { throw badRequest("Invalid JSON request."); }
 }
+function badRequest(message) { return Object.assign(new Error(message), { status: 400 }); }
 function normalizeUsername(value) { return String(value || "").trim().toLowerCase(); }
 function validUsername(value) { return /^[a-z0-9._-]{2,40}$/u.test(value); }
 function validPassword(value) {
@@ -114,7 +115,7 @@ async function listConversations(env, userId) {
     "(SELECT m.text FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message, " +
     "(SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message_at " +
     "FROM conversations c JOIN conversation_members cm ON cm.conversation_id = c.id " +
-    "WHERE cm.user_id = ? ORDER BY COALESCE(last_message_at, c.created_at) DESC",
+    "WHERE cm.user_id = ? ORDER BY COALESCE((SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1), c.created_at) DESC",
   ).bind(userId, userId).all();
   return result.results || [];
 }
@@ -150,6 +151,7 @@ async function routeApi(request, env) {
     const ip = request.headers.get("CF-Connecting-IP") || "native-client";
     const attemptKey = b64url(await sha256(username + ":" + ip));
     const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare("DELETE FROM login_attempts WHERE window_started < ?").bind(now - 3600).run();
     const attempts = await env.DB.prepare("SELECT window_started, attempts FROM login_attempts WHERE attempt_key = ?").bind(attemptKey).first();
     if (attempts && Number(attempts.window_started) + 900 > now && Number(attempts.attempts) >= 10) {
       return json({ error: "Too many sign-in attempts. Try again in 15 minutes." }, 429);
@@ -293,6 +295,7 @@ async function routeApi(request, env) {
     if (!/^[0-9a-f-]{36}$/iu.test(conversationId)) return json({ error: "Invalid conversation." }, 400);
     try { await requireMember(env, conversationId, user.id); } catch (error) { return json({ error: error.message }, error.status || 403); }
     const ticket = randomToken(32);
+    await env.DB.prepare("DELETE FROM socket_tickets WHERE expires_at <= ?").bind(Math.floor(Date.now() / 1000)).run();
     await env.DB.prepare("INSERT INTO socket_tickets(ticket_hash, user_id, conversation_id, expires_at) VALUES(?, ?, ?, ?)")
       .bind(b64url(await sha256(ticket)), user.id, conversationId, Math.floor(Date.now() / 1000) + SOCKET_TICKET_TTL_SECONDS).run();
     return json({ ok: true, ticket, expiresIn: SOCKET_TICKET_TTL_SECONDS });
@@ -339,7 +342,7 @@ export default {
       if (env.ASSETS) return withCors(await env.ASSETS.fetch(request), request);
       return withCors(json({ error: "Not found." }, 404), request);
     } catch (error) {
-      const status = Number(error.status) || 400;
+      const status = Number(error.status) || 500;
       return withCors(json({ error: status >= 500 ? "The chat service encountered an error." : String(error.message || "Request failed.") }, status), request);
     }
   },
