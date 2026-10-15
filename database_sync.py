@@ -383,6 +383,42 @@ class GitHubDatabaseSync:
             raise RuntimeError("GitHub returned an unexpected response.")
         return result
 
+    def download_latest_snapshot(self) -> bytes:
+        """Download and authenticate this installation's latest encrypted business snapshot."""
+        with self._lock:
+            token = self._token
+        if not token:
+            raise RuntimeError("Configure the GitHub sync token before pulling data.")
+        path = f"customer-data/{self.installation_id}.db.enc"
+        result = self._request_json("GET", f"/contents/{path}?ref=main", token)
+        encoded = str(result.get("content") or "").replace("\\n", "").strip()
+        if result.get("encoding") != "base64" or not encoded:
+            raise RuntimeError("GitHub did not return a valid encrypted database snapshot.")
+        try:
+            encrypted = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise RuntimeError("The GitHub database snapshot content is invalid.") from exc
+        if len(encrypted) > _MAX_SNAPSHOT_BYTES:
+            raise RuntimeError("The GitHub database snapshot exceeds the supported size limit.")
+        raw = decrypt_snapshot_bytes(encrypted, token)
+        with tempfile.NamedTemporaryFile(prefix="rsc_pull_validate_", suffix=".sqlite3", delete=False) as handle:
+            validation_path = Path(handle.name)
+            handle.write(raw)
+        try:
+            connection = sqlite3.connect(str(validation_path), timeout=20)
+            try:
+                integrity = connection.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise RuntimeError("The downloaded database failed SQLite integrity validation.")
+                tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if not tables or "settings" in tables or "auth_users" in tables:
+                    raise RuntimeError("The downloaded snapshot contains unexpected local account/settings tables.")
+            finally:
+                connection.close()
+        finally:
+            validation_path.unlink(missing_ok=True)
+        return raw
+
     def _sync_once(self):
         with self._lock:
             token = self._token
