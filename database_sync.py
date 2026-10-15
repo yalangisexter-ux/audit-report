@@ -391,7 +391,7 @@ class GitHubDatabaseSync:
             raise RuntimeError("Configure the GitHub sync token before pulling data.")
         path = f"customer-data/{self.installation_id}.db.enc"
         result = self._request_json("GET", f"/contents/{path}?ref=main", token)
-        encoded = str(result.get("content") or "").replace("\\n", "").strip()
+        encoded = str(result.get("content") or "").replace("\n", "").strip()
         if result.get("encoding") != "base64" or not encoded:
             raise RuntimeError("GitHub did not return a valid encrypted database snapshot.")
         try:
