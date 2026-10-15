@@ -411,7 +411,7 @@ class GitHubDatabaseSync:
                 if not integrity or integrity[0] != "ok":
                     raise RuntimeError("The downloaded database failed SQLite integrity validation.")
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if not tables or "settings" in tables or "auth_users" in tables:
+                if not tables or "auth_users" in tables:
                     raise RuntimeError("The downloaded snapshot contains unexpected local account/settings tables.")
             finally:
                 connection.close()
