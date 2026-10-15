@@ -72,7 +72,7 @@ jobs:
         run: |
           set -o pipefail
           npm run deploy 2>&1 | tee deploy-output.log
-          worker_url="$(grep -Eo 'https://raw-strength-employee-chat\\.[A-Za-z0-9-]+\\.workers\\.dev' deploy-output.log | tail -n 1 || true)"
+          worker_url="$(grep -Eo 'https://raw-strength-employee-chat[.][A-Za-z0-9-]+[.]workers[.]dev' deploy-output.log | tail -n 1 || true)"
           if [ -z "$worker_url" ]; then
             echo "Could not determine the deployed Worker URL from Wrangler output."
             echo "Set the CHAT_WORKER_URL repository/environment variable to the deployed HTTPS Worker URL."
