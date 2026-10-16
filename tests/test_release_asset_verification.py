@@ -645,6 +645,22 @@ def test_database_sync_worker_endpoint_injection_has_safe_validation_and_fallbac
     assert 'DEFAULT_DB_SYNC_WORKER_URL = ""' in sync_source
 
 
+def test_live_chat_worker_endpoint_injection_reads_source_and_has_safe_validation():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    chat_source = (root / "cloudflare_chat.py").read_text(encoding="utf-8")
+
+    # Regression guard for warning: Could not configure the production Live Chat endpoint:
+    # cloudflare_chat.py source must be read via Get-Content before regex replacement,
+    # and DEFAULT_CHAT_API_BASE must be injected.
+    assert '$sourcePath = "cloudflare_chat.py"' in workflow
+    assert '$source = Get-Content $sourcePath -Raw' in workflow
+    assert "DEFAULT_CHAT_API_BASE" in workflow
+    assert 'DEFAULT_CHAT_API_BASE = ""' in chat_source
+
+
 def test_proof_evidence_compatibility_regression_is_required_for_every_build():
     from pathlib import Path
 
