@@ -4275,11 +4275,7 @@ class MainWindow(QMainWindow):
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
         att_header = self.att_table.horizontalHeader()
         att_header.setSectionResizeMode(QHeaderView.Interactive)
-        att_header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         att_header.setMinimumSectionSize(90)
-        # Inline editors must never exceed their cells. Use stable widths and
-        # horizontal scrolling on laptop-sized windows instead of overlapping.
-        att_header.setSectionResizeMode(QHeaderView.Interactive)
         for col, width in enumerate((156, 120, 158, 126, 126, 96, 220)):
             self.att_table.setColumnWidth(col, width)
         self.att_table.horizontalHeader().setStretchLastSection(True)
@@ -4287,7 +4283,20 @@ class MainWindow(QMainWindow):
         self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setMinimumHeight(230)
-        self.att_table.verticalHeader().setDefaultSectionSize(54)
+        self.att_table.verticalHeader().setDefaultSectionSize(48)
+        self.att_table.verticalHeader().setMinimumSectionSize(44)
+        for c, align in enumerate([
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        ]):
+            h_item = self.att_table.horizontalHeaderItem(c)
+            if h_item:
+                h_item.setTextAlignment(align)
         self.att_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.att_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -4301,13 +4310,19 @@ class MainWindow(QMainWindow):
         headers = ["Employee","Start date","Work days","Present","Absent","Leave","Holidays","Total present"]
         self.attendance_summary_table.setHorizontalHeaderLabels(headers)
         header = self.attendance_summary_table.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setMinimumSectionSize(82)
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         for col in range(2, len(headers)):
             header.setSectionResizeMode(col, QHeaderView.Stretch)
+        for c in range(len(headers)):
+            h_item = self.attendance_summary_table.horizontalHeaderItem(c)
+            if h_item:
+                if c == 0:
+                    h_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                else:
+                    h_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         self.attendance_summary_table.setWordWrap(False)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.attendance_summary_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
@@ -4827,8 +4842,10 @@ class MainWindow(QMainWindow):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
-            table.verticalHeader().setMinimumSectionSize(42)
-            table.verticalHeader().setDefaultSectionSize(max(42, table.verticalHeader().defaultSectionSize()))
+            is_att = table is getattr(self, "att_table", None)
+            row_height = 48 if is_att else 40
+            table.verticalHeader().setDefaultSectionSize(row_height)
+            table.verticalHeader().setMinimumSectionSize(max(36, row_height - 6))
             table.setCornerButtonEnabled(False)
             table.setWordWrap(False)
             table.setTextElideMode(Qt.TextElideMode.ElideRight)
@@ -4849,19 +4866,19 @@ class MainWindow(QMainWindow):
             table.setPalette(table_palette)
             table.viewport().setPalette(table_palette)
             table.horizontalHeader().setMinimumHeight(42)
-            table.horizontalHeader().setMinimumSectionSize(72)
-            table.verticalHeader().setDefaultSectionSize(40)
-            table.verticalHeader().setMinimumSectionSize(38)
+            table.horizontalHeader().setMinimumSectionSize(65)
             header_view = table.horizontalHeader()
             resize_modes = [header_view.sectionResizeMode(column) for column in range(table.columnCount())]
             if resize_modes and all(mode == QHeaderView.Stretch for mode in resize_modes):
                 column_hints = {
-                    "id": 65, "#": 60, "code": 110, "employee id": 125, "role": 135,
-                    "status": 125, "priority": 115, "progress": 110, "due": 110, "due time": 110,
-                    "check-in": 115, "check-out": 115, "net hours": 110, "name": 175, "employee": 175,
-                    "department": 165, "phone": 140, "email": 195, "task": 320, "proof": 260,
-                    "proof link": 260, "manager remarks": 280, "note": 240, "file name": 280,
-                    "date": 120, "report date": 120, "uploaded": 150, "size": 100,
+                    "id": 65, "#": 60, "code": 115, "employee id": 135, "role": 145,
+                    "status": 130, "priority": 115, "progress": 110, "due": 110, "due time": 110,
+                    "check-in": 126, "check-out": 126, "net hours": 100, "name": 185, "employee": 180,
+                    "department": 170, "phone": 145, "email": 210, "task": 320, "proof": 280,
+                    "proof link": 280, "manager remarks": 300, "note": 260, "file name": 300,
+                    "date": 120, "report date": 120, "start date": 120, "uploaded": 160, "size": 100,
+                    "work days": 100, "present": 90, "absent": 90, "leave": 90, "holidays": 90,
+                    "total present": 110, "score": 90, "tasks": 90, "completed": 95,
                 }
                 header_view.setSectionResizeMode(QHeaderView.Interactive)
                 for column in range(table.columnCount()):
@@ -4872,15 +4889,35 @@ class MainWindow(QMainWindow):
                     table.setColumnWidth(column, target_width)
                 header_view.setStretchLastSection(True)
             table.setMouseTracking(True)
+            center_titles = {
+                "id", "#", "code", "employee id", "date", "report date", "start date",
+                "status", "attendance status", "priority", "progress", "due", "due time",
+                "check-in", "check-out", "net hours", "work days", "present", "absent",
+                "leave", "holidays", "total present", "uploaded", "size", "created", "phone"
+            }
             for column in range(table.columnCount()):
                 header = table.horizontalHeaderItem(column)
-                if header and not header.toolTip().strip():
-                    header.setToolTip(header.text())
+                if header:
+                    col_title = header.text().strip().lower()
+                    if col_title in center_titles:
+                        header.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+                    else:
+                        header.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                    if not header.toolTip().strip():
+                        header.setToolTip(header.text())
             for row in range(table.rowCount()):
                 for column in range(table.columnCount()):
                     item = table.item(row, column)
-                    if item and not item.toolTip().strip():
-                        item.setToolTip(item.text())
+                    if item:
+                        current_align = item.textAlignment()
+                        h_align = current_align & Qt.AlignmentFlag.AlignHorizontal_Mask
+                        if not h_align:
+                            header = table.horizontalHeaderItem(column)
+                            col_title = header.text().strip().lower() if header else ""
+                            h_align = Qt.AlignmentFlag.AlignCenter if col_title in center_titles else Qt.AlignmentFlag.AlignLeft
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | h_align)
+                        if not item.toolTip().strip():
+                            item.setToolTip(item.text())
             # Preserve explicitly sized screens; long values remain accessible
             # through the tooltips attached above.
 
@@ -4973,13 +5010,20 @@ class MainWindow(QMainWindow):
     def set_row_items(self, table, row, values, status_cols=None):
         """Fill a table row; status_cols get colored pill styling."""
         status_cols = set(status_cols or [])
+        center_headers = {
+            "id", "#", "code", "employee id", "priority", "status", "progress", "due",
+            "due time", "date", "phone", "check-in", "check-out", "net hours"
+        }
         for c, v in enumerate(values):
             text = task_status_label(v) if c in status_cols and (v is None or not str(v).strip()) else str(v or "")
             if c in status_cols:
                 item = self.status_item(text)
             else:
                 item = QTableWidgetItem(text)
-            item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if c in status_cols or c == 0 else Qt.AlignmentFlag.AlignLeft))
+            h_item = table.horizontalHeaderItem(c)
+            h_text = h_item.text().strip().lower() if h_item else ""
+            is_center = (c in status_cols) or (c == 0) or (h_text in center_headers)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if is_center else Qt.AlignmentFlag.AlignLeft))
             if text:
                 item.setToolTip(text)
             table.setItem(row, c, item)
@@ -5737,7 +5781,9 @@ class MainWindow(QMainWindow):
         restore_row = -1
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
-            name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"]); self.att_table.setItem(r,0,name)
+            name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
+            name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            self.att_table.setItem(r,0,name)
             if selected_eid is not None and e["id"] == selected_eid:
                 restore_row = r
             ci=a["check_in"] if a else ""; co=a["check_out"] if a else ""
@@ -5747,15 +5793,22 @@ class MainWindow(QMainWindow):
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
             # Inline editors make attendance updates visible and discoverable.
             date_item = QTableWidgetItem(d)
-            date_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            date_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter)
             date_item.setToolTip(f"Attendance date: {d}")
             self.att_table.setItem(r, 1, date_item)
+
+            is_night_mode = (self.current_theme() or "day").lower() == "night"
+            c_bg = "#1E293B" if is_night_mode else "#F8FAFC"
+            c_fg = "#F8FAFC" if is_night_mode else "#0F172A"
+            c_border = "#475569" if is_night_mode else "#CBD5E1"
 
             def attach_editor(column, editor):
                 cell = QWidget()
                 cell.setObjectName("attendanceEditorCell")
+                cell.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
                 cell_layout = QHBoxLayout(cell)
-                cell_layout.setContentsMargins(4, 4, 4, 4)
+                cell_layout.setContentsMargins(4, 2, 4, 2)
+                cell_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 cell_layout.setSpacing(0)
                 cell_layout.addWidget(editor)
                 self.att_table.setCellWidget(r, column, cell)
@@ -5765,10 +5818,16 @@ class MainWindow(QMainWindow):
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
             status_combo.setMinimumWidth(0)
             status_combo.setMinimumWidth(108)
-            status_combo.setFixedHeight(38)
+            status_combo.setFixedHeight(30)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
+            status_combo.setStyleSheet(
+                f"QComboBox {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
+                f"border-radius: 6px; padding: 2px 22px 2px 8px; font-size: 9pt; font-weight: 600; }} "
+                f"QComboBox:hover {{ border-color: #6366F1; }} "
+                f"QComboBox:focus {{ border: 1.5px solid #6366F1; }}"
+            )
             status_combo.currentTextChanged.connect(
                 lambda value, employee_id=e["id"], work_date=d: self.save_attendance_inline(
                     employee_id, work_date, "status", value
@@ -5783,14 +5842,24 @@ class MainWindow(QMainWindow):
             ):
                 editor = QLineEdit(str(value or ""))
                 editor.setMinimumWidth(0)
-                editor.setFixedHeight(38)
+                editor.setFixedHeight(30)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+                if field in ("check_in", "check_out"):
+                    editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                else:
+                    editor.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
                 editor.setToolTip(
                     "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")
                     else "Enter an attendance note"
                 )
                 editor.setEnabled(not bool(holiday))
+                editor.setStyleSheet(
+                    f"QLineEdit {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
+                    f"border-radius: 6px; padding: 2px 8px; font-size: 9pt; }} "
+                    f"QLineEdit:hover {{ border-color: #6366F1; }} "
+                    f"QLineEdit:focus {{ border: 1.5px solid #6366F1; background-color: {'#0F172A' if is_night_mode else '#FFFFFF'}; }}"
+                )
                 editor.editingFinished.connect(
                     lambda input_widget=editor, employee_id=e["id"], work_date=d, field_name=field:
                     self.save_attendance_inline(employee_id, work_date, field_name, input_widget.text())
@@ -5798,10 +5867,9 @@ class MainWindow(QMainWindow):
                 attach_editor(column, editor)
 
             hours_item = QTableWidgetItem(hours)
-            hours_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            hours_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter)
             hours_item.setToolTip(f"Net work hours: {hours or 'not available'}")
             self.att_table.setItem(r, 5, hours_item)
-            name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         if restore_row >= 0:
             self.att_table.selectRow(restore_row)
         self.refresh_attendance_summary()
@@ -5891,6 +5959,7 @@ class MainWindow(QMainWindow):
                 values = [str(index), employee["employee_code"] or "", employee["name"] or "", employee["designation"] or "", "Active" if employee["active"] else "Inactive"]
                 for column, value in enumerate(values):
                     item = QTableWidgetItem(str(value))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if column in (0, 1, 4) else Qt.AlignmentFlag.AlignLeft))
                     item.setToolTip(str(value))
                     self.dashboard_recent.setItem(row, column, item)
         for row in range(self.dashboard_tasks.rowCount()):
@@ -5923,6 +5992,7 @@ class MainWindow(QMainWindow):
                     self.dashboard_tasks.setCellWidget(row, column, progress_bar)
                     continue
                 item = QTableWidgetItem(str(value if value is not None else ""))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if column in (2, 4) else Qt.AlignmentFlag.AlignLeft))
                 item.setToolTip(str(value if value is not None else ""))
                 self.dashboard_tasks.setItem(row, column, item)
         if hasattr(self, "dashboard_attendance_table"):
@@ -5932,6 +6002,7 @@ class MainWindow(QMainWindow):
                 self.dashboard_attendance_table.insertRow(row)
                 for column, value in enumerate((name, status, check_in)):
                     item = QTableWidgetItem(str(value))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if column in (1, 2) else Qt.AlignmentFlag.AlignLeft))
                     item.setToolTip(str(value))
                     if column == 1:
                         status_colors = {
@@ -5958,6 +6029,7 @@ class MainWindow(QMainWindow):
             self.productivity_table.insertRow(row)
             for column, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter))
                 item.setToolTip(str(value))
                 self.productivity_table.setItem(row, column, item)
         self.productivity_chart.set_values(metrics)
@@ -7005,7 +7077,10 @@ class MainWindow(QMainWindow):
             vals=[d["id"],d["file_name"],d["employee_name"] or "Unassigned / All",d["report_date"] or "Unknown",d["uploaded_at"],d["notes"],f"{(size or 0)/1024:.1f} KB"]
             r=self.archive_table.rowCount(); self.archive_table.insertRow(r)
             for c,v in enumerate(vals):
-                item=QTableWidgetItem(str(v)); item.setToolTip(str(v)); self.archive_table.setItem(r,c,item)
+                item=QTableWidgetItem(str(v))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if c in (0, 3, 4, 6) else Qt.AlignmentFlag.AlignLeft))
+                item.setToolTip(str(v))
+                self.archive_table.setItem(r,c,item)
         self.refresh_archived_report_choices()
 
     def change_password(self):
@@ -7055,12 +7130,11 @@ class MainWindow(QMainWindow):
             for col,val in enumerate([row["username"],row["display_name"],row["role"],"Active" if row["active"] else "Disabled",row["created_at"]]):
                 if col == 3:
                     item = self.status_item(val)
-                    item.setToolTip(str(val))
-                    table.setItem(idx, col, item)
                 else:
                     item = QTableWidgetItem(str(val))
-                    item.setToolTip(str(val))
-                    table.setItem(idx, col, item)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if col in (2, 3, 4) else Qt.AlignmentFlag.AlignLeft))
+                item.setToolTip(str(val))
+                table.setItem(idx, col, item)
         layout.addWidget(table)
         formbox=QGroupBox("Create account"); form=QFormLayout(formbox)
         username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["HR","Admin"])

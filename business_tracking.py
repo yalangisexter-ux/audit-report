@@ -167,10 +167,11 @@ def available_stock(product_row):
     )
 
 
-def _table_item(value):
+def _table_item(value, is_center=False):
     """Keep elided table values available on hover without changing row layout."""
     text = "" if value is None else str(value)
     item = QTableWidgetItem(text)
+    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if is_center else Qt.AlignmentFlag.AlignLeft))
     if text:
         item.setToolTip(text)
     return item
@@ -371,7 +372,7 @@ class BusinessTrackingTab(QWidget):
             avail = available_stock(p)
             vals = [p["id"], p["sku"] or "", p["name"], p["category"], f"{avail:.1f}", p["reorder_level"]]
             for c, v in enumerate(vals):
-                self.prod_table.setItem(r, c, _table_item(v))
+                self.prod_table.setItem(r, c, _table_item(v, is_center=(c in (0, 1, 4, 5))))
 
     def refresh_orders(self):
         text = self.order_search.text().lower() if hasattr(self, "order_search") else ""
@@ -384,7 +385,7 @@ class BusinessTrackingTab(QWidget):
             self.order_table.insertRow(r)
             vals = [o["id"], o["external_order_id"], o["order_date"], o["sales_channel"], o["customer_name"], o["order_status"]]
             for c, v in enumerate(vals):
-                self.order_table.setItem(r, c, _table_item(v))
+                self.order_table.setItem(r, c, _table_item(v, is_center=(c in (0, 1, 2, 5))))
 
     def refresh_services(self):
         svcs = self.db.conn.execute("SELECT * FROM bt_services ORDER BY name").fetchall()
@@ -394,7 +395,7 @@ class BusinessTrackingTab(QWidget):
             self.svc_table.insertRow(r)
             vals = [s["id"], s["name"], s["training_mode"], s["standard_price"]]
             for c, v in enumerate(vals):
-                self.svc_table.setItem(r, c, _table_item(v))
+                self.svc_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3))))
         mems = self.db.conn.execute("""
             SELECT m.*, s.name AS service_name FROM bt_members m
             LEFT JOIN bt_services s ON s.id = m.service_id ORDER BY m.name
@@ -406,7 +407,7 @@ class BusinessTrackingTab(QWidget):
             left = int(m["sessions_purchased"] or 0) - int(m["sessions_completed"] or 0)
             vals = [m["id"], m["name"], m["service_name"] or "", m["status"], left]
             for c, v in enumerate(vals):
-                self.mem_table.setItem(r, c, _table_item(v))
+                self.mem_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4))))
 
     def refresh_activities(self):
         rows = self.db.conn.execute("""
@@ -420,7 +421,7 @@ class BusinessTrackingTab(QWidget):
             self.act_table.insertRow(r)
             vals = [a["id"], a["employee_name"] or a["employee_id"], a["task_type"], a["task_status"], a["start_time"], a["remarks"]]
             for c, v in enumerate(vals):
-                self.act_table.setItem(r, c, _table_item(v))
+                self.act_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4))))
 
     def add_product(self):
         d = QDialog(self)
