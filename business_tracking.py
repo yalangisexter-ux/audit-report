@@ -183,13 +183,7 @@ class BusinessTrackingTab(QWidget):
         self.db = db
         setup_business_tables(db.conn)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        title = QLabel("Business Tracking")
-        title.setProperty("pageTitle", True)
-        layout.addWidget(title)
-        subtitle = QLabel("Record products, orders, services, and employee activities. Does not place orders or process payments.")
-        subtitle.setProperty("pageSubtitle", True)
-        layout.addWidget(subtitle)
+        layout.setContentsMargins(12, 10, 12, 8)
 
         self.sub_tabs = QTabWidget()
         self.sub_tabs.addTab(self._build_dashboard(), "Dashboard")

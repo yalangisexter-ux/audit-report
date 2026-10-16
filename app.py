@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime, date
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QSize, QDate, QTime, QEvent, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QDate, QTime, QEvent, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QPointF, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -2026,6 +2026,106 @@ class AnimatedDashboardIcon(QLabel):
         super().enterEvent(event)
 
 
+class AnalogClockWidget(QWidget):
+    """Vector analog clock face with hour/minute/second hands and date display."""
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Click to switch to Digital clock")
+        self._current_time = datetime.now()
+
+    def set_time(self, dt):
+        self._current_time = dt
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+
+        h = self.height()
+        w = self.width()
+        dial_size = min(h - 10, 46)
+        margin_left = 6
+        center_x = margin_left + dial_size / 2.0
+        center_y = h / 2.0
+        radius = dial_size / 2.0
+
+        # Dial background
+        painter.setPen(QPen(QColor(148, 163, 184, 180), 1.5))
+        painter.setBrush(QColor(15, 23, 42, 220))
+        painter.drawEllipse(QPointF(center_x, center_y), radius, radius)
+
+        # Tick marks
+        now = self._current_time
+        hour = now.hour % 12
+        minute = now.minute
+        second = now.second
+
+        painter.save()
+        painter.translate(center_x, center_y)
+        for i in range(12):
+            is_cardinal = (i % 3 == 0)
+            painter.setPen(QPen(QColor(255, 255, 255, 220 if is_cardinal else 120), 1.5 if is_cardinal else 1.0))
+            tick_start = radius - (5 if is_cardinal else 3)
+            tick_end = radius - 1
+            rad = math.radians(i * 30 - 90)
+            x1 = tick_start * math.cos(rad)
+            y1 = tick_start * math.sin(rad)
+            x2 = tick_end * math.cos(rad)
+            y2 = tick_end * math.sin(rad)
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+        # Hour hand
+        hour_angle = (hour + minute / 60.0 + second / 3600.0) * 30.0 - 90.0
+        h_rad = math.radians(hour_angle)
+        h_len = radius * 0.52
+        painter.setPen(QPen(QColor("#E2E8F0"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(0, 0), QPointF(h_len * math.cos(h_rad), h_len * math.sin(h_rad)))
+
+        # Minute hand
+        min_angle = (minute + second / 60.0) * 6.0 - 90.0
+        m_rad = math.radians(min_angle)
+        m_len = radius * 0.76
+        painter.setPen(QPen(QColor("#38BDF8"), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(0, 0), QPointF(m_len * math.cos(m_rad), m_len * math.sin(m_rad)))
+
+        # Second hand
+        sec_angle = second * 6.0 - 90.0
+        s_rad = math.radians(sec_angle)
+        s_len = radius * 0.82
+        painter.setPen(QPen(QColor("#F43F5E"), 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(0, 0), QPointF(s_len * math.cos(s_rad), s_len * math.sin(s_rad)))
+
+        # Center pin
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#F43F5E"))
+        painter.drawEllipse(QPointF(0, 0), 2.5, 2.5)
+        painter.restore()
+
+        # Date & digital text readout beside dial
+        text_x = margin_left + dial_size + 8
+        text_w = max(0, w - text_x - 2)
+        if text_w > 20:
+            date_str = now.strftime("%a, %d %b")
+            time_str = now.strftime("%I:%M:%S %p")
+            painter.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
+            painter.setPen(QColor("#F8FAFC"))
+            painter.drawText(QRectF(text_x, center_y - 17, text_w, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, date_str)
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Normal))
+            painter.setPen(QColor("#94A3B8"))
+            painter.drawText(QRectF(text_x, center_y + 1, text_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, time_str)
+
+
 class AnimatedRGBFrame(QFrame):
     """Paint a soft, animated RGB outline for the clock and brand mark."""
     def __init__(self, *, hover_only=False, outline_inset=8, parent=None):
@@ -2555,16 +2655,35 @@ class MainWindow(QMainWindow):
         self.header_clock.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.header_clock.setMinimumHeight(42)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.header_clock.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.header_clock.setToolTip("Click to switch to Analog clock")
+        self.header_clock.mousePressEvent = lambda e: self.toggle_clock_mode() if e.button() == Qt.MouseButton.LeftButton else None
         self.header_clock_frame = AnimatedRGBFrame()
         self.header_clock_frame.setObjectName("headerClockFrame")
         # Reserve enough room for the full date/time, including the meridiem.
         # A flexible QLabel inside a narrow minimum frame clipped both ends of
         # the clock string on maximized, DPI-scaled Windows displays.
         self.header_clock_frame.setFixedSize(254, 66)
+        self.header_clock_analog = AnalogClockWidget(self.header_clock_frame)
+        self.header_clock_analog.setObjectName("headerClockAnalog")
+        self.header_clock_analog.hide()
+        self.header_clock_analog.clicked.connect(self.toggle_clock_mode)
+        self.clock_mode_btn = QPushButton("🕒")
+        self.clock_mode_btn.setObjectName("clockModeBtn")
+        self.clock_mode_btn.setFixedSize(26, 26)
+        self.clock_mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clock_mode_btn.setToolTip("Switch clock mode (Digital / Analog)")
+        self.clock_mode_btn.setStyleSheet(
+            "QPushButton#clockModeBtn { background: rgba(255, 255, 255, 0.12); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 6px; font-size: 12px; } "
+            "QPushButton#clockModeBtn:hover { background: rgba(255, 255, 255, 0.25); color: #FFFFFF; }"
+        )
+        self.clock_mode_btn.clicked.connect(self.toggle_clock_mode)
         clock_frame_layout = QHBoxLayout(self.header_clock_frame)
-        clock_frame_layout.setContentsMargins(11, 9, 11, 9)
-        clock_frame_layout.setSpacing(0)
-        clock_frame_layout.addWidget(self.header_clock)
+        clock_frame_layout.setContentsMargins(10, 6, 8, 6)
+        clock_frame_layout.setSpacing(4)
+        clock_frame_layout.addWidget(self.header_clock, 1)
+        clock_frame_layout.addWidget(self.header_clock_analog, 1)
+        clock_frame_layout.addWidget(self.clock_mode_btn, 0)
         brand_layout.addWidget(self.header_clock_frame)
         self.header_clock.show()
         main_content_layout.addWidget(self.brand_banner)
@@ -2656,6 +2775,11 @@ class MainWindow(QMainWindow):
         self._header_clock_timer.timeout.connect(self.refresh_header_clock)
         self._header_clock_timer.start(1000)
         self.refresh_header_clock()
+        saved_clock_mode = self.db.get_setting("clock_mode", "digital") if hasattr(self, "db") else "digital"
+        if saved_clock_mode == "analog":
+            self.set_clock_mode("analog")
+        else:
+            self._clock_mode = "digital"
         self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
         # Database sync controls remain in the dedicated sync/settings area.
         self.polish_tables()
@@ -2667,9 +2791,50 @@ class MainWindow(QMainWindow):
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
 
+    def toggle_clock_mode(self):
+        current = getattr(self, "_clock_mode", "digital")
+        new_mode = "analog" if current == "digital" else "digital"
+        self.set_clock_mode(new_mode)
+
+    def set_clock_mode(self, mode):
+        self._clock_mode = mode
+        if hasattr(self, "db") and hasattr(self.db, "set_setting"):
+            try:
+                self.db.set_setting("clock_mode", mode)
+            except Exception:
+                pass
+        if mode == "analog":
+            if hasattr(self, "header_clock"):
+                self.header_clock.hide()
+            if hasattr(self, "header_clock_analog"):
+                self.header_clock_analog.show()
+            if hasattr(self, "clock_mode_btn"):
+                self.clock_mode_btn.setText("🔢")
+                self.clock_mode_btn.setToolTip("Switch to Digital clock")
+            if hasattr(self, "clock_mode_combo"):
+                self.clock_mode_combo.blockSignals(True)
+                self.clock_mode_combo.setCurrentText("Analog")
+                self.clock_mode_combo.blockSignals(False)
+        else:
+            if hasattr(self, "header_clock"):
+                self.header_clock.show()
+            if hasattr(self, "header_clock_analog"):
+                self.header_clock_analog.hide()
+            if hasattr(self, "clock_mode_btn"):
+                self.clock_mode_btn.setText("🕒")
+                self.clock_mode_btn.setToolTip("Switch to Analog clock")
+            if hasattr(self, "clock_mode_combo"):
+                self.clock_mode_combo.blockSignals(True)
+                self.clock_mode_combo.setCurrentText("Digital")
+                self.clock_mode_combo.blockSignals(False)
+        self.refresh_header_clock()
+
     def refresh_header_clock(self):
+        now = datetime.now()
         if hasattr(self, "header_clock"):
-            self.header_clock.setText(datetime.now().strftime("%a, %d %b  %I:%M:%S %p"))
+            self.header_clock.setText(now.strftime("%a, %d %b  %I:%M:%S %p"))
+        if hasattr(self, "header_clock_analog"):
+            self.header_clock_analog.set_time(now)
 
     def toggle_sidebar(self):
         collapsed = self.sidebar.width() > 100
@@ -3036,9 +3201,7 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(page_widget)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        if page_title:
-            self._add_fixed_page_header(outer, page_title, page_subtitle)
-        elif fixed_header is not None:
+        if fixed_header is not None:
             outer.addWidget(fixed_header)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -3052,7 +3215,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         content.setAutoFillBackground(True)
         content.setObjectName("pageContent")
-        content_layout.setContentsMargins(18, 0 if page_title else 12, 18, 14)
+        content_layout.setContentsMargins(18, 12, 18, 14)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
@@ -3789,7 +3952,6 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(self.reports_tab)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        self._add_fixed_page_header(outer, "Reports", "Generate audit, attendance, productivity, and employee reports.")
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -3798,7 +3960,7 @@ class MainWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("pageContent")
         l = QVBoxLayout(content)
-        l.setContentsMargins(20, 0, 20, 16)
+        l.setContentsMargins(20, 14, 20, 16)
         l.setSpacing(12)
 
         # Form section in a card-like group
@@ -4131,7 +4293,19 @@ class MainWindow(QMainWindow):
         animation_row.addWidget(self.animation_combo, 1)
         appearance_layout.addLayout(animation_row)
 
-        note = QLabel("Choose a color theme and animated wallpaper. Changes apply immediately across the main app screens.")
+        clock_row = QHBoxLayout()
+        clock_label = QLabel("Clock display mode")
+        self.clock_mode_combo = QComboBox()
+        self.clock_mode_combo.addItems(["Digital", "Analog"])
+        current_mode = getattr(self, "_clock_mode", "digital").capitalize()
+        if current_mode in ["Digital", "Analog"]:
+            self.clock_mode_combo.setCurrentText(current_mode)
+        self.clock_mode_combo.currentTextChanged.connect(lambda mode: self.set_clock_mode(mode.lower()))
+        clock_row.addWidget(clock_label)
+        clock_row.addWidget(self.clock_mode_combo, 1)
+        appearance_layout.addLayout(clock_row)
+
+        note = QLabel("Choose a color theme, animated wallpaper, and clock format. Changes apply immediately across the main app screens.")
         note.setWordWrap(True)
         note.setMinimumWidth(0)
         note.setMinimumHeight(40)
