@@ -532,7 +532,7 @@ class CloudflareChatTab(QWidget):
         self.status_label.setText(f"Connected as {name}")
         self.conv_list_heading.setText("Support Contact")
         self.conversation_heading.setText("Support Team")
-        self.user_mode_info.setText(f"You are texting Support as:\n<b>{name}</b>")
+        self.user_mode_info.setText(f"You are texting Support as:\n{name}")
         self.user_mode_info.show()
 
         self.conversation_list.blockSignals(True)

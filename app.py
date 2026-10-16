@@ -2842,6 +2842,7 @@ class MainWindow(QMainWindow):
             page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             page.setAutoFillBackground(False)
             page.setObjectName("appPageSurface")
+            page.setStyleSheet("QWidget#appPageSurface { background: transparent; }")
         self.business_tab = BusinessTrackingTab(self.db)
         self.chat_tab = CloudflareChatTab(self.db, self.current_user)
         tab_items = [
@@ -3328,11 +3329,11 @@ class MainWindow(QMainWindow):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         scroll.setAutoFillBackground(False)
-        scroll.viewport().setStyleSheet("background: transparent;")
+        scroll.viewport().setStyleSheet("background: transparent; border: 0;")
         content = QWidget()
-        # Keep the content surface opaque; the wallpaper belongs behind, not through, UI text.
-        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        content.setAutoFillBackground(True)
+        # Keep the content viewport translucent so the wallpaper remains visible behind opaque cards
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        content.setAutoFillBackground(False)
         content.setObjectName("pageContent")
         content_layout.setContentsMargins(18, 12, 18, 14)
         content_layout.setSpacing(12)
@@ -3427,13 +3428,32 @@ class MainWindow(QMainWindow):
             background, foreground, border = "#FFFFFF", "#0F172A", "#E2E8F0"
         else:
             background, foreground, border = "#111827", "#F8FAFC", "#64748B"
+        # Tab pages and scroll viewports are transparent so wallpaper is visible across all tabs
+        for page in self.findChildren(QWidget, "appPageSurface"):
+            page.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            page.setAutoFillBackground(False)
+            page.setStyleSheet("QWidget#appPageSurface { background: transparent; border: 0; }")
+
         for object_name in ("homeContent", "pageContent"):
             for surface in self.findChildren(QWidget, object_name):
-                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-                surface.setAutoFillBackground(True)
-                surface.setStyleSheet(
-                    f"QWidget#{object_name} {{ background-color: {background}; "
-                    f"color: {foreground}; border: 1px solid {border}; border-radius: 18px; }}"
+                surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                surface.setAutoFillBackground(False)
+                surface.setStyleSheet(f"QWidget#{object_name} {{ background: transparent; border: 0; }}")
+
+        for scroll in self.findChildren(QScrollArea):
+            scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            scroll.setAutoFillBackground(False)
+            if scroll.viewport():
+                scroll.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                scroll.viewport().setAutoFillBackground(False)
+                scroll.viewport().setStyleSheet("background: transparent; border: 0;")
+
+        # Ensure cards, toolbars, and panels on all tabs remain fully opaque
+        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "kpiCard", "dashboardPanel"):
+            for frame in self.findChildren(QFrame, card_id):
+                frame.setStyleSheet(
+                    f"QFrame#{card_id} {{ background-color: {background}; color: {foreground}; "
+                    f"border: 1px solid {border}; border-radius: 14px; }}"
                 )
 
     def toggle_theme(self):
@@ -3463,11 +3483,11 @@ class MainWindow(QMainWindow):
         self.home_scroll.setObjectName("homeScroll")
         self.home_scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.home_scroll.setAutoFillBackground(False)
-        self.home_scroll.viewport().setStyleSheet("background: transparent;")
+        self.home_scroll.viewport().setStyleSheet("background: transparent; border: 0;")
         content = QWidget()
-        # Keep the content surface opaque; the wallpaper belongs behind, not through, UI text.
-        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        content.setAutoFillBackground(True)
+        # Keep the content viewport translucent so the wallpaper remains visible behind opaque cards
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        content.setAutoFillBackground(False)
         content.setObjectName("homeContent")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(22, 18, 22, 18)
@@ -4193,7 +4213,12 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setObjectName("pageScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setStyleSheet("background: transparent; border: 0;")
         content = QWidget()
+        content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        content.setAutoFillBackground(False)
         content.setObjectName("pageContent")
         l = QVBoxLayout(content)
         l.setContentsMargins(20, 14, 20, 16)
