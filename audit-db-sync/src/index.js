@@ -85,37 +85,43 @@ async function handlePull(request, env) {
   if (auth instanceof Response) return auth;
 
   let targetId = auth.installation_id;
+  let preferLatest = false;
   try {
     const body = await readJson(request, 16 * 1024);
-    if (body && typeof body.target_installation_id === "string" && INSTALLATION_RE.test(body.target_installation_id)) {
-      targetId = body.target_installation_id;
+    if (body) {
+      if (typeof body.target_installation_id === "string" && INSTALLATION_RE.test(body.target_installation_id)) {
+        targetId = body.target_installation_id;
+      }
+      if (body.target_installation_id === "latest" || body.prefer_latest === true) {
+        preferLatest = true;
+      }
     }
   } catch {}
 
-  let path = "customer-data/" + targetId + ".db.enc";
-  let response = await fetch(githubContentsUrl(env, path), {
-    method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
-  });
-
-  if (response.status === 404) {
-    try {
-      const listRes = await fetch(githubContentsUrl(env, "customer-data"), {
-        method: "GET", headers: githubHeaders(env, "application/vnd.github+json"),
+  let response = null;
+  if (preferLatest) {
+    const latestPath = await resolveLatestSnapshotPath(env);
+    if (latestPath) {
+      response = await fetch(githubContentsUrl(env, latestPath), {
+        method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
       });
-      if (listRes.ok) {
-        const files = await listRes.json();
-        if (Array.isArray(files) && files.length > 0) {
-          const encFiles = files.filter(f => f.name && f.name.endsWith(".db.enc"));
-          if (encFiles.length > 0) {
-            const latestFile = encFiles[encFiles.length - 1];
-            path = latestFile.path || ("customer-data/" + latestFile.name);
-            response = await fetch(githubContentsUrl(env, path), {
-              method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
-            });
-          }
-        }
-      }
-    } catch {}
+    }
+  }
+
+  if (!response || !response.ok) {
+    const path = "customer-data/" + targetId + ".db.enc";
+    response = await fetch(githubContentsUrl(env, path), {
+      method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
+    });
+  }
+
+  if (response.status === 404 && !preferLatest) {
+    const fallbackPath = await resolveLatestSnapshotPath(env);
+    if (fallbackPath) {
+      response = await fetch(githubContentsUrl(env, fallbackPath), {
+        method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
+      });
+    }
   }
 
   if (response.status === 404) return json({ error: "No remote snapshot for this installation" }, 404);
@@ -126,6 +132,43 @@ async function handlePull(request, env) {
     status: 200,
     headers: { "Content-Type": "application/octet-stream", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
   });
+}
+
+async function resolveLatestSnapshotPath(env) {
+  try {
+    const owner = String(env.GITHUB_OWNER || "");
+    const repo = String(env.GITHUB_REPO || "");
+    const commitsUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/commits?path=customer-data&per_page=1";
+    const commitsRes = await fetch(commitsUrl, {
+      method: "GET", headers: githubHeaders(env, "application/vnd.github+json"),
+    });
+    if (commitsRes.ok) {
+      const commits = await commitsRes.json();
+      if (Array.isArray(commits) && commits.length > 0) {
+        const msg = String(commits[0]?.commit?.message || "");
+        const match = /([0-9a-f]{32})/.exec(msg);
+        if (match) return "customer-data/" + match[1] + ".db.enc";
+      }
+    }
+  } catch {}
+
+  try {
+    const listRes = await fetch(githubContentsUrl(env, "customer-data"), {
+      method: "GET", headers: githubHeaders(env, "application/vnd.github+json"),
+    });
+    if (listRes.ok) {
+      const files = await listRes.json();
+      if (Array.isArray(files) && files.length > 0) {
+        const encFiles = files.filter(f => f.name && f.name.endsWith(".db.enc"));
+        if (encFiles.length > 0) {
+          const latestFile = encFiles[encFiles.length - 1];
+          return latestFile.path || ("customer-data/" + latestFile.name);
+        }
+      }
+    }
+  } catch {}
+
+  return null;
 }
 
 async function authenticate(request, env) {

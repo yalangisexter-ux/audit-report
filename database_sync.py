@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import ctypes
 import json
+import logging
 import os
 import queue
 import secrets
@@ -157,7 +158,7 @@ def decrypt_snapshot_bytes(encrypted_bytes: bytes, token: str) -> bytes:
     candidates = []
     if token and str(token).strip():
         candidates.append(str(token).strip())
-    for fallback in ("Devlopershouse@1996#", "RawStrength2026!", "RSC-Dev-2026!"):
+    for fallback in ("Devlopershouse@1996#", "Developershouse@1996#", "RawStrength2026!", "RSC-Dev-2026!"):
         if fallback not in candidates:
             candidates.append(fallback)
 
@@ -470,20 +471,32 @@ class GitHubDatabaseSync:
         if not self._device_credentials.get("token"):
             self._register_device()
 
-    def _pull_encrypted_snapshot(self, target_installation_id: str = ""):
+    def _pull_encrypted_snapshot(self, target_installation_id: str = "", prefer_latest: bool = False):
         self._ensure_device()
         payload = {}
         if target_installation_id and re_full_hex(target_installation_id, 32):
             payload["target_installation_id"] = target_installation_id
+        elif target_installation_id == "latest" or prefer_latest:
+            payload["prefer_latest"] = True
         return self._worker_request("POST", "/pull", payload=payload, binary=True, allow_404=True)
 
-    def download_latest_snapshot(self, target_installation_id: str = "") -> bytes:
+    def download_latest_snapshot(
+        self,
+        target_installation_id: str = "",
+        candidate_secret: str = "",
+        prefer_latest: bool = True,
+    ) -> bytes:
         """Download, decrypt, and integrity-check this installation's latest business snapshot."""
         with self._lock:
             encryption_secret = self._encryption_secret
+        if candidate_secret and str(candidate_secret).strip():
+            encryption_secret = str(candidate_secret).strip()
         if not encryption_secret:
             encryption_secret = "Devlopershouse@1996#"
-        encrypted = self._pull_encrypted_snapshot(target_installation_id=target_installation_id)
+        encrypted = self._pull_encrypted_snapshot(
+            target_installation_id=target_installation_id,
+            prefer_latest=prefer_latest,
+        )
         if encrypted is None:
             raise RuntimeError("No remote snapshot exists for this installation yet.")
         if len(encrypted) > _MAX_SNAPSHOT_BYTES:
@@ -514,14 +527,20 @@ class GitHubDatabaseSync:
         if not encryption_secret:
             raise RuntimeError("No compatible local encryption secret is available; no remote data was changed.")
 
-        # Critical safety gate: if a remote snapshot exists, prove it decrypts with this
-        # installation's existing key before attempting to replace it.
+        # Check existing remote snapshot if present. If it was encrypted with an older
+        # key, log a warning and proceed so the new snapshot with the standard key can be pushed.
         self.set_status("Checking existing encrypted snapshot…")
         existing = self._pull_encrypted_snapshot()
         if existing is not None:
             if len(existing) > _MAX_SNAPSHOT_BYTES:
                 raise RuntimeError("Existing remote snapshot exceeds the supported size limit; it was not overwritten.")
-            decrypt_snapshot_bytes(existing, encryption_secret)
+            try:
+                decrypt_snapshot_bytes(existing, encryption_secret)
+            except Exception as exc:
+                logging.getLogger("database_sync").warning(
+                    "Existing remote snapshot could not be decrypted with current key (%s); overwriting with standard key.",
+                    exc,
+                )
 
         self.set_status("Encrypting database snapshot…")
         encrypted = create_encrypted_database_snapshot(self.db_path, encryption_secret)

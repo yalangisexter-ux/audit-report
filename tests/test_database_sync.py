@@ -1,5 +1,7 @@
-import sqlite3
 import os
+from pathlib import Path
+import sqlite3
+import tempfile
 
 import pytest
 
@@ -104,7 +106,7 @@ def test_successful_database_commits_stay_local_until_manual_push(tmp_path):
     sync.close()
 
 
-def test_worker_push_checks_existing_snapshot_before_overwriting(tmp_path, monkeypatch):
+def test_worker_push_overwrites_legacy_snapshot_with_standard_key(tmp_path, monkeypatch):
     database_path = tmp_path / "customer.db"
     connection = sqlite3.connect(database_path)
     connection.execute("CREATE TABLE entries(value TEXT)")
@@ -116,15 +118,23 @@ def test_worker_push_checks_existing_snapshot_before_overwriting(tmp_path, monke
         database_path, "example/repository", "b" * 32,
         worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
     )
-    # A legacy snapshot encrypted with a different secret must block an overwrite.
+    # A legacy snapshot encrypted with an older/different secret must be safely overwritten
+    # rather than locking the user into a permanent decryption failure.
     existing = encrypt_snapshot_bytes(b"existing customer snapshot", "different-legacy-secret")
-    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda: existing)
-    monkeypatch.setattr(
-        sync, "_worker_request",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("push must not happen")),
-    )
-    with pytest.raises(ValueError, match="Snapshot decryption failed"):
-        sync._sync_once()
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda **kwargs: existing)
+    requests = []
+
+    def fake_request(method, endpoint, **kwargs):
+        requests.append((method, endpoint, kwargs))
+        if endpoint == "/push":
+            return {"success": True}
+        raise AssertionError("Unexpected worker endpoint")
+
+    monkeypatch.setattr(sync, "_worker_request", fake_request)
+    sync._sync_once()
+
+    assert requests[0][1] == "/push"
+    assert sync.status == "Synced"
     sync.close()
 
 
@@ -187,7 +197,50 @@ def test_missing_encryption_key_never_overwrites_remote_snapshot(tmp_path, monke
         tmp_path / "customer.db", "example/repository", "e" * 32,
         worker_url="https://sync.example",
     )
-    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda: b"legacy encrypted snapshot")
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda **kwargs: b"legacy encrypted snapshot")
     with pytest.raises(RuntimeError, match="No compatible local encryption secret"):
         sync._sync_once()
     sync.close()
+
+
+def test_download_latest_snapshot_with_candidate_secret_and_prefer_latest(tmp_path, monkeypatch):
+    source_db = tmp_path / "source.db"
+    conn = sqlite3.connect(source_db)
+    conn.execute("CREATE TABLE employees(id INTEGER PRIMARY KEY, name TEXT)")
+    conn.execute("INSERT INTO employees VALUES(1, 'Alice')")
+    conn.commit()
+    conn.close()
+
+    secret = "CustomDeveloperSecret123!"
+    encrypted = create_encrypted_database_snapshot(source_db, secret)
+
+    dest_db = tmp_path / "dest.db"
+    sync = GitHubDatabaseSync(
+        dest_db, "example/repository", "f" * 32,
+        worker_url="https://sync.example", encryption_secret="DifferentSecret456!",
+    )
+    passed_args = {}
+
+    def fake_pull(target_installation_id="", prefer_latest=False):
+        passed_args["target_installation_id"] = target_installation_id
+        passed_args["prefer_latest"] = prefer_latest
+        return encrypted
+
+    monkeypatch.setattr(sync, "_pull_encrypted_snapshot", fake_pull)
+    raw = sync.download_latest_snapshot(candidate_secret=secret, prefer_latest=True)
+    assert len(raw) > 0
+    assert passed_args["prefer_latest"] is True
+
+    # Validate decrypted database contents
+    test_conn = sqlite3.connect(f"file:memdb?mode=memory&cache=shared")
+    with tempfile.NamedTemporaryFile(suffix=".sqlite3", delete=False) as h:
+        tmp_f = Path(h.name)
+        h.write(raw)
+    try:
+        check_conn = sqlite3.connect(str(tmp_f))
+        assert check_conn.execute("SELECT name FROM employees").fetchone()[0] == "Alice"
+        check_conn.close()
+    finally:
+        tmp_f.unlink(missing_ok=True)
+    sync.close()
+

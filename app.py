@@ -1082,7 +1082,7 @@ class Database:
             except ValueError:
                 encryption_secret = ""
         standard_secret = "Devlopershouse@1996#"
-        if not encryption_secret or len(encryption_secret) == 64:
+        if encryption_secret != standard_secret:
             encryption_secret = standard_secret
             protected = protect_sync_token(encryption_secret)
             self.conn.execute(
@@ -5550,7 +5550,22 @@ class MainWindow(QMainWindow):
         try:
             Path(BACKUP_DIR).mkdir(parents=True, exist_ok=True)
             create_validated_sqlite_copy(self.db.conn, backup_path)
-            raw = sync.download_latest_snapshot()
+            try:
+                raw = sync.download_latest_snapshot(candidate_secret=password, prefer_latest=True)
+            except Exception as dl_err:
+                if "Snapshot decryption failed" in str(dl_err):
+                    custom_key, ok = QInputDialog.getText(
+                        self, "Snapshot Decryption Passphrase",
+                        "The remote snapshot could not be decrypted with default credentials.\n"
+                        "Please enter the snapshot encryption passphrase or custom key:",
+                        QLineEdit.EchoMode.Password,
+                    )
+                    if ok and custom_key.strip():
+                        raw = sync.download_latest_snapshot(candidate_secret=custom_key.strip(), prefer_latest=True)
+                    else:
+                        raise
+                else:
+                    raise
             import tempfile
             with tempfile.NamedTemporaryFile(prefix="rsc_pull_", suffix=".sqlite3", delete=False) as handle:
                 snapshot_path = Path(handle.name)
@@ -5836,6 +5851,7 @@ class MainWindow(QMainWindow):
 
     def refresh_all(self):
         self.refresh_employees()
+        self.refresh_employee_filter()
         self.refresh_task_filter()
         self.refresh_tracker_employees()
         self.refresh_tasks()
