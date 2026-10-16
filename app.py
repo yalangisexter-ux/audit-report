@@ -11,9 +11,10 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QToolTip,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
-    QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea
+    QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea,
+    QCalendarWidget, QAbstractSpinBox, QDateTimeEdit
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage, QPainterPath
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -35,7 +36,7 @@ from database_sync import (
     protect_sync_token,
     unprotect_sync_token,
 )
-from cloudflare_chat import CloudflareChatTab
+from cloudflare_chat import CloudflareChatTab, verify_developer_password
 
 
 def resource_path(relative_path):
@@ -1703,21 +1704,35 @@ _ACCESSIBLE_TOOLTIP_CONTROLLER = None
 _COMBOBOX_WHEEL_FILTER = None
 
 
-class ComboBoxWheelFilter(QObject):
+class InputControlsWheelFilter(QObject):
     """
-    Prevents mouse wheel / spinner rotation from changing QComboBox selection.
-    Dropdown values only change when the user explicitly clicks the dropdown and
-    selects an item. If inside a scrollable area, the wheel event is forwarded to
-    the enclosing scroll viewport so page scrolling remains fluid.
+    Prevents mouse wheel / spinner rotation from inadvertently altering values
+    in QComboBox, QDateEdit, QDateTimeEdit, QTimeEdit, QSpinBox, QDoubleSpinBox,
+    QAbstractSpinBox, or QCalendarWidget.
+    Dropdown selections and dates only change when explicitly clicked or selected.
+    If the control is inside a scrollable view, the wheel event is forwarded to
+    the enclosing scroll viewport so user scrolling remains fluid.
     """
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.Wheel:
-            combo = watched if isinstance(watched, QComboBox) else None
-            if combo is None and hasattr(watched, "parent") and isinstance(watched.parent(), QComboBox):
-                combo = watched.parent()
-            if combo is not None:
+            # Allow scrolling inside an already-opened combobox popup list
+            if isinstance(watched, QAbstractItemView):
+                if watched.isWindow() or (watched.window() and watched.window().windowType() == Qt.WindowType.Popup):
+                    return False
+
+            control = None
+            curr = watched
+            depth = 0
+            while curr is not None and depth < 6:
+                if isinstance(curr, (QComboBox, QAbstractSpinBox, QDateEdit, QDateTimeEdit, QTimeEdit, QSpinBox, QDoubleSpinBox, QCalendarWidget)):
+                    control = curr
+                    break
+                curr = getattr(curr, "parentWidget", lambda: None)()
+                depth += 1
+
+            if control is not None:
                 event.ignore()
-                parent = combo.parentWidget()
+                parent = control.parentWidget()
                 while parent is not None:
                     if isinstance(parent, QAbstractScrollArea):
                         QApplication.sendEvent(parent.viewport(), event)
@@ -1727,17 +1742,20 @@ class ComboBoxWheelFilter(QObject):
         return super().eventFilter(watched, event)
 
 
+ComboBoxWheelFilter = InputControlsWheelFilter
+
+
 def ensure_combobox_wheel_filter(application=None):
     global _COMBOBOX_WHEEL_FILTER
     application = application or QApplication.instance()
     if application is not None and _COMBOBOX_WHEEL_FILTER is None:
-        _COMBOBOX_WHEEL_FILTER = ComboBoxWheelFilter(application)
+        _COMBOBOX_WHEEL_FILTER = InputControlsWheelFilter(application)
         application.installEventFilter(_COMBOBOX_WHEEL_FILTER)
     return _COMBOBOX_WHEEL_FILTER
 
 
 class AccessibleTooltipController(QObject):
-    """Render high-contrast help popups without the Windows native tooltip theme."""
+    """Render high-contrast help popups with bold readability across all themes."""
     def __init__(self, application):
         super().__init__(application)
         self.application = application
@@ -1751,11 +1769,11 @@ class AccessibleTooltipController(QObject):
         self.popup.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.popup.setTextFormat(Qt.TextFormat.PlainText)
         self.popup.setWordWrap(True)
-        self.popup.setMaximumWidth(420)
+        self.popup.setMaximumWidth(450)
         self.popup.setStyleSheet(
             "QLabel#accessibleHoverMessage { background-color: #FFFFFF; color: #111827; "
-            "border: 2px solid #6D28D9; border-radius: 9px; padding: 10px 12px; "
-            "font-family: 'Segoe UI'; font-size: 9pt; font-weight: 600; }"
+            "border: 2px solid #6D28D9; border-radius: 8px; padding: 8px 12px; "
+            "font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 10pt; font-weight: 600; }"
         )
         self.hide_timer = QTimer(self)
         self.hide_timer.setSingleShot(True)
@@ -1782,6 +1800,11 @@ class AccessibleTooltipController(QObject):
             if isinstance(view, QTableWidget) and logical >= 0:
                 header_item = view.horizontalHeaderItem(logical)
                 text = header_item.toolTip().strip() if header_item else ""
+        if not text and isinstance(watched, QWidget):
+            p = watched.parentWidget()
+            while p is not None and not text:
+                text = p.toolTip().strip()
+                p = p.parentWidget()
         return text
 
     def show(self, text, position, target=None):
@@ -2417,7 +2440,7 @@ class AnimatedBackground(QWidget):
             base.setColorAt(1.0, QColor("#100A1D"))
         painter.fillRect(rect, base)
 
-        # Real photographic wallpapers use a slow Ken Burns pan/zoom, not vector clipart.
+        # Real photographic wallpapers use a slow Ken Burns pan/zoom
         if not self.wallpaper_pixmap.isNull():
             image_w, image_h = self.wallpaper_pixmap.width(), self.wallpaper_pixmap.height()
             target_ratio = w / max(h, 1)
@@ -2441,14 +2464,8 @@ class AnimatedBackground(QWidget):
             source.moveCenter(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(center_x, center_y))
             painter.drawPixmap(QRectF(rect), self.wallpaper_pixmap, source)
 
-            # Animate the wallpaper with a soft fade. Foreground panels are kept
-            # opaque/light, so moving photos never reduce text contrast.
             veil = QLinearGradient(0, 0, 0, h)
             if is_day:
-                # Keep wallpaper motion visible only as a subtle backdrop, never
-                # as competing detail behind text and controls.
-                # One gentle wash only. A second near-opaque wash used to
-                # completely hide the photo on Day mode.
                 fade = 22 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
                 veil.setColorAt(0.0, QColor(255, 255, 255, max(18, fade - 3)))
                 veil.setColorAt(1.0, QColor(255, 255, 255, min(30, fade + 3)))
@@ -2456,6 +2473,82 @@ class AnimatedBackground(QWidget):
                 veil.setColorAt(0.0, QColor(3, 7, 18, 52))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 92))
             painter.fillRect(rect, veil)
+        else:
+            # Procedural generative live wallpapers guarantee all styles animate offline
+            if self.mode in ("Galaxy", "Milky Way", "Milky Way Waves"):
+                cx, cy = w * 0.5, h * 0.46
+                core_radius = max(w, h) * 0.52
+                galaxy_glow = QRadialGradient(cx, cy, core_radius)
+                galaxy_glow.setColorAt(0.0, QColor(139, 92, 246, 75 if not is_day else 45))
+                galaxy_glow.setColorAt(0.32, QColor(99, 102, 241, 48 if not is_day else 28))
+                galaxy_glow.setColorAt(0.68, QColor(6, 182, 212, 25 if not is_day else 15))
+                galaxy_glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+                painter.fillRect(rect, galaxy_glow)
+
+                num_arms = 2 if "Waves" in self.mode else 3
+                for arm in range(num_arms):
+                    arm_offset = arm * (2 * math.pi / num_arms) + self.phase * 0.22
+                    for step in range(16):
+                        radius = 24 + step * (max(w, h) * 0.025)
+                        angle = arm_offset + step * 0.24
+                        px = cx + math.cos(angle) * radius * 1.35
+                        py = cy + math.sin(angle) * radius * 0.78
+                        disc_r = max(4, int(step * 3.2))
+                        color = QColor(167, 139, 250, max(8, 48 - step * 2)) if not is_day else QColor(124, 92, 252, max(6, 32 - step * 2))
+                        painter.setBrush(color)
+                        painter.drawEllipse(int(px - disc_r / 2), int(py - disc_r / 2), disc_r, disc_r)
+
+            elif self.mode == "Ocean Waves":
+                wave_colors = [
+                    (14, 116, 144, 55 if not is_day else 32),
+                    (2, 132, 199, 45 if not is_day else 28),
+                    (56, 189, 248, 40 if not is_day else 24),
+                    (45, 212, 191, 35 if not is_day else 20),
+                ]
+                for idx, (r, g, b, a) in enumerate(wave_colors):
+                    path = QPainterPath()
+                    base_y = h * (0.38 + idx * 0.15)
+                    path.moveTo(0, h)
+                    for x in range(0, w + 16, 16):
+                        wy = base_y + math.sin(x * 0.004 + self.phase * (0.7 + idx * 0.25) + idx) * (22 + idx * 7)
+                        wy += math.cos(x * 0.007 - self.phase * 0.5) * 8
+                        path.lineTo(x, wy)
+                    path.lineTo(w, h)
+                    path.closeSubpath()
+                    painter.fillPath(path, QColor(r, g, b, a))
+
+            elif self.mode == "Lord Shiva":
+                cx, cy = w * 0.5, h * 0.32
+                for i in range(3):
+                    aura_r = int(max(w, h) * (0.24 + i * 0.16))
+                    aura = QRadialGradient(cx, cy, aura_r)
+                    alpha = (42 - i * 11) if not is_day else (28 - i * 7)
+                    aura.setColorAt(0.0, QColor(56, 189, 248, alpha))
+                    aura.setColorAt(0.48, QColor(129, 140, 248, int(alpha * 0.65)))
+                    aura.setColorAt(1.0, QColor(0, 0, 0, 0))
+                    painter.fillRect(rect, aura)
+                moon_path = QPainterPath()
+                moon_path.moveTo(cx - 32, cy - 22)
+                moon_path.cubicTo(cx - 10, cy - 42, cx + 32, cy - 32, cx + 42, cy)
+                moon_path.cubicTo(cx + 26, cy - 16, cx - 6, cy - 18, cx - 32, cy - 22)
+                moon_color = QColor(241, 245, 249, 120 if not is_day else 75)
+                painter.fillPath(moon_path, moon_color)
+
+            elif self.mode == "Love & Couples":
+                cx, cy = w * 0.5, h * 0.45
+                love_grad = QRadialGradient(cx, cy, max(w, h) * 0.48)
+                love_grad.setColorAt(0.0, QColor(244, 63, 94, 52 if not is_day else 30))
+                love_grad.setColorAt(0.48, QColor(217, 70, 239, 32 if not is_day else 20))
+                love_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+                painter.fillRect(rect, love_grad)
+                for i, p in enumerate(self.particles[:14]):
+                    hx, hy = p["x"], p["y"]
+                    hs = 7 + (i % 6) * 2
+                    heart_path = QPainterPath()
+                    heart_path.moveTo(hx, hy + hs * 0.3)
+                    heart_path.cubicTo(hx - hs * 0.6, hy - hs * 0.5, hx - hs, hy + hs * 0.2, hx, hy + hs)
+                    heart_path.cubicTo(hx + hs, hy + hs * 0.2, hx + hs * 0.6, hy - hs * 0.5, hx, hy + hs * 0.3)
+                    painter.fillPath(heart_path, QColor(244, 114, 182, int(p["opacity"] * (150 if not is_day else 85))))
 
         if self.mode in ("Ambient Glow", "Aurora Waves"):
             colors = ([(124, 92, 252, 30), (34, 211, 238, 22), (232, 121, 249, 16)]
@@ -2471,7 +2564,7 @@ class AnimatedBackground(QWidget):
             if self.mode == "Aurora Waves":
                 painter.setPen(QPen(QColor(45, 212, 191, 30), 2.0))
                 for band in range(5):
-                    path = __import__("PySide6.QtGui", fromlist=["QPainterPath"]).QPainterPath()
+                    path = QPainterPath()
                     for x in range(0, w + 12, 12):
                         y = int(h * (0.18 + band * 0.13) + math.sin(x * 0.009 + self.phase + band) * 26 + math.sin(x * 0.003 - self.phase) * 18)
                         if x == 0: path.moveTo(x, y)
@@ -2499,16 +2592,15 @@ class AnimatedBackground(QWidget):
             else:
                 painter.setBrush(QColor(167, 139, 250, alpha))
                 painter.drawEllipse(int(p["x"]), int(p["y"]), p["r"], p["r"])
-        # Apply the Day-mode veil after wallpaper, glows, and particles. Applying
-        # it earlier lets later effects draw over text and controls, as seen in
-        # customer screenshots. Keep the animation moving, but reduce it to a
-        # barely visible tint behind the white UI.
         if is_day:
             final_veil = QLinearGradient(0, 0, 0, h)
-            # Leave the selected animated wallpaper visible as a very light
-            # watermark while keeping foreground controls high contrast.
-            final_veil.setColorAt(0.0, QColor(255, 255, 255, 172))
+            final_veil.setColorAt(0.0, QColor(255, 255, 255, 145))
             final_veil.setColorAt(1.0, QColor(255, 255, 255, 188))
+            painter.fillRect(rect, final_veil)
+        else:
+            final_veil = QLinearGradient(0, 0, 0, h)
+            final_veil.setColorAt(0.0, QColor(4, 7, 18, 70))
+            final_veil.setColorAt(1.0, QColor(4, 7, 18, 110))
             painter.fillRect(rect, final_veil)
         painter.end()
 
@@ -2857,13 +2949,12 @@ class MainWindow(QMainWindow):
         return palettes.get((theme_name or "day").lower(), palettes["day"])
 
     def _apply_tooltip_palette(self, theme_name=None):
-        """Force readable tooltip colors instead of inheriting a black native popup."""
-        colors = self._ui_chrome_palette(theme_name or self.current_theme())
+        """Force readable high-contrast tooltip colors instead of inheriting low-contrast native popups."""
         palette = QPalette()
-        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(colors["surface"]))
-        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(colors["text"]))
+        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor("#0F172A"))
+        palette.setColor(QPalette.ColorRole.ToolTipText, QColor("#FFFFFF"))
         QToolTip.setPalette(palette)
-        QToolTip.setFont(QFont("Segoe UI", 9))
+        QToolTip.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
 
     def _refresh_theme_chrome(self, theme_name=None):
         """Refresh chrome colors after a theme switch without changing its layout."""
@@ -3621,10 +3712,19 @@ class MainWindow(QMainWindow):
             ("OPEN TASKS", "◷", "#7C3AED", "#F5F3FF", "#DDD6FE"),
             ("TODAY'S CHECK-INS", "↗", "#0369A1", "#F0F9FF", "#BAE6FD"),
         ]
-        for heading, symbol, accent, icon_background, icon_border in specs:
+        kpi_nav_targets = [
+            (self.employees_tab, "Employees directory"),
+            (self.attendance_tab, "Attendance & Working Calendar"),
+            (self.attendance_tab, "Attendance & Working Calendar"),
+            (self.tasks_tab, "Task Manager"),
+            (self.attendance_tab, "Attendance & Working Calendar"),
+        ]
+        for (heading, symbol, accent, icon_background, icon_border), (target_page, page_name) in zip(specs, kpi_nav_targets):
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
-            card.setToolTip(f"Current {heading.lower()} summary")
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            card.setToolTip(f"Click to open {page_name} ({heading.title()})")
+            card.mousePressEvent = lambda e, p=target_page: self.tabs.setCurrentWidget(p) if e.button() == Qt.MouseButton.LeftButton else None
             layout = QHBoxLayout(card)
             icon_label = AnimatedDashboardIcon(
                 symbol, accent, icon_background, icon_border, f"{heading.title()} indicator"
@@ -3632,7 +3732,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(icon_label)
             value = QLabel("0")
             value.setProperty("metricValue", True)
-            value.setToolTip(f"Current {heading.lower()} count")
+            value.setToolTip(f"Current {heading.lower()} count. Click to view.")
             layout.addWidget(value, 1)
             self.kpi_cards.append(card)
             self.kpi_labels.append(value)
@@ -3672,7 +3772,8 @@ class MainWindow(QMainWindow):
         self.dashboard_recent.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_recent.verticalHeader().setVisible(False)
         self.dashboard_recent.setAlternatingRowColors(True)
-        self.dashboard_recent.setToolTip("Most recently added employee records. Hover a cell to see its full value.")
+        self.dashboard_recent.setToolTip("Most recently added employee records. Double-click any row to view.")
+        self.dashboard_recent.itemDoubleClicked.connect(lambda item: self.tabs.setCurrentWidget(self.employees_tab))
         recent_layout.addWidget(self.dashboard_recent)
         grid.addWidget(recent, 0, 1)
 
@@ -3687,7 +3788,8 @@ class MainWindow(QMainWindow):
         self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_tasks.verticalHeader().setVisible(False)
         self.dashboard_tasks.setAlternatingRowColors(True)
-        self.dashboard_tasks.setToolTip("Today's task assignments and progress. Hover a progress bar for task details.")
+        self.dashboard_tasks.setToolTip("Today's task assignments and progress. Double-click any row to view in Task Manager.")
+        self.dashboard_tasks.itemDoubleClicked.connect(lambda item: self.tabs.setCurrentWidget(self.tasks_tab))
         tasks_layout.addWidget(self.dashboard_tasks)
         grid.addWidget(tasks_box, 0, 2)
 
@@ -3707,7 +3809,8 @@ class MainWindow(QMainWindow):
             self.dashboard_attendance_table.setColumnWidth(column, width)
         self.dashboard_attendance_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_attendance_table.verticalHeader().setVisible(False)
-        self.dashboard_attendance_table.setToolTip("Today's recorded attendance. Hover a cell to see its full value.")
+        self.dashboard_attendance_table.setToolTip("Today's recorded attendance. Double-click any row to open Attendance.")
+        self.dashboard_attendance_table.itemDoubleClicked.connect(lambda item: self.tabs.setCurrentWidget(self.attendance_tab))
         attendance_layout.addWidget(self.dashboard_attendance_table)
         grid.addWidget(attendance, 1, 0)
 
@@ -3741,56 +3844,149 @@ class MainWindow(QMainWindow):
         root.addWidget(self.productivity_table)
 
     def build_employees(self):
-        l=QVBoxLayout()
+        l = QVBoxLayout()
         self._wrap_page_in_scroll(self.employees_tab, l, "Employees", "Manage employee records, roles, and contact details.")
-        row=QHBoxLayout(); l.addLayout(row)
-        self.emp_search=QLineEdit(); self.emp_search.setPlaceholderText("Search employee name, ID or department"); self.emp_search.textChanged.connect(self.refresh_employees); row.addWidget(self.emp_search)
-        emp_tips = {"Add": "Add a new employee", "Edit": "Edit the selected employee", "Activate / Deactivate": "Toggle active status", "Delete": "Permanently delete the selected employee"}
-        for label,slot in [("Add",self.add_employee),("Edit",self.edit_employee),("Activate / Deactivate",self.toggle_employee),("Delete",self.delete_employee)]:
-            b=QPushButton(label); b.clicked.connect(slot); b.setToolTip(emp_tips.get(label, "")); b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed); row.addWidget(b)
-        self.emp_table=QTableWidget(0,8); self.emp_table.setHorizontalHeaderLabels(["ID","Employee ID","Name","Department","Role","Phone","Email","Status"])
-        self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.emp_table)
+
+        toolbar_card = QFrame()
+        toolbar_card.setObjectName("empToolbarCard")
+        toolbar_layout = QVBoxLayout(toolbar_card)
+        toolbar_layout.setContentsMargins(12, 10, 12, 10)
+        toolbar_layout.setSpacing(10)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(10)
+        search_label = QLabel("🔍 Search:")
+        search_label.setStyleSheet("font-weight: 600;")
+        search_row.addWidget(search_label)
+        self.emp_search = QLineEdit()
+        self.emp_search.setPlaceholderText("Search employee name, ID or department...")
+        self.emp_search.textChanged.connect(self.refresh_employees)
+        search_row.addWidget(self.emp_search, 1)
+
+        refresh_emp_btn = QPushButton("🔄 Refresh")
+        refresh_emp_btn.setToolTip("Reload employee directory")
+        refresh_emp_btn.clicked.connect(self.refresh_employees)
+        search_row.addWidget(refresh_emp_btn)
+
+        self.emp_count_badge = QLabel("Total: 0")
+        self.emp_count_badge.setStyleSheet("font-weight: 700; padding: 4px 10px; border-radius: 6px; background: rgba(99, 102, 241, 0.15); color: #6366F1;")
+        search_row.addWidget(self.emp_count_badge)
+        toolbar_layout.addLayout(search_row)
+
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
+        actions = [
+            ("➕ Add Employee", self.add_employee, "Add a new employee record", True),
+            ("✏️ Edit Selected", self.edit_employee, "Edit the selected employee", False),
+            ("🔄 Activate / Deactivate", self.toggle_employee, "Toggle active status for selected employee", False),
+            ("🗑️ Delete Employee", self.delete_employee, "Permanently delete the selected employee", False),
+        ]
+        for label, slot, tip, is_primary in actions:
+            b = QPushButton(label)
+            b.clicked.connect(slot)
+            b.setToolTip(tip)
+            b.setMinimumHeight(36)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            if is_primary:
+                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+            elif "Delete" in label:
+                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
+            else:
+                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
+            actions_row.addWidget(b)
+        actions_row.addStretch(1)
+        toolbar_layout.addLayout(actions_row)
+
+        l.addWidget(toolbar_card)
+
+        self.emp_table = QTableWidget(0, 8)
+        self.emp_table.setHorizontalHeaderLabels(["ID", "Employee ID", "Name", "Department", "Role", "Phone", "Email", "Status"])
+        self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        l.addWidget(self.emp_table)
 
     def build_tasks(self):
-        l=QVBoxLayout()
+        l = QVBoxLayout()
         self._wrap_page_in_scroll(self.tasks_tab, l, "Task Manager", "Add, edit, and track daily tasks and evidence.")
-        row=QHBoxLayout(); l.addLayout(row)
-        self.task_date=QDateEdit(); configure_date_edit(self.task_date); self.task_date.setDisplayFormat("yyyy-MM-dd"); self.task_date.setDate(QDate.currentDate()); self.task_date.dateChanged.connect(self.refresh_tasks)
-        row.addWidget(QLabel("Date")); row.addWidget(self.task_date)
-        self.task_filter=QComboBox(); self.task_filter.addItem("All employees",None)
-        row.addWidget(self.task_filter)
+
+        task_toolbar_card = QFrame()
+        task_toolbar_card.setObjectName("taskToolbarCard")
+        task_toolbar_card_layout = QVBoxLayout(task_toolbar_card)
+        task_toolbar_card_layout.setContentsMargins(12, 10, 12, 10)
+        task_toolbar_card_layout.setSpacing(10)
+
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(10)
+
+        date_label = QLabel("📅 Date:")
+        date_label.setStyleSheet("font-weight: 600;")
+        filter_row.addWidget(date_label)
+        self.task_date = QDateEdit()
+        configure_date_edit(self.task_date)
+        self.task_date.setDisplayFormat("yyyy-MM-dd")
+        self.task_date.setDate(QDate.currentDate())
+        self.task_date.setMinimumWidth(125)
+        self.task_date.dateChanged.connect(self.refresh_tasks)
+        filter_row.addWidget(self.task_date)
+
+        filter_label = QLabel("👤 Employee:")
+        filter_label.setStyleSheet("font-weight: 600;")
+        filter_row.addWidget(filter_label)
+        self.task_filter = QComboBox()
+        self.task_filter.addItem("All employees", None)
+        self.task_filter.setMinimumWidth(170)
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
-        task_tips = {"Add Task": "Create a new task for the selected date", "Edit Selected": "Edit one selected task", "Bulk Edit Selected": "Apply chosen fields to multiple selected tasks", "Select All": "Select every task shown for the selected date and employee filter", "Delete Selected": "Delete the selected task", "Open Proof": "Open proof/evidence link in browser"}
-        # Keep task actions readable at the app's minimum window width. A
-        # horizontal toolbar scrolls rather than squeezing labels into buttons.
-        task_toolbar_scroll = QScrollArea()
-        task_toolbar_scroll.setWidgetResizable(True)
-        task_toolbar_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        task_toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        task_toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        task_toolbar_scroll.setFixedHeight(58)
-        task_toolbar_scroll.setStyleSheet("QScrollArea { background: transparent; border: 0; } QWidget#taskToolbarInner { background: transparent; } QPushButton { padding: 6px 12px; min-height: 34px; }")
-        task_toolbar_scroll.setViewportMargins(0, 0, 0, 0)
-        task_toolbar_inner = QWidget()
-        task_toolbar_inner.setObjectName("taskToolbarInner")
-        task_toolbar_layout = QHBoxLayout(task_toolbar_inner)
-        task_toolbar_layout.setContentsMargins(0, 2, 0, 2)
-        task_toolbar_layout.setSpacing(8)
-        for label,slot in [("Add Task",self.add_task),("Edit Selected",self.edit_task),("Bulk Edit Selected",self.bulk_edit_tasks),("Select All",self.task_table_select_all),("Delete Selected",self.delete_task),("Open Proof",self.open_proof)]:
-            b=QPushButton(label)
+        filter_row.addWidget(self.task_filter)
+
+        refresh_tasks_btn = QPushButton("🔄 Refresh")
+        refresh_tasks_btn.setToolTip("Reload tasks for the selected date and employee")
+        refresh_tasks_btn.clicked.connect(self.refresh_tasks)
+        filter_row.addWidget(refresh_tasks_btn)
+
+        filter_row.addStretch(1)
+
+        self.task_count_badge = QLabel("Tasks: 0")
+        self.task_count_badge.setStyleSheet("font-weight: 700; padding: 4px 10px; border-radius: 6px; background: rgba(99, 102, 241, 0.15); color: #6366F1;")
+        filter_row.addWidget(self.task_count_badge)
+        task_toolbar_card_layout.addLayout(filter_row)
+
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
+
+        task_actions = [
+            ("➕ Add Task", self.add_task, "Create a new task for the selected date", True),
+            ("✏️ Edit Selected", self.edit_task, "Edit one selected task", False),
+            ("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False),
+            ("☑️ Select All", self.task_table_select_all, "Select every task shown for the selected date and employee filter", False),
+            ("🗑️ Delete Selected", self.delete_task, "Delete the selected task", False),
+            ("🔗 Open Proof", self.open_proof, "Open proof/evidence link in browser", False),
+        ]
+        for label, slot, tip, is_primary in task_actions:
+            b = QPushButton(label)
             b.clicked.connect(slot)
-            b.setToolTip(task_tips.get(label, ""))
-            b.setMinimumWidth(max(112, b.fontMetrics().horizontalAdvance(label) + 36))
-            b.setMinimumHeight(40)
-            b.setMaximumHeight(42)
-            b.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            b.setStyleSheet("QPushButton { padding: 7px 12px; text-align: center; }")
-            task_toolbar_layout.addWidget(b)
-        task_toolbar_inner.setMinimumHeight(46)
-        task_toolbar_scroll.setWidget(task_toolbar_inner)
-        row.addWidget(task_toolbar_scroll, 1)
-        self.task_table=QTableWidget(0,9); self.task_table.setHorizontalHeaderLabels(["ID","Employee","Task","Priority","Status","Progress","Due","Proof","Manager remarks"])
-        self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows); self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection); self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers); l.addWidget(self.task_table)
+            b.setToolTip(tip)
+            b.setMinimumHeight(36)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            if is_primary:
+                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+            elif "Delete" in label:
+                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
+            else:
+                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
+            actions_row.addWidget(b)
+        actions_row.addStretch(1)
+        task_toolbar_card_layout.addLayout(actions_row)
+
+        l.addWidget(task_toolbar_card)
+
+        self.task_table = QTableWidget(0, 9)
+        self.task_table.setHorizontalHeaderLabels(["ID", "Employee", "Task", "Priority", "Status", "Progress", "Due", "Proof", "Manager remarks"])
+        self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        l.addWidget(self.task_table)
 
     def build_tracker(self):
         l=QVBoxLayout()
@@ -3823,49 +4019,80 @@ class MainWindow(QMainWindow):
         l=QVBoxLayout()
         self._wrap_page_in_scroll(self.attendance_tab, l, "Attendance & Working Calendar", "Record daily attendance and configure scheduled workdays.")
 
-        # Date row
-        row=QHBoxLayout(); row.setSpacing(8); l.addLayout(row)
-        self.att_date=QDateEdit(); configure_date_edit(self.att_date); self.att_date.setDisplayFormat("yyyy-MM-dd"); self.att_date.setDate(QDate.currentDate()); self.att_date.dateChanged.connect(self.refresh_attendance)
-        row.addWidget(QLabel("Selected date")); row.addWidget(self.att_date)
-        row.addStretch(1)
+        att_toolbar_card = QFrame()
+        att_toolbar_card.setObjectName("attToolbarCard")
+        att_toolbar_layout = QVBoxLayout(att_toolbar_card)
+        att_toolbar_layout.setContentsMargins(12, 10, 12, 10)
+        att_toolbar_layout.setSpacing(10)
 
-        # Scrollable action toolbar so labels never clip on narrow windows
-        toolbar_scroll = QScrollArea()
-        toolbar_scroll.setWidgetResizable(True)
-        toolbar_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        toolbar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        toolbar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        toolbar_scroll.setFixedHeight(48)
-        toolbar_scroll.setStyleSheet("QScrollArea { background: transparent; border: 0; } QWidget#attToolbarInner { background: transparent; }")
-        toolbar_inner = QWidget()
-        toolbar_inner.setObjectName("attToolbarInner")
-        row2 = QHBoxLayout(toolbar_inner)
-        row2.setContentsMargins(0, 2, 0, 2)
+        # Row 1: Date & Employee Filter & Selection
+        row1 = QHBoxLayout()
+        row1.setSpacing(10)
+
+        date_label = QLabel("📅 Date:")
+        date_label.setStyleSheet("font-weight: 600;")
+        row1.addWidget(date_label)
+        self.att_date = QDateEdit()
+        configure_date_edit(self.att_date)
+        self.att_date.setDisplayFormat("yyyy-MM-dd")
+        self.att_date.setDate(QDate.currentDate())
+        self.att_date.setMinimumWidth(125)
+        self.att_date.dateChanged.connect(self.refresh_attendance)
+        row1.addWidget(self.att_date)
+
+        filter_label = QLabel("👤 Filter employee:")
+        filter_label.setStyleSheet("font-weight: 600;")
+        row1.addWidget(filter_label)
+        self.att_employee_filter = QComboBox()
+        self.att_employee_filter.addItem("All employees", None)
+        for e in self.db.employees(False):
+            self.att_employee_filter.addItem(e["name"], e["id"])
+        self.att_employee_filter.setMinimumWidth(160)
+        self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
+        row1.addWidget(self.att_employee_filter)
+
+        self.att_select_all_button = QPushButton("☑️ Select All")
+        self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
+        self.att_select_all_button.setMinimumHeight(34)
+        self.att_select_all_button.clicked.connect(self.attendance_select_all)
+        row1.addWidget(self.att_select_all_button)
+
+        self.att_bulk_edit_button = QPushButton("📝 Bulk Edit Selected")
+        self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
+        self.att_bulk_edit_button.setMinimumHeight(34)
+        self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
+        row1.addWidget(self.att_bulk_edit_button)
+
+        row1.addStretch(1)
+        att_toolbar_layout.addLayout(row1)
+
+        # Row 2: Status & Time Actions
+        row2 = QHBoxLayout()
         row2.setSpacing(8)
 
-        for label, slot in [
-            ("Present", lambda: self.set_attendance_status("Present")),
-            ("Absent", lambda: self.set_attendance_status("Absent")),
-            ("Leave", lambda: self.set_attendance_status("Leave")),
-            ("Check In", self.check_in),
-            ("Check Out", self.check_out),
-            ("Edit Times", self.edit_attendance_times),
-            ("Note", self.attendance_note),
-        ]:
+        status_actions = [
+            ("🟢 Present", lambda: self.set_attendance_status("Present")),
+            ("🔴 Absent", lambda: self.set_attendance_status("Absent")),
+            ("🟡 Leave", lambda: self.set_attendance_status("Leave")),
+            ("⏱️ Check In", self.check_in),
+            ("🏁 Check Out", self.check_out),
+            ("✏️ Edit Times", self.edit_attendance_times),
+            ("📝 Note", self.attendance_note),
+        ]
+        for label, slot in status_actions:
             b = QPushButton(label)
-            b.setMinimumWidth(90)
-            b.setMinimumHeight(32)
-            b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            b.setMinimumHeight(34)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
             b.clicked.connect(slot)
             row2.addWidget(b)
 
-        # Holiday actions in a dropdown (never truncates)
         holiday_btn = QToolButton()
-        holiday_btn.setText("Holiday")
-        holiday_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        holiday_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        holiday_btn.setMinimumWidth(110)
-        holiday_btn.setMinimumHeight(32)
+        holiday_btn.setText("🎉 Holiday")
+        holiday_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        holiday_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        holiday_btn.setMinimumHeight(34)
+        holiday_btn.setStyleSheet("QToolButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
         holiday_menu = QMenu(holiday_btn)
         act_declare = QAction("Declare Holiday", self)
         act_declare.triggered.connect(self.declare_holiday)
@@ -3874,34 +4101,15 @@ class MainWindow(QMainWindow):
         holiday_menu.addAction(act_declare)
         holiday_menu.addAction(act_remove)
         holiday_btn.setMenu(holiday_menu)
-        holiday_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         row2.addWidget(holiday_btn)
         row2.addStretch(1)
+        att_toolbar_layout.addLayout(row2)
 
-        toolbar_scroll.setWidget(toolbar_inner)
-        l.addWidget(toolbar_scroll)
+        l.addWidget(att_toolbar_card)
 
-        self.holiday_banner=QLabel("")
+        self.holiday_banner = QLabel("")
         self.holiday_banner.setProperty("warningBanner", True)
         l.addWidget(self.holiday_banner)
-        emp_row = QHBoxLayout()
-        emp_row.addWidget(QLabel("Filter employee:"))
-        self.att_employee_filter = QComboBox()
-        self.att_employee_filter.addItem("All employees", None)
-        for e in self.db.employees(False):
-            self.att_employee_filter.addItem(e["name"], e["id"])
-        self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
-        emp_row.addWidget(self.att_employee_filter)
-        self.att_select_all_button = QPushButton("Select All")
-        self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
-        self.att_select_all_button.clicked.connect(self.attendance_select_all)
-        emp_row.addWidget(self.att_select_all_button)
-        self.att_bulk_edit_button = QPushButton("Bulk Edit Selected")
-        self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
-        self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
-        emp_row.addWidget(self.att_bulk_edit_button)
-        emp_row.addStretch(1)
-        l.addLayout(emp_row)
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
         att_header = self.att_table.horizontalHeader()
         att_header.setSectionResizeMode(QHeaderView.Interactive)
@@ -4348,13 +4556,9 @@ class MainWindow(QMainWindow):
             self, "Developer authorization", "Enter developer password to pull latest data:",
             QLineEdit.EchoMode.Password,
         )
-        if not ok:
+        if not ok or not password:
             return
-        expected = bytes.fromhex("c408585fbeeed010ea54f7fb51c80053546baec2b6831c1abfdc886777b330ec")
-        actual = hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), b"RSC-Pull-Latest-Data-v1", 300000
-        )
-        if not secrets.compare_digest(actual, expected):
+        if not verify_developer_password(password):
             return error(self, "Developer authorization failed.")
         sync = self.db.github_sync
         if not sync.is_configured:
@@ -4525,20 +4729,21 @@ class MainWindow(QMainWindow):
             button.setToolTip(message)
 
     def apply_interaction_animations(self):
-        """Add animated hover/click feedback without resizing controls or changing actions."""
+        """Add animated hover/click feedback for action buttons without interfering with table text rendering."""
         accent = self._ui_chrome_palette(self.current_theme())["accent"]
-        targets = self.findChildren(QPushButton) + self.findChildren(QToolButton)
-        targets += self.findChildren(QGroupBox) + self.findChildren(QAbstractItemView)
-        targets += self.findChildren(QProgressBar) + self.findChildren(ProductivityChart)
-        brand_logo = getattr(self, "brand_logo", None)
-        if brand_logo is not None:
-            targets.append(brand_logo)
+        # Query UI elements while isolating item views and charts from rasterizing effects
+        _ = self.findChildren(QAbstractItemView)
+        _ = self.findChildren(QProgressBar) + self.findChildren(ProductivityChart)
+        targets = []
+        for widget in self.findChildren(QPushButton) + self.findChildren(QToolButton):
+            if widget.objectName() in ("titleBtnMin", "titleBtnMax", "titleBtnClose"):
+                continue
+            targets.append(widget)
         for widget in targets:
             feedback = getattr(widget, "_interaction_feedback", None)
             if feedback is not None:
                 feedback.set_accent(accent)
                 continue
-            # Preserve any screen-transition or widget-specific effect already in use.
             if widget.graphicsEffect() is not None:
                 continue
             feedback = InteractionFeedback(widget, accent)
@@ -4615,6 +4820,8 @@ class MainWindow(QMainWindow):
             r=self.emp_table.rowCount(); self.emp_table.insertRow(r)
             vals=[e["id"],e["employee_code"] or "",e["name"],e["department"],e["designation"],e["phone"] or "",e["email"] or "","Active" if e["active"] else "Inactive"]
             self.set_row_items(self.emp_table, r, vals, status_cols={7})
+        if hasattr(self, "emp_count_badge"):
+            self.emp_count_badge.setText(f"Total: {len(rows)}")
         self.refresh_task_filter(); self.refresh_report_employees()
 
     def refresh_task_filter(self):
@@ -5219,6 +5426,8 @@ class MainWindow(QMainWindow):
             r=self.task_table.rowCount(); self.task_table.insertRow(r)
             vals=[t["id"],t["employee_name"],t["title"],t["priority"],task_status_label(t["status"]),f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
             self.set_row_items(self.task_table, r, vals, status_cols={3, 4})
+        if hasattr(self, "task_count_badge"):
+            self.task_count_badge.setText(f"Tasks: {len(rows)}")
         self.refresh_dashboard()
 
     def tracking_start_date(self, employee):
@@ -6834,15 +7043,16 @@ QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { backgro
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QDialog { background: #E8EEF6; color: #1E293B; }
 QFormLayout QLabel { color: #334155; background: transparent; }
-QToolTip { background: #F8FAFC; color: #0F172A; border: 1px solid #A5B4FC; padding: 8px 10px; border-radius: 8px; font-size: 9pt; }
+QToolTip, QLabel#accessibleHoverMessage { background-color: #0F172A; color: #FFFFFF; border: 2px solid #6366F1; padding: 8px 12px; border-radius: 8px; font-size: 10pt; font-weight: 600; }
+QCalendarWidget { background-color: #FFFFFF; color: #0F172A; border: 2px solid #6366F1; border-radius: 10px; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #15233F; }
 QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 4px; padding: 6px 8px; font-weight: 600; }
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
-QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
-QCalendarWidget QAbstractItemView { background: #F1F5F9; alternate-background-color: #F1F5F9; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
+QCalendarWidget QSpinBox { background: #0F172A; color: #ffffff; border: 1px solid #475569; border-radius: 4px; padding: 3px 6px; }
+QCalendarWidget QAbstractItemView { background: #FFFFFF; alternate-background-color: #F8FAFC; color: #0F172A; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* Opaque high-contrast surfaces prevent photographic wallpapers from reducing text readability. */
 QWidget#appPageSurface { background: #FFFFFF; color: #0F172A; }
-QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #64748B; }
+QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 16px; }
 QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
 QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }
 QWidget#kpiCard, QWidget#dashboardPanel { background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 14px; }
@@ -6989,15 +7199,16 @@ QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { backgro
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QDialog { background: #111827; color: #E2E8F0; }
 QFormLayout QLabel { color: #CBD5E1; background: transparent; }
-QToolTip { background: #111827; color: #F8FAFC; border: 1px solid #6366F1; padding: 8px 10px; border-radius: 8px; font-size: 9pt; }
+QToolTip, QLabel#accessibleHoverMessage { background-color: #020617; color: #FFFFFF; border: 2px solid #818CF8; padding: 8px 12px; border-radius: 8px; font-size: 10pt; font-weight: 600; }
+QCalendarWidget { background-color: #0F172A; color: #F8FAFC; border: 2px solid #818CF8; border-radius: 10px; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #070B14; }
 QCalendarWidget QToolButton { background: transparent; color: #ffffff; border: 0; border-radius: 4px; padding: 6px 8px; font-weight: 600; }
 QCalendarWidget QToolButton:hover { background: #7C5CFC; }
-QCalendarWidget QSpinBox { background: transparent; color: #ffffff; border: 0; padding: 3px; }
-QCalendarWidget QAbstractItemView { background: #111827; alternate-background-color: #0F172A; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
+QCalendarWidget QSpinBox { background: #1E293B; color: #ffffff; border: 1px solid #475569; border-radius: 4px; padding: 3px 6px; }
+QCalendarWidget QAbstractItemView { background: #0F172A; alternate-background-color: #1E293B; color: #E2E8F0; selection-background-color: #7C5CFC; selection-color: #ffffff; outline: 0; }
 /* High contrast: opaque panels keep live wallpapers from washing out text. */
 QWidget#appPageSurface { background: transparent; color: #F8FAFC; }
-QWidget#homeContent, QWidget#pageContent { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; }
+QWidget#homeContent, QWidget#pageContent { background-color: #111827; color: #F8FAFC; border: 1px solid #475569; border-radius: 16px; }
 QGroupBox { background-color: #0F172A; color: #F8FAFC; border: 1px solid #475569; border-radius: 12px; }
 QGroupBox::title { color: #F1F5F9; background-color: #0F172A; }
 QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC; border: 1px solid #475569; border-radius: 14px; }
