@@ -46,10 +46,25 @@ def resource_path(relative_path):
 
 
 def brand_mark_pixmap(size):
-    """Create the premium Raw Strength Calisthenics gym and strength emblem at the requested size."""
+    """Return the official colored Raw Strength Calisthenics emblem at the requested size."""
     size = max(24, int(size))
     if QApplication.instance() is None:
         _ = QApplication([""])
+    logo_file = resource_path("assets/raw_strength_brand_hud.png")
+    if Path(logo_file).exists():
+        pm = QPixmap(logo_file)
+        if not pm.isNull():
+            scaled = pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            canvas = QPixmap(size, size)
+            canvas.fill(Qt.GlobalColor.transparent)
+            p = QPainter(canvas)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            x = (size - scaled.width()) // 2
+            y = (size - scaled.height()) // 2
+            p.drawPixmap(x, y, scaled)
+            p.end()
+            return canvas
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -3521,13 +3536,11 @@ class MainWindow(QMainWindow):
             }
             QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
             QComboBox::down-arrow {
-                width: 0; height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 6px solid #6366F1;
+                image: url(assets/chevron_down_slate.png);
+                width: 12px; height: 12px;
                 margin-right: 8px;
             }
-            QComboBox::down-arrow:hover { border-top-color: #A855F7; }
+            QComboBox::down-arrow:hover { image: url(assets/chevron_down_cyan.png); }
             QTextEdit, QPlainTextEdit { padding: 6px 10px; border-radius: 8px; }
             QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
             QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {
@@ -6826,7 +6839,9 @@ class MainWindow(QMainWindow):
                 target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
                 doc.add_heading(f"Name : {e['name']}",level=1)
                 if opts.get("identity",True):
-                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}{target_str}',style="List Bullet")
+                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}',style="List Bullet")
+                if opts.get("target", True):
+                    doc.add_paragraph(f'Target: {emp_target}',style="List Bullet")
                 if opts.get("contact",False):
                     doc.add_paragraph(f'Phone: {e["phone"] or "N/A"}  |  Email: {e["email"] or "N/A"}',style="List Bullet")
                 eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
@@ -6836,8 +6851,8 @@ class MainWindow(QMainWindow):
                     links=self.source_status(e,"links",report_date) or "Not independently checked"
                     doc.add_paragraph(f"LATE: {late}  |  LINKS: {links}",style="List Bullet")
                 if opts.get("missing_proof",True):
-                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}{target_status_str}',style="List Bullet")
-                elif opts.get("target_status", True):
+                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}',style="List Bullet")
+                if opts.get("target_status", True):
                     doc.add_paragraph(f'Target status : {emp_target_status}',style="List Bullet")
                 if opts.get("tasks",True):
                     doc.add_paragraph("TASKS / WORK ITEMS",style="Heading 2")
@@ -6966,13 +6981,13 @@ class MainWindow(QMainWindow):
         logo_path = resource_path("assets/raw_strength_brand.png")
         if Path(logo_path).exists():
             try:
-                logo_flowable = RLImage(logo_path, width=38*mm, height=24.15*mm)
+                logo_flowable = RLImage(logo_path, width=38*mm, height=38*mm)
                 logo_flowable.hAlign = 'CENTER'
                 story.append(logo_flowable)
-                story.append(Spacer(1, 2.5*mm))
+                story.append(Spacer(1, 3.5*mm))
             except Exception:
                 pass
-        story.extend([Paragraph("RAW STRENGTH CALISTHENICS", styles["RSBrand"]),
+        story.extend([
                  Paragraph(escape(self._report_title(report_type)), styles["RSTitle"]),
                  Paragraph(f"Report date: {escape(report_date)} &nbsp;&nbsp; | &nbsp;&nbsp; Scope: {escape(scope)}", styles["RSSubtitle"]),
                  HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9)])
@@ -7055,7 +7070,9 @@ class MainWindow(QMainWindow):
                 target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
                 story.append(employee_name(e["name"]))
                 if opts.get("identity", True):
-                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}{target_str}'))
+                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}'))
+                if opts.get("target", True):
+                    story.append(bullet(f'Target: {emp_target}'))
                 if opts.get("contact", False):
                     story.append(bullet(f'Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}'))
                 eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
@@ -7066,8 +7083,8 @@ class MainWindow(QMainWindow):
                     links = self.source_status(e, "links", report_date) or "Not independently checked"
                     story.append(bullet(f"LATE: {late} | LINKS: {links}"))
                 if opts.get("missing_proof", True):
-                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}{target_status_str}'))
-                elif opts.get("target_status", True):
+                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}'))
+                if opts.get("target_status", True):
                     story.append(bullet(f'Target status : {emp_target_status}'))
                 if opts.get("tasks", True):
                     story.append(Paragraph("TASKS / WORK ITEMS", styles["RSSection"]))
@@ -7349,15 +7366,16 @@ class MainWindow(QMainWindow):
             target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
             target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
             lines.append(f"Name : {e['name']}")
-            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}{target_str}')
+            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}')
+            if opts.get("target", True): lines.append(f'• Target: {emp_target}')
             if opts.get("contact",False): lines.append(f'• Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}')
             eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
             if opts.get("work_status",True): lines.append(f"• WORK / EOD STATUS: {eod}")
             if opts.get("late_links",True):
                 lines.append(f'• LATE: {self.source_status(e,"late",d) or "Review required"} | LINKS: {self.source_status(e,"links",d) or "Not independently checked"}')
             if opts.get("missing_proof",True):
-                lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}{target_status_str}')
-            elif opts.get("target_status", True):
+                lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}')
+            if opts.get("target_status", True):
                 lines.append(f'• Target status : {emp_target_status}')
             if opts.get("tasks",True):
                 lines.append("TASKS / WORK ITEMS")
@@ -7847,14 +7865,12 @@ QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBo
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
 QComboBox::down-arrow {
-    width: 0; height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid #4F46E5;
+    image: url(assets/chevron_down_slate.png);
+    width: 12px; height: 12px;
     margin-right: 8px;
 }
-QComboBox::down-arrow:hover { border-top-color: #7C3AED; }
-QComboBox::down-arrow:disabled { border-top-color: #94A3B8; }
+QComboBox::down-arrow:hover { image: url(assets/chevron_down_cyan.png); }
+QComboBox::down-arrow:disabled { image: url(assets/chevron_down_slate.png); }
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #64748B; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
@@ -8011,14 +8027,12 @@ QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBo
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
 QComboBox::down-arrow {
-    width: 0; height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid #00E5FF;
+    image: url(assets/chevron_down_white.png);
+    width: 12px; height: 12px;
     margin-right: 8px;
 }
-QComboBox::down-arrow:hover { border-top-color: #38BDF8; }
-QComboBox::down-arrow:disabled { border-top-color: #64748B; }
+QComboBox::down-arrow:hover { image: url(assets/chevron_down_cyan.png); }
+QComboBox::down-arrow:disabled { image: url(assets/chevron_down_white.png); }
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #4C1D95; color: #FFFFFF; }

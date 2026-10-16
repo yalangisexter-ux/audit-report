@@ -33,7 +33,8 @@ def test_employee_targets_crud_and_report_formatting(tmp_path, monkeypatch):
         # 1. Verify default unset target returns NA
         preview_default = window.report_preview_text(today, emp_id)
         assert "Name : Taruna" in preview_default
-        assert "• Employee ID: RS-101 | Department: Fitness | Role: Coach   Target: NA" in preview_default
+        assert "• Employee ID: RS-101 | Department: Fitness | Role: Coach" in preview_default
+        assert "• Target: NA" in preview_default
         assert "Target status : NA" in preview_default
 
         # 2. Set custom target and status via db
@@ -44,7 +45,8 @@ def test_employee_targets_crud_and_report_formatting(tmp_path, monkeypatch):
 
         # 3. Verify text preview reflects custom target and status
         preview_updated = window.report_preview_text(today, emp_id)
-        assert "• Employee ID: RS-101 | Department: Fitness | Role: Coach   Target: Complete 5 audits" in preview_updated
+        assert "• Employee ID: RS-101 | Department: Fitness | Role: Coach" in preview_updated
+        assert "• Target: Complete 5 audits" in preview_updated
         assert "Target status : In Progress" in preview_updated
 
         # 4. Verify Word (DOCX) export formatting
