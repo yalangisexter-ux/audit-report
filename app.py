@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
     QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -23,7 +23,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether, HRFlowable, Image as RLImage
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -38,21 +38,28 @@ from database_sync import (
 from cloudflare_chat import CloudflareChatTab
 
 
+def resource_path(relative_path):
+    """Resolve bundled assets in source and PyInstaller builds."""
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return str(base_path / relative_path)
+
+
 def brand_mark_pixmap(size):
-    """Create the current vector-style RSC brand mark at the requested size."""
+    """Create the calisthenics/gym brand mark at the requested size."""
     size = max(24, int(size))
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
     bounds = QRectF(1, 1, size - 2, size - 2)
     background = QLinearGradient(bounds.topLeft(), bounds.bottomRight())
-    background.setColorAt(0.0, QColor("#111B4D"))
-    background.setColorAt(0.55, QColor("#312E81"))
-    background.setColorAt(1.0, QColor("#6D28D9"))
+    background.setColorAt(0.0, QColor("#0B132B"))
+    background.setColorAt(0.5, QColor("#1C2541"))
+    background.setColorAt(1.0, QColor("#3A506B"))
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(background)
-    painter.drawRoundedRect(bounds, size * .23, size * .23)
+    painter.drawRoundedRect(bounds, size * .22, size * .22)
 
     border = QConicalGradient(bounds.center(), 0)
     border.setColorAt(0.0, QColor("#22D3EE"))
@@ -60,21 +67,57 @@ def brand_mark_pixmap(size):
     border.setColorAt(.7, QColor("#F472B6"))
     border.setColorAt(1.0, QColor("#22D3EE"))
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.setPen(QPen(QBrush(border), max(1.4, size * .035)))
-    painter.drawRoundedRect(bounds.adjusted(size * .06, size * .06, -size * .06, -size * .06), size * .19, size * .19)
+    painter.setPen(QPen(QBrush(border), max(1.2, size * .035)))
+    painter.drawRoundedRect(bounds.adjusted(size * .05, size * .05, -size * .05, -size * .05), size * .18, size * .18)
 
-    painter.setPen(QColor("#FFFFFF"))
-    font = QFont("Segoe UI", max(9, round(size * .23)), QFont.Weight.Bold)
-    painter.setFont(font)
-    painter.drawText(QRectF(size * .08, size * .27, size * .84, size * .42), Qt.AlignmentFlag.AlignCenter, "RSC")
-    accent = QLinearGradient(size * .27, size * .76, size * .73, size * .76)
-    accent.setColorAt(0.0, QColor("#22D3EE"))
-    accent.setColorAt(.5, QColor("#A78BFA"))
-    accent.setColorAt(1.0, QColor("#F472B6"))
-    painter.setPen(QPen(QBrush(accent), max(1.8, size * .045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    painter.drawLine(int(size * .28), int(size * .77), int(size * .72), int(size * .77))
+    brand_img_path = resource_path("assets/raw_strength_brand.png")
+    drawn_image = False
+    if os.path.exists(brand_img_path):
+        img = QImage(brand_img_path)
+        if not img.isNull():
+            inset = size * 0.09
+            inner_w = size - 2 * inset
+            inner_h = size - 2 * inset
+            scaled = img.scaled(int(inner_w), int(inner_h), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            target_x = (size - scaled.width()) / 2.0
+            target_y = (size - scaled.height()) / 2.0
+            painter.drawImage(QRectF(target_x, target_y, scaled.width(), scaled.height()), scaled)
+            drawn_image = True
+
+    if not drawn_image:
+        painter.setPen(QColor("#FFFFFF"))
+        font = QFont("Segoe UI", max(9, round(size * .23)), QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.drawText(QRectF(size * .08, size * .27, size * .84, size * .42), Qt.AlignmentFlag.AlignCenter, "RSC")
+        accent = QLinearGradient(size * .27, size * .76, size * .73, size * .76)
+        accent.setColorAt(0.0, QColor("#22D3EE"))
+        accent.setColorAt(.5, QColor("#A78BFA"))
+        accent.setColorAt(1.0, QColor("#F472B6"))
+        painter.setPen(QPen(QBrush(accent), max(1.8, size * .045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(int(size * .28), int(size * .77), int(size * .72), int(size * .77))
+
     painter.end()
     return pixmap
+
+
+def is_due_time_included(opts):
+    """Check if due time should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("due_time", "duetime", "due", "due_times"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("due_time", True))
+
+
+def is_remarks_included(opts):
+    """Check if manager remarks should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("remarks", "manager_remarks", "manager_note", "notes", "manager_notes"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("remarks", True))
 
 # Embedded historical audit seed data (combined from audit_seed.py).
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
@@ -3803,7 +3846,7 @@ class MainWindow(QMainWindow):
         self.report_options_grid.setVerticalSpacing(8)
         self.eod_checks = {}
         self.report_option_keys = {
-            "Audit / EOD": ("summary", "identity", "contact", "work_status", "late_links", "missing_proof", "tasks", "details", "due_time", "proof", "proof_notes", "remarks", "pending"),
+            "Audit / EOD": ("summary", "identity", "contact", "work_status", "late_links", "missing_proof", "tasks", "details", "due_time", "proof", "proof_notes", "expose_link", "remarks", "pending"),
             "Employee Attendance": ("attendance_identity", "attendance_status", "attendance_times", "attendance_remarks", "attendance_summary"),
             "Employee Details": ("details_identity", "details_contact", "details_joining", "details_status", "details_notes"),
             "Employee Productivity": ("productivity_identity", "productivity_metrics", "productivity_explanation", "productivity_tracking", "productivity_tasks"),
@@ -3820,6 +3863,7 @@ class MainWindow(QMainWindow):
             ("due_time", "Due time", True),
             ("proof", "Proof / evidence links", True),
             ("proof_notes", "Proof notes", False),
+            ("expose_link", "Expose proof links (show full URLs for all employees)", False),
             ("remarks", "Manager remarks", True),
             ("pending", "Pending items", True),
             ("attendance_identity", "Employee ID / Department", True),
@@ -3838,10 +3882,14 @@ class MainWindow(QMainWindow):
             ("productivity_tracking", "Tracking and attendance totals", True),
             ("productivity_tasks", "Task progress details", True),
         ]
-        for key, label, checked in report_options:
+        for key, label, default_checked in report_options:
+            saved = self.db.get_setting(f"report_opt_{key}", "")
+            checked = (saved == "1") if saved in ("0", "1") else default_checked
             cb = QCheckBox(label)
             cb.setChecked(checked)
-            cb.stateChanged.connect(lambda _state: self.preview_report())
+            def _bind_cb(k, box):
+                return lambda _state: (self.db.set_setting(f"report_opt_{k}", "1" if box.isChecked() else "0"), self.preview_report())
+            cb.stateChanged.connect(_bind_cb(key, cb))
             self.eod_checks[key] = cb
         l.addWidget(self.eod_options_group)
 
@@ -4017,6 +4065,7 @@ class MainWindow(QMainWindow):
             ("Recovery question", self.update_recovery_question, "Update your password recovery question"),
             ("Manage accounts", self.manage_accounts, "Create or manage HR and Admin accounts"),
             ("Export employees CSV", self.export_employees_csv, "Export employee list to CSV"),
+            ("Expose all proof links", self.apply_global_expose_links, "Expose proof links for all employee tasks and reports"),
         ]
         for index, (label, slot, tip) in enumerate(actions):
             button = QPushButton(label)
@@ -4515,7 +4564,8 @@ class MainWindow(QMainWindow):
         defaults = {
             "summary": True, "identity": True, "contact": False, "work_status": True,
             "late_links": True, "missing_proof": True, "tasks": True, "details": True,
-            "due_time": True, "proof": True, "proof_notes": False, "remarks": True, "pending": True,
+            "due_time": True, "proof": True, "proof_notes": False, "expose_link": False,
+            "remarks": True, "pending": True,
             "attendance_identity": True, "attendance_status": True, "attendance_times": True,
             "attendance_remarks": True, "attendance_summary": True,
             "details_identity": True, "details_contact": True, "details_joining": True,
@@ -4526,7 +4576,40 @@ class MainWindow(QMainWindow):
         }
         selected = {key: cb.isChecked() for key, cb in getattr(self, "eod_checks", {}).items()}
         selected.update({key: cb.isChecked() for key, cb in getattr(self, "business_report_checks", {}).items()})
-        return selected or defaults
+        res = selected if selected else defaults.copy()
+        if "due_time" in res:
+            res["duetime"] = res["due_time"]
+            res["due"] = res["due_time"]
+        if "remarks" in res:
+            res["manager_remarks"] = res["remarks"]
+            res["manager_note"] = res["remarks"]
+        return res
+
+    def is_task_link_exposed(self, task, opts=None):
+        if opts and (opts.get("expose_link") or opts.get("expose_links") or opts.get("expose_all_links")):
+            return True
+        if hasattr(self, "db") and self.db.get_setting("global_expose_link") == "1":
+            return True
+        if task is None:
+            return False
+        try:
+            return bool(task["expose_link"])
+        except (IndexError, KeyError):
+            return False
+
+    def apply_global_expose_links(self):
+        count = self.db.conn.execute("SELECT COUNT(*) AS c FROM tasks").fetchone()["c"]
+        if not ask(self, "Expose all proof links", f"This will expose full proof links for all employees across all {count} tasks and default reports to full URLs. Proceed?"):
+            return
+        self.db.conn.execute("UPDATE tasks SET expose_link=1, updated_at=?", (now_text(),))
+        self.db.set_setting("global_expose_link", "1")
+        self.db.set_setting("report_opt_expose_link", "1")
+        if hasattr(self, "eod_checks") and "expose_link" in self.eod_checks:
+            self.eod_checks["expose_link"].setChecked(True)
+        self.db.conn.commit()
+        self.db.log("Global expose links enabled", f"Updated {count} tasks")
+        self.refresh_all()
+        info(self, f"Expose link has been enabled globally across all {count} employee tasks.")
 
     def _report_scope_changed(self, *_args):
         if not hasattr(self, "report_scope") or not hasattr(self, "report_employee"):
@@ -4676,6 +4759,7 @@ class MainWindow(QMainWindow):
         progress = QSpinBox(); progress.setRange(0,100); progress.setSuffix("%"); field_row("Progress", progress)
         due = QLineEdit(); due.setPlaceholderText("HH:MM"); field_row("Due time", due)
         manager_note = QLineEdit(); field_row("Manager remarks", manager_note)
+        expose_link = QCheckBox("Expose full proof URL in reports"); field_row("Expose links", expose_link)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
         if dialog.exec() != QDialog.Accepted: return
@@ -4692,6 +4776,7 @@ class MainWindow(QMainWindow):
             if value and not valid_hhmm(value): return error(self, "Due time must use 24-hour HH:MM format.")
             updates["due_time"] = value
         if fields["Manager remarks"][0].isChecked(): updates["manager_note"] = manager_note.text().strip()
+        if fields["Expose links"][0].isChecked(): updates["expose_link"] = 1 if expose_link.isChecked() else 0
         if not updates: return info(self, "No fields were selected to update.")
         if updates.get("status") == "Completed": updates["progress"] = 100
         if "status" in updates and updates["status"] in ("Submitted","Completed"):
@@ -5455,6 +5540,15 @@ class MainWindow(QMainWindow):
         for r in header.runs: r.font.name="Aptos"; r.font.size=Pt(8); r.font.bold=True; r.font.color.rgb=RGBColor(71,85,105)
         footer=sec.footer.paragraphs[0]; footer.text=f"Confidential internal report  •  Generated {now_text()}"; footer.alignment=1
         for r in footer.runs: r.font.size=Pt(8); r.font.color.rgb=RGBColor(100,116,139)
+        logo_path = resource_path("assets/raw_strength_brand.png")
+        if Path(logo_path).exists():
+            try:
+                logo_para = doc.add_paragraph()
+                logo_para.alignment = 1
+                logo_para.paragraph_format.space_after = Pt(2)
+                logo_para.add_run().add_picture(logo_path, width=Inches(1.8))
+            except Exception:
+                pass
         title=doc.add_paragraph(style="Title"); title.alignment=1; title.add_run(self._report_title(report_type))
         chosen=self.db.employee(employee_id) if employee_id else None
         sub=doc.add_paragraph(); sub.alignment=1; sub.add_run(f"Report date: {report_date}    |    Scope: {chosen['name'] if chosen else 'All employees'}").bold=True
@@ -5544,7 +5638,7 @@ class MainWindow(QMainWindow):
                         for idx,t in enumerate(tasks,1):
                             doc.add_paragraph(f'{idx}. {t["title"]} — Status: {task_status_label(t["status"])}',style="List Bullet")
                             if opts.get("details",True) and t["details"]: doc.add_paragraph(f'Details: {t["details"]}',style="List Bullet 2")
-                            if opts.get("due_time",True) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
+                            if is_due_time_included(opts) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
                             if opts.get("proof",True):
                                 task_links = task_evidence_urls(t)
                                 if task_links:
@@ -5553,15 +5647,15 @@ class MainWindow(QMainWindow):
                                     for task_link_index, url in enumerate(task_links):
                                         if task_link_index:
                                             proof_paragraph.add_run(" | ")
-                                        add_docx_hyperlink(proof_paragraph, url, url if bool(t["expose_link"]) else "Tap here to view content")
+                                        add_docx_hyperlink(proof_paragraph, url, url if self.is_task_link_exposed(t, opts) else "Tap here to view content")
                                 else:
                                     doc.add_paragraph('Proof / Evidence: N/A',style="List Bullet 2")
                             if opts.get("proof_notes",False) and t["proof_note"]:
                                 note_paragraph=doc.add_paragraph(style="List Bullet 2")
                                 note_paragraph.add_run("Proof notes: ")
                                 note_text = proof_note_display_text(t, opts.get("proof", True))
-                                add_docx_linkified_text(note_paragraph,note_text,bool(t["expose_link"]))
-                            if opts.get("remarks",True): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
+                                add_docx_linkified_text(note_paragraph,note_text,self.is_task_link_exposed(t, opts))
+                            if is_remarks_included(opts): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
                     else:
                         doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
                 if opts.get("pending",True):
@@ -5661,10 +5755,20 @@ class MainWindow(QMainWindow):
         employee = self.db.employee(employee_id) if employee_id else None
         scope = employee["name"] if employee else "All employees"
         opts = self.selected_eod_options() if eod_options is None else eod_options
-        story = [Paragraph("RAW STRENGTH CALISTHENICS", styles["RSBrand"]),
+        story = []
+        logo_path = resource_path("assets/raw_strength_brand.png")
+        if Path(logo_path).exists():
+            try:
+                logo_flowable = RLImage(logo_path, width=38*mm, height=24.15*mm)
+                logo_flowable.hAlign = 'CENTER'
+                story.append(logo_flowable)
+                story.append(Spacer(1, 2.5*mm))
+            except Exception:
+                pass
+        story.extend([Paragraph("RAW STRENGTH CALISTHENICS", styles["RSBrand"]),
                  Paragraph(escape(self._report_title(report_type)), styles["RSTitle"]),
                  Paragraph(f"Report date: {escape(report_date)} &nbsp;&nbsp; | &nbsp;&nbsp; Scope: {escape(scope)}", styles["RSSubtitle"]),
-                 HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9)]
+                 HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9)])
 
         if report_type == "Employee Details":
             emps = self._report_employees(employee_id)
@@ -5758,7 +5862,7 @@ class MainWindow(QMainWindow):
                             story.append(bullet(f'{idx}. {t["title"]} — Status: {task_status_label(t["status"])}'))
                             if opts.get("details", True) and t["details"]:
                                 story.append(bullet(f'Details: {t["details"]}'))
-                            if opts.get("due_time", True) and t["due_time"]:
+                            if is_due_time_included(opts) and t["due_time"]:
                                 story.append(bullet(f'Due time: {t["due_time"]}'))
                             if opts.get("proof", True):
                                 task_links = task_evidence_urls(t)
@@ -5767,7 +5871,7 @@ class MainWindow(QMainWindow):
                                     for task_link_index,url in enumerate(task_links):
                                         if task_link_index:
                                             link_markup.append("|")
-                                        link_markup.append(report_pdf_hyperlink(url, url if bool(t["expose_link"]) else "Tap here to view content"))
+                                        link_markup.append(report_pdf_hyperlink(url, url if self.is_task_link_exposed(t, opts) else "Tap here to view content"))
                                     story.append(Paragraph(
                                         "&#8226;&nbsp; Proof / Evidence: " + " ".join(link_markup),
                                         styles["RSLink"],
@@ -5776,8 +5880,8 @@ class MainWindow(QMainWindow):
                                     story.append(bullet("Proof / Evidence: N/A"))
                             if opts.get("proof_notes", False) and t["proof_note"]:
                                 note_text = proof_note_display_text(t, opts.get("proof", True))
-                                story.append(bullet(f'Proof notes: {note_text}', expose_full_url=bool(t["expose_link"])))
-                            if opts.get("remarks", True):
+                                story.append(bullet(f'Proof notes: {note_text}', expose_full_url=self.is_task_link_exposed(t, opts)))
+                            if is_remarks_included(opts):
                                 story.append(bullet(f'Manager remarks: {t["manager_note"] or "N/A"}'))
                     else:
                         story.append(bullet("No tasks recorded for this date."))
@@ -5877,9 +5981,13 @@ class MainWindow(QMainWindow):
                 max_proof_links=max(1,max_proof_links)
                 proof_headers=["Proof link"] if max_proof_links==1 else [f"Proof link {index+1}" for index in range(max_proof_links)]
                 field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
-                headers += [label for key,label in field_keys if key!="proof" and opts.get(key,True)]
+                def _is_csv_field_active(k):
+                    if k == "due_time": return is_due_time_included(opts)
+                    if k == "remarks": return is_remarks_included(opts)
+                    return bool(opts.get(k, True))
+                headers += [label for key,label in field_keys if key!="proof" and _is_csv_field_active(key)]
                 if opts.get("proof",True):
-                    insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))
+                    insert_at=5+sum(1 for key,_label in field_keys[:8] if _is_csv_field_active(key))
                     headers[insert_at:insert_at]=proof_headers
                 w.writerow(headers)
                 for e,tasks,_att in report_rows:
@@ -5901,17 +6009,17 @@ class MainWindow(QMainWindow):
                             "Manager remarks":t["manager_note"] or "N/A" if t else "N/A",
                             "Pending items":"; ".join(x["title"] for x in tasks if not is_explicitly_completed_task_status(x["status"]) and not is_cancelled_task_status(x["status"])) or "No",
                         }
-                        row=base+[values[label] for key,label in field_keys if key!="proof" and opts.get(key,True)]
+                        row=base+[values[label] for key,label in field_keys if key!="proof" and _is_csv_field_active(key)]
                         if opts.get("proof",True):
                             # CSV has no native hyperlink formatting. Spreadsheet
                             # apps evaluate HYPERLINK formulas and render their
                             # short labels as clickable links.
                             proof_cells=[]
                             for url in links[:max_proof_links]:
-                                proof_cells.append(csv_hyperlink_formula(url, url if t and bool(t["expose_link"]) else "Tap here to view content"))
+                                proof_cells.append(csv_hyperlink_formula(url, url if t and self.is_task_link_exposed(t, opts) else "Tap here to view content"))
                             if not proof_cells: proof_cells=["N/A"]
                             proof_cells += [""] * (max_proof_links-len(proof_cells))
-                            insert_at=5+sum(1 for key,_label in field_keys[:8] if opts.get(key,True))
+                            insert_at=5+sum(1 for key,_label in field_keys[:8] if _is_csv_field_active(key))
                             row[insert_at:insert_at]=proof_cells
                         w.writerow(row)
             for section_title, headers, rows in self._selected_business_report_sections(opts):
@@ -6021,18 +6129,18 @@ class MainWindow(QMainWindow):
                     for i,t in enumerate(tasks,1):
                         lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}')
                         if opts.get("details",True) and t["details"]: lines.append(f'  • Details: {t["details"]}')
-                        if opts.get("due_time",True) and t["due_time"]: lines.append(f'  • Due time: {t["due_time"]}')
+                        if is_due_time_included(opts) and t["due_time"]: lines.append(f'  • Due time: {t["due_time"]}')
                         if opts.get("proof",True):
                             evidence_urls = task_evidence_urls(t)
                             lines.append(f'  • Proof / Evidence: {self.task_proof_label(e,t,d)}')
                             if evidence_urls:
                                 for evidence_url in evidence_urls:
-                                    label = evidence_url if bool(t["expose_link"]) else "Tap here to view content"
+                                    label = evidence_url if self.is_task_link_exposed(t, opts) else "Tap here to view content"
                                     lines.append(f'  • {label}')
                         if opts.get("proof_notes",False) and t["proof_note"]:
                             note_text = proof_note_display_text(t, opts.get("proof", True))
                             lines.append(f'  • Proof notes: {note_text}')
-                        if opts.get("remarks",True): lines.append(f'  • Manager remarks: {t["manager_note"] or "N/A"}')
+                        if is_remarks_included(opts): lines.append(f'  • Manager remarks: {t["manager_note"] or "N/A"}')
                 else: lines.append("• No tasks recorded for this date.")
             if opts.get("pending",True):
                 pending=[t["title"] for t in tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"])]

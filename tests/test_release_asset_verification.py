@@ -663,3 +663,95 @@ def test_update_worker_has_latest_release_fallback_for_api_failures():
     assert 'fallback_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"' in source
     assert "fallback both failed." in source
     assert "verify_release_asset_bytes" in source
+
+
+def test_due_time_and_remarks_exclusion_and_exposed_links_in_exports(tmp_path, monkeypatch):
+    import reportlab.platypus
+    import xml.etree.ElementTree as ET
+    from docx import Document
+    from pathlib import Path
+    import csv
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "test-exclude.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    today = "2026-10-16"
+    now_str = app.now_text()
+    emp_id = db.conn.execute(
+        "INSERT INTO employees(name,employee_code,department,designation,active,created_at) VALUES(?,?,?,?,?,?)",
+        ("Test Athlete", "TA01", "Calisthenics", "Trainer", 1, now_str),
+    ).lastrowid
+    db.conn.execute(
+        "INSERT INTO tasks(employee_id,task_date,title,details,due_time,status,progress,proof_url,proof_note,manager_note,expose_link,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (emp_id, today, "Planche practice", "Hold 10s", "10:30", "Completed", 100, "https://example.com/planche", "Good form", "Manager approved", 0, now_str, now_str),
+    )
+    db.conn.commit()
+
+    window = app.MainWindow(db, {"username": "AdminUser", "role": "Admin"})
+    try:
+        # Exclude due time and manager remarks
+        window.eod_checks["due_time"].setChecked(False)
+        window.eod_checks["remarks"].setChecked(False)
+        opts = window.selected_eod_options()
+        assert opts["due_time"] is False
+        assert opts["remarks"] is False
+        assert opts["duetime"] is False
+        assert opts["manager_remarks"] is False
+
+        # 1. Preview text
+        preview = window.report_preview_text(today, emp_id)
+        assert "Due time" not in preview
+        assert "Manager remarks" not in preview
+        assert "Tap here to view content" in preview
+
+        # 2. DOCX
+        docx_path = tmp_path / "test_exclude.docx"
+        window.make_docx(docx_path, today, emp_id, "Audit / EOD", opts)
+        doc = Document(docx_path)
+        doc_text = "\n".join(p.text for p in doc.paragraphs)
+        assert "Due time" not in doc_text
+        assert "Manager remarks" not in doc_text
+
+        # 3. CSV
+        csv_path = tmp_path / "test_exclude.csv"
+        window.export_report_csv(csv_path, today, emp_id, "Audit / EOD", opts)
+        with open(csv_path, encoding="utf-8-sig") as f:
+            csv_lines = [row for row in csv.reader(f)]
+        header_row = csv_lines[0]
+        assert "Due time" not in header_row
+        assert "Manager remarks" not in header_row
+
+        # 4. PDF
+        captured_story = []
+        class CaptureDoc:
+            def __init__(self, *args, **kwargs): pass
+            def build(self, story, **kwargs): captured_story.extend(story)
+        monkeypatch.setattr(reportlab.platypus, "SimpleDocTemplate", CaptureDoc)
+        pdf_path = tmp_path / "test_exclude.pdf"
+        window.make_pdf(pdf_path, today, emp_id, "Audit / EOD", opts)
+        pdf_text = " ".join(getattr(f, "text", "") for f in captured_story if hasattr(f, "text"))
+        assert "Due time" not in pdf_text
+        assert "Manager remarks" not in pdf_text
+
+        # Now test expose_link in Print Center: when enabled, URLs must be exposed
+        window.eod_checks["expose_link"].setChecked(True)
+        opts_exposed = window.selected_eod_options()
+        assert opts_exposed["expose_link"] is True
+        preview_exposed = window.report_preview_text(today, emp_id)
+        assert "https://example.com/planche" in preview_exposed
+        assert "Tap here to view content" not in preview_exposed
+    finally:
+        window.close()
+
+
+def test_calisthenics_logo_and_brand_mark():
+    from pathlib import Path
+    pix = app.brand_mark_pixmap(68)
+    assert not pix.isNull()
+    assert pix.width() == 68 and pix.height() == 68
+
+    logo_path = app.resource_path("assets/raw_strength_brand.png")
+    assert Path(logo_path).exists()
+
