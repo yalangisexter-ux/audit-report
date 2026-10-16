@@ -46,56 +46,99 @@ def resource_path(relative_path):
 
 
 def brand_mark_pixmap(size):
-    """Create the calisthenics/gym brand mark at the requested size."""
+    """Create the premium Raw Strength Calisthenics brand emblem at the requested size."""
     size = max(24, int(size))
+    if QApplication.instance() is None:
+        _ = QApplication([""])
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-    bounds = QRectF(1, 1, size - 2, size - 2)
-    background = QLinearGradient(bounds.topLeft(), bounds.bottomRight())
-    background.setColorAt(0.0, QColor("#0B132B"))
-    background.setColorAt(0.5, QColor("#1C2541"))
-    background.setColorAt(1.0, QColor("#3A506B"))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(background)
-    painter.drawRoundedRect(bounds, size * .22, size * .22)
 
-    border = QConicalGradient(bounds.center(), 0)
-    border.setColorAt(0.0, QColor("#22D3EE"))
-    border.setColorAt(.35, QColor("#A78BFA"))
-    border.setColorAt(.7, QColor("#F472B6"))
-    border.setColorAt(1.0, QColor("#22D3EE"))
+    cx = size / 2.0
+    cy = size / 2.0
+    top = size * 0.05
+    bottom = size * 0.95
+    left = size * 0.05
+    right = size * 0.95
+    mid_y = size * 0.62
+
+    # 1. Geometric Diamond / Hexagonal Shield Crest
+    shield_path = QPainterPath()
+    shield_path.moveTo(cx, top)
+    shield_path.lineTo(right, size * 0.22)
+    shield_path.lineTo(right, mid_y)
+    shield_path.lineTo(cx, bottom)
+    shield_path.lineTo(left, mid_y)
+    shield_path.lineTo(left, size * 0.22)
+    shield_path.closeSubpath()
+
+    # Premium obsidian-titanium dark fill
+    bg_gradient = QLinearGradient(0, top, 0, bottom)
+    bg_gradient.setColorAt(0.0, QColor("#1E293B"))
+    bg_gradient.setColorAt(0.4, QColor("#0F172A"))
+    bg_gradient.setColorAt(1.0, QColor("#020617"))
+    painter.fillPath(shield_path, bg_gradient)
+
+    # 2. Precision Metallic Rim (Cyan to Electric Indigo)
+    rim_pen = QLinearGradient(left, top, right, bottom)
+    rim_pen.setColorAt(0.0, QColor("#38BDF8"))
+    rim_pen.setColorAt(0.5, QColor("#818CF8"))
+    rim_pen.setColorAt(1.0, QColor("#C084FC"))
+    painter.setPen(QPen(QBrush(rim_pen), max(1.5, size * 0.045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.setPen(QPen(QBrush(border), max(1.2, size * .035)))
-    painter.drawRoundedRect(bounds.adjusted(size * .05, size * .05, -size * .05, -size * .05), size * .18, size * .18)
+    painter.drawPath(shield_path)
 
-    brand_img_path = resource_path("assets/raw_strength_brand.png")
-    drawn_image = False
-    if os.path.exists(brand_img_path):
-        img = QImage(brand_img_path)
-        if not img.isNull():
-            inset = size * 0.09
-            inner_w = size - 2 * inset
-            inner_h = size - 2 * inset
-            scaled = img.scaled(int(inner_w), int(inner_h), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            target_x = (size - scaled.width()) / 2.0
-            target_y = (size - scaled.height()) / 2.0
-            painter.drawImage(QRectF(target_x, target_y, scaled.width(), scaled.height()), scaled)
-            drawn_image = True
+    # 3. Inner Subtle Depth Border
+    inner_shield = QPainterPath()
+    inner_inset = size * 0.07
+    inner_shield.moveTo(cx, top + inner_inset)
+    inner_shield.lineTo(right - inner_inset, size * 0.23)
+    inner_shield.lineTo(right - inner_inset, mid_y - inner_inset * 0.5)
+    inner_shield.lineTo(cx, bottom - inner_inset)
+    inner_shield.lineTo(left + inner_inset, mid_y - inner_inset * 0.5)
+    inner_shield.lineTo(left + inner_inset, size * 0.23)
+    inner_shield.closeSubpath()
+    painter.setPen(QPen(QColor(255, 255, 255, 30), max(1.0, size * 0.02)))
+    painter.drawPath(inner_shield)
 
-    if not drawn_image:
-        painter.setPen(QColor("#FFFFFF"))
-        font = QFont("Segoe UI", max(9, round(size * .23)), QFont.Weight.Bold)
-        painter.setFont(font)
-        painter.drawText(QRectF(size * .08, size * .27, size * .84, size * .42), Qt.AlignmentFlag.AlignCenter, "RSC")
-        accent = QLinearGradient(size * .27, size * .76, size * .73, size * .76)
-        accent.setColorAt(0.0, QColor("#22D3EE"))
-        accent.setColorAt(.5, QColor("#A78BFA"))
-        accent.setColorAt(1.0, QColor("#F472B6"))
-        painter.setPen(QPen(QBrush(accent), max(1.8, size * .045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(int(size * .28), int(size * .77), int(size * .72), int(size * .77))
+    # 4. Calisthenics Core Emblem:
+    # A. Pull-up / Parallel Bar across upper region
+    bar_y = size * 0.27
+    bar_pen = QPen(QColor("#38BDF8"), max(1.8, size * 0.038), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+    painter.setPen(bar_pen)
+    painter.drawLine(QPointF(size * 0.22, bar_y), QPointF(size * 0.78, bar_y))
+
+    # B. Symmetrical Gymnastic Rings suspended from the bar
+    ring_radius = size * 0.10
+    strap_pen = QPen(QColor(203, 213, 225, 180), max(1.0, size * 0.022))
+    painter.setPen(strap_pen)
+    painter.drawLine(QPointF(size * 0.30, bar_y), QPointF(size * 0.30, size * 0.35))
+    painter.drawLine(QPointF(size * 0.70, bar_y), QPointF(size * 0.70, size * 0.35))
+
+    ring_pen = QPen(QColor("#F8FAFC"), max(1.4, size * 0.032))
+    painter.setPen(ring_pen)
+    painter.drawEllipse(QPointF(size * 0.30, size * 0.42), ring_radius, ring_radius)
+    painter.drawEllipse(QPointF(size * 0.70, size * 0.42), ring_radius, ring_radius)
+
+    # C. Dynamic "RSC" Athletic Typography
+    painter.setPen(QColor("#FFFFFF"))
+    font_size = max(8, round(size * 0.22))
+    font = QFont("Segoe UI", font_size, QFont.Weight.Black)
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(0.5, size * 0.02))
+    painter.setFont(font)
+    text_rect = QRectF(size * 0.08, size * 0.50, size * 0.84, size * 0.28)
+    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "RSC")
+
+    # D. Electric Accent Chevron at Apex
+    chevron = QPainterPath()
+    ch_y = size * 0.82
+    chevron.moveTo(size * 0.36, ch_y - size * 0.03)
+    chevron.lineTo(cx, ch_y + size * 0.04)
+    chevron.lineTo(size * 0.64, ch_y - size * 0.03)
+    painter.setPen(QPen(QColor("#38BDF8"), max(1.8, size * 0.042), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    painter.drawPath(chevron)
 
     painter.end()
     return pixmap
@@ -404,25 +447,33 @@ def add_docx_linkified_text(paragraph, text, expose_full_url=False):
 
 def configure_date_edit(date_edit):
     date_edit.setCalendarPopup(True)
+    date_edit.wheelEvent = lambda event: event.ignore()
     calendar = date_edit.calendarWidget()
     calendar.setGridVisible(True)
     calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
+    calendar.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+    calendar.setAutoFillBackground(True)
+    for child in calendar.findChildren(QWidget):
+        child.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        child.setAutoFillBackground(True)
+        if isinstance(child, (QAbstractItemView, QSpinBox, QAbstractSpinBox)):
+            child.wheelEvent = lambda event: event.ignore()
     calendar.setStyleSheet("""
-        QCalendarWidget { background: #FFFFFF; color: #0F172A; }
-        QWidget#qt_calendar_navigationbar { background: #FFFFFF; border-bottom: 1px solid #CBD5E1; }
-        QCalendarWidget QToolButton { background: #FFFFFF; color: #0F172A; border: 0;
-            border-radius: 6px; padding: 6px 8px; font-weight: 700; }
-        QCalendarWidget QToolButton:hover { background: #EDE9FE; color: #4C1D95; }
-        QCalendarWidget QSpinBox { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
-            border-radius: 5px; padding: 3px; }
-        QCalendarWidget QMenu { background: #FFFFFF; color: #0F172A; }
-        QCalendarWidget QAbstractItemView { background: #FFFFFF; alternate-background-color: #F1F5F9;
-            color: #0F172A; selection-background-color: #6D28D9; selection-color: #FFFFFF;
-            gridline-color: #CBD5E1; outline: 0; }
-        QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
-        QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
-        QCalendarWidget QHeaderView::section { background: #F1F5F9; color: #334155;
-            border: 1px solid #E2E8F0; padding: 5px; font-weight: 700; }
+        QCalendarWidget { background-color: #0F172A; color: #F8FAFC; border: 2px solid #38BDF8; border-radius: 10px; }
+        QWidget#qt_calendar_navigationbar { background: #0B1120; border-bottom: 1px solid #334155; }
+        QCalendarWidget QToolButton { background: transparent; color: #F8FAFC; border: 0;
+            border-radius: 6px; padding: 6px 10px; font-weight: 700; font-size: 9.5pt; }
+        QCalendarWidget QToolButton:hover { background: #1E293B; color: #38BDF8; }
+        QCalendarWidget QSpinBox { background: #1E293B; color: #F8FAFC; border: 1px solid #475569;
+            border-radius: 5px; padding: 3px 6px; }
+        QCalendarWidget QMenu { background: #0F172A; color: #F8FAFC; border: 1px solid #334155; }
+        QCalendarWidget QAbstractItemView { background: #0F172A; alternate-background-color: #1E293B;
+            color: #F8FAFC; selection-background-color: #6366F1; selection-color: #FFFFFF;
+            gridline-color: #1E293B; outline: 0; font-weight: 600; }
+        QCalendarWidget QAbstractItemView:enabled { color: #F8FAFC; }
+        QCalendarWidget QAbstractItemView:disabled { color: #64748B; }
+        QCalendarWidget QHeaderView::section { background: #1E293B; color: #94A3B8;
+            border: 1px solid #334155; padding: 6px; font-weight: 700; font-size: 8.5pt; }
     """)
 
 
@@ -1715,7 +1766,21 @@ class InputControlsWheelFilter(QObject):
     """
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.Wheel:
-            # Allow scrolling inside an already-opened combobox popup list
+            # Check if watched or its parent belongs to a calendar popup
+            p = watched
+            in_calendar = False
+            for _ in range(6):
+                if p is None:
+                    break
+                if isinstance(p, QCalendarWidget) or (hasattr(p, "metaObject") and "calendar" in p.metaObject().className().lower()):
+                    in_calendar = True
+                    break
+                p = getattr(p, "parentWidget", lambda: None)()
+            if in_calendar:
+                event.ignore()
+                return True
+
+            # Allow scrolling inside an already-opened combobox popup list (not calendar)
             if isinstance(watched, QAbstractItemView):
                 if watched.isWindow() or (watched.window() and watched.window().windowType() == Qt.WindowType.Popup):
                     return False
@@ -2197,11 +2262,12 @@ class AnimatedRGBFrame(QFrame):
 
         pulse = (0.5 + 0.5 * math.sin(self._phase)) if self._active else 0.0
         glow_alpha = 20 + round(18 * pulse) if self._active else 76
-        for width, alpha in ((9.0, glow_alpha), (5.0, 80 if self._active else 100), (2.0, 235)):
+        for width, alpha in ((6.0, glow_alpha), (3.0, 90 if self._active else 110), (1.5, 240)):
             gradient = QConicalGradient(bounds.center(), self._rotation)
-            for stop, offset in ((0.0, 0), (0.25, 90), (0.5, 180), (0.75, 270), (1.0, 360)):
-                hue = int(self._rotation + offset) % 360
-                gradient.setColorAt(stop, QColor.fromHsv(hue, 240, 255, alpha))
+            gradient.setColorAt(0.0, QColor(56, 189, 248, alpha))
+            gradient.setColorAt(0.35, QColor(129, 140, 248, alpha))
+            gradient.setColorAt(0.70, QColor(99, 102, 241, alpha))
+            gradient.setColorAt(1.0, QColor(56, 189, 248, alpha))
             pen = QPen(QBrush(gradient), width, Qt.PenStyle.SolidLine,
                        Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
@@ -3036,32 +3102,42 @@ class MainWindow(QMainWindow):
             QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
             QWidget#mainContentSurface { background: transparent; }
             QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #263FAE,stop:0.52 #4F46E5,stop:1 #BE347E);
-                border: 1px solid #A5B4FC; border-radius: 16px; margin: 8px 10px; }
-            QLabel#brandLogo { background: rgba(15,23,42,110); border: 2px solid #A5B4FC; border-radius: 13px; padding: 3px; }
-            QFrame#headerClockFrame { background: transparent; border: 0; }
+            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #0B1120,stop:1 #020617);
+                border: 1px solid rgba(255, 255, 255, 0.10); border-top: 2px solid #38BDF8; border-radius: 16px; margin: 8px 10px; }
+            QLabel#brandLogo { background: rgba(15,23,42,160); border: 2px solid rgba(56, 189, 248, 0.40); border-radius: 14px; padding: 2px; }
+            QFrame#headerClockFrame { background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; }
             QFrame#headerClockFrame QLabel#headerClock, QFrame#brandBanner QLabel#headerClock {
-                background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700;
+                background: transparent; color: #F8FAFC; border: 0; padding: 2px 6px; font-size: 9.5pt; font-weight: 700;
             }
-            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 19pt; font-weight: 800; }
-            QLabel#brandSubheading { background: transparent; color: #F1F5F9; font-size: 10pt; }
+            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 16pt; font-weight: 800; letter-spacing: 0.8px; }
+            QLabel#brandSubheading { background: transparent; color: #94A3B8; font-size: 9pt; font-weight: 600; letter-spacing: 0.5px; }
             QPushButton#clockModeBtn { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
-                padding: 0; margin: 0; background: rgba(255, 255, 255, 0.16); color: #FFFFFF;
-                border: 1px solid rgba(255, 255, 255, 0.32); border-radius: 6px;
+                padding: 0; margin: 0; background: rgba(15, 23, 42, 0.65); color: #F8FAFC;
+                border: 1px solid rgba(255, 255, 255, 0.20); border-radius: 6px;
                 font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; }
-            QPushButton#clockModeBtn:hover { background: rgba(255, 255, 255, 0.32); border-color: #38BDF8; }
-            QPushButton#headerSyncPushBtn, QPushButton#headerSyncPullBtn {
+            QPushButton#clockModeBtn:hover { background: rgba(56, 189, 248, 0.25); border-color: #38BDF8; }
+            QPushButton#headerSyncPushBtn {
                 min-height: 34px; max-height: 38px; padding: 6px 14px;
-                background: rgba(15, 23, 42, 0.55); color: #FFFFFF;
-                border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 9px;
+                background: rgba(15, 23, 42, 0.70); color: #E0F2FE;
+                border: 1px solid rgba(56, 189, 248, 0.40); border-radius: 9px;
                 font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700;
             }
-            QPushButton#headerSyncPushBtn:hover, QPushButton#headerSyncPullBtn:hover {
-                background: rgba(15, 23, 42, 0.85); border-color: #38BDF8; color: #FFFFFF;
+            QPushButton#headerSyncPushBtn:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1);
+                border-color: #38BDF8; color: #FFFFFF;
             }
-            QPushButton#headerSyncPushBtn:pressed, QPushButton#headerSyncPullBtn:pressed {
-                background: rgba(15, 23, 42, 0.95);
+            QPushButton#headerSyncPushBtn:pressed { background: #0369A1; }
+            QPushButton#headerSyncPullBtn {
+                min-height: 34px; max-height: 38px; padding: 6px 14px;
+                background: rgba(15, 23, 42, 0.70); color: #EEF2FF;
+                border: 1px solid rgba(129, 140, 248, 0.40); border-radius: 9px;
+                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700;
             }
+            QPushButton#headerSyncPullBtn:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5);
+                border-color: #A5B4FC; color: #FFFFFF;
+            }
+            QPushButton#headerSyncPullBtn:pressed { background: #4338CA; }
             QPushButton#headerSyncPushBtn:disabled, QPushButton#headerSyncPullBtn:disabled {
                 background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12);
             }
@@ -3525,16 +3601,16 @@ class MainWindow(QMainWindow):
         self.rollback_button.setToolTip("Install a previous application version (Admin password required)")
         self.rollback_button.setMinimumWidth(120)
         self.rollback_button.clicked.connect(self.rollback_application)
-        session_layout.addWidget(self.rollback_button, 3, 0)
-        self.theme_toggle_btn = QPushButton("🌙  Switch theme")
-        self.theme_toggle_btn.setToolTip("Toggle day / night appearance")
-        self.theme_toggle_btn.setMinimumWidth(120)
-        self.theme_toggle_btn.clicked.connect(self.toggle_theme)
-        session_layout.addWidget(self.theme_toggle_btn, 1, 2)
-        database_label = QLabel("Local database · Offline")
+        session_layout.addWidget(self.rollback_button, 1, 2)
+        database_label = QLabel("Local database · Encrypted")
         database_label.setProperty("mutedText", True)
         database_label.setWordWrap(True)
         session_layout.addWidget(database_label, 1, 3)
+
+        # Retain theme_toggle_btn attribute for backwards compatibility
+        self.theme_toggle_btn = QPushButton()
+        self.theme_toggle_btn.hide()
+
         # Quick theme and wallpaper selectors are available directly in the Home header.
         home_theme_label = QLabel("Theme")
         home_theme_label.setProperty("mutedText", True)
@@ -3747,6 +3823,20 @@ class MainWindow(QMainWindow):
 
         self._wrap_page_in_scroll(self.dashboard, root)
 
+        self.dashboard_hero = QFrame()
+        self.dashboard_hero.setObjectName("dashboardHero")
+        self.dashboard_hero.setStyleSheet("QFrame#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 rgba(15,23,42,0.92), stop:1 rgba(30,41,59,0.85)); border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; padding: 6px 14px; }")
+        hero_layout = QHBoxLayout(self.dashboard_hero)
+        hero_layout.setContentsMargins(12, 6, 12, 6)
+        hero_title = QLabel("📊  OPERATIONS COMMAND DASHBOARD")
+        hero_title.setStyleSheet("font-size: 10.5pt; font-weight: 800; color: #F8FAFC; letter-spacing: 0.8px;")
+        hero_layout.addWidget(hero_title)
+        hero_layout.addStretch(1)
+        hero_status = QLabel("● REAL-TIME AUDIT METRICS ACTIVE")
+        hero_status.setStyleSheet("background: rgba(16,185,129,0.18); color: #34D399; border: 1px solid rgba(16,185,129,0.35); border-radius: 6px; padding: 3px 10px; font-size: 8pt; font-weight: 700; letter-spacing: 0.5px;")
+        hero_layout.addWidget(hero_status)
+        root.addWidget(self.dashboard_hero)
+
         self.kpis = QGridLayout()
         self.kpis.setHorizontalSpacing(10)
         self.kpis.setVerticalSpacing(10)
@@ -3754,11 +3844,11 @@ class MainWindow(QMainWindow):
         root.addLayout(self.kpis)
         self.kpi_labels = []
         specs = [
-            ("TOTAL EMPLOYEES", "👥", "#4F46E5", "#EEF2FF", "#C7D2FE"),
-            ("PRESENT TODAY", "✓", "#15803D", "#F0FDF4", "#BBF7D0"),
-            ("ABSENT TODAY", "×", "#BE123C", "#FFF1F2", "#FECDD3"),
-            ("OPEN TASKS", "◷", "#7C3AED", "#F5F3FF", "#DDD6FE"),
-            ("TODAY'S CHECK-INS", "↗", "#0369A1", "#F0F9FF", "#BAE6FD"),
+            ("TOTAL EMPLOYEES", "👥", "#4F46E5", "#EEF2FF", "#C7D2FE", "Active Roster"),
+            ("PRESENT TODAY", "✓", "#15803D", "#ECFDF5", "#A7F3D0", "Verified On-Site"),
+            ("ABSENT TODAY", "×", "#BE123C", "#FFF1F2", "#FECDD3", "Unmarked / Off"),
+            ("OPEN TASKS", "◷", "#8B5CF6", "#F5F3FF", "#DDD6FE", "Active Work items"),
+            ("TODAY'S CHECK-INS", "↗", "#0EA5E9", "#F0F9FF", "#BAE6FD", "Clocked In"),
         ]
         kpi_nav_targets = [
             (self.employees_tab, "Employees directory"),
@@ -3767,21 +3857,37 @@ class MainWindow(QMainWindow):
             (self.tasks_tab, "Task Manager"),
             (self.attendance_tab, "Attendance & Working Calendar"),
         ]
-        for (heading, symbol, accent, icon_background, icon_border), (target_page, page_name) in zip(specs, kpi_nav_targets):
+        for (heading, symbol, accent, icon_background, icon_border, subtitle_desc), (target_page, page_name) in zip(specs, kpi_nav_targets):
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             card.setToolTip(f"Click to open {page_name} ({heading.title()})")
             card.mousePressEvent = lambda e, p=target_page: self.tabs.setCurrentWidget(p) if e.button() == Qt.MouseButton.LeftButton else None
+            card.setStyleSheet(
+                f"QGroupBox#kpiCard {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111827, stop:1 #0B0F19); "
+                f"border: 1.5px solid {accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
+                f"QGroupBox#kpiCard:hover {{ border: 2px solid {accent}; background: #162032; }} "
+                f"QGroupBox#kpiCard::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 2px 8px; "
+                f"background: {accent}; color: #FFFFFF; border-radius: 5px; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px; }}"
+            )
             layout = QHBoxLayout(card)
+            layout.setContentsMargins(12, 10, 12, 10)
+            layout.setSpacing(12)
             icon_label = AnimatedDashboardIcon(
                 symbol, accent, icon_background, icon_border, f"{heading.title()} indicator"
             )
             layout.addWidget(icon_label)
+            metric_col = QVBoxLayout()
+            metric_col.setSpacing(2)
             value = QLabel("0")
             value.setProperty("metricValue", True)
             value.setToolTip(f"Current {heading.lower()} count. Click to view.")
-            layout.addWidget(value, 1)
+            value.setStyleSheet("font-size: 24pt; font-weight: 800; color: #FFFFFF;")
+            metric_col.addWidget(value)
+            sub_label = QLabel(f"● {subtitle_desc}")
+            sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 600; color: {accent}; letter-spacing: 0.3px;")
+            metric_col.addWidget(sub_label)
+            layout.addLayout(metric_col, 1)
             self.kpi_cards.append(card)
             self.kpi_labels.append(value)
 
@@ -3793,17 +3899,25 @@ class MainWindow(QMainWindow):
         quick = QGroupBox("⚡  Quick Actions")
         quick.setObjectName("dashboardPanel")
         quick_layout = QVBoxLayout(quick)
-        for text, target, tooltip in [
-            ("＋  Add Employee", self.employees_tab, "Open Employees to add or update an employee record."),
-            ("✓  Assign Task", self.tasks_tab, "Open Task Manager to create or update an assigned task."),
-            ("▦  Mark Attendance", self.attendance_tab, "Open Attendance to record today's status and times."),
-            ("▤  Generate Report", self.reports_tab, "Open Print Center to preview or generate a report."),
-            ("⇩  Print / Export", self.reports_tab, "Open Print Center to print or export the selected report."),
-        ]:
+        quick_actions_spec = [
+            ("➕  Add Employee", self.employees_tab, "Open Employees to add or update an employee record.", "#6366F1"),
+            ("✓  Assign Task", self.tasks_tab, "Open Task Manager to create or update an assigned task.", "#0EA5E9"),
+            ("▦  Mark Attendance", self.attendance_tab, "Open Attendance to record today's status and times.", "#10B981"),
+            ("▤  Generate Report", self.reports_tab, "Open Print Center to preview or generate a report.", "#8B5CF6"),
+            ("⇩  Print / Export", self.reports_tab, "Open Print Center to print or export the selected report.", "#EC4899"),
+        ]
+        for text, target, tooltip, btn_accent in quick_actions_spec:
             button = QPushButton(text)
             button.setProperty("dashboardAction", "true")
-            button.setMinimumHeight(38)
+            button.setMinimumHeight(40)
             button.setToolTip(tooltip)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setStyleSheet(
+                f"QPushButton {{ background: rgba(15, 23, 42, 0.70); color: #F8FAFC; border: 1px solid rgba(255, 255, 255, 0.12); "
+                f"border-left: 4px solid {btn_accent}; border-radius: 9px; padding: 7px 14px; font-weight: 700; font-size: 9.5pt; text-align: left; }} "
+                f"QPushButton:hover {{ background: {btn_accent}; color: #FFFFFF; border-color: {btn_accent}; }} "
+                f"QPushButton:pressed {{ background: rgba(15, 23, 42, 0.95); }}"
+            )
             button.clicked.connect(lambda checked=False, page=target: self.tabs.setCurrentWidget(page))
             quick_layout.addWidget(button)
         quick_layout.addStretch(1)
@@ -4736,17 +4850,26 @@ class MainWindow(QMainWindow):
             table.viewport().setPalette(table_palette)
             table.horizontalHeader().setMinimumHeight(42)
             table.horizontalHeader().setMinimumSectionSize(72)
-            table.horizontalHeader().setHighlightSections(False)
+            table.verticalHeader().setDefaultSectionSize(40)
+            table.verticalHeader().setMinimumSectionSize(38)
             header_view = table.horizontalHeader()
             resize_modes = [header_view.sectionResizeMode(column) for column in range(table.columnCount())]
             if resize_modes and all(mode == QHeaderView.Stretch for mode in resize_modes):
-                # Stretching every column evenly clips longer headers such as
-                # "Employee ID" and "Manager remarks" in compact panels.
+                column_hints = {
+                    "id": 65, "#": 60, "code": 110, "employee id": 125, "role": 135,
+                    "status": 125, "priority": 115, "progress": 110, "due": 110, "due time": 110,
+                    "check-in": 115, "check-out": 115, "net hours": 110, "name": 175, "employee": 175,
+                    "department": 165, "phone": 140, "email": 195, "task": 320, "proof": 260,
+                    "proof link": 260, "manager remarks": 280, "note": 240, "file name": 280,
+                    "date": 120, "report date": 120, "uploaded": 150, "size": 100,
+                }
                 header_view.setSectionResizeMode(QHeaderView.Interactive)
                 for column in range(table.columnCount()):
                     item = table.horizontalHeaderItem(column)
+                    header_title = item.text().strip().lower() if item else ""
                     title_width = header_view.fontMetrics().horizontalAdvance(item.text()) if item else 0
-                    table.setColumnWidth(column, max(72, min(190, title_width + 24)))
+                    target_width = column_hints.get(header_title, max(85, title_width + 28))
+                    table.setColumnWidth(column, target_width)
                 header_view.setStretchLastSection(True)
             table.setMouseTracking(True)
             for column in range(table.columnCount()):
@@ -4856,6 +4979,7 @@ class MainWindow(QMainWindow):
                 item = self.status_item(text)
             else:
                 item = QTableWidgetItem(text)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if c in status_cols or c == 0 else Qt.AlignmentFlag.AlignLeft))
             if text:
                 item.setToolTip(text)
             table.setItem(row, c, item)
