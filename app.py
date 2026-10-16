@@ -3019,8 +3019,8 @@ class MainWindow(QMainWindow):
         self.header_next.setObjectName("headerNavButton")
         self.header_next.setToolTip("Next page")
         self.header_next.setFixedSize(36, 32)
-        btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
-        close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
+        btn_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
+        close_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
 
         self.btn_min = QPushButton("—")
         self.btn_min.setObjectName("titleBtnMin")
@@ -3328,7 +3328,7 @@ class MainWindow(QMainWindow):
         palettes = {
             "day": {
                 "surface": "#FFFFFF",
-                "sidebar": "rgba(255, 255, 255, 0.62)",
+                "sidebar": "rgba(255, 255, 255, 0.45)",
                 "sidebar_border": "rgba(226, 232, 240, 0.70)",
                 "nav": "rgba(248, 250, 252, 0.62)",
                 "nav_border": "rgba(226, 232, 240, 0.75)",
@@ -3340,7 +3340,7 @@ class MainWindow(QMainWindow):
             },
             "night": {
                 "surface": "#111827",
-                "sidebar": "rgba(15, 23, 42, 0.68)",
+                "sidebar": "rgba(15, 23, 42, 0.52)",
                 "sidebar_border": "rgba(51, 65, 85, 0.70)",
                 "nav": "rgba(30, 41, 59, 0.65)",
                 "nav_border": "rgba(51, 65, 85, 0.75)",
@@ -3352,7 +3352,7 @@ class MainWindow(QMainWindow):
             },
             "ocean": {
                 "surface": "#F0F9FF",
-                "sidebar": "rgba(240, 249, 255, 0.65)",
+                "sidebar": "rgba(240, 249, 255, 0.48)",
                 "sidebar_border": "rgba(186, 230, 253, 0.70)",
                 "nav": "rgba(224, 242, 254, 0.65)",
                 "nav_border": "rgba(186, 230, 253, 0.75)",
@@ -3364,7 +3364,7 @@ class MainWindow(QMainWindow):
             },
             "sunset": {
                 "surface": "#FFEDD5",
-                "sidebar": "rgba(255, 237, 213, 0.65)",
+                "sidebar": "rgba(255, 237, 213, 0.48)",
                 "sidebar_border": "rgba(254, 215, 170, 0.70)",
                 "nav": "rgba(255, 247, 237, 0.65)",
                 "nav_border": "rgba(254, 215, 170, 0.75)",
@@ -3396,12 +3396,13 @@ class MainWindow(QMainWindow):
                 f"QWidget#navigationSidebar {{ background: {sidebar_bg}; border-right: 1px solid {sidebar_border}; }}"
             )
         if hasattr(self, "title_bar"):
+            title_bg = "#070B14" if (theme_name or self.current_theme()).lower() == "night" else "#15233F"
+            title_border = "#111827" if (theme_name or self.current_theme()).lower() == "night" else "#1E2F52"
             self.title_bar.setStyleSheet(
-                f"QWidget#titleBar {{ background: {surface}; border-bottom: 1px solid {border}; }}"
+                f"QWidget#titleBar {{ background: {title_bg}; border-bottom: 1px solid {title_border}; }}"
             )
         if hasattr(self, "title_label"):
-            title_color = "#F8FAFC" if (theme_name or self.current_theme()).lower() == "night" else colors["text"]
-            self.title_label.setStyleSheet(f"QLabel#titleLabel {{ color: {title_color}; }}")
+            self.title_label.setStyleSheet("QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }")
         if hasattr(self, "sidebar_buttons"):
             nav_bg = colors.get("nav", colors['nav'])
             nav_border = colors.get("nav_border", border)
@@ -3486,12 +3487,21 @@ class MainWindow(QMainWindow):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         self._apply_tooltip_palette(self.current_theme())
         if "QWidget#headerClock" not in self.styleSheet():
+            is_dark_theme = (self.current_theme() or "day").lower() == "night"
             slate_arrow = resource_path("assets/chevron_down_slate.png").replace("\\", "/")
-            cyan_arrow = resource_path("assets/chevron_down_cyan.png").replace("\\", "/")
+            white_arrow = resource_path("assets/chevron_down_white.png").replace("\\", "/")
+            active_arrow = white_arrow if is_dark_theme else slate_arrow
+            drop_bg = "#1E293B" if is_dark_theme else "#F8FAFC"
+            drop_border = "#334155" if is_dark_theme else "#CBD5E1"
+            drop_hover = "#334155" if is_dark_theme else "#E2E8F0"
+            sidebar_bg = "rgba(15, 23, 42, 0.52)" if is_dark_theme else "rgba(255, 255, 255, 0.45)"
+            sidebar_border = "rgba(51, 65, 85, 0.70)" if is_dark_theme else "rgba(226, 232, 240, 0.70)"
+            title_bg = "#070B14" if is_dark_theme else "#15233F"
+            title_border = "#111827" if is_dark_theme else "#1E2F52"
             polish_css = """
-            QWidget#navigationSidebar { background: rgba(255, 255, 255, 0.62); border-right: 1px solid rgba(226, 232, 240, 0.70); }
+            QWidget#navigationSidebar { background: __SIDEBAR_BG__; border-right: 1px solid __SIDEBAR_BORDER__; }
             QWidget#mainContentSurface { background: transparent; }
-            QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
+            QWidget#titleBar { background: __TITLE_BG__; border-bottom: 1px solid __TITLE_BORDER__; }
             QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #0B1120,stop:1 #020617);
                 border: 1px solid rgba(255, 255, 255, 0.12); border-top: 2px solid #38BDF8; border-radius: 14px; margin: 6px 12px; }
             QLabel#brandLogo { background: rgba(15,23,42,160); border: 2px solid rgba(56, 189, 248, 0.40); border-radius: 14px; padding: 2px; }
@@ -3588,19 +3598,19 @@ class MainWindow(QMainWindow):
             }
             QComboBox::drop-down, QDateEdit::drop-down {
                 subcontrol-origin: padding; subcontrol-position: top right;
-                width: 28px; border-left: 1px solid #CBD5E1;
+                width: 28px; border-left: 1px solid __DROP_BORDER__;
                 border-top-right-radius: 7px; border-bottom-right-radius: 7px;
-                background-color: #F8FAFC;
+                background-color: __DROP_BG__;
             }
             QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
-                background-color: #EDE9FE;
+                background-color: __DROP_HOVER__;
             }
             QComboBox::down-arrow, QDateEdit::down-arrow {
-                image: url(__CHEVRON_SLATE__);
+                image: url("__CHEVRON_ACTIVE__");
                 width: 12px; height: 12px;
             }
             QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
-                image: url(__CHEVRON_CYAN__);
+                image: url("__CHEVRON_ACTIVE__");
             }
             QTextEdit, QPlainTextEdit { padding: 6px 10px; border-radius: 8px; }
             QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
@@ -3652,7 +3662,17 @@ class MainWindow(QMainWindow):
             QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
             QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
             """
-            self.setStyleSheet(self.styleSheet() + polish_css.replace("__CHEVRON_SLATE__", slate_arrow).replace("__CHEVRON_CYAN__", cyan_arrow))
+            self.setStyleSheet(
+                self.styleSheet() + polish_css
+                .replace("__SIDEBAR_BG__", sidebar_bg)
+                .replace("__SIDEBAR_BORDER__", sidebar_border)
+                .replace("__TITLE_BG__", title_bg)
+                .replace("__TITLE_BORDER__", title_border)
+                .replace("__DROP_BG__", drop_bg)
+                .replace("__DROP_BORDER__", drop_border)
+                .replace("__DROP_HOVER__", drop_hover)
+                .replace("__CHEVRON_ACTIVE__", active_arrow)
+            )
         for widget in self.findChildren(QLabel):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
@@ -3779,9 +3799,11 @@ class MainWindow(QMainWindow):
         for button, title in getattr(self, "sidebar_buttons", []):
             label = title.split("  ", 1)[0] if collapsed else title
             text_width = max(0, button.contentsRect().width() - 22)
-            button.setText(button.fontMetrics().elidedText(
+            elided = button.fontMetrics().elidedText(
                 label, Qt.TextElideMode.ElideRight, text_width
-            ))
+            )
+            clean_text = elided.replace("&&", "&").replace("&", "&&")
+            button.setText(clean_text)
             button.setToolTip(title)
 
     def update_title_label(self):
@@ -3902,8 +3924,8 @@ class MainWindow(QMainWindow):
             self.productivity_chart.update()
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
-            btn_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #E2E8F0; color: #0F172A; }"
-            close_style = "QPushButton { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #FEE2E2; color: #DC2626; }"
+            btn_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
+            close_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
             self.btn_min.setStyleSheet(btn_style)
             self.btn_max.setStyleSheet(btn_style)
             self.btn_close.setStyleSheet(close_style)
@@ -4501,20 +4523,22 @@ class MainWindow(QMainWindow):
             (self.attendance_tab, "Attendance & Working Calendar"),
         ]
         is_dark = self.current_theme() == "night"
-        card_bg = "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111827, stop:1 #0B0F19)" if is_dark else "#FFFFFF"
+        kpi_bg = "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17,25,50,0.92), stop:1 rgba(9,14,30,0.90))" if is_dark else "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #FFFFFF, stop:1 #F8FAFC)"
+        kpi_border = "rgba(56, 189, 248, 0.25)" if is_dark else "rgba(203, 213, 225, 0.85)"
         val_col = "#FFFFFF" if is_dark else "#0F172A"
         for (heading, symbol, accent, icon_background, icon_border, subtitle_desc), (target_page, page_name) in zip(specs, kpi_nav_targets):
             neon_accent = "#10B981" if accent == "#15803D" else ("#F43F5E" if accent == "#BE123C" else ("#00E5FF" if accent == "#4F46E5" else ("#C084FC" if accent == "#8B5CF6" else "#38BDF8")))
             active_accent = neon_accent if is_dark else accent
+            sub_col = "#CBD5E1" if is_dark else accent
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             card.setToolTip(f"Click to open {page_name} ({heading.title()})")
             card.mousePressEvent = lambda e, p=target_page: self.tabs.setCurrentWidget(p) if e.button() == Qt.MouseButton.LeftButton else None
             card.setStyleSheet(
-                f"QGroupBox#kpiCard {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17,25,50,0.88), stop:1 rgba(9,14,30,0.85)) if is_dark else '#FFFFFF'; "
-                f"border: 1.5px solid rgba(56, 189, 248, 0.25); border-top: 3.5px solid {active_accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
-                f"QGroupBox#kpiCard:hover {{ border: 1.5px solid {accent}; border-top: 4px solid {active_accent}; }} "
+                f"QGroupBox#kpiCard {{ background: {kpi_bg}; "
+                f"border: 1.5px solid {kpi_border}; border-top: 3.5px solid {active_accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
+                f"QGroupBox#kpiCard:hover {{ border: 1.5px solid {active_accent}; border-top: 4px solid {active_accent}; }} "
                 f"QGroupBox#kpiCard::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 2px 8px; "
                 f"background: {active_accent}; color: #FFFFFF; border-radius: 5px; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px; }}"
             )
@@ -4533,7 +4557,7 @@ class MainWindow(QMainWindow):
             value.setStyleSheet(f"font-size: 26pt; font-weight: 900; color: {active_accent if is_dark else val_col};")
             metric_col.addWidget(value)
             sub_label = QLabel(f"● {subtitle_desc}")
-            sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 700; color: #CBD5E1 if is_dark else {accent}; letter-spacing: 0.3px;")
+            sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 700; color: {sub_col}; letter-spacing: 0.3px;")
             metric_col.addWidget(sub_label)
             layout.addLayout(metric_col, 1)
             self.kpi_cards.append(card)
@@ -4789,11 +4813,11 @@ class MainWindow(QMainWindow):
             b.setMinimumHeight(36)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             if is_primary:
-                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 5px 11px; font-size: 8.5pt; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
             elif "Delete" in label:
-                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
+                b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
             else:
-                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
+                b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; }")
             actions_row.addWidget(b)
         actions_row.addStretch(1)
         task_toolbar_card_layout.addLayout(actions_row)
@@ -4879,14 +4903,32 @@ class MainWindow(QMainWindow):
         self.att_select_all_button = QPushButton("☑️ Select All")
         self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
         self.att_select_all_button.setMinimumHeight(34)
+        self.att_select_all_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; }")
         self.att_select_all_button.clicked.connect(self.attendance_select_all)
         row1.addWidget(self.att_select_all_button)
 
         self.att_bulk_edit_button = QPushButton("📝 Bulk Edit Selected")
         self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
         self.att_bulk_edit_button.setMinimumHeight(34)
+        self.att_bulk_edit_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; }")
         self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
         row1.addWidget(self.att_bulk_edit_button)
+
+        declare_holiday_btn = QPushButton("🎉 Declare Holiday")
+        declare_holiday_btn.setToolTip("Mark the selected date as a declared company holiday")
+        declare_holiday_btn.setMinimumHeight(34)
+        declare_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; background: rgba(99, 102, 241, 0.15); color: #6366F1; border: 1px solid rgba(99, 102, 241, 0.35); } QPushButton:hover { background: #6366F1; color: #FFFFFF; }")
+        declare_holiday_btn.clicked.connect(self.declare_holiday)
+        row1.addWidget(declare_holiday_btn)
+
+        remove_holiday_btn = QPushButton("🗑️ Remove Holiday")
+        remove_holiday_btn.setToolTip("Remove declared holiday from the selected date")
+        remove_holiday_btn.setMinimumHeight(34)
+        remove_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
+        remove_holiday_btn.clicked.connect(self.remove_holiday)
+        row1.addWidget(remove_holiday_btn)
 
         row1.addStretch(1)
         att_toolbar_layout.addLayout(row1)
@@ -4908,25 +4950,9 @@ class MainWindow(QMainWindow):
             b = QPushButton(label)
             b.setMinimumHeight(34)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
+            b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; min-width: 0; }")
             b.clicked.connect(slot)
             row2.addWidget(b)
-
-        declare_holiday_btn = QPushButton("🎉 Declare Holiday")
-        declare_holiday_btn.setToolTip("Mark the selected date as a declared company holiday")
-        declare_holiday_btn.setMinimumHeight(34)
-        declare_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 14px; background: rgba(99, 102, 241, 0.15); color: #6366F1; border: 1px solid rgba(99, 102, 241, 0.35); } QPushButton:hover { background: #6366F1; color: #FFFFFF; }")
-        declare_holiday_btn.clicked.connect(self.declare_holiday)
-        row2.addWidget(declare_holiday_btn)
-
-        remove_holiday_btn = QPushButton("🗑️ Remove Holiday")
-        remove_holiday_btn.setToolTip("Remove declared holiday from the selected date")
-        remove_holiday_btn.setMinimumHeight(34)
-        remove_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
-        remove_holiday_btn.clicked.connect(self.remove_holiday)
-        row2.addWidget(remove_holiday_btn)
 
         self.holiday_btn = QToolButton()
         self.holiday_btn.setText("🎉 Holiday")
@@ -4950,6 +4976,7 @@ class MainWindow(QMainWindow):
         self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setMinimumHeight(230)
+        self.att_table.setMaximumHeight(350)
         self.att_table.verticalHeader().setDefaultSectionSize(48)
         self.att_table.verticalHeader().setMinimumSectionSize(44)
         for c, align in enumerate([
@@ -4993,7 +5020,7 @@ class MainWindow(QMainWindow):
         self.attendance_summary_table.setWordWrap(False)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.attendance_summary_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.attendance_summary_table.setMinimumHeight(150)
+        self.attendance_summary_table.setMinimumHeight(220)
         for i, h in enumerate(headers):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -5808,7 +5835,22 @@ class MainWindow(QMainWindow):
             table.setItem(row, c, item)
 
     def refresh_all(self):
-        self.refresh_employees(); self.refresh_task_filter(); self.refresh_tracker_employees(); self.refresh_tasks(); self.refresh_tracker(); self.refresh_attendance(); self.refresh_report_employees(); self.refresh_dashboard(); self.refresh_archive()
+        self.refresh_employees()
+        self.refresh_task_filter()
+        self.refresh_tracker_employees()
+        self.refresh_tasks()
+        self.refresh_tracker()
+        self.refresh_attendance()
+        self.refresh_attendance_summary()
+        self.refresh_report_employees()
+        self.refresh_dashboard()
+        self.refresh_archive()
+        if hasattr(self, "refresh_home_business_snapshot"):
+            self.refresh_home_business_snapshot()
+        if hasattr(self, "business_tab") and hasattr(self.business_tab, "refresh_all"):
+            self.business_tab.refresh_all()
+        if hasattr(self, "refresh_archived_report_choices"):
+            self.refresh_archived_report_choices()
         self.polish_tables()
 
     def refresh_employees(self):
@@ -8026,12 +8068,16 @@ QPushButton { min-height: 36px; padding: 8px 14px; border-radius: 9px; font-size
 QLabel { padding: 1px; }
 QWidget#titleBar { background: #15233F; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
-QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+QPushButton#titleBtnMin, QPushButton#titleBtnMax {
     min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
-    background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700;
+    background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
 }
-QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #E2E8F0; color: #0F172A; }
-QPushButton#titleBtnClose:hover { background: #FEE2E2; color: #DC2626; }
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }
+QPushButton#titleBtnClose {
+    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
+    background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
+}
+QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
 QPushButton#titleFileBtn { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; padding: 0 10px; font-weight: 600; }
 QPushButton#titleFileBtn:hover { background: #1E2F52; color: #FFFFFF; }
 QPushButton#titleFileBtn::menu-indicator { image: none; }
@@ -8080,17 +8126,17 @@ QComboBox::drop-down, QDateEdit::drop-down {
     background-color: #F8FAFC;
 }
 QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
-    background-color: #EDE9FE;
+    background-color: #E2E8F0;
 }
 QComboBox::down-arrow, QDateEdit::down-arrow {
-    image: url(__CHEVRON_SLATE__);
+    image: url("__CHEVRON_SLATE__");
     width: 12px; height: 12px;
 }
 QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
-    image: url(__CHEVRON_CYAN__);
+    image: url("__CHEVRON_SLATE__");
 }
 QComboBox::down-arrow:disabled, QDateEdit::down-arrow:disabled {
-    image: url(__CHEVRON_SLATE__);
+    image: url("__CHEVRON_SLATE__");
 }
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #64748B; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
@@ -8161,7 +8207,7 @@ QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #FFF
 QGroupBox#kpiCard:hover { border-color: #A78BFA; }
 QGroupBox#dashboardPanel { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 15px; }
 QGroupBox#dashboardPanel:hover { border-color: #A5B4FC; }
-QGroupBox#kpiCard::title, QGroupBox#dashboardPanel::title { background: transparent; color: #334155; padding: 0 5px; font-weight: 700; }
+QGroupBox#dashboardPanel::title { background: transparent; color: #334155; padding: 0 5px; font-weight: 700; }
 QPushButton[dashboardAction="true"] { background: #F8FAFC; color: #1E293B; border: 1px solid #CBD5E1; border-radius: 10px; padding: 8px 12px; text-align: left; font-weight: 650; }
 QPushButton[dashboardAction="true"]:hover { background: #EEF2FF; color: #4C1D95; border-color: #A78BFA; }
 QPushButton[dashboardAction="true"]:pressed { background: #E0E7FF; border-color: #7C3AED; }
@@ -8204,12 +8250,16 @@ QWidget#settingsContent QComboBox { background: #0F172A; color: #F8FAFC; }
 QMainWindow { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #080F20, stop:0.52 #11152E, stop:1 #082F49); }
 QWidget#titleBar { background: #070B14; border-bottom: 1px solid #111827; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
-QPushButton#titleBtnMin, QPushButton#titleBtnMax, QPushButton#titleBtnClose {
+QPushButton#titleBtnMin, QPushButton#titleBtnMax {
     min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
-    background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; font-size: 11pt; font-weight: 700;
+    background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
 }
-QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: #E2E8F0; color: #0F172A; }
-QPushButton#titleBtnClose:hover { background: #FEE2E2; color: #DC2626; }
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: rgba(255, 255, 255, 0.12); color: #FFFFFF; }
+QPushButton#titleBtnClose {
+    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
+    background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
+}
+QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
 QTabWidget::pane { border: 0; background: transparent; top: 0; margin-top: 0; }
 QTabWidget { background: transparent; }
 QMenuBar { background: #111827; border-bottom: 1px solid #1F2937; padding: 5px 10px; color: #E2E8F0; }
@@ -8258,17 +8308,17 @@ QComboBox::drop-down, QDateEdit::drop-down {
     background-color: #1E293B;
 }
 QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
-    background-color: #312E81;
+    background-color: #334155;
 }
 QComboBox::down-arrow, QDateEdit::down-arrow {
-    image: url(__CHEVRON_WHITE__);
+    image: url("__CHEVRON_WHITE__");
     width: 12px; height: 12px;
 }
 QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
-    image: url(__CHEVRON_CYAN__);
+    image: url("__CHEVRON_WHITE__");
 }
 QComboBox::down-arrow:disabled, QDateEdit::down-arrow:disabled {
-    image: url(__CHEVRON_WHITE__);
+    image: url("__CHEVRON_WHITE__");
 }
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
@@ -8340,7 +8390,7 @@ QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #111
 QGroupBox#kpiCard:hover { border-color: #8B5CF6; }
 QGroupBox#dashboardPanel { background: #0F172A; border: 1px solid #334155; border-radius: 15px; }
 QGroupBox#dashboardPanel:hover { border-color: #6366F1; }
-QGroupBox#kpiCard::title, QGroupBox#dashboardPanel::title { background: transparent; color: #E2E8F0; padding: 0 5px; font-weight: 700; }
+QGroupBox#dashboardPanel::title { background: transparent; color: #E2E8F0; padding: 0 5px; font-weight: 700; }
 QPushButton[dashboardAction="true"] { background: #111C32; color: #E2E8F0; border: 1px solid #334155; border-radius: 10px; padding: 8px 12px; text-align: left; font-weight: 650; }
 QPushButton[dashboardAction="true"]:hover { background: #312E81; color: #FFFFFF; border-color: #8B5CF6; }
 QPushButton[dashboardAction="true"]:pressed { background: #3730A3; border-color: #A78BFA; }
