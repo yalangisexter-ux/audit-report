@@ -4,6 +4,7 @@ This module never modifies existing employee, task, or audit tables.
 """
 import sqlite3
 from datetime import datetime
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QTabWidget, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QFormLayout,
@@ -167,13 +168,40 @@ def available_stock(product_row):
     )
 
 
-def _table_item(value, is_center=False):
-    """Keep elided table values available on hover without changing row layout."""
+STATUS_PALETTE = {
+    "completed": ("#DCFCE7", "#166534"),
+    "delivered": ("#DCFCE7", "#166534"),
+    "active": ("#DCFCE7", "#166534"),
+    "packed": ("#E0E7FF", "#3730A3"),
+    "confirmed": ("#CFFAFE", "#0E7490"),
+    "dispatched": ("#DBEAFE", "#1E40AF"),
+    "in progress": ("#DBEAFE", "#1E40AF"),
+    "pending": ("#FEF3C7", "#92400E"),
+    "partially completed": ("#FEF3C7", "#92400E"),
+    "unmarked": ("#F1F5F9", "#475569"),
+    "cancelled": ("#FEE2E2", "#991B1B"),
+    "returned": ("#FEE2E2", "#991B1B"),
+    "blocked": ("#FEE2E2", "#991B1B"),
+    "expired": ("#FEE2E2", "#991B1B"),
+    "inactive": ("#F1F5F9", "#475569"),
+}
+
+
+def _table_item(value, is_center=False, status_pill=False):
+    """Keep elided table values available on hover with optional colored status pill styling."""
     text = "" if value is None else str(value)
     item = QTableWidgetItem(text)
-    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if is_center else Qt.AlignmentFlag.AlignLeft))
+    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if is_center or status_pill else Qt.AlignmentFlag.AlignLeft))
     if text:
         item.setToolTip(text)
+    if status_pill:
+        key = text.strip().lower()
+        bg, fg = STATUS_PALETTE.get(key, ("#F1F5F9", "#475569"))
+        item.setBackground(QColor(bg))
+        item.setForeground(QColor(fg))
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
     return item
 
 
@@ -183,15 +211,43 @@ class BusinessTrackingTab(QWidget):
         super().__init__(parent)
         self.db = db
         setup_business_tables(db.conn)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 8)
 
         self.sub_tabs = QTabWidget()
-        self.sub_tabs.addTab(self._build_dashboard(), "Dashboard")
-        self.sub_tabs.addTab(self._build_products(), "Products & Inventory")
-        self.sub_tabs.addTab(self._build_orders(), "Orders")
-        self.sub_tabs.addTab(self._build_services(), "Services & Members")
-        self.sub_tabs.addTab(self._build_activities(), "Employee Activities")
+        self.sub_tabs.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1.5px solid rgba(99, 102, 241, 0.35);
+                border-radius: 14px;
+                background: rgba(15, 23, 42, 0.90);
+                padding: 10px;
+            }
+            QTabBar::tab {
+                background: rgba(30, 41, 59, 0.85);
+                color: #CBD5E1;
+                font-weight: 700;
+                font-size: 9.5pt;
+                padding: 8px 18px;
+                margin-right: 6px;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            QTabBar::tab:selected {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #00E5FF);
+                color: #FFFFFF;
+                border: 1px solid #00E5FF;
+            }
+            QTabBar::tab:hover:!selected {
+                background: rgba(99, 102, 241, 0.35);
+                color: #FFFFFF;
+            }
+        """)
+        self.sub_tabs.addTab(self._build_dashboard(), "📊 Dashboard")
+        self.sub_tabs.addTab(self._build_products(), "📦 Products & Inventory")
+        self.sub_tabs.addTab(self._build_orders(), "🛒 Orders")
+        self.sub_tabs.addTab(self._build_services(), "🏋️ Services & Members")
+        self.sub_tabs.addTab(self._build_activities(), "⚡ Employee Activities")
         layout.addWidget(self.sub_tabs)
         self.refresh_all()
 
@@ -203,6 +259,7 @@ class BusinessTrackingTab(QWidget):
 
         heading = QLabel("Business overview")
         heading.setProperty("sectionHeading", True)
+        heading.setStyleSheet("font-size: 15pt; font-weight: 800; color: #FFFFFF;")
         l.addWidget(heading)
 
         cards = QGridLayout()
@@ -220,18 +277,31 @@ class BusinessTrackingTab(QWidget):
             card.setObjectName("kpiCard")
             card.setMinimumHeight(122)
             card.setToolTip(f"{title}: {description}.")
+            card.setStyleSheet("""
+                QWidget#kpiCard {
+                    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17,25,50,0.92), stop:1 rgba(9,14,30,0.95));
+                    border: 1.5px solid rgba(99, 102, 241, 0.35);
+                    border-radius: 14px;
+                    padding: 8px;
+                }
+                QWidget#kpiCard:hover {
+                    border: 1.5px solid #00E5FF;
+                    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(23,35,70,0.95), stop:1 rgba(15,23,42,0.98));
+                }
+            """)
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(16, 12, 16, 12)
             card_layout.setSpacing(4)
 
             title_label = QLabel(title)
-            title_label.setProperty("mutedText", True)
+            title_label.setStyleSheet("font-size: 9.5pt; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;")
             value_label = QLabel("—")
-            value_label.setProperty("metricValue", True)
+            value_label.setObjectName("metricValue")
+            value_label.setStyleSheet("font-size: 26pt; font-weight: 800; color: #00E5FF;")
             value_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             value_label.setToolTip(f"{title}: {description}.")
             description_label = QLabel(description)
-            description_label.setProperty("mutedText", True)
+            description_label.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
             description_label.setWordWrap(True)
 
             card_layout.addWidget(title_label)
@@ -244,6 +314,7 @@ class BusinessTrackingTab(QWidget):
         self.dash_summary = QLabel("Loading business activity...")
         self.dash_summary.setWordWrap(True)
         self.dash_summary.setProperty("statusSummary", True)
+        self.dash_summary.setStyleSheet("font-size: 10pt; font-weight: 600; color: #E2E8F0; padding: 8px;")
         l.addWidget(self.dash_summary)
         l.addStretch()
         return w
@@ -253,13 +324,22 @@ class BusinessTrackingTab(QWidget):
         l = QVBoxLayout(w)
         row = QHBoxLayout()
         self.prod_search = QLineEdit()
-        self.prod_search.setPlaceholderText("Search product name or SKU")
+        self.prod_search.setPlaceholderText("🔍 Search product name or SKU")
+        self.prod_search.setClearButtonEnabled(True)
+        self.prod_search.setMinimumHeight(34)
         self.prod_search.textChanged.connect(self.refresh_products)
         row.addWidget(self.prod_search)
-        add_btn = QPushButton("Add Product")
+        add_btn = QPushButton("➕ Add Product")
         add_btn.setToolTip("Add a product and its opening or received stock quantities.")
+        add_btn.setMinimumHeight(34)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_btn.clicked.connect(self.add_product)
         row.addWidget(add_btn)
+        ref_btn = QPushButton("🔄 Refresh")
+        ref_btn.setMinimumHeight(34)
+        ref_btn.clicked.connect(self.refresh_products)
+        row.addWidget(ref_btn)
         l.addLayout(row)
         self.prod_table = QTableWidget(0, 6)
         self.prod_table.setHorizontalHeaderLabels(["ID", "SKU", "Name", "Category", "Available", "Reorder"])
@@ -273,13 +353,22 @@ class BusinessTrackingTab(QWidget):
         l = QVBoxLayout(w)
         row = QHBoxLayout()
         self.order_search = QLineEdit()
-        self.order_search.setPlaceholderText("Search order ID or customer")
+        self.order_search.setPlaceholderText("🔍 Search order ID or customer")
+        self.order_search.setClearButtonEnabled(True)
+        self.order_search.setMinimumHeight(34)
         self.order_search.textChanged.connect(self.refresh_orders)
         row.addWidget(self.order_search)
-        add_btn = QPushButton("Add Order")
+        add_btn = QPushButton("➕ Add Order")
         add_btn.setToolTip("Record an order and its current tracking status.")
+        add_btn.setMinimumHeight(34)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_btn.clicked.connect(self.add_order)
         row.addWidget(add_btn)
+        ref_btn = QPushButton("🔄 Refresh")
+        ref_btn.setMinimumHeight(34)
+        ref_btn.clicked.connect(self.refresh_orders)
+        row.addWidget(ref_btn)
         l.addLayout(row)
         self.order_table = QTableWidget(0, 6)
         self.order_table.setHorizontalHeaderLabels(["ID", "External ID", "Date", "Channel", "Customer", "Status"])
@@ -294,25 +383,45 @@ class BusinessTrackingTab(QWidget):
         w = QWidget()
         l = QVBoxLayout(w)
         row = QHBoxLayout()
-        add_svc = QPushButton("Add Service")
+        add_svc = QPushButton("➕ Add Service")
         add_svc.setToolTip("Add a service offered to members.")
+        add_svc.setMinimumHeight(34)
+        add_svc.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_svc.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_svc.clicked.connect(self.add_service)
-        add_mem = QPushButton("Add Member")
+        add_mem = QPushButton("➕ Add Member")
         add_mem.setToolTip("Add a member and record their service and purchased sessions.")
+        add_mem.setMinimumHeight(34)
+        add_mem.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_mem.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00E5FF, stop:1 #6366F1); color: #020617; font-weight: 800; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: #38BDF8; color: #FFFFFF; }")
         add_mem.clicked.connect(self.add_member)
+        ref_btn = QPushButton("🔄 Refresh")
+        ref_btn.setMinimumHeight(34)
+        ref_btn.clicked.connect(self.refresh_services)
         row.addWidget(add_svc)
         row.addWidget(add_mem)
+        row.addWidget(ref_btn)
         row.addStretch()
         l.addLayout(row)
+
+        lbl_svc = QLabel("🏋️ Services & Training Programs")
+        lbl_svc.setStyleSheet("font-weight: 700; font-size: 10.5pt; color: #818CF8; margin-top: 4px;")
+        l.addWidget(lbl_svc)
         self.svc_table = QTableWidget(0, 4)
         self.svc_table.setHorizontalHeaderLabels(["ID", "Service", "Mode", "Price"])
         self.svc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.svc_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.svc_table)
+
+        lbl_mem = QLabel("👥 Active Memberships & Sessions")
+        lbl_mem.setStyleSheet("font-weight: 700; font-size: 10.5pt; color: #818CF8; margin-top: 8px;")
+        l.addWidget(lbl_mem)
         self.mem_table = QTableWidget(0, 5)
         self.mem_table.setHorizontalHeaderLabels(["ID", "Member", "Service", "Status", "Sessions left"])
         self.mem_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.mem_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.mem_table.setToolTip("Double-click a member to log completed sessions or update membership status.")
+        self.mem_table.cellDoubleClicked.connect(self.edit_member_status)
         l.addWidget(self.mem_table)
         return w
 
@@ -320,16 +429,25 @@ class BusinessTrackingTab(QWidget):
         w = QWidget()
         l = QVBoxLayout(w)
         row = QHBoxLayout()
-        add_btn = QPushButton("Add Activity")
+        add_btn = QPushButton("➕ Add Activity")
         add_btn.setToolTip("Record an employee activity and its current status.")
+        add_btn.setMinimumHeight(34)
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_btn.clicked.connect(self.add_activity)
+        ref_btn = QPushButton("🔄 Refresh")
+        ref_btn.setMinimumHeight(34)
+        ref_btn.clicked.connect(self.refresh_activities)
         row.addWidget(add_btn)
+        row.addWidget(ref_btn)
         row.addStretch()
         l.addLayout(row)
         self.act_table = QTableWidget(0, 6)
         self.act_table.setHorizontalHeaderLabels(["ID", "Employee", "Type", "Status", "Start", "Remarks"])
         self.act_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.act_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.act_table.setToolTip("Double-click an activity row to change its status.")
+        self.act_table.cellDoubleClicked.connect(self.edit_activity_status)
         l.addWidget(self.act_table)
         return w
 
@@ -385,7 +503,7 @@ class BusinessTrackingTab(QWidget):
             self.order_table.insertRow(r)
             vals = [o["id"], o["external_order_id"], o["order_date"], o["sales_channel"], o["customer_name"], o["order_status"]]
             for c, v in enumerate(vals):
-                self.order_table.setItem(r, c, _table_item(v, is_center=(c in (0, 1, 2, 5))))
+                self.order_table.setItem(r, c, _table_item(v, is_center=(c in (0, 1, 2, 5)), status_pill=(c == 5)))
 
     def refresh_services(self):
         svcs = self.db.conn.execute("SELECT * FROM bt_services ORDER BY name").fetchall()
@@ -407,7 +525,7 @@ class BusinessTrackingTab(QWidget):
             left = int(m["sessions_purchased"] or 0) - int(m["sessions_completed"] or 0)
             vals = [m["id"], m["name"], m["service_name"] or "", m["status"], left]
             for c, v in enumerate(vals):
-                self.mem_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4))))
+                self.mem_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4)), status_pill=(c == 3)))
 
     def refresh_activities(self):
         rows = self.db.conn.execute("""
@@ -421,7 +539,43 @@ class BusinessTrackingTab(QWidget):
             self.act_table.insertRow(r)
             vals = [a["id"], a["employee_name"] or a["employee_id"], a["task_type"], a["task_status"], a["start_time"], a["remarks"]]
             for c, v in enumerate(vals):
-                self.act_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4))))
+                self.act_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4)), status_pill=(c == 3)))
+
+    def edit_activity_status(self, row, column):
+        item = self.act_table.item(row, 0)
+        if item is None: return
+        try: act_id = int(item.text())
+        except (ValueError, TypeError): return
+        current = self.db.conn.execute("SELECT task_status FROM bt_activities WHERE id=?", (act_id,)).fetchone()
+        if not current: return
+        statuses = ["Pending", "In Progress", "Completed", "Blocked", "Cancelled"]
+        selected, ok = QInputDialog.getItem(self, "Update Activity Status", "Activity status:", statuses,
+                                            max(0, statuses.index(current["task_status"]) if current["task_status"] in statuses else 0), False)
+        if not ok or not selected: return
+        self.db.conn.execute("UPDATE bt_activities SET task_status=? WHERE id=?", (selected, act_id))
+        self.db.conn.commit()
+        self.refresh_all()
+
+    def edit_member_status(self, row, column):
+        item = self.mem_table.item(row, 0)
+        if item is None: return
+        try: mem_id = int(item.text())
+        except (ValueError, TypeError): return
+        current = self.db.conn.execute("SELECT name, status, sessions_purchased, sessions_completed FROM bt_members WHERE id=?", (mem_id,)).fetchone()
+        if not current: return
+        action, ok = QInputDialog.getItem(self, f"Member: {current['name']}", "Choose action:",
+                                          ["Record 1 completed session", "Change status to Active", "Change status to Expired", "Change status to Inactive"], 0, False)
+        if not ok or not action: return
+        if "completed session" in action:
+            self.db.conn.execute("UPDATE bt_members SET sessions_completed=COALESCE(sessions_completed,0)+1 WHERE id=?", (mem_id,))
+        elif "Active" in action:
+            self.db.conn.execute("UPDATE bt_members SET status='Active' WHERE id=?", (mem_id,))
+        elif "Expired" in action:
+            self.db.conn.execute("UPDATE bt_members SET status='Expired' WHERE id=?", (mem_id,))
+        elif "Inactive" in action:
+            self.db.conn.execute("UPDATE bt_members SET status='Inactive' WHERE id=?", (mem_id,))
+        self.db.conn.commit()
+        self.refresh_all()
 
     def add_product(self):
         d = QDialog(self)

@@ -1089,6 +1089,7 @@ class Database:
             except (ValueError, json.JSONDecodeError):
                 device_credentials = {}
 
+        worker_url = self.get_setting("db_sync_worker_url", "") or os.environ.get("DB_SYNC_WORKER_URL", "")
         self.github_sync = GitHubDatabaseSync(
             DB_PATH,
             GITHUB_REPOSITORY,
@@ -1096,6 +1097,7 @@ class Database:
             encryption_secret=encryption_secret,
             device_credentials=device_credentials,
             credential_store=self._store_sync_device_credentials,
+            worker_url=worker_url if worker_url else None,
         )
         self.conn.set_commit_callback(self.github_sync.mark_pending)
 
@@ -3244,6 +3246,8 @@ class MainWindow(QMainWindow):
         self.apply_interaction_animations()
         self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
         self.refresh_all()
+        # Check for update in background and display home banner if a newer release exists
+        QTimer.singleShot(2500, self._check_updates_silently)
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
 
@@ -3515,6 +3519,15 @@ class MainWindow(QMainWindow):
             QComboBox, QDateEdit {
                 min-height: 26px; max-height: 36px; padding: 4px 30px 4px 9px; border-radius: 8px;
             }
+            QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
+            QComboBox::down-arrow {
+                width: 0; height: 0;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #6366F1;
+                margin-right: 8px;
+            }
+            QComboBox::down-arrow:hover { border-top-color: #A855F7; }
             QTextEdit, QPlainTextEdit { padding: 6px 10px; border-radius: 8px; }
             QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
             QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {
@@ -3853,12 +3866,20 @@ class MainWindow(QMainWindow):
                 scroll.viewport().setStyleSheet("background: transparent; border: 0;")
 
         # Ensure cards, toolbars, and panels on all tabs remain fully opaque
-        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "sessionStrip", "guideItem", "settingsContent"):
+        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "sessionStrip", "settingsContent"):
             for widget in self.findChildren(QWidget, card_id):
                 widget.setStyleSheet(
                     f"QWidget#{card_id} {{ background-color: {background}; color: {foreground}; "
                     f"border: 1px solid {border}; border-radius: 14px; }}"
                 )
+
+        guide_left_border = "#00E5FF" if theme_name == "night" else ("#0284C7" if theme_name == "ocean" else ("#EA580C" if theme_name == "sunset" else "#6366F1"))
+        for widget in self.findChildren(QWidget, "guideItem"):
+            widget.setStyleSheet(
+                f"QWidget#guideItem {{ background-color: {background}; color: {foreground}; "
+                f"border: 1.5px solid {border}; border-left: 5px solid {guide_left_border}; border-radius: 14px; }} "
+                f"QWidget#guideItem:hover {{ border-color: {guide_left_border}; }}"
+            )
 
         for group in self.findChildren(QGroupBox):
             if group.objectName() in ("kpiCard", "dashboardPanel"):
@@ -4039,22 +4060,24 @@ class MainWindow(QMainWindow):
         guide_grid.setHorizontalSpacing(12)
         guide_grid.setVerticalSpacing(10)
         guide_items = [
-            ("▦", "Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records."),
-            ("♙", "Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional."),
-            ("✓", "Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%."),
-            ("◷", "Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only."),
-            ("◉", "Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out."),
-            ("▤", "Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details."),
-            ("▣", "EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
-            ("⚙", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
+            ("📊", "Dashboard", "Review today's totals, recent tasks, and employee productivity.", "Open a feature page from the top navigation to manage records.", 1),
+            ("👥", "Employees", "Add or edit employee identity, department, job title, and optional contact details.", "Example: Operations · Coordinator · phone and email optional.", 2),
+            ("✅", "Task Manager", "Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.", "Example: Prepare daily report · In progress · 60%.", 3),
+            ("📝", "Employee Tracker", "Choose an employee and date, then select Refresh to review their tasks.", "Use Task Manager for changes; this page is read-only.", 4),
+            ("🟢", "Attendance", "Select a date to record present, absent, or leave; add check-in/out times and manage holidays.", "Example: Present · 09:00 check-in · 17:30 check-out.", 5),
+            ("🖨️", "Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details.", 6),
+            ("📁", "EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups.", 7),
+            ("💼", "Business Tracking", "Track catalog products, inventory stock, customer orders, gym memberships, and employee activities.", "Example: Stock reorders · Order tracking · Membership sessions left.", 8),
+            ("💬", "Live Chat", "Real-time team collaboration with Cloudflare-synced channels, threads, and instant updates.", "Example: Shift announcements · Audit coordination · Daily notes.", 9),
+            ("⚙️", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build.", 10),
         ]
         session_strip.setStyleSheet(
             "QWidget#sessionStrip { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px; padding: 12px; }"
             if self.current_theme() != "night" else
-            "QWidget#sessionStrip { background: #0F172A; border: 1px solid #334155; border-radius: 14px; padding: 12px; }"
+            "QWidget#sessionStrip { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17, 24, 39, 0.92), stop:1 rgba(15, 23, 42, 0.95)); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 14px; padding: 12px; }"
         )
         self.update_button.setStyleSheet(
-            "QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1); "
+            "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #0369A1); "
             "color: #FFFFFF; border: 1px solid #38BDF8; border-radius: 8px; padding: 6px 14px; font-weight: 700; font-size: 9.5pt; } "
             "QPushButton:hover { background: #0369A1; border-color: #7DD3FC; }"
         )
@@ -4067,16 +4090,23 @@ class MainWindow(QMainWindow):
             "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
             "QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
         )
-        for index, (symbol, section, guidance, example) in enumerate(guide_items):
+        for index, (symbol, section, guidance, example, tab_idx) in enumerate(guide_items):
             guide_card = QWidget()
             guide_card.setObjectName("guideItem")
+            guide_card.setCursor(Qt.CursorShape.PointingHandCursor)
+            guide_card.setToolTip(f"Click to navigate directly to {section}")
             guide_card.setStyleSheet(
-                "QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 14px; } "
-                "QWidget#guideItem:hover { border-color: #A78BFA; background: #FAF5FF; }"
+                "QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 5px solid #6366F1; border-radius: 14px; } "
+                "QWidget#guideItem:hover { border-color: #6366F1; border-left: 5px solid #00E5FF; background: #F8FAFC; }"
                 if self.current_theme() != "night" else
-                "QWidget#guideItem { background: #0F172A; border: 1px solid #334155; border-left: 4px solid #A78BFA; border-radius: 14px; } "
-                "QWidget#guideItem:hover { border-color: #C4B5FD; background: #1E293B; }"
+                "QWidget#guideItem { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17, 24, 39, 0.92), stop:1 rgba(15, 23, 42, 0.96)); "
+                "border: 1.5px solid rgba(99, 102, 241, 0.35); border-left: 5px solid #00E5FF; border-radius: 14px; } "
+                "QWidget#guideItem:hover { border: 1.5px solid #00E5FF; border-left: 5px solid #A855F7; "
+                "background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(30, 41, 59, 0.95), stop:1 rgba(15, 23, 42, 0.98)); }"
             )
+            def _bind_tab_nav(target):
+                return lambda event: self.tabs.setCurrentIndex(target) if event.button() == Qt.MouseButton.LeftButton else None
+            guide_card.mousePressEvent = _bind_tab_nav(tab_idx)
             card_layout = QVBoxLayout(guide_card)
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(5)
@@ -4085,8 +4115,8 @@ class MainWindow(QMainWindow):
             icon_label = QLabel(symbol)
             icon_label.setObjectName("guideIcon")
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_label.setFixedSize(34, 34)
-            icon_label.setStyleSheet("QLabel#guideIcon { background: rgba(124,92,252,41); color: #7C5CFC; border: 1px solid rgba(124,92,252,77); border-radius: 10px; font-size: 17px; font-weight: 700; }")
+            icon_label.setFixedSize(36, 36)
+            icon_label.setStyleSheet("QLabel#guideIcon { background: rgba(99, 102, 241, 0.20); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.40); border-radius: 10px; font-size: 17px; font-weight: 700; }")
             heading_row.addWidget(icon_label)
             section_label = QLabel(section)
             section_label.setProperty("guideTitle", True)
@@ -4558,6 +4588,7 @@ class MainWindow(QMainWindow):
         self.task_filter = QComboBox()
         self.task_filter.addItem("All employees", None)
         self.task_filter.setMinimumWidth(170)
+        self.task_filter.setMaximumWidth(260)
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
         filter_row.addWidget(self.task_filter)
 
@@ -4616,10 +4647,13 @@ class MainWindow(QMainWindow):
         self._wrap_page_in_scroll(self.tracker_tab, l, "Employee Task Tracker", "Review assigned work and evidence.")
         filters=QHBoxLayout(); l.addLayout(filters)
         self.tracker_employee=QComboBox(); self.tracker_employee.addItem("Select employee", None)
+        self.tracker_employee.setMinimumWidth(180)
+        self.tracker_employee.setMaximumWidth(280)
         self.tracker_employee.currentIndexChanged.connect(self.refresh_tracker)
         self.tracker_date=QDateEdit(); configure_date_edit(self.tracker_date); self.tracker_date.setDisplayFormat("yyyy-MM-dd"); self.tracker_date.setDate(QDate.currentDate()); self.tracker_date.dateChanged.connect(self.refresh_tracker)
-        filters.addWidget(QLabel("Employee")); filters.addWidget(self.tracker_employee,2)
+        filters.addWidget(QLabel("Employee")); filters.addWidget(self.tracker_employee)
         filters.addWidget(QLabel("Task date")); filters.addWidget(self.tracker_date)
+        filters.addStretch(1)
         self.tracker_summary=QLabel("Select an employee to view assigned tasks.")
         self.tracker_summary.setProperty("statusSummary", True)
         l.addWidget(self.tracker_summary)
@@ -4671,6 +4705,7 @@ class MainWindow(QMainWindow):
         for e in self.db.employees(False):
             self.att_employee_filter.addItem(e["name"], e["id"])
         self.att_employee_filter.setMinimumWidth(160)
+        self.att_employee_filter.setMaximumWidth(260)
         self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
         row1.addWidget(self.att_employee_filter)
 
@@ -4710,22 +4745,25 @@ class MainWindow(QMainWindow):
             b.clicked.connect(slot)
             row2.addWidget(b)
 
-        holiday_btn = QToolButton()
-        holiday_btn.setText("🎉 Holiday")
-        holiday_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        holiday_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        holiday_btn.setMinimumHeight(34)
-        holiday_btn.setStyleSheet("QToolButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
-        holiday_menu = QMenu(holiday_btn)
-        holiday_menu.setObjectName("holidayMenu")
-        act_declare = QAction("Declare Holiday", self)
-        act_declare.triggered.connect(self.declare_holiday)
-        act_remove = QAction("Remove Holiday", self)
-        act_remove.triggered.connect(self.remove_holiday)
-        holiday_menu.addAction(act_declare)
-        holiday_menu.addAction(act_remove)
-        holiday_btn.setMenu(holiday_menu)
-        row2.addWidget(holiday_btn)
+        declare_holiday_btn = QPushButton("🎉 Declare Holiday")
+        declare_holiday_btn.setToolTip("Mark the selected date as a declared company holiday")
+        declare_holiday_btn.setMinimumHeight(34)
+        declare_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 14px; background: rgba(99, 102, 241, 0.15); color: #6366F1; border: 1px solid rgba(99, 102, 241, 0.35); } QPushButton:hover { background: #6366F1; color: #FFFFFF; }")
+        declare_holiday_btn.clicked.connect(self.declare_holiday)
+        row2.addWidget(declare_holiday_btn)
+
+        remove_holiday_btn = QPushButton("🗑️ Remove Holiday")
+        remove_holiday_btn.setToolTip("Remove declared holiday from the selected date")
+        remove_holiday_btn.setMinimumHeight(34)
+        remove_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
+        remove_holiday_btn.clicked.connect(self.remove_holiday)
+        row2.addWidget(remove_holiday_btn)
+
+        self.holiday_btn = QToolButton()
+        self.holiday_btn.setText("🎉 Holiday")
+        self.holiday_btn.hide()
         row2.addStretch(1)
         att_toolbar_layout.addLayout(row2)
 
@@ -5055,8 +5093,14 @@ class MainWindow(QMainWindow):
             "Developer-only: validate and pull the latest committed snapshot for this installation. A backup is created first."
         )
         self.github_sync_pull_button.clicked.connect(self.pull_latest_github_database)
+        self.github_sync_config_button = QPushButton("⚙️ Configure Cloud Sync")
+        self.github_sync_config_button.setToolTip(
+            "Set or update the Cloudflare Sync Worker URL for database backup and synchronization."
+        )
+        self.github_sync_config_button.clicked.connect(self.configure_github_sync_url)
         sync_actions.addWidget(self.github_sync_now_button)
         sync_actions.addWidget(self.github_sync_pull_button)
+        sync_actions.addWidget(self.github_sync_config_button)
         sync_actions.addStretch(1)
         sync_layout.addLayout(sync_actions)
 
@@ -5204,9 +5248,36 @@ class MainWindow(QMainWindow):
         if shared_pull is not None:
             shared_pull.setEnabled(sync.is_configured and self.user_role == "Admin" and not sync.is_busy)
 
+    def configure_github_sync_url(self):
+        current = self.db.get_setting("db_sync_worker_url", "") or getattr(self.db.github_sync, "worker_url", "")
+        url, ok = QInputDialog.getText(
+            self, "Configure Cloud Sync",
+            "Enter Cloudflare Sync Worker URL (e.g. https://your-worker.workers.dev):",
+            QLineEdit.EchoMode.Normal,
+            current,
+        )
+        if not ok:
+            return
+        url = url.strip()
+        self.db.set_setting("db_sync_worker_url", url)
+        self.db._initialize_github_sync()
+        self._refresh_github_sync_status()
+        info(self, f"Cloud Sync URL updated:\n{url or '(Cleared / Disabled)'}")
+
     def sync_github_database_now(self):
         if not self.db.github_sync.is_configured:
-            return error(self, "Secure database sync is not configured in this build.")
+            url, ok = QInputDialog.getText(
+                self, "Configure Cloud Sync",
+                "Cloud sync is not configured yet.\nEnter Cloudflare Sync Worker URL to push encrypted database:",
+                QLineEdit.EchoMode.Normal,
+                self.db.get_setting("db_sync_worker_url", ""),
+            )
+            if ok and url.strip():
+                self.db.set_setting("db_sync_worker_url", url.strip())
+                self.db._initialize_github_sync()
+                self._refresh_github_sync_status()
+            else:
+                return error(self, "Secure database sync is not configured. Please set the Sync Worker URL.")
         if not self.db.github_sync.request_sync():
             return error(self, "Could not queue the encrypted database push. Check your network connection and try again.")
         self._refresh_github_sync_status()
@@ -5223,7 +5294,19 @@ class MainWindow(QMainWindow):
             return error(self, "Developer authorization failed.")
         sync = self.db.github_sync
         if not sync.is_configured:
-            return error(self, "Secure database sync is not configured in this build.")
+            url, ok = QInputDialog.getText(
+                self, "Configure Cloud Sync",
+                "Cloud sync is not configured yet.\nEnter Cloudflare Sync Worker URL to pull data:",
+                QLineEdit.EchoMode.Normal,
+                self.db.get_setting("db_sync_worker_url", ""),
+            )
+            if ok and url.strip():
+                self.db.set_setting("db_sync_worker_url", url.strip())
+                self.db._initialize_github_sync()
+                sync = self.db.github_sync
+                self._refresh_github_sync_status()
+            else:
+                return error(self, "Secure database sync is not configured in this build.")
         if sync.is_busy:
             return error(self, "An encrypted database sync is already running. Wait for it to finish.")
         if not ask(
@@ -7763,6 +7846,15 @@ QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBo
     border: 2px solid #7C5CFC; background-color: #F1F5F9; color: #0F172A;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
+QComboBox::down-arrow {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #4F46E5;
+    margin-right: 8px;
+}
+QComboBox::down-arrow:hover { border-top-color: #7C3AED; }
+QComboBox::down-arrow:disabled { border-top-color: #94A3B8; }
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #64748B; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
@@ -7918,6 +8010,15 @@ QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBo
     border: 2px solid #A78BFA; background-color: #0F172A; color: #F8FAFC;
 }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
+QComboBox::down-arrow {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #00E5FF;
+    margin-right: 8px;
+}
+QComboBox::down-arrow:hover { border-top-color: #38BDF8; }
+QComboBox::down-arrow:disabled { border-top-color: #64748B; }
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
