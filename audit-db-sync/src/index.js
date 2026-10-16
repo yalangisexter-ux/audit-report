@@ -6,7 +6,14 @@ const DEVICE_RE = /^[0-9a-f]{32}$/;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === "/health" && request.method === "GET") return json({ ok: true, service: "audit-db-sync" });
+    if ((url.pathname === "/" || url.pathname === "/health") && request.method === "GET") {
+      return json({
+        ok: true,
+        service: "raw-strength-audit-db-sync",
+        status: "online",
+        message: "Raw Strength Database Sync Service is online and operational.",
+      });
+    }
     if (url.pathname === "/register" && request.method === "POST") return handleRegister(request, env);
     if (url.pathname === "/push" && request.method === "POST") return handlePush(request, env);
     if (url.pathname === "/pull" && request.method === "POST") return handlePull(request, env);
