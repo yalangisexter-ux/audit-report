@@ -3324,10 +3324,54 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _ui_chrome_palette(theme_name):
         palettes = {
-            "day": {"surface": "#FFFFFF", "border": "#E2E8F0", "nav": "#F8FAFC", "text": "#1E293B", "hover": "#EDE9FE", "hover_text": "#4C1D95", "accent": "#6D28D9"},
-            "night": {"surface": "#111827", "border": "#334155", "nav": "#1E293B", "text": "#E2E8F0", "hover": "#312E81", "hover_text": "#F8FAFC", "accent": "#7C3AED"},
-            "ocean": {"surface": "#F0F9FF", "border": "#BAE6FD", "nav": "#E0F2FE", "text": "#0C4A6E", "hover": "#CFFAFE", "hover_text": "#075985", "accent": "#0284C7"},
-            "sunset": {"surface": "#FFEDD5", "border": "#FED7AA", "nav": "#FFF7ED", "text": "#7C2D12", "hover": "#FED7AA", "hover_text": "#7C2D12", "accent": "#EA580C"},
+            "day": {
+                "surface": "#FFFFFF",
+                "sidebar": "rgba(255, 255, 255, 0.62)",
+                "sidebar_border": "rgba(226, 232, 240, 0.70)",
+                "nav": "rgba(248, 250, 252, 0.62)",
+                "nav_border": "rgba(226, 232, 240, 0.75)",
+                "border": "#E2E8F0",
+                "text": "#1E293B",
+                "hover": "rgba(237, 233, 254, 0.85)",
+                "hover_text": "#4C1D95",
+                "accent": "#6D28D9",
+            },
+            "night": {
+                "surface": "#111827",
+                "sidebar": "rgba(15, 23, 42, 0.68)",
+                "sidebar_border": "rgba(51, 65, 85, 0.70)",
+                "nav": "rgba(30, 41, 59, 0.65)",
+                "nav_border": "rgba(51, 65, 85, 0.75)",
+                "border": "#334155",
+                "text": "#E2E8F0",
+                "hover": "rgba(49, 46, 129, 0.85)",
+                "hover_text": "#F8FAFC",
+                "accent": "#7C3AED",
+            },
+            "ocean": {
+                "surface": "#F0F9FF",
+                "sidebar": "rgba(240, 249, 255, 0.65)",
+                "sidebar_border": "rgba(186, 230, 253, 0.70)",
+                "nav": "rgba(224, 242, 254, 0.65)",
+                "nav_border": "rgba(186, 230, 253, 0.75)",
+                "border": "#BAE6FD",
+                "text": "#0C4A6E",
+                "hover": "rgba(207, 250, 254, 0.85)",
+                "hover_text": "#075985",
+                "accent": "#0284C7",
+            },
+            "sunset": {
+                "surface": "#FFEDD5",
+                "sidebar": "rgba(255, 237, 213, 0.65)",
+                "sidebar_border": "rgba(254, 215, 170, 0.70)",
+                "nav": "rgba(255, 247, 237, 0.65)",
+                "nav_border": "rgba(254, 215, 170, 0.75)",
+                "border": "#FED7AA",
+                "text": "#7C2D12",
+                "hover": "rgba(254, 215, 170, 0.85)",
+                "hover_text": "#7C2D12",
+                "accent": "#EA580C",
+            },
         }
         return palettes.get((theme_name or "day").lower(), palettes["day"])
 
@@ -3343,9 +3387,11 @@ class MainWindow(QMainWindow):
         """Refresh chrome colors after a theme switch without changing its layout."""
         colors = self._ui_chrome_palette(theme_name or self.current_theme())
         surface, border = colors["surface"], colors["border"]
+        sidebar_bg = colors.get("sidebar", surface)
+        sidebar_border = colors.get("sidebar_border", border)
         if hasattr(self, "sidebar"):
             self.sidebar.setStyleSheet(
-                f"QWidget#navigationSidebar {{ background: {surface}; border-right: 1px solid {border}; }}"
+                f"QWidget#navigationSidebar {{ background: {sidebar_bg}; border-right: 1px solid {sidebar_border}; }}"
             )
         if hasattr(self, "title_bar"):
             self.title_bar.setStyleSheet(
@@ -3355,15 +3401,17 @@ class MainWindow(QMainWindow):
             title_color = "#F8FAFC" if (theme_name or self.current_theme()).lower() == "night" else colors["text"]
             self.title_label.setStyleSheet(f"QLabel#titleLabel {{ color: {title_color}; }}")
         if hasattr(self, "sidebar_buttons"):
+            nav_bg = colors.get("nav", colors['nav'])
+            nav_border = colors.get("nav_border", border)
             for button, _title in self.sidebar_buttons:
                 button.setStyleSheet(f"""
-                    QPushButton#sidebarNavButton {{ background: {colors['nav']}; color: {colors['text']};
-                        border: 1px solid {border}; border-radius: 11px; font-size: 10pt;
+                    QPushButton#sidebarNavButton {{ background: {nav_bg}; color: {colors['text']};
+                        border: 1px solid {nav_border}; border-radius: 11px; font-size: 10pt;
                         font-weight: 600; text-align: left; padding: 8px 10px; }}
                     QPushButton#sidebarNavButton:hover {{ background: {colors['hover']};
                         color: {colors['hover_text']}; border-color: #C4B5FD; }}
                     QPushButton#sidebarNavButton:checked {{
-                        background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
+                        background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,235),stop:1 rgba(219,39,119,175));
                         color: #FFFFFF; border: 1px solid #C4B5FD; }}
                 """)
         for header in self.findChildren(QWidget, "pageHeader"):
@@ -3437,7 +3485,7 @@ class MainWindow(QMainWindow):
         self._apply_tooltip_palette(self.current_theme())
         if "QWidget#headerClock" not in self.styleSheet():
             self.setStyleSheet(self.styleSheet() + """
-            QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
+            QWidget#navigationSidebar { background: rgba(255, 255, 255, 0.62); border-right: 1px solid rgba(226, 232, 240, 0.70); }
             QWidget#mainContentSurface { background: transparent; }
             QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
             QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #0B1120,stop:1 #020617);
@@ -3483,11 +3531,11 @@ class MainWindow(QMainWindow):
             QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
                 border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
             QPushButton#sidebarToggle:hover { background: rgba(8, 145, 178, 220); border-color: #67E8F9; }
-            QPushButton#sidebarNavButton { background: #F8FAFC; color: #1E293B;
-                border: 1px solid #E2E8F0; border-radius: 11px;
+            QPushButton#sidebarNavButton { background: rgba(248, 250, 252, 0.62); color: #1E293B;
+                border: 1px solid rgba(226, 232, 240, 0.75); border-radius: 11px;
                 font-size: 10pt; font-weight: 600; text-align: left; padding: 8px 10px; }
-            QPushButton#sidebarNavButton:hover { background: #EDE9FE; color: #4C1D95; border-color: #C4B5FD; }
-            QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
+            QPushButton#sidebarNavButton:hover { background: rgba(237, 233, 254, 0.85); color: #4C1D95; border-color: #C4B5FD; }
+            QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,235),stop:1 rgba(219,39,119,175));
                 color: #FFFFFF; border: 1px solid #C4B5FD; }
             QWidget#headerClock { background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }
             QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
