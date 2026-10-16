@@ -250,8 +250,9 @@ def test_release_metadata_is_consistent_and_newer_than_installed_version():
     assert f'MyAppVersion "{version}"' in (root / "installer.iss").read_text(encoding="utf-8")
     assert f"StringStruct('FileVersion', '{version}.0')" in (root / "version_info.txt").read_text(encoding="utf-8")
     assert f"StringStruct('ProductVersion', '{version}.0')" in (root / "version_info.txt").read_text(encoding="utf-8")
-    assert f"filevers=(1, 2, {app.release_version_tuple(version)[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
-    assert f"prodvers=(1, 2, {app.release_version_tuple(version)[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
+    v_parts = app.release_version_tuple(version)
+    assert f"filevers=({v_parts[0]}, {v_parts[1]}, {v_parts[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
+    assert f"prodvers=({v_parts[0]}, {v_parts[1]}, {v_parts[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
     workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
     assert f'APP_VERSION: "{version}"' in workflow
     assert f"tag_name: v{version}" in workflow
