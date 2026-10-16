@@ -3484,7 +3484,9 @@ class MainWindow(QMainWindow):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
         self._apply_tooltip_palette(self.current_theme())
         if "QWidget#headerClock" not in self.styleSheet():
-            self.setStyleSheet(self.styleSheet() + """
+            slate_arrow = resource_path("assets/chevron_down_slate.png").replace("\\", "/")
+            cyan_arrow = resource_path("assets/chevron_down_cyan.png").replace("\\", "/")
+            polish_css = """
             QWidget#navigationSidebar { background: rgba(255, 255, 255, 0.62); border-right: 1px solid rgba(226, 232, 240, 0.70); }
             QWidget#mainContentSurface { background: transparent; }
             QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
@@ -3580,15 +3582,24 @@ class MainWindow(QMainWindow):
                 min-height: 24px; max-height: 36px; padding: 4px 9px; border-radius: 8px;
             }
             QComboBox, QDateEdit {
-                min-height: 26px; max-height: 36px; padding: 4px 30px 4px 9px; border-radius: 8px;
+                min-height: 26px; max-height: 36px; padding: 4px 32px 4px 9px; border-radius: 8px;
             }
-            QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-            QComboBox::down-arrow {
-                image: url(assets/chevron_down_slate.png);
+            QComboBox::drop-down, QDateEdit::drop-down {
+                subcontrol-origin: padding; subcontrol-position: top right;
+                width: 28px; border-left: 1px solid #CBD5E1;
+                border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+                background-color: #F8FAFC;
+            }
+            QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
+                background-color: #EDE9FE;
+            }
+            QComboBox::down-arrow, QDateEdit::down-arrow {
+                image: url(__CHEVRON_SLATE__);
                 width: 12px; height: 12px;
-                margin-right: 8px;
             }
-            QComboBox::down-arrow:hover { image: url(assets/chevron_down_cyan.png); }
+            QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
+                image: url(__CHEVRON_CYAN__);
+            }
             QTextEdit, QPlainTextEdit { padding: 6px 10px; border-radius: 8px; }
             QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
             QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {
@@ -3638,7 +3649,8 @@ class MainWindow(QMainWindow):
             }
             QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
             QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
-        """)
+            """
+            self.setStyleSheet(self.styleSheet() + polish_css.replace("__CHEVRON_SLATE__", slate_arrow).replace("__CHEVRON_CYAN__", cyan_arrow))
         for widget in self.findChildren(QLabel):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
@@ -6451,11 +6463,14 @@ class MainWindow(QMainWindow):
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
+            arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() == "night" else "assets/chevron_down_slate.png").replace("\\", "/")
             status_combo.setStyleSheet(
                 f"QComboBox {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
-                f"border-radius: 6px; padding: 2px 22px 2px 8px; font-size: 9pt; font-weight: 600; }} "
+                f"border-radius: 6px; padding: 2px 24px 2px 8px; font-size: 9pt; font-weight: 600; }} "
                 f"QComboBox:hover {{ border-color: #6366F1; }} "
-                f"QComboBox:focus {{ border: 1.5px solid #6366F1; }}"
+                f"QComboBox:focus {{ border: 1.5px solid #6366F1; }} "
+                f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid {c_border}; border-top-right-radius: 5px; border-bottom-right-radius: 5px; background-color: {c_bg}; }} "
+                f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 10px; height: 10px; }}"
             )
             status_combo.currentTextChanged.connect(
                 lambda value, employee_id=e["id"], work_date=d: self.save_attendance_inline(
@@ -7847,7 +7862,9 @@ class MainWindow(QMainWindow):
 
 
 def light_stylesheet():
-    return """
+    slate_arrow = resource_path("assets/chevron_down_slate.png").replace("\\", "/")
+    cyan_arrow = resource_path("assets/chevron_down_cyan.png").replace("\\", "/")
+    css = """
 QDialog#loginDialog { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #15233F, stop:1 #312E81); }
 QDialog#loginDialog QLabel { color: #F8FAFC; }
 QDialog#loginDialog QLabel[pageTitle="true"] { color: #FFFFFF; font-size: 16pt; font-weight: 700; }
@@ -7902,23 +7919,36 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
     padding: 6px 10px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
 QComboBox, QDateEdit {
-    combobox-popup: 0; background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 8px;
-    padding: 6px 30px 6px 10px; min-height: 24px; selection-background-color: #EDE9FE; selection-color: #0F172A;
+    combobox-popup: 0; background-color: #FFFFFF; color: #0F172A; border: 1.5px solid #94A3B8; border-radius: 8px;
+    padding: 6px 32px 6px 10px; min-height: 24px; selection-background-color: #EDE9FE; selection-color: #0F172A;
 }
+QComboBox:hover, QDateEdit:hover { border-color: #6366F1; }
+QComboBox:focus, QDateEdit:focus { border: 2px solid #7C5CFC; }
 QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #F1F5F9; color: #0F172A; }
 QComboBox QLineEdit { background-color: #F1F5F9; color: #0F172A; border: 0; padding: 0; }
-QDateEdit { min-width: 142px; padding-right: 30px; }
+QDateEdit { min-width: 142px; padding-right: 32px; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {
     border: 2px solid #7C5CFC; background-color: #F1F5F9; color: #0F172A;
 }
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-QComboBox::down-arrow {
-    image: url(assets/chevron_down_slate.png);
-    width: 12px; height: 12px;
-    margin-right: 8px;
+QComboBox::drop-down, QDateEdit::drop-down {
+    subcontrol-origin: padding; subcontrol-position: top right;
+    width: 28px; border-left: 1px solid #CBD5E1;
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+    background-color: #F8FAFC;
 }
-QComboBox::down-arrow:hover { image: url(assets/chevron_down_cyan.png); }
-QComboBox::down-arrow:disabled { image: url(assets/chevron_down_slate.png); }
+QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
+    background-color: #EDE9FE;
+}
+QComboBox::down-arrow, QDateEdit::down-arrow {
+    image: url(__CHEVRON_SLATE__);
+    width: 12px; height: 12px;
+}
+QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
+    image: url(__CHEVRON_CYAN__);
+}
+QComboBox::down-arrow:disabled, QDateEdit::down-arrow:disabled {
+    image: url(__CHEVRON_SLATE__);
+}
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #F1F5F9; color: #0F172A; border: 1px solid #64748B; selection-background-color: #EDE9FE; selection-color: #4C1D95; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #0F172A; background-color: #F1F5F9; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #EDE9FE; color: #4C1D95; }
@@ -8016,9 +8046,12 @@ QTableWidget::item:selected { background: #DDE7FF; color: #1E1B4B; }
 QCheckBox, QRadioButton { color: #1E293B; }
 QStatusBar { background: #E2E8F0; color: #1E293B; }
 """
+    return css.replace("__CHEVRON_SLATE__", slate_arrow).replace("__CHEVRON_CYAN__", cyan_arrow)
 
 def dark_stylesheet():
-    return """
+    white_arrow = resource_path("assets/chevron_down_white.png").replace("\\", "/")
+    cyan_arrow = resource_path("assets/chevron_down_cyan.png").replace("\\", "/")
+    css = """
 QWidget#settingsContent QGroupBox { background: #111827; }
 QWidget#settingsContent QLabel { color: #E2E8F0; }
 QWidget#settingsContent QPushButton { background: #1E293B; color: #F1F5F9; }
@@ -8064,23 +8097,36 @@ QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
     padding: 6px 10px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
 }
 QComboBox, QDateEdit {
-    combobox-popup: 0; background-color: #111827; color: #F8FAFC; border: 1px solid #475569; border-radius: 8px;
-    padding: 6px 30px 6px 10px; min-height: 24px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
+    combobox-popup: 0; background-color: #111827; color: #F8FAFC; border: 1.5px solid #475569; border-radius: 8px;
+    padding: 6px 32px 6px 10px; min-height: 24px; selection-background-color: #4C1D95; selection-color: #FFFFFF;
 }
+QComboBox:hover, QDateEdit:hover { border-color: #00E5FF; }
+QComboBox:focus, QDateEdit:focus { border: 2px solid #38BDF8; }
 QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #111827; color: #F8FAFC; }
 QComboBox QLineEdit { background-color: #111827; color: #F8FAFC; border: 0; padding: 0; }
-QDateEdit { min-width: 142px; padding-right: 30px; }
+QDateEdit { min-width: 142px; padding-right: 32px; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {
     border: 2px solid #A78BFA; background-color: #0F172A; color: #F8FAFC;
 }
-QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right; width: 28px; border: none; background: transparent; }
-QComboBox::down-arrow {
-    image: url(assets/chevron_down_white.png);
-    width: 12px; height: 12px;
-    margin-right: 8px;
+QComboBox::drop-down, QDateEdit::drop-down {
+    subcontrol-origin: padding; subcontrol-position: top right;
+    width: 28px; border-left: 1px solid #334155;
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+    background-color: #1E293B;
 }
-QComboBox::down-arrow:hover { image: url(assets/chevron_down_cyan.png); }
-QComboBox::down-arrow:disabled { image: url(assets/chevron_down_white.png); }
+QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
+    background-color: #312E81;
+}
+QComboBox::down-arrow, QDateEdit::down-arrow {
+    image: url(__CHEVRON_WHITE__);
+    width: 12px; height: 12px;
+}
+QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
+    image: url(__CHEVRON_CYAN__);
+}
+QComboBox::down-arrow:disabled, QDateEdit::down-arrow:disabled {
+    image: url(__CHEVRON_WHITE__);
+}
 QComboBox QAbstractItemView, QComboBox QListView { background-color: #111827; color: #F8FAFC; border: 1px solid #64748B; selection-background-color: #4C1D95; selection-color: #FFFFFF; outline: 0; padding: 4px; }
 QComboBox QAbstractItemView::item, QComboBox QListView::item { color: #F8FAFC; background-color: #111827; padding: 6px 10px; min-height: 22px; }
 QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected { background-color: #4C1D95; color: #FFFFFF; }
@@ -8182,6 +8228,7 @@ QTableWidget { font-size: 9pt; }
 QTableWidget::item { padding: 4px 6px; }
 QHeaderView::section { padding: 6px 8px; min-height: 36px; }
 """
+    return css.replace("__CHEVRON_WHITE__", white_arrow).replace("__CHEVRON_CYAN__", cyan_arrow)
 
 def apply_app_theme(app, theme_name):
     theme_name = (theme_name or "day").lower()
