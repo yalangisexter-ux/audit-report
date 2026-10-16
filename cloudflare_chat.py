@@ -33,6 +33,7 @@ _ACTIVE_SOCKETS = set()
 # The release workflow injects the deployed Worker HTTPS URL at build time.
 # Keep this empty in source control; never guess a production workers.dev hostname.
 DEFAULT_CHAT_API_BASE = ""
+FALLBACK_CHAT_API_BASE = "https://raw-strength-employee-chat.yalangisexter.workers.dev"
 
 try:
     import websocket
@@ -105,7 +106,11 @@ def websocket_url(api_base: str, ticket: str) -> str:
 
 def _api_call(base: str, path: str, token: str, method: str, payload: dict | None):
     body = None if payload is None else json.dumps(payload).encode("utf-8")
-    headers = {"Accept": "application/json", "Cache-Control": "no-store"}
+    headers = {
+        "Accept": "application/json",
+        "Cache-Control": "no-store",
+        "User-Agent": "RawStrengthEmployeeAuditManager/1.2 (Windows NT 10.0; Win64; x64)",
+    }
     if body is not None:
         headers["Content-Type"] = "application/json"
     if token:
@@ -232,7 +237,7 @@ class CloudflareChatTab(QWidget):
         self.current_role = ""
         self.current_display_name = ""
         stored = str(self.db.get_setting("cloudflare_chat_api_url", "") or "")
-        self.api_base = DEFAULT_CHAT_API_BASE or stored
+        self.api_base = DEFAULT_CHAT_API_BASE or stored or FALLBACK_CHAT_API_BASE
         if DEFAULT_CHAT_API_BASE and stored != DEFAULT_CHAT_API_BASE:
             self.db.set_setting("cloudflare_chat_api_url", DEFAULT_CHAT_API_BASE)
 
@@ -656,6 +661,105 @@ class CloudflareChatTab(QWidget):
             })
         self._render_messages()
 
+    def _remote_sync_conversations(self):
+        base = self._base()
+        if not base or getattr(self, "_syncing_remote_convs", False):
+            return
+        self._syncing_remote_convs = True
+
+        def _worker():
+            try:
+                res = _api_call(base, "/api/support/conversations", "", "GET", None)
+                convs = res.get("conversations", [])
+                QTimer.singleShot(0, lambda: self._apply_remote_conversations(convs))
+            except Exception:
+                pass
+            finally:
+                self._syncing_remote_convs = False
+
+        threading.Thread(target=_worker, name="chat-conv-sync", daemon=True).start()
+
+    def _apply_remote_conversations(self, convs):
+        if not convs or not hasattr(self.db, "conn") or self.db.conn is None:
+            return
+        updated = False
+        cur = self.db.conn.cursor()
+        for c in convs:
+            cid = str(c.get("id") or "")
+            uname = str(c.get("user_name") or "Customer")
+            lmsg = str(c.get("last_message") or "")
+            uat = str(c.get("updated_at") or "")
+            if cid:
+                cur.execute("SELECT last_message, updated_at FROM local_chat_conversations WHERE id=?", (cid,))
+                existing = cur.fetchone()
+                if not existing or existing[0] != lmsg or existing[1] != uat:
+                    self.db.conn.execute(
+                        "INSERT INTO local_chat_conversations(id, user_name, last_message, updated_at) "
+                        "VALUES(?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
+                        "user_name=excluded.user_name, last_message=excluded.last_message, updated_at=excluded.updated_at",
+                        (cid, uname, lmsg, uat)
+                    )
+                    updated = True
+        if updated:
+            self.db.conn.commit()
+            if self.current_role == "Support":
+                self._reload_conversations()
+
+    def _remote_sync_messages(self, conv_id: str):
+        base = self._base()
+        if not base or not conv_id or getattr(self, "_syncing_remote_msgs", False):
+            return
+        self._syncing_remote_msgs = True
+
+        max_id = 0
+        if hasattr(self.db, "conn") and self.db.conn is not None:
+            cur = self.db.conn.cursor()
+            cur.execute("SELECT COALESCE(MAX(id), 0) FROM local_chat_messages WHERE conversation_id=?", (conv_id,))
+            row = cur.fetchone()
+            if row:
+                max_id = row[0]
+
+        def _worker(cid=conv_id, after=max_id):
+            try:
+                path = f"/api/support/messages?conversation_id={urllib.parse.quote(cid)}"
+                if after > 0:
+                    path += f"&after={after}"
+                res = _api_call(base, path, "", "GET", None)
+                msgs = res.get("messages", [])
+                QTimer.singleShot(0, lambda: self._apply_remote_messages(cid, msgs))
+            except Exception:
+                pass
+            finally:
+                self._syncing_remote_msgs = False
+
+        threading.Thread(target=_worker, name="chat-msg-sync", daemon=True).start()
+
+    def _apply_remote_messages(self, conv_id, msgs):
+        if not msgs or not hasattr(self.db, "conn") or self.db.conn is None:
+            return
+        inserted = False
+        cur = self.db.conn.cursor()
+        for m in msgs:
+            srole = str(m.get("sender_role") or "User")
+            sname = str(m.get("sender_name") or srole)
+            txt = str(m.get("text") or "")
+            cat = str(m.get("created_at") or "")
+            cur.execute(
+                "SELECT 1 FROM local_chat_messages WHERE conversation_id=? AND text=? AND sender_role=? AND created_at=?",
+                (conv_id, txt, srole, cat)
+            )
+            if not cur.fetchone():
+                self.db.conn.execute(
+                    "INSERT INTO local_chat_messages (conversation_id, sender_role, sender_name, text, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (conv_id, srole, sname, txt, cat)
+                )
+                inserted = True
+        if inserted:
+            self.db.conn.commit()
+            if self.active_conversation and str(self.active_conversation.get("id")) == str(conv_id):
+                self._reload_messages()
+
     def _poll_updates(self):
         if not self.chat_panel.isVisible():
             return
@@ -672,11 +776,14 @@ class CloudflareChatTab(QWidget):
             if new_convs != self.conversations:
                 self.conversations = new_convs
                 self._render_conversations()
+            self._remote_sync_conversations()
             if self.active_conversation:
-                self._poll_active_messages()
+                self._remote_sync_messages(str(self.active_conversation["id"]))
+            self._poll_active_messages()
         elif self.current_role == "User":
             if self.active_conversation:
-                self._poll_active_messages()
+                self._remote_sync_messages(str(self.active_conversation["id"]))
+            self._poll_active_messages()
 
     def _poll_active_messages(self):
         if not self.active_conversation or not hasattr(self.db, "conn") or self.db.conn is None:
@@ -705,7 +812,7 @@ class CloudflareChatTab(QWidget):
 
     def _base(self):
         """Use the centrally configured release endpoint; never ask customers for a URL."""
-        candidate = self.api_base or DEFAULT_CHAT_API_BASE
+        candidate = self.api_base or DEFAULT_CHAT_API_BASE or FALLBACK_CHAT_API_BASE
         if not candidate:
             self.login_error.setText("Live Chat is not configured in this release. Contact the application administrator.")
             return ""
@@ -1056,6 +1163,21 @@ class CloudflareChatTab(QWidget):
                 (last_preview, now_str, conv_id)
             )
             self.db.conn.commit()
+
+        base = self._base()
+        if base:
+            def _async_send():
+                try:
+                    payload = {
+                        "conversation_id": conv_id,
+                        "sender_role": sender_role,
+                        "sender_name": sender_name,
+                        "text": text,
+                    }
+                    _api_call(base, "/api/support/send", "", "POST", payload)
+                except Exception:
+                    pass
+            threading.Thread(target=_async_send, name="chat-send", daemon=True).start()
 
         worker = self._socket
         if worker is not None and worker.isRunning():

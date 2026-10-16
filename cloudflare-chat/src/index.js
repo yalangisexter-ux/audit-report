@@ -119,6 +119,18 @@ async function listConversations(env, userId) {
   ).bind(userId, userId).all();
   return result.results || [];
 }
+let supportTablesReady = false;
+async function ensureSupportTables(env) {
+  if (supportTablesReady || !env.DB) return;
+  try {
+    await env.DB.batch([
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS support_conversations (id TEXT PRIMARY KEY, user_name TEXT NOT NULL, last_message TEXT DEFAULT '', updated_at TEXT NOT NULL)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS support_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, sender_role TEXT NOT NULL, sender_name TEXT NOT NULL, text TEXT NOT NULL, created_at TEXT NOT NULL)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_support_msgs_conv ON support_messages(conversation_id, id ASC)"),
+    ]);
+    supportTablesReady = true;
+  } catch {}
+}
 async function routeApi(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -179,6 +191,70 @@ async function routeApi(request, env) {
     await env.DB.prepare("DELETE FROM login_attempts WHERE attempt_key = ?").bind(attemptKey).run();
     const publicUser = { id: user.id, username: user.username, displayName: user.display_name, role: user.role };
     return json({ ok: true, token: await issueToken(env, publicUser), expiresIn: TOKEN_TTL_SECONDS, user: publicUser });
+  }
+
+  // --- Real-Time Support Chat Endpoints for Customer <-> Support Desktop Clients ---
+  if (path === "/api/support/conversations" && method === "GET") {
+    await ensureSupportTables(env);
+    const result = await env.DB.prepare(
+      "SELECT id, user_name, last_message, updated_at FROM support_conversations ORDER BY updated_at DESC LIMIT 100"
+    ).all();
+    return json({ ok: true, conversations: result.results || [] });
+  }
+
+  if (path === "/api/support/messages" && method === "GET") {
+    await ensureSupportTables(env);
+    const convId = String(url.searchParams.get("conversation_id") || "").trim();
+    if (!convId) return json({ error: "conversation_id is required." }, 400);
+    const after = Number(url.searchParams.get("after") || 0);
+    let result;
+    if (after > 0) {
+      result = await env.DB.prepare(
+        "SELECT id, conversation_id, sender_role, sender_name, text, created_at FROM support_messages WHERE conversation_id = ? AND id > ? ORDER BY id ASC LIMIT 250"
+      ).bind(convId, after).all();
+    } else {
+      result = await env.DB.prepare(
+        "SELECT id, conversation_id, sender_role, sender_name, text, created_at FROM support_messages WHERE conversation_id = ? ORDER BY id ASC LIMIT 250"
+      ).bind(convId).all();
+    }
+    return json({ ok: true, messages: result.results || [] });
+  }
+
+  if (path === "/api/support/send" && method === "POST") {
+    await ensureSupportTables(env);
+    const body = await readJson(request);
+    const convId = String(body.conversation_id || "").trim().slice(0, 80);
+    const senderRole = body.sender_role === "Support" ? "Support" : "User";
+    const senderName = cleanDisplayName(body.sender_name, senderRole);
+    const text = String(body.text || "").trim();
+    if (!convId || !text) return json({ error: "Missing conversation ID or text." }, 400);
+    if (text.length > MAX_MESSAGE_LENGTH) return json({ error: "Message must not exceed 4000 characters." }, 400);
+
+    const now = new Date().toISOString();
+    const preview = senderRole === "User" ? text : `Support: ${text}`;
+    const cleanUser = senderRole === "User" ? senderName : convId.replace(/^user_/i, "");
+
+    await env.DB.prepare(
+      "INSERT INTO support_conversations(id, user_name, last_message, updated_at) VALUES(?, ?, ?, ?) " +
+      "ON CONFLICT(id) DO UPDATE SET last_message = excluded.last_message, updated_at = excluded.updated_at"
+    ).bind(convId, cleanUser, preview.slice(0, 100), now).run();
+
+    const insertResult = await env.DB.prepare(
+      "INSERT INTO support_messages(conversation_id, sender_role, sender_name, text, created_at) VALUES(?, ?, ?, ?, ?) RETURNING id"
+    ).bind(convId, senderRole, senderName, text, now).first();
+
+    const messageId = insertResult && insertResult.id ? insertResult.id : Date.now();
+    return json({
+      ok: true,
+      message: {
+        id: messageId,
+        conversation_id: convId,
+        sender_role: senderRole,
+        sender_name: senderName,
+        text,
+        created_at: now
+      }
+    }, 201);
   }
 
   if (!path.startsWith("/api/")) return null;

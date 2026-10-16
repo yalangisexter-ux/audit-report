@@ -51,3 +51,21 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 CREATE INDEX IF NOT EXISTS idx_members_user ON conversation_members(user_id,conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id,id DESC);
 CREATE INDEX IF NOT EXISTS idx_tickets_expiry ON socket_tickets(expires_at);
+
+CREATE TABLE IF NOT EXISTS support_conversations (
+  id TEXT PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  last_message TEXT DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS support_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL,
+  sender_role TEXT NOT NULL,
+  sender_name TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_support_msgs_conv ON support_messages(conversation_id, id ASC);

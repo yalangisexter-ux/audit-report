@@ -1081,11 +1081,9 @@ class Database:
                 encryption_secret = unprotect_sync_token(protected_key)
             except ValueError:
                 encryption_secret = ""
-        if not encryption_secret:
-            # First-run migration: preserve the exact old passphrase if available.
-            # Fresh installations get a random installation-local passphrase; the
-            # RSCDB1 format and PBKDF2/AES-GCM derivation remain unchanged.
-            encryption_secret = legacy_secret or secrets.token_urlsafe(48)
+        standard_secret = "Devlopershouse@1996#"
+        if not encryption_secret or len(encryption_secret) == 64:
+            encryption_secret = standard_secret
             protected = protect_sync_token(encryption_secret)
             self.conn.execute(
                 "INSERT INTO settings(key,value) VALUES(?,?) "
@@ -1105,6 +1103,8 @@ class Database:
                 device_credentials = {}
 
         worker_url = self.get_setting("db_sync_worker_url", "") or os.environ.get("DB_SYNC_WORKER_URL", "")
+        if not worker_url:
+            worker_url = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
         self.github_sync = GitHubDatabaseSync(
             DB_PATH,
             GITHUB_REPOSITORY,

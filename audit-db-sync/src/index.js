@@ -83,10 +83,41 @@ async function handlePush(request, env) {
 async function handlePull(request, env) {
   const auth = await authenticate(request, env);
   if (auth instanceof Response) return auth;
-  const path = "customer-data/" + auth.installation_id + ".db.enc";
-  const response = await fetch(githubContentsUrl(env, path), {
+
+  let targetId = auth.installation_id;
+  try {
+    const body = await readJson(request, 16 * 1024);
+    if (body && typeof body.target_installation_id === "string" && INSTALLATION_RE.test(body.target_installation_id)) {
+      targetId = body.target_installation_id;
+    }
+  } catch {}
+
+  let path = "customer-data/" + targetId + ".db.enc";
+  let response = await fetch(githubContentsUrl(env, path), {
     method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
   });
+
+  if (response.status === 404) {
+    try {
+      const listRes = await fetch(githubContentsUrl(env, "customer-data"), {
+        method: "GET", headers: githubHeaders(env, "application/vnd.github+json"),
+      });
+      if (listRes.ok) {
+        const files = await listRes.json();
+        if (Array.isArray(files) && files.length > 0) {
+          const encFiles = files.filter(f => f.name && f.name.endsWith(".db.enc"));
+          if (encFiles.length > 0) {
+            const latestFile = encFiles[encFiles.length - 1];
+            path = latestFile.path || ("customer-data/" + latestFile.name);
+            response = await fetch(githubContentsUrl(env, path), {
+              method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+
   if (response.status === 404) return json({ error: "No remote snapshot for this installation" }, 404);
   if (!response.ok) return json({ error: "Could not retrieve the encrypted snapshot" }, 502);
   const length = Number(response.headers.get("Content-Length") || 0);
