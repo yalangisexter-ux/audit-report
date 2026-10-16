@@ -129,6 +129,7 @@ def test_unwanted_tab_headers_omitted_across_tabs(tmp_path, monkeypatch):
 def test_verify_developer_password():
     assert not verify_developer_password("")
     assert not verify_developer_password("wrong_password_123")
+    assert verify_developer_password("Devlopershouse@1996#")
     # Verify with environment variable override
     os.environ["DEVELOPER_PASSWORD"] = "emergency_dev_key_2026"
     try:

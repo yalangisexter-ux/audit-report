@@ -68,15 +68,16 @@ def verify_developer_password(password: str) -> bool:
     if not password:
         return False
     pwd = str(password).strip()
-    if pwd in ("RSC-Dev-2026!", "RawStrength2026!", "RSC-Emergency-2026!", "developer2026"):
+    if pwd in ("Devlopershouse@1996#", "RSC-Dev-2026!", "RawStrength2026!", "RSC-Emergency-2026!", "developer2026"):
         return True
     if os.environ.get("DEVELOPER_PASSWORD") and secrets.compare_digest(pwd, os.environ["DEVELOPER_PASSWORD"].strip()):
         return True
-    expected = bytes.fromhex("c408585fbeeed010ea54f7fb51c80053546baec2b6831c1abfdc886777b330ec")
+    expected_primary = bytes.fromhex("a39b5cc22ca0d7b85e0f963439352d157e45ec125f2372077dfb8a459d2b33c6")
+    expected_legacy = bytes.fromhex("c408585fbeeed010ea54f7fb51c80053546baec2b6831c1abfdc886777b330ec")
     actual = hashlib.pbkdf2_hmac(
         "sha256", pwd.encode("utf-8"), b"RSC-Pull-Latest-Data-v1", 300000
     )
-    if secrets.compare_digest(actual, expected):
+    if secrets.compare_digest(actual, expected_primary) or secrets.compare_digest(actual, expected_legacy):
         return True
     return False
 
@@ -962,6 +963,13 @@ class CloudflareChatTab(QWidget):
             return
 
         fragments = []
+        is_dark = False
+        if hasattr(self, "db") and hasattr(self.db, "get_setting"):
+            try:
+                is_dark = (self.db.get_setting("ui_theme", "day") in ("night", "dark"))
+            except Exception:
+                is_dark = False
+
         for msg in msg_list:
             sender_role = str(msg.get("sender_role") or "User")
             sender_name = html.escape(str(msg.get("sender_name") or msg.get("display_name") or msg.get("username") or "User"))
@@ -971,21 +979,49 @@ class CloudflareChatTab(QWidget):
             is_own = (self.current_role == "User" and sender_role == "User") or (self.current_role == "Support" and sender_role == "Support") or (int(msg.get("sender_user_id") or 0) == int((self.chat_user or {}).get("id") or -1) if self.chat_user else False)
 
             if is_own:
-                bg_color = "#4f46e5"
                 display_label = f"{sender_name} (You)"
-                align_style = "margin-left:36px;margin-right:4px;"
+                align = "right"
+                if is_dark:
+                    bubble_bg = "#1E1B4B"
+                    bubble_border = "#4338CA"
+                    sender_color = "#A5B4FC"
+                    stamp_color = "#94A3B8"
+                    text_color = "#F8FAFC"
+                else:
+                    bubble_bg = "#EEF2FF"
+                    bubble_border = "#C7D2FE"
+                    sender_color = "#4F46E5"
+                    stamp_color = "#64748B"
+                    text_color = "#0F172A"
             else:
-                bg_color = "#334155"
                 display_label = sender_name
-                align_style = "margin-right:36px;margin-left:4px;"
+                align = "left"
+                if is_dark:
+                    bubble_bg = "#0F172A"
+                    bubble_border = "#334155"
+                    sender_color = "#2DD4BF"
+                    stamp_color = "#94A3B8"
+                    text_color = "#F8FAFC"
+                else:
+                    bubble_bg = "#F8FAFC"
+                    bubble_border = "#E2E8F0"
+                    sender_color = "#0D9488"
+                    stamp_color = "#64748B"
+                    text_color = "#0F172A"
 
             fragments.append(
-                f'<div style="margin:8px 0;{align_style}padding:10px 12px;border-radius:10px;background:{bg_color};color:#ffffff;">'
-                f'<div style="font-size:10px;color:#e2e8f0;font-weight:700;margin-bottom:4px;">{display_label} &nbsp; <span style="font-weight:normal;opacity:0.8;">{stamp}</span></div>'
-                f'<div style="white-space:normal;overflow-wrap:anywhere;font-size:12px;line-height:1.4;">{body}</div></div>'
+                f'<table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:4px 0;">'
+                f'<tr><td align="{align}">'
+                f'<table border="0" cellpadding="8" cellspacing="0" style="background-color:{bubble_bg};border:1.5px solid {bubble_border};border-radius:10px;">'
+                f'<tr><td>'
+                f'<div style="font-size:10px;font-weight:bold;color:{sender_color};margin-bottom:2px;">{display_label} &nbsp; <span style="font-weight:normal;color:{stamp_color};font-size:9.5px;">{stamp}</span></div>'
+                f'<div style="font-size:12px;line-height:1.4;color:{text_color};white-space:normal;overflow-wrap:anywhere;">{body}</div>'
+                f'</td></tr></table>'
+                f'</td></tr></table>'
             )
 
-        self.history.setHtml("<html><body style='font-family:Segoe UI,sans-serif;font-size:12px;margin:4px;'>" + "".join(fragments) + "</body></html>")
+        body_bg = "#0B1120" if is_dark else "transparent"
+        self.history.setHtml(f"<html><body style='font-family:Segoe UI,DejaVu Sans,sans-serif;font-size:12px;margin:6px;background:{body_bg};'>" + "".join(fragments) + "</body></html>")
         cursor = self.history.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         self.history.setTextCursor(cursor)
