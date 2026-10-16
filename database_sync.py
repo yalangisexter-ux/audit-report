@@ -367,11 +367,18 @@ class GitHubDatabaseSync:
                 with self._lock:
                     self._busy = False
 
-    def _worker_request(self, method: str, endpoint: str, *, payload=None, binary=False, allow_404=False):
+    def _worker_request(self, method: str, endpoint: str, *, payload=None, binary=False, allow_404=False, _retry_auth=True):
         if not self.worker_url:
             raise RuntimeError("The secure database-sync service is not configured in this build.")
         body = None
-        headers = {"Accept": "application/octet-stream" if binary else "application/json"}
+        try:
+            from build_info import APP_VERSION as current_ver
+        except ImportError:
+            current_ver = "1.2.88"
+        headers = {
+            "User-Agent": f"RawStrengthEmployeeAuditManager/{current_ver} (Windows NT 10.0; Win64; x64)",
+            "Accept": "application/octet-stream" if binary else "application/json",
+        }
         if payload is not None:
             body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -396,10 +403,13 @@ class GitHubDatabaseSync:
         except HTTPError as exc:
             if allow_404 and exc.code == 404:
                 return None
-            if exc.code == 401 and endpoint != "/register" and self._device_credentials.get("device_secret"):
-                # Device JWTs expire; re-registration proves possession of the stored device secret.
-                self._register_device()
-                return self._worker_request(method, endpoint, payload=payload, binary=binary, allow_404=allow_404)
+            if exc.code in (401, 403) and endpoint != "/register" and _retry_auth:
+                # Device JWTs expire or require re-auth; re-registration proves possession of credentials.
+                try:
+                    self._register_device()
+                    return self._worker_request(method, endpoint, payload=payload, binary=binary, allow_404=allow_404, _retry_auth=False)
+                except Exception:
+                    pass
             try:
                 detail = json.loads(exc.read(2048).decode("utf-8")).get("error", "")
             except Exception:

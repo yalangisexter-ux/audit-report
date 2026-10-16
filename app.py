@@ -1148,6 +1148,12 @@ class Database:
           source_filename TEXT NOT NULL, raw_text TEXT NOT NULL,
           imported_at TEXT NOT NULL, UNIQUE(report_date, source_filename)
         );
+        CREATE TABLE IF NOT EXISTS employee_targets(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
+          target_date TEXT NOT NULL, target TEXT DEFAULT '', target_status TEXT DEFAULT '',
+          updated_at TEXT NOT NULL, UNIQUE(employee_id, target_date),
+          FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
+        );
         """)
         # Additive migrations only — never drop existing data.
         def apply_column_migrations(table_name, migrations):
@@ -1157,6 +1163,13 @@ class Database:
                     c.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} {decl}")
                     existing.add(col)
             return existing
+
+        target_migrations = (
+            ("target", "TEXT DEFAULT ''"),
+            ("target_status", "TEXT DEFAULT ''"),
+            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
+        )
+        apply_column_migrations("employee_targets", target_migrations)
 
         employee_migrations = (
             ("employee_code", "TEXT"),
@@ -1303,6 +1316,33 @@ class Database:
             self.conn.execute("INSERT INTO attendance(employee_id,work_date,check_in,check_out,attendance_status,attendance_note,updated_at) VALUES(?,?,?,?,?,?,?)",
                               (emp_id, work_date, check_in or "", check_out or "", st, note or "", now_text()))
         self.conn.commit()
+
+    def get_employee_target(self, emp_id, target_date):
+        if not emp_id:
+            return {"target": "", "target_status": ""}
+        row = self.conn.execute("SELECT target, target_status FROM employee_targets WHERE employee_id=? AND target_date=?", (emp_id, target_date)).fetchone()
+        if row:
+            return {"target": row["target"] or "", "target_status": row["target_status"] or ""}
+        return {"target": "", "target_status": ""}
+
+    def set_employee_target(self, emp_id, target_date, target, target_status):
+        if not emp_id:
+            return
+        self.conn.execute(
+            """INSERT INTO employee_targets(employee_id,target_date,target,target_status,updated_at)
+               VALUES(?,?,?,?,?)
+               ON CONFLICT(employee_id,target_date) DO UPDATE SET
+                   target=excluded.target,
+                   target_status=excluded.target_status,
+                   updated_at=excluded.updated_at""",
+            (emp_id, target_date, (target or "").strip(), (target_status or "").strip(), now_text())
+        )
+        self.conn.commit()
+
+    def task(self, task_id):
+        if not task_id:
+            return None
+        return self.conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
 
     def working_weekdays(self):
         raw = self.get_setting("working_weekdays", "0,1,2,3,4")
@@ -1746,7 +1786,26 @@ class TaskDialog(QDialog):
                 self.status.addItem(label, row["status"])
                 status_index=self.status.count()-1
             self.status.setCurrentIndex(status_index); self.progress.setValue(row["progress"])
+
+        initial_emp = self.employee.currentData()
+        initial_d = self.date.date().toString("yyyy-MM-dd")
+        tinfo = self.db.get_employee_target(initial_emp, initial_d) if (initial_emp and hasattr(self.db, "get_employee_target")) else {}
+        self.target_input = QLineEdit(tinfo.get("target", ""))
+        self.target_input.setPlaceholderText("Custom target (e.g. NA or 5 tasks)")
+        self.target_status_input = QLineEdit(tinfo.get("target_status", ""))
+        self.target_status_input.setPlaceholderText("Custom target status (e.g. NA or 5/5 Completed)")
+        def _on_emp_or_date_changed():
+            eid = self.employee.currentData()
+            dt = self.date.date().toString("yyyy-MM-dd")
+            if eid and hasattr(self.db, "get_employee_target"):
+                ti = self.db.get_employee_target(eid, dt)
+                self.target_input.setText(ti.get("target", ""))
+                self.target_status_input.setText(ti.get("target_status", ""))
+        self.employee.currentIndexChanged.connect(_on_emp_or_date_changed)
+        self.date.dateChanged.connect(_on_emp_or_date_changed)
+
         self.layout.addRow("Employee *", self.employee); self.layout.addRow("Task date", self.date)
+        self.layout.addRow("Employee target", self.target_input); self.layout.addRow("Target status", self.target_status_input)
         self.layout.addRow("Task title *", self.title); self.layout.addRow("Description", self.details)
         self.layout.addRow("Due time", self.due); self.layout.addRow("Priority", self.priority)
         self.layout.addRow("Status", self.status); self.layout.addRow("Progress", self.progress)
@@ -1754,6 +1813,12 @@ class TaskDialog(QDialog):
         self.layout.addRow("Manager notes", self.manager_note)
         buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); self.layout.addRow(buttons)
+    def accept(self):
+        eid = self.employee.currentData()
+        dt = self.date.date().toString("yyyy-MM-dd")
+        if eid and hasattr(self.db, "set_employee_target"):
+            self.db.set_employee_target(eid, dt, self.target_input.text().strip(), self.target_status_input.text().strip())
+        super().accept()
     def values(self):
         if self.employee.count()==0: return None
         status=self.status.currentData(); progress=self.progress.value()
@@ -3131,6 +3196,38 @@ class MainWindow(QMainWindow):
                         selection-background-color: {colors['accent']}; selection-color: #FFFFFF; }}
                     QCalendarWidget QAbstractItemView:disabled {{ color: #94A3B8; }}
                 """)
+        menu_bg = surface
+        menu_fg = colors["text"]
+        menu_border = border
+        menu_sel_bg = colors["hover"] if (theme_name or self.current_theme()).lower() != "night" else colors["accent"]
+        menu_sel_fg = colors["hover_text"] if (theme_name or self.current_theme()).lower() != "night" else "#FFFFFF"
+        for menu in self.findChildren(QMenu):
+            menu.setStyleSheet(f"""
+                QMenu, QMenu#holidayMenu, QMenu#headerSectionMenu {{
+                    background-color: {menu_bg}; color: {menu_fg};
+                    border: 1px solid {menu_border}; border-radius: 8px; padding: 6px;
+                }}
+                QMenu::item, QMenu#holidayMenu::item, QMenu#headerSectionMenu::item {{
+                    background-color: {menu_bg}; color: {menu_fg};
+                    padding: 8px 24px 8px 16px; border-radius: 6px;
+                    font-size: 9.5pt; font-weight: 600;
+                }}
+                QMenu::item:selected, QMenu#holidayMenu::item:selected, QMenu#headerSectionMenu::item:selected {{
+                    background-color: {menu_sel_bg}; color: {menu_sel_fg};
+                }}
+                QMenu::item:disabled, QMenu#holidayMenu::item:disabled, QMenu#headerSectionMenu::item:disabled {{
+                    color: #94A3B8;
+                }}
+            """)
+        for combo in self.findChildren(QComboBox):
+            view = combo.view()
+            if view is not None:
+                view.setStyleSheet(f"""
+                    QListView {{ background-color: {menu_bg}; color: {menu_fg}; border: 1px solid {menu_border}; outline: 0; padding: 4px; border-radius: 8px; }}
+                    QListView::item {{ background-color: {menu_bg}; color: {menu_fg}; padding: 7px 10px; min-height: 24px; border-radius: 4px; }}
+                    QListView::item:selected {{ background-color: {colors['accent']}; color: #FFFFFF; }}
+                    QListView::item:hover {{ background-color: {colors['hover']}; color: {colors['hover_text']}; }}
+                """)
 
     def _refresh_dashboard_action_styles(self, theme_name=None):
         colors = self._ui_chrome_palette(theme_name or self.current_theme())
@@ -3211,10 +3308,19 @@ class MainWindow(QMainWindow):
             QPushButton#headerNavButton:hover { background: #0891B2; border-color: #67E8F9; color: #FFFFFF; }
             QToolButton#headerLogoMenu { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #6D28D9,stop:1 #DB2777);
                 border: 1px solid #C4B5FD; border-radius: 10px; padding: 3px; }
-            QToolButton#headerLogoMenu:hover { background: #0891B2; border-color: #67E8F9; }
-            QMenu#headerSectionMenu { background: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; padding: 5px; }
-            QMenu#headerSectionMenu::item { padding: 8px 18px; border-radius: 6px; }
-            QMenu#headerSectionMenu::item:selected { background: #6D28D9; color: #FFFFFF; }
+            QMenu, QMenu#holidayMenu, QMenu#headerSectionMenu {
+                background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 8px; padding: 6px;
+            }
+            QMenu::item, QMenu#holidayMenu::item, QMenu#headerSectionMenu::item {
+                background-color: #FFFFFF; color: #0F172A; padding: 8px 24px 8px 16px; border-radius: 6px;
+                font-size: 9.5pt; font-weight: 600;
+            }
+            QMenu::item:selected, QMenu#holidayMenu::item:selected, QMenu#headerSectionMenu::item:selected {
+                background-color: #EDE9FE; color: #4C1D95;
+            }
+            QMenu::item:disabled, QMenu#holidayMenu::item:disabled, QMenu#headerSectionMenu::item:disabled {
+                color: #94A3B8;
+            }
             QComboBox QAbstractItemView, QComboBox QListView {
                 background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
                 selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0;
@@ -3585,6 +3691,35 @@ class MainWindow(QMainWindow):
                     f"border: 1px solid {border}; border-radius: 14px; }}"
                 )
 
+        for group in self.findChildren(QGroupBox):
+            group.setStyleSheet(
+                f"QGroupBox {{ background-color: {background}; color: {foreground}; "
+                f"border: 1px solid {border}; border-radius: 14px; margin-top: 14px; padding: 12px 10px 10px 10px; font-weight: 700; }} "
+                f"QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; background-color: {background}; color: {foreground}; }}"
+            )
+
+        menu_bg = background
+        menu_fg = foreground
+        menu_border = border
+        menu_sel_bg = "#EDE9FE" if theme_name != "night" else "#6D28D9"
+        menu_sel_fg = "#4C1D95" if theme_name != "night" else "#FFFFFF"
+        for menu in self.findChildren(QMenu):
+            menu.setStyleSheet(f"""
+                QMenu, QMenu#holidayMenu, QMenu#headerSectionMenu {{
+                    background-color: {menu_bg}; color: {menu_fg}; border: 1px solid {menu_border}; border-radius: 8px; padding: 6px;
+                }}
+                QMenu::item, QMenu#holidayMenu::item, QMenu#headerSectionMenu::item {{
+                    background-color: {menu_bg}; color: {menu_fg}; padding: 8px 24px 8px 16px; border-radius: 6px;
+                    font-size: 9.5pt; font-weight: 600;
+                }}
+                QMenu::item:selected, QMenu#holidayMenu::item:selected, QMenu#headerSectionMenu::item:selected {{
+                    background-color: {menu_sel_bg}; color: {menu_sel_fg};
+                }}
+                QMenu::item:disabled, QMenu#holidayMenu::item:disabled, QMenu#headerSectionMenu::item:disabled {{
+                    color: #94A3B8;
+                }}
+            """)
+
     def toggle_theme(self):
         current = self.current_theme()
         nxt = "night" if current == "day" else "day"
@@ -3673,6 +3808,7 @@ class MainWindow(QMainWindow):
         self.home_theme_combo.addItems(["Day", "Night", "Ocean", "Sunset"])
         self.home_theme_combo.setCurrentText(self.current_theme().capitalize())
         self.home_theme_combo.setMinimumWidth(110)
+        self.home_theme_combo.setMaximumWidth(180)
         self.home_theme_combo.setToolTip("Choose the application color theme")
         self.home_theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
         session_layout.addWidget(self.home_theme_combo, 2, 1)
@@ -3686,6 +3822,7 @@ class MainWindow(QMainWindow):
         if self.home_wallpaper_combo.findText(saved_wallpaper) >= 0:
             self.home_wallpaper_combo.setCurrentText(saved_wallpaper)
         self.home_wallpaper_combo.setMinimumWidth(145)
+        self.home_wallpaper_combo.setMaximumWidth(220)
         self.home_wallpaper_combo.setToolTip("Choose the animated background for the application")
         self.home_wallpaper_combo.currentTextChanged.connect(self.set_animation_style)
         session_layout.addWidget(self.home_wallpaper_combo, 2, 3)
@@ -4201,6 +4338,40 @@ class MainWindow(QMainWindow):
         filter_row.addWidget(self.task_count_badge)
         task_toolbar_card_layout.addLayout(filter_row)
 
+        target_row = QHBoxLayout()
+        target_row.setSpacing(10)
+
+        target_label = QLabel("🎯 Target:")
+        target_label.setStyleSheet("font-weight: 600;")
+        self.employee_target_input = QLineEdit()
+        self.employee_target_input.setPlaceholderText("Type custom target (e.g. NA or 5 tasks)")
+        self.employee_target_input.setClearButtonEnabled(True)
+        self.employee_target_input.setMinimumWidth(180)
+        self.employee_target_input.setMaximumWidth(260)
+        self.employee_target_input.editingFinished.connect(self.save_employee_target_from_input)
+
+        target_status_label = QLabel("📊 Target status:")
+        target_status_label.setStyleSheet("font-weight: 600;")
+        self.employee_target_status_input = QLineEdit()
+        self.employee_target_status_input.setPlaceholderText("Type custom target status (e.g. NA or Completed)")
+        self.employee_target_status_input.setClearButtonEnabled(True)
+        self.employee_target_status_input.setMinimumWidth(180)
+        self.employee_target_status_input.setMaximumWidth(260)
+        self.employee_target_status_input.editingFinished.connect(self.save_employee_target_from_input)
+
+        self.save_target_btn = QPushButton("💾 Save Target")
+        self.save_target_btn.setToolTip("Save target and target status for selected employee and date")
+        self.save_target_btn.clicked.connect(self.save_employee_target_from_input)
+
+        target_row.addWidget(target_label)
+        target_row.addWidget(self.employee_target_input)
+        target_row.addWidget(target_status_label)
+        target_row.addWidget(self.employee_target_status_input)
+        target_row.addWidget(self.save_target_btn)
+        target_row.addStretch(1)
+
+        task_toolbar_card_layout.addLayout(target_row)
+
         actions_row = QHBoxLayout()
         actions_row.setSpacing(8)
 
@@ -4236,6 +4407,7 @@ class MainWindow(QMainWindow):
         self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.task_table.itemSelectionChanged.connect(self._on_task_table_selection_changed)
         l.addWidget(self.task_table)
 
     def build_tracker(self):
@@ -4344,6 +4516,7 @@ class MainWindow(QMainWindow):
         holiday_btn.setMinimumHeight(34)
         holiday_btn.setStyleSheet("QToolButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
         holiday_menu = QMenu(holiday_btn)
+        holiday_menu.setObjectName("holidayMenu")
         act_declare = QAction("Declare Holiday", self)
         act_declare.triggered.connect(self.declare_holiday)
         act_remove = QAction("Remove Holiday", self)
@@ -4468,6 +4641,12 @@ class MainWindow(QMainWindow):
         self.archived_report = QComboBox()
         self.archived_report.addItem("Generated report for selected date", None)
 
+        for ctrl in (self.report_type, self.report_date, self.report_scope, self.report_employee,
+                     self.report_exclude_employee, self.report_format, self.archived_report):
+            ctrl.setMaximumWidth(420)
+            ctrl.setMinimumWidth(280)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+
         form.addRow("Report type", self.report_type)
         form.addRow("Report date", self.report_date)
         form.addRow("Report scope", self.report_scope)
@@ -4486,7 +4665,7 @@ class MainWindow(QMainWindow):
         self.report_options_grid.setVerticalSpacing(8)
         self.eod_checks = {}
         self.report_option_keys = {
-            "Audit / EOD": ("summary", "identity", "contact", "work_status", "late_links", "missing_proof", "tasks", "details", "due_time", "proof", "proof_notes", "expose_link", "remarks", "pending"),
+            "Audit / EOD": ("summary", "identity", "contact", "target", "work_status", "late_links", "missing_proof", "target_status", "tasks", "details", "due_time", "proof", "proof_notes", "expose_link", "remarks", "pending"),
             "Employee Attendance": ("attendance_identity", "attendance_status", "attendance_times", "attendance_remarks", "attendance_summary"),
             "Employee Details": ("details_identity", "details_contact", "details_joining", "details_status", "details_notes"),
             "Employee Productivity": ("productivity_identity", "productivity_metrics", "productivity_explanation", "productivity_tracking", "productivity_tasks"),
@@ -4494,10 +4673,12 @@ class MainWindow(QMainWindow):
         report_options = [
             ("summary", "Daily summary", True),
             ("identity", "Employee ID / Department / Role", True),
+            ("target", "Target", True),
             ("contact", "Phone / Email", False),
             ("work_status", "Work / EOD status", True),
             ("late_links", "Late / Links status", True),
             ("missing_proof", "Missing proof", True),
+            ("target_status", "Target status", True),
             ("tasks", "Task names and status", True),
             ("details", "Task details", True),
             ("due_time", "Due time", True),
@@ -4754,9 +4935,12 @@ class MainWindow(QMainWindow):
         current = self.current_theme().capitalize()
         if current in ["Day", "Night", "Ocean", "Sunset"]:
             self.theme_combo.setCurrentText(current)
+        self.theme_combo.setMinimumWidth(180)
+        self.theme_combo.setMaximumWidth(280)
         self.theme_combo.currentTextChanged.connect(lambda theme: self.apply_theme(theme.lower()))
         theme_row.addWidget(theme_label)
-        theme_row.addWidget(self.theme_combo, 1)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch(1)
         appearance_layout.addLayout(theme_row)
 
         animation_row = QHBoxLayout()
@@ -4766,9 +4950,12 @@ class MainWindow(QMainWindow):
         saved_animation = self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow"
         if self.animation_combo.findText(saved_animation) >= 0:
             self.animation_combo.setCurrentText(saved_animation)
+        self.animation_combo.setMinimumWidth(220)
+        self.animation_combo.setMaximumWidth(320)
         self.animation_combo.currentTextChanged.connect(self.set_animation_style)
         animation_row.addWidget(animation_label)
-        animation_row.addWidget(self.animation_combo, 1)
+        animation_row.addWidget(self.animation_combo)
+        animation_row.addStretch(1)
         appearance_layout.addLayout(animation_row)
 
         clock_row = QHBoxLayout()
@@ -4778,9 +4965,12 @@ class MainWindow(QMainWindow):
         current_mode = getattr(self, "_clock_mode", "digital").capitalize()
         if current_mode in ["Digital", "Analog"]:
             self.clock_mode_combo.setCurrentText(current_mode)
+        self.clock_mode_combo.setMinimumWidth(180)
+        self.clock_mode_combo.setMaximumWidth(280)
         self.clock_mode_combo.currentTextChanged.connect(lambda mode: self.set_clock_mode(mode.lower()))
         clock_row.addWidget(clock_label)
-        clock_row.addWidget(self.clock_mode_combo, 1)
+        clock_row.addWidget(self.clock_mode_combo)
+        clock_row.addStretch(1)
         appearance_layout.addLayout(clock_row)
 
         note = QLabel("Choose a color theme, animated wallpaper, and clock format. Changes apply immediately across the main app screens.")
@@ -5737,7 +5927,87 @@ class MainWindow(QMainWindow):
             self.set_row_items(self.task_table, r, vals, status_cols={3, 4})
         if hasattr(self, "task_count_badge"):
             self.task_count_badge.setText(f"Tasks: {len(rows)}")
+        if hasattr(self, "employee_target_input"):
+            self.employee_target_input.blockSignals(True)
+            self.employee_target_status_input.blockSignals(True)
+            if eid:
+                tinfo = self.db.get_employee_target(eid, d)
+                self.employee_target_input.setText(tinfo.get("target", ""))
+                self.employee_target_status_input.setText(tinfo.get("target_status", ""))
+                self.employee_target_input.setEnabled(True)
+                self.employee_target_status_input.setEnabled(True)
+                self.save_target_btn.setEnabled(True)
+                emp = self.db.employee(eid)
+                ename = emp["name"] if emp else "Selected employee"
+                self.employee_target_input.setPlaceholderText(f"Target for {ename} (e.g. NA)")
+                self.employee_target_status_input.setPlaceholderText(f"Target status for {ename} (e.g. NA)")
+            else:
+                self.employee_target_input.setText("")
+                self.employee_target_status_input.setText("")
+                self.employee_target_input.setEnabled(False)
+                self.employee_target_status_input.setEnabled(False)
+                self.save_target_btn.setEnabled(False)
+                self.employee_target_input.setPlaceholderText("Select an employee above to set Target")
+                self.employee_target_status_input.setPlaceholderText("Select an employee above to set Target status")
+            self.employee_target_input.blockSignals(False)
+            self.employee_target_status_input.blockSignals(False)
         self.refresh_dashboard()
+
+    def _on_task_table_selection_changed(self):
+        if not hasattr(self, "task_table") or not hasattr(self, "employee_target_input"):
+            return
+        selected_rows = self.task_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        row = selected_rows[0].row()
+        item = self.task_table.item(row, 0)
+        if not item:
+            return
+        try:
+            task_id = int(item.text())
+        except (ValueError, TypeError):
+            return
+        task_row = self.db.task(task_id) if hasattr(self.db, "task") else None
+        if not task_row:
+            return
+        eid = task_row["employee_id"]
+        d = self.task_date.date().toString("yyyy-MM-dd")
+        tinfo = self.db.get_employee_target(eid, d)
+        self.employee_target_input.blockSignals(True)
+        self.employee_target_status_input.blockSignals(True)
+        self.employee_target_input.setText(tinfo.get("target", ""))
+        self.employee_target_status_input.setText(tinfo.get("target_status", ""))
+        self.employee_target_input.setEnabled(True)
+        self.employee_target_status_input.setEnabled(True)
+        self.save_target_btn.setEnabled(True)
+        emp = self.db.employee(eid)
+        ename = emp["name"] if emp else "Selected employee"
+        self.employee_target_input.setPlaceholderText(f"Target for {ename} (e.g. NA)")
+        self.employee_target_status_input.setPlaceholderText(f"Target status for {ename} (e.g. NA)")
+        self.employee_target_input.blockSignals(False)
+        self.employee_target_status_input.blockSignals(False)
+
+    def save_employee_target_from_input(self):
+        eid = self.task_filter.currentData() if hasattr(self, "task_filter") else None
+        if not eid and hasattr(self, "task_table"):
+            selected_rows = self.task_table.selectionModel().selectedRows()
+            if selected_rows:
+                item = self.task_table.item(selected_rows[0].row(), 0)
+                if item:
+                    try:
+                        task_id = int(item.text())
+                        task_row = self.db.task(task_id) if hasattr(self.db, "task") else None
+                        if task_row:
+                            eid = task_row["employee_id"]
+                    except (ValueError, TypeError):
+                        pass
+        if not eid:
+            return
+        d = self.task_date.date().toString("yyyy-MM-dd")
+        target_val = self.employee_target_input.text().strip()
+        status_val = self.employee_target_status_input.text().strip()
+        self.db.set_employee_target(eid, d, target_val, status_val)
+        self.db.log("Employee target updated", f"Employee {eid} on {d}: Target='{target_val}', Status='{status_val}'")
 
     def tracking_start_date(self, employee):
         if employee["joining_date"]:
@@ -6339,9 +6609,12 @@ class MainWindow(QMainWindow):
                 for item in [f"Employees: {len(data)}",f"Tasks recorded: {len(all_tasks)}",f"Completed / submitted tasks: {completed}",f"Pending / other tasks: {pending_count}",f"Employees flagged for missing proof: {missing}"]:
                     doc.add_paragraph(item,style="List Bullet")
             for e,tasks,_att in data:
-                doc.add_heading(e["name"].upper(),level=1)
+                tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
+                emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
+                emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+                doc.add_heading(f"Name : {e['name']}",level=1)
                 if opts.get("identity",True):
-                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"}  |  Department: {e["department"] or "N/A"}  |  Role: {e["designation"] or "N/A"}',style="List Bullet")
+                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}   Target: {emp_target}',style="List Bullet")
                 if opts.get("contact",False):
                     doc.add_paragraph(f'Phone: {e["phone"] or "N/A"}  |  Email: {e["email"] or "N/A"}',style="List Bullet")
                 eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
@@ -6351,7 +6624,9 @@ class MainWindow(QMainWindow):
                     links=self.source_status(e,"links",report_date) or "Not independently checked"
                     doc.add_paragraph(f"LATE: {late}  |  LINKS: {links}",style="List Bullet")
                 if opts.get("missing_proof",True):
-                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}',style="List Bullet")
+                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}   Target status : {emp_target_status}',style="List Bullet")
+                else:
+                    doc.add_paragraph(f'Target status : {emp_target_status}',style="List Bullet")
                 if opts.get("tasks",True):
                     doc.add_paragraph("TASKS / WORK ITEMS",style="Heading 2")
                     if tasks:
@@ -6561,9 +6836,12 @@ class MainWindow(QMainWindow):
                     bullet(f"Employees flagged for missing proof: {missing}"), Spacer(1, 5),
                     HRFlowable(width="100%", thickness=.6, color=cyan, spaceAfter=6)])
             for e, tasks, _att in data:
+                tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
+                emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
+                emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
                 story.append(employee_name(e["name"]))
                 if opts.get("identity", True):
-                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}'))
+                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}   Target: {emp_target}'))
                 if opts.get("contact", False):
                     story.append(bullet(f'Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}'))
                 eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
@@ -6574,7 +6852,9 @@ class MainWindow(QMainWindow):
                     links = self.source_status(e, "links", report_date) or "Not independently checked"
                     story.append(bullet(f"LATE: {late} | LINKS: {links}"))
                 if opts.get("missing_proof", True):
-                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}'))
+                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}   Target status : {emp_target_status}'))
+                else:
+                    story.append(bullet(f'Target status : {emp_target_status}'))
                 if opts.get("tasks", True):
                     story.append(Paragraph("TASKS / WORK ITEMS", styles["RSSection"]))
                     if tasks:
@@ -6693,26 +6973,31 @@ class MainWindow(QMainWindow):
                             row += [task["title"] if task else "N/A",task_status_label(task["status"]) if task else "N/A",task["progress"] if task else "N/A"]
                         w.writerow(row)
             else:
-                headers=["Report date","Employee ID","Employee","Department","Role"]
+                headers=["Report date","Employee ID","Employee","Department","Role","Target"]
                 report_rows=self.report_data(report_date,employee_id)
                 def task_proof_links(task):
                     return task_evidence_urls(task) if task else []
                 max_proof_links=max([len(task_proof_links(t)) for _e,tasks,_a in report_rows for t in tasks] or [1])
                 max_proof_links=max(1,max_proof_links)
                 proof_headers=["Proof link"] if max_proof_links==1 else [f"Proof link {index+1}" for index in range(max_proof_links)]
-                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
+                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("target_status","Target status"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
                 def _is_csv_field_active(k):
                     if k == "due_time": return is_due_time_included(opts)
                     if k == "remarks": return is_remarks_included(opts)
+                    if k == "target_status": return True
                     return bool(opts.get(k, True))
                 headers += [label for key,label in field_keys if key!="proof" and _is_csv_field_active(key)]
+                proof_idx = [k for k,_l in field_keys].index("proof")
                 if opts.get("proof",True):
-                    insert_at=5+sum(1 for key,_label in field_keys[:8] if _is_csv_field_active(key))
+                    insert_at=6+sum(1 for key,_label in field_keys[:proof_idx] if _is_csv_field_active(key))
                     headers[insert_at:insert_at]=proof_headers
                 w.writerow(headers)
                 for e,tasks,_att in report_rows:
+                    tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
+                    emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
+                    emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
                     eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
-                    base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A"]
+                    base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A",emp_target]
                     task_rows=tasks or [None]
                     for t in task_rows:
                         links=task_proof_links(t)
@@ -6721,6 +7006,7 @@ class MainWindow(QMainWindow):
                             "Late":self.source_status(e,"late",report_date) or "Review required",
                             "Links status":self.source_status(e,"links",report_date) or "Not independently checked",
                             "Missing proof":self.employee_missing_proof(e,tasks,report_date),
+                            "Target status":emp_target_status,
                             "Task":t["title"] if t else "N/A",
                             "Task details":t["details"] if t else "N/A",
                             "Task status":task_status_label(t["status"]) if t else "N/A",
@@ -6739,7 +7025,7 @@ class MainWindow(QMainWindow):
                                 proof_cells.append(csv_hyperlink_formula(url, url if t and self.is_task_link_exposed(t, opts) else "Tap here to view content"))
                             if not proof_cells: proof_cells=["N/A"]
                             proof_cells += [""] * (max_proof_links-len(proof_cells))
-                            insert_at=5+sum(1 for key,_label in field_keys[:8] if _is_csv_field_active(key))
+                            insert_at=len(base)+sum(1 for key,_label in field_keys[:proof_idx] if _is_csv_field_active(key))
                             row[insert_at:insert_at]=proof_cells
                         w.writerow(row)
             for section_title, headers, rows in self._selected_business_report_sections(opts):
@@ -6835,14 +7121,20 @@ class MainWindow(QMainWindow):
                 f'• Pending / other tasks: {sum(1 for t in all_tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"]))}',
                 f'• Employees flagged for missing proof: {sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,d).startswith("Yes"))}',""])
         for e,tasks,_att in data:
-            lines.append(e["name"].upper())
-            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}')
+            tgt_info = self.db.get_employee_target(e["id"], d) if hasattr(self.db, "get_employee_target") else None
+            emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
+            emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+            lines.append(f"Name : {e['name']}")
+            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}   Target: {emp_target}')
             if opts.get("contact",False): lines.append(f'• Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}')
             eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
             if opts.get("work_status",True): lines.append(f"• WORK / EOD STATUS: {eod}")
             if opts.get("late_links",True):
                 lines.append(f'• LATE: {self.source_status(e,"late",d) or "Review required"} | LINKS: {self.source_status(e,"links",d) or "Not independently checked"}')
-            if opts.get("missing_proof",True): lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}')
+            if opts.get("missing_proof",True):
+                lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}   Target status : {emp_target_status}')
+            else:
+                lines.append(f'• Target status : {emp_target_status}')
             if opts.get("tasks",True):
                 lines.append("TASKS / WORK ITEMS")
                 if tasks:
