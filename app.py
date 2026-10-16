@@ -46,7 +46,7 @@ def resource_path(relative_path):
 
 
 def brand_mark_pixmap(size):
-    """Create the premium Raw Strength Calisthenics executive brand crest at the requested size."""
+    """Create the premium Raw Strength Calisthenics gym and strength emblem at the requested size."""
     size = max(24, int(size))
     if QApplication.instance() is None:
         _ = QApplication([""])
@@ -62,105 +62,132 @@ def brand_mark_pixmap(size):
 
     # 1. Outer Aerodynamic Executive Shield Crest
     shield = QPainterPath()
-    shield.moveTo(cx, s * 0.05)
-    shield.lineTo(s * 0.93, s * 0.20)
-    shield.lineTo(s * 0.93, s * 0.58)
-    shield.cubicTo(s * 0.93, s * 0.78, cx + s * 0.15, s * 0.92, cx, s * 0.96)
-    shield.cubicTo(cx - s * 0.15, s * 0.92, s * 0.07, s * 0.78, s * 0.07, s * 0.58)
-    shield.lineTo(s * 0.07, s * 0.20)
+    shield.moveTo(cx, s * 0.04)
+    shield.lineTo(s * 0.94, s * 0.20)
+    shield.lineTo(s * 0.94, s * 0.60)
+    shield.cubicTo(s * 0.94, s * 0.82, cx + s * 0.16, s * 0.94, cx, s * 0.98)
+    shield.cubicTo(cx - s * 0.16, s * 0.94, s * 0.06, s * 0.82, s * 0.06, s * 0.60)
+    shield.lineTo(s * 0.06, s * 0.20)
     shield.closeSubpath()
 
     # Premium Obsidian-Titanium Deep Gradient Fill
     bg_gradient = QLinearGradient(0, 0, s, s)
-    bg_gradient.setColorAt(0.0, QColor("#0F172A"))
-    bg_gradient.setColorAt(0.5, QColor("#0A0E1A"))
-    bg_gradient.setColorAt(1.0, QColor("#020617"))
+    bg_gradient.setColorAt(0.0, QColor("#050B14"))
+    bg_gradient.setColorAt(0.5, QColor("#0D1527"))
+    bg_gradient.setColorAt(1.0, QColor("#030712"))
     painter.fillPath(shield, bg_gradient)
 
-    # 2. Precision Metallic Rim (Neon Cyan to Royal Indigo to Violet)
-    rim_pen = QLinearGradient(0, s * 0.10, s, s * 0.90)
-    rim_pen.setColorAt(0.0, QColor("#38BDF8"))
-    rim_pen.setColorAt(0.5, QColor("#6366F1"))
-    rim_pen.setColorAt(1.0, QColor("#C084FC"))
-    painter.setPen(QPen(QBrush(rim_pen), max(2.0, s * 0.045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    # 2. Precision Metallic Rim (Neon Cyan to Royal Indigo to Hot Magenta)
+    rim_pen = QLinearGradient(0, 0, s, s)
+    rim_pen.setColorAt(0.0, QColor("#00E5FF"))
+    rim_pen.setColorAt(0.5, QColor("#8B5CF6"))
+    rim_pen.setColorAt(1.0, QColor("#EC4899"))
+    painter.setPen(QPen(QBrush(rim_pen), max(2.2, s * 0.045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     painter.drawPath(shield)
 
-    # 3. Inner Depth Bezel
+    # 3. Inner Depth Inset Bezel
     inner = QPainterPath()
-    inset = s * 0.07
-    inner.moveTo(cx, s * 0.05 + inset * 1.1)
-    inner.lineTo(s * 0.93 - inset, s * 0.20 + inset * 0.3)
-    inner.lineTo(s * 0.93 - inset, s * 0.58 - inset * 0.2)
-    inner.cubicTo(s * 0.93 - inset, s * 0.75, cx + s * 0.12, s * 0.90 - inset, cx, s * 0.96 - inset * 1.1)
-    inner.cubicTo(cx - s * 0.12, s * 0.90 - inset, s * 0.07 + inset, s * 0.75, s * 0.07 + inset, s * 0.58 - inset * 0.2)
-    inner.lineTo(s * 0.07 + inset, s * 0.20 + inset * 0.3)
+    inset = s * 0.075
+    inner.moveTo(cx, s * 0.04 + inset * 1.1)
+    inner.lineTo(s * 0.94 - inset, s * 0.20 + inset * 0.3)
+    inner.lineTo(s * 0.94 - inset, s * 0.60 - inset * 0.2)
+    inner.cubicTo(s * 0.94 - inset, s * 0.80, cx + s * 0.14, s * 0.92 - inset, cx, s * 0.98 - inset * 1.1)
+    inner.cubicTo(cx - s * 0.14, s * 0.92 - inset, s * 0.06 + inset, s * 0.80, s * 0.06 + inset, s * 0.60 - inset * 0.2)
+    inner.lineTo(s * 0.06 + inset, s * 0.20 + inset * 0.3)
     inner.closeSubpath()
-    painter.setPen(QPen(QColor(255, 255, 255, 40), max(1.0, s * 0.018)))
+    painter.setPen(QPen(QColor(0, 229, 255, 60), max(1.0, s * 0.015)))
     painter.drawPath(inner)
 
-    # 4. Calisthenics Apex Performance Chevrons (Dual Wings of Power)
-    c1 = QPainterPath()
-    c1.moveTo(s * 0.30, s * 0.28)
-    c1.lineTo(cx, s * 0.15)
-    c1.lineTo(s * 0.70, s * 0.28)
-    c1.lineTo(cx, s * 0.21)
-    c1.closeSubpath()
-    c1_grad = QLinearGradient(s * 0.30, 0, s * 0.70, 0)
-    c1_grad.setColorAt(0.0, QColor("#38BDF8"))
-    c1_grad.setColorAt(0.5, QColor("#FFFFFF"))
-    c1_grad.setColorAt(1.0, QColor("#818CF8"))
-    painter.fillPath(c1, c1_grad)
+    # 4. Strength Barbell Shaft & Weight Plates
+    bar_y = s * 0.32
+    bar_grad = QLinearGradient(s * 0.18, bar_y, s * 0.82, bar_y)
+    bar_grad.setColorAt(0.0, QColor("#00E5FF"))
+    bar_grad.setColorAt(0.5, QColor("#FFFFFF"))
+    bar_grad.setColorAt(1.0, QColor("#00E5FF"))
+    painter.setPen(QPen(QBrush(bar_grad), max(2.5, s * 0.038), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    painter.drawLine(QPointF(s * 0.18, bar_y), QPointF(s * 0.82, bar_y))
+    for plate_x in (s * 0.19, s * 0.23, s * 0.77, s * 0.81):
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#00E5FF" if plate_x in (s * 0.19, s * 0.81) else "#8B5CF6"))
+        painter.drawRoundedRect(QRectF(plate_x - s * 0.016, bar_y - s * 0.065, s * 0.032, s * 0.13), 2, 2)
 
-    c2 = QPainterPath()
-    c2.moveTo(s * 0.24, s * 0.39)
-    c2.lineTo(cx, s * 0.26)
-    c2.lineTo(s * 0.76, s * 0.39)
-    c2.lineTo(cx, s * 0.32)
-    c2.closeSubpath()
-    c2_grad = QLinearGradient(s * 0.24, 0, s * 0.76, 0)
-    c2_grad.setColorAt(0.0, QColor("#0284C7"))
-    c2_grad.setColorAt(0.5, QColor("#38BDF8"))
-    c2_grad.setColorAt(1.0, QColor("#6366F1"))
-    painter.fillPath(c2, c2_grad)
+    # 5. Calisthenics Gymnastic Rings
+    for ring_x in (s * 0.33, s * 0.67):
+        painter.setPen(QPen(QColor(148, 163, 184, 160), max(1.2, s * 0.02)))
+        painter.drawLine(QPointF(ring_x, s * 0.12), QPointF(ring_x, s * 0.38))
+        painter.setPen(QPen(QColor("#F59E0B"), max(2.2, s * 0.035)))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        ring_r = s * 0.065
+        painter.drawEllipse(QPointF(ring_x, s * 0.44), ring_r, ring_r)
 
-    # 5. Central Dynamic RSC Athletic Typography
-    font_size = max(10, round(s * 0.25))
-    font = QFont("Segoe UI", font_size, QFont.Weight.Black)
-    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(1.2, s * 0.028))
-    painter.setFont(font)
+    # 6. Calisthenics Athlete Silhouette in Iron Cross / Planche
+    body_grad = QLinearGradient(cx, s * 0.36, cx, s * 0.68)
+    body_grad.setColorAt(0.0, QColor("#FFFFFF"))
+    body_grad.setColorAt(0.5, QColor("#00E5FF"))
+    body_grad.setColorAt(1.0, QColor("#38BDF8"))
 
-    # Shadow for depth
-    painter.setPen(QColor(0, 0, 0, 200))
-    painter.drawText(QRectF(0, s * 0.44 + 1.2, s, s * 0.32), Qt.AlignmentFlag.AlignCenter, "RSC")
-
-    # Brilliant white face
-    painter.setPen(QColor("#FFFFFF"))
-    painter.drawText(QRectF(0, s * 0.44, s, s * 0.32), Qt.AlignmentFlag.AlignCenter, "RSC")
-
-    # 6. Subtle Lower Athletic Jewel / Line
-    if s >= 80:
-        sub_size = max(4, round(s * 0.065))
-        sub_font = QFont("Segoe UI", sub_size, QFont.Weight.Bold)
-        sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(0.8, s * 0.020))
-        painter.setFont(sub_font)
-        painter.setPen(QColor("#38BDF8"))
-        painter.drawText(QRectF(s * 0.15, s * 0.73, s * 0.70, s * 0.12), Qt.AlignmentFlag.AlignCenter, "STRENGTH")
-    else:
-        line_y = s * 0.76
-        line_grad = QLinearGradient(s * 0.30, line_y, s * 0.70, line_y)
-        line_grad.setColorAt(0.0, QColor(56, 189, 248, 0))
-        line_grad.setColorAt(0.5, QColor("#38BDF8"))
-        line_grad.setColorAt(1.0, QColor(129, 140, 248, 0))
-        painter.setPen(QPen(QBrush(line_grad), max(1.5, s * 0.035), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(s * 0.30, line_y), QPointF(s * 0.70, line_y))
-
-    painter.setBrush(QColor("#A855F7"))
+    # Head
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(QPointF(cx, s * 0.86), max(1.6, s * 0.025), max(1.6, s * 0.025))
+    painter.setBrush(QColor("#FFFFFF"))
+    painter.drawEllipse(QPointF(cx, s * 0.36), s * 0.045, s * 0.045)
+
+    # Torso
+    athlete = QPainterPath()
+    athlete.moveTo(cx - s * 0.11, s * 0.41)
+    athlete.lineTo(cx + s * 0.11, s * 0.41)
+    athlete.lineTo(cx + s * 0.05, s * 0.58)
+    athlete.lineTo(cx - s * 0.05, s * 0.58)
+    athlete.closeSubpath()
+    painter.fillPath(athlete, body_grad)
+
+    # Arms
+    arms = QPainterPath()
+    arms.moveTo(s * 0.33, s * 0.44)
+    arms.lineTo(cx - s * 0.08, s * 0.42)
+    arms.lineTo(cx + s * 0.08, s * 0.42)
+    arms.lineTo(s * 0.67, s * 0.44)
+    arms.lineTo(s * 0.65, s * 0.47)
+    arms.lineTo(cx + s * 0.07, s * 0.45)
+    arms.lineTo(cx - s * 0.07, s * 0.45)
+    arms.lineTo(s * 0.35, s * 0.47)
+    arms.closeSubpath()
+    painter.fillPath(arms, body_grad)
+
+    # Planche Legs
+    legs = QPainterPath()
+    legs.moveTo(cx - s * 0.045, s * 0.58)
+    legs.lineTo(cx + s * 0.045, s * 0.58)
+    legs.lineTo(cx + s * 0.03, s * 0.70)
+    legs.lineTo(cx - s * 0.03, s * 0.70)
+    legs.closeSubpath()
+    painter.fillPath(legs, QColor("#00E5FF"))
+
+    # 7. Bold Typography 'RAW STRENGTH' & 'CALISTHENICS'
+    if s >= 48:
+        f_size = max(7, round(s * 0.092))
+        font = QFont("Segoe UI", f_size, QFont.Weight.Black)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(1.0, s * 0.022))
+        painter.setFont(font)
+        painter.setPen(QColor(0, 0, 0, 220))
+        painter.drawText(QRectF(0, s * 0.72 + 1.2, s, s * 0.14), Qt.AlignmentFlag.AlignCenter, "RAW STRENGTH")
+        painter.setPen(QColor("#FFFFFF"))
+        painter.drawText(QRectF(0, s * 0.72, s, s * 0.14), Qt.AlignmentFlag.AlignCenter, "RAW STRENGTH")
+
+        sub_size = max(5, round(s * 0.055))
+        sub_font = QFont("Segoe UI", sub_size, QFont.Weight.ExtraBold)
+        sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(1.2, s * 0.030))
+        painter.setFont(sub_font)
+        painter.setPen(QColor("#00E5FF"))
+        painter.drawText(QRectF(0, s * 0.84, s, s * 0.10), Qt.AlignmentFlag.AlignCenter, "CALISTHENICS")
+    else:
+        f_size = max(6, round(s * 0.28))
+        font = QFont("Segoe UI", f_size, QFont.Weight.Black)
+        painter.setFont(font)
+        painter.setPen(QColor("#FFFFFF"))
+        painter.drawText(QRectF(0, s * 0.66, s, s * 0.30), Qt.AlignmentFlag.AlignCenter, "RS")
 
     painter.end()
     return pixmap
-
 
 def is_due_time_included(opts):
     """Check if due time should be included, handling aliases and explicit falsy exclusions."""
@@ -2008,6 +2035,102 @@ def show_accessible_tooltip(text, position, target=None):
         controller.show(text, position, target)
 
 
+class NeonAttendanceGauge(QWidget):
+    """Circular glowing neon gauge displaying today's attendance percentage and verified counts."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.percent = 0
+        self.present = 0
+        self.total = 0
+        self.setMinimumHeight(135)
+        self.setMaximumHeight(155)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_percent(self, percent, present=0, total=0):
+        self.percent = max(0, min(100, int(percent)))
+        self.present = present
+        self.total = total
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        w, h = self.width(), self.height()
+        
+        # Center of the circular gauge
+        cx = max(50.0, min(float(w * 0.30), 85.0))
+        cy = float(h * 0.50)
+        radius = min(float(h * 0.38), 48.0)
+        pen_width = max(7.0, radius * 0.20)
+        rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
+
+        is_dark = True
+        try:
+            window = self.window()
+            if hasattr(window, "current_theme") and window.current_theme() == "day":
+                is_dark = False
+        except Exception:
+            pass
+
+        # 1. Background Track
+        track_color = QColor(255, 255, 255, 20) if is_dark else QColor(0, 0, 0, 22)
+        painter.setPen(QPen(track_color, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawArc(rect, 0, 360 * 16)
+
+        # 2. Glowing Neon Progress Arc
+        if self.percent > 0:
+            arc_grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
+            arc_grad.setColorAt(0.0, QColor("#00E5FF"))
+            arc_grad.setColorAt(0.5, QColor("#3B82F6"))
+            arc_grad.setColorAt(1.0, QColor("#A855F7"))
+            painter.setPen(QPen(QBrush(arc_grad), pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            start_angle = 90 * 16
+            span_angle = -int(self.percent * 3.6 * 16)
+            painter.drawArc(rect, start_angle, span_angle)
+
+        # 3. Center Metric Number
+        num_font = QFont("Segoe UI", max(10, int(radius * 0.38)), QFont.Weight.Black)
+        painter.setFont(num_font)
+        painter.setPen(QColor("#00E5FF" if is_dark else "#0284C7"))
+        painter.drawText(QRectF(cx - radius, cy - radius * 0.46, radius * 2, radius * 0.58), Qt.AlignmentFlag.AlignCenter, f"{self.percent}%")
+
+        sub_font = QFont("Segoe UI", max(5, int(radius * 0.16)), QFont.Weight.Bold)
+        painter.setFont(sub_font)
+        painter.setPen(QColor("#94A3B8" if is_dark else "#64748B"))
+        painter.drawText(QRectF(cx - radius, cy + radius * 0.14, radius * 2, radius * 0.35), Qt.AlignmentFlag.AlignCenter, "ATTENDANCE")
+
+        # 4. Right Side Pill Badges & Breakdown
+        right_x = cx + radius + 14
+        avail_w = max(40.0, float(w - right_x - 10))
+        
+        badge_y = cy - radius + 2
+        painter.setPen(Qt.PenStyle.NoPen)
+        badge_bg = QColor(16, 185, 129, 35) if self.percent >= 75 else (QColor(245, 158, 11, 35) if self.percent >= 50 else QColor(244, 63, 94, 35))
+        badge_fg = QColor("#34D399") if self.percent >= 75 else (QColor("#FBBF24") if self.percent >= 50 else QColor("#FB7185"))
+        badge_rect = QRectF(right_x, badge_y, min(avail_w, 120.0), 20.0)
+        painter.setBrush(badge_bg)
+        painter.drawRoundedRect(badge_rect, 5, 5)
+        
+        b_font = QFont("Segoe UI", 7, QFont.Weight.Black)
+        b_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.4)
+        painter.setFont(b_font)
+        painter.setPen(badge_fg)
+        status_text = "● ON TARGET" if self.percent >= 75 else ("● MODERATE" if self.percent >= 50 else "● ATTENTION")
+        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, status_text)
+
+        c_font = QFont("Segoe UI", 8, QFont.Weight.Bold)
+        painter.setFont(c_font)
+        painter.setPen(QColor("#F8FAFC" if is_dark else "#0F172A"))
+        painter.drawText(QRectF(right_x, badge_y + 24, avail_w, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, f"Present: {self.present} of {self.total}")
+        
+        d_font = QFont("Segoe UI", 7, QFont.Weight.DemiBold)
+        painter.setFont(d_font)
+        painter.setPen(QColor("#94A3B8" if is_dark else "#64748B"))
+        painter.drawText(QRectF(right_x, badge_y + 40, avail_w, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "Daily Roster Ratio")
+
+        painter.end()
+
+
 class ProductivityChart(QWidget):
     """Lightweight native Qt bar chart; no charting dependency is required."""
     PALETTES = {
@@ -2016,8 +2139,8 @@ class ProductivityChart(QWidget):
             "strong": "#16A34A", "steady": "#2563EB", "attention": "#D97706",
         },
         "night": {
-            "background": "#0F172A", "grid": "#334155", "axis": "#94A3B8", "label": "#F8FAFC",
-            "strong": "#34D399", "steady": "#60A5FA", "attention": "#FBBF24",
+            "background": "#0F172A", "grid": "rgba(51, 65, 85, 0.60)", "axis": "#94A3B8", "label": "#F8FAFC",
+            "strong": "#00E5FF", "steady": "#8B5CF6", "attention": "#F59E0B",
         },
         "ocean": {
             "background": "#F0F9FF", "grid": "#BAE6FD", "axis": "#0C4A6E", "label": "#075985",
@@ -2463,7 +2586,7 @@ class WallpaperPhotoLoader(QThread):
 
 class AnimatedBackground(QWidget):
     """High-resolution photographic wallpapers with gentle Ken Burns motion and particles."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Lord Shiva", "Love & Couples")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Lord Shiva", "Love Couple", "Love & Couples", "Cyberpunk Neon", "Calisthenics Power", "Cosmic Nebula")
     PHOTO_WALLPAPERS = {
         "Galaxy": ("galaxy.jpg", "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Milky Way": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
@@ -2481,6 +2604,14 @@ class AnimatedBackground(QWidget):
         m = str(mode).strip().lower()
         if m in ("shiva", "lord shiva", "loard shiva"):
             return "Lord Shiva"
+        if m in ("love couple", "love couples", "love & couple", "love & couples", "love and couples"):
+            return "Love Couple"
+        if m in ("cyberpunk", "cyberpunk neon", "neon"):
+            return "Cyberpunk Neon"
+        if m in ("calisthenics", "calisthenics power", "power"):
+            return "Calisthenics Power"
+        if m in ("cosmic", "cosmic nebula", "nebula"):
+            return "Cosmic Nebula"
         if m in ("love & couples", "love & couple", "love couple", "love couples", "love and couples"):
             return "Love & Couples"
         if m in ("milky way waves", "milky way wave"):
@@ -2688,6 +2819,39 @@ class AnimatedBackground(QWidget):
                     path.lineTo(w, h)
                     path.closeSubpath()
                     painter.fillPath(path, QColor(r, g, b, a))
+
+            elif self.mode == "Cyberpunk Neon":
+                # Neon perspective cyber-grid
+                grid_pen = QPen(QColor(0, 229, 255, 35 if not is_day else 22), 1.2)
+                painter.setPen(grid_pen)
+                horizon = h * 0.48
+                for x in range(0, w + 40, 40):
+                    px = (x - w * 0.5) * 2.8 + w * 0.5
+                    painter.drawLine(QPointF(w * 0.5, horizon), QPointF(px, h))
+                for idx in range(1, 9):
+                    gy = horizon + (h - horizon) * ((idx / 8.0) ** 1.8)
+                    painter.drawLine(QPointF(0, gy), QPointF(w, gy))
+                # Glowing neon horizon sun
+                sun_grad = QRadialGradient(w * 0.5, horizon, max(w, h) * 0.28)
+                sun_grad.setColorAt(0.0, QColor(244, 63, 94, 65 if not is_day else 40))
+                sun_grad.setColorAt(0.5, QColor(139, 92, 246, 40 if not is_day else 25))
+                sun_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
+                painter.fillRect(rect, sun_grad)
+
+            elif self.mode in ("Calisthenics Power", "Cosmic Nebula"):
+                cx, cy = w * 0.5, h * 0.42
+                glow = QRadialGradient(cx, cy, max(w, h) * 0.55)
+                glow.setColorAt(0.0, QColor(0, 229, 255, 60 if not is_day else 35))
+                glow.setColorAt(0.40, QColor(139, 92, 246, 45 if not is_day else 25))
+                glow.setColorAt(0.75, QColor(236, 72, 153, 30 if not is_day else 15))
+                glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+                painter.fillRect(rect, glow)
+                # Calisthenics power wave pulses
+                for r_idx in range(4):
+                    ring_r = int(max(w, h) * (0.12 + r_idx * 0.14) + math.sin(self.phase + r_idx) * 14)
+                    painter.setPen(QPen(QColor(0, 229, 255, max(8, 42 - r_idx * 9)), 1.5))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawEllipse(QPointF(cx, cy), ring_r, ring_r * 0.65)
 
             elif self.mode == "Lord Shiva":
                 cx, cy = w * 0.5, h * 0.32
@@ -3684,7 +3848,7 @@ class MainWindow(QMainWindow):
                 scroll.viewport().setStyleSheet("background: transparent; border: 0;")
 
         # Ensure cards, toolbars, and panels on all tabs remain fully opaque
-        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "kpiCard", "dashboardPanel", "sessionStrip", "guideItem", "settingsContent"):
+        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "sessionStrip", "guideItem", "settingsContent"):
             for widget in self.findChildren(QWidget, card_id):
                 widget.setStyleSheet(
                     f"QWidget#{card_id} {{ background-color: {background}; color: {foreground}; "
@@ -3692,6 +3856,8 @@ class MainWindow(QMainWindow):
                 )
 
         for group in self.findChildren(QGroupBox):
+            if group.objectName() in ("kpiCard", "dashboardPanel"):
+                continue
             group.setStyleSheet(
                 f"QGroupBox {{ background-color: {background}; color: {foreground}; "
                 f"border: 1px solid {border}; border-radius: 14px; margin-top: 14px; padding: 12px 10px 10px 10px; font-weight: 700; }} "
@@ -3756,6 +3922,38 @@ class MainWindow(QMainWindow):
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(22, 18, 22, 18)
         content_layout.setSpacing(16)
+
+        self.home_update_banner = QFrame()
+        self.home_update_banner.setObjectName("homeUpdateBanner")
+        self.home_update_banner.setStyleSheet(
+            "QFrame#homeUpdateBanner { "
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(79, 70, 229, 0.40), stop:0.5 rgba(14, 165, 233, 0.35), stop:1 rgba(217, 70, 239, 0.40)); "
+            "border: 1.5px solid #00E5FF; border-radius: 12px; padding: 6px 14px; margin-bottom: 4px; }"
+        )
+        banner_layout = QHBoxLayout(self.home_update_banner)
+        banner_layout.setContentsMargins(10, 6, 10, 6)
+        banner_layout.setSpacing(12)
+        banner_icon = QLabel("⚡")
+        banner_icon.setStyleSheet("font-size: 16pt; background: transparent;")
+        banner_layout.addWidget(banner_icon)
+        self.home_update_text = QLabel("A new version is available!")
+        self.home_update_text.setStyleSheet("font-size: 9.5pt; font-weight: 700; color: #FFFFFF; background: transparent;")
+        banner_layout.addWidget(self.home_update_text, 1)
+        self.home_update_action_btn = QPushButton("⬇  Install Update Now")
+        self.home_update_action_btn.setStyleSheet(
+            "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00E5FF, stop:1 #6366F1); "
+            "color: #020617; font-weight: 800; font-size: 9pt; border-radius: 8px; padding: 6px 14px; border: 0; } "
+            "QPushButton:hover { background: #38BDF8; color: #FFFFFF; }"
+        )
+        self.home_update_action_btn.clicked.connect(self.check_for_updates)
+        banner_layout.addWidget(self.home_update_action_btn)
+        banner_dismiss = QPushButton("✕")
+        banner_dismiss.setFixedSize(26, 26)
+        banner_dismiss.setStyleSheet("QPushButton { background: rgba(255,255,255,0.12); color: #CBD5E1; border: 0; border-radius: 13px; font-weight: 700; } QPushButton:hover { background: rgba(244,63,94,0.4); color: #FFFFFF; }")
+        banner_dismiss.clicked.connect(self.home_update_banner.hide)
+        banner_layout.addWidget(banner_dismiss)
+        self.home_update_banner.hide()
+        content_layout.addWidget(self.home_update_banner)
 
         session_strip = QWidget()
         session_strip.setObjectName("sessionStrip")
@@ -3968,7 +4166,34 @@ class MainWindow(QMainWindow):
             self._update_progress = None
         info(self, f"You are already using the latest version ({version}).")
 
+    def show_update_alert(self, version):
+        if hasattr(self, "home_update_banner") and hasattr(self, "home_update_text"):
+            self.home_update_text.setText(f"⚡ Update Available: Version {version} is ready for installation!")
+            self.home_update_banner.show()
+
+    def _check_updates_silently(self):
+        try:
+            import threading
+            def _bg_query():
+                try:
+                    payload = json.loads(UpdateWorker.request_bytes(GITHUB_RELEASES_API).decode("utf-8"))
+                    if isinstance(payload, list):
+                        for candidate in payload:
+                            if not isinstance(candidate, dict) or candidate.get("draft") or candidate.get("prerelease"):
+                                continue
+                            tag = candidate.get("tag_name", "")
+                            if release_version_tuple(tag) > release_version_tuple(APP_VERSION):
+                                v = tag.lstrip("vV")
+                                QTimer.singleShot(0, lambda ver=v: self.show_update_alert(ver))
+                                break
+                except Exception:
+                    pass
+            threading.Thread(target=_bg_query, daemon=True).start()
+        except Exception:
+            pass
+
     def _update_is_ready(self, installer_path, version):
+        self.show_update_alert(version)
         if getattr(self, "_update_progress", None):
             self._update_progress.setLabelText("Preparing silent installation...")
             self._update_progress.setRange(0, 0)
@@ -4077,17 +4302,19 @@ class MainWindow(QMainWindow):
         card_bg = "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111827, stop:1 #0B0F19)" if is_dark else "#FFFFFF"
         val_col = "#FFFFFF" if is_dark else "#0F172A"
         for (heading, symbol, accent, icon_background, icon_border, subtitle_desc), (target_page, page_name) in zip(specs, kpi_nav_targets):
+            neon_accent = "#10B981" if accent == "#15803D" else ("#F43F5E" if accent == "#BE123C" else ("#00E5FF" if accent == "#4F46E5" else ("#C084FC" if accent == "#8B5CF6" else "#38BDF8")))
+            active_accent = neon_accent if is_dark else accent
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
             card.setCursor(Qt.CursorShape.PointingHandCursor)
             card.setToolTip(f"Click to open {page_name} ({heading.title()})")
             card.mousePressEvent = lambda e, p=target_page: self.tabs.setCurrentWidget(p) if e.button() == Qt.MouseButton.LeftButton else None
             card.setStyleSheet(
-                f"QGroupBox#kpiCard {{ background: {card_bg}; "
-                f"border: 1.5px solid {accent}; border-top: 3.5px solid {accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
-                f"QGroupBox#kpiCard:hover {{ border: 2px solid {accent}; border-top: 4px solid {accent}; }} "
+                f"QGroupBox#kpiCard {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17,25,50,0.88), stop:1 rgba(9,14,30,0.85)) if is_dark else '#FFFFFF'; "
+                f"border: 1.5px solid rgba(56, 189, 248, 0.25); border-top: 3.5px solid {active_accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
+                f"QGroupBox#kpiCard:hover {{ border: 1.5px solid {accent}; border-top: 4px solid {active_accent}; }} "
                 f"QGroupBox#kpiCard::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 2px 8px; "
-                f"background: {accent}; color: #FFFFFF; border-radius: 5px; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px; }}"
+                f"background: {active_accent}; color: #FFFFFF; border-radius: 5px; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px; }}"
             )
             layout = QHBoxLayout(card)
             layout.setContentsMargins(12, 10, 12, 10)
@@ -4101,10 +4328,10 @@ class MainWindow(QMainWindow):
             value = QLabel("0")
             value.setProperty("metricValue", True)
             value.setToolTip(f"Current {heading.lower()} count. Click to view.")
-            value.setStyleSheet(f"font-size: 24pt; font-weight: 800; color: {val_col};")
+            value.setStyleSheet(f"font-size: 26pt; font-weight: 900; color: {active_accent if is_dark else val_col};")
             metric_col.addWidget(value)
             sub_label = QLabel(f"● {subtitle_desc}")
-            sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 600; color: {accent}; letter-spacing: 0.3px;")
+            sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 700; color: #CBD5E1 if is_dark else {accent}; letter-spacing: 0.3px;")
             metric_col.addWidget(sub_label)
             layout.addLayout(metric_col, 1)
             self.kpi_cards.append(card)
@@ -4181,6 +4408,9 @@ class MainWindow(QMainWindow):
         attendance = QGroupBox("◉  Today's Attendance")
         attendance.setObjectName("dashboardPanel")
         attendance_layout = QVBoxLayout(attendance)
+        self.neon_attendance_gauge = NeonAttendanceGauge()
+        self.neon_attendance_gauge.setToolTip("Real-time visual attendance gauge and checked-in ratio.")
+        attendance_layout.addWidget(self.neon_attendance_gauge)
         self.dashboard_attendance_summary = QLabel("Attendance summary")
         self.dashboard_attendance_summary.setObjectName("attendanceSummary")
         self.dashboard_attendance_summary.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -5442,8 +5672,8 @@ class MainWindow(QMainWindow):
 
     def selected_eod_options(self):
         defaults = {
-            "summary": True, "identity": True, "contact": False, "work_status": True,
-            "late_links": True, "missing_proof": True, "tasks": True, "details": True,
+            "summary": True, "identity": True, "target": True, "contact": False, "work_status": True,
+            "late_links": True, "missing_proof": True, "target_status": True, "tasks": True, "details": True,
             "due_time": True, "proof": True, "proof_notes": False, "expose_link": False,
             "remarks": True, "pending": True,
             "attendance_identity": True, "attendance_status": True, "attendance_times": True,
@@ -6612,9 +6842,11 @@ class MainWindow(QMainWindow):
                 tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
                 emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
                 emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+                target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
+                target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
                 doc.add_heading(f"Name : {e['name']}",level=1)
                 if opts.get("identity",True):
-                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}   Target: {emp_target}',style="List Bullet")
+                    doc.add_paragraph(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}{target_str}',style="List Bullet")
                 if opts.get("contact",False):
                     doc.add_paragraph(f'Phone: {e["phone"] or "N/A"}  |  Email: {e["email"] or "N/A"}',style="List Bullet")
                 eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
@@ -6624,8 +6856,8 @@ class MainWindow(QMainWindow):
                     links=self.source_status(e,"links",report_date) or "Not independently checked"
                     doc.add_paragraph(f"LATE: {late}  |  LINKS: {links}",style="List Bullet")
                 if opts.get("missing_proof",True):
-                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}   Target status : {emp_target_status}',style="List Bullet")
-                else:
+                    doc.add_paragraph(f'MISSING PROOF: {self.employee_missing_proof(e,tasks,report_date)}{target_status_str}',style="List Bullet")
+                elif opts.get("target_status", True):
                     doc.add_paragraph(f'Target status : {emp_target_status}',style="List Bullet")
                 if opts.get("tasks",True):
                     doc.add_paragraph("TASKS / WORK ITEMS",style="Heading 2")
@@ -6839,9 +7071,11 @@ class MainWindow(QMainWindow):
                 tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
                 emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
                 emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+                target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
+                target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
                 story.append(employee_name(e["name"]))
                 if opts.get("identity", True):
-                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}   Target: {emp_target}'))
+                    story.append(bullet(f'Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}{target_str}'))
                 if opts.get("contact", False):
                     story.append(bullet(f'Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}'))
                 eod = self.source_status(e, "work", report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
@@ -6852,8 +7086,8 @@ class MainWindow(QMainWindow):
                     links = self.source_status(e, "links", report_date) or "Not independently checked"
                     story.append(bullet(f"LATE: {late} | LINKS: {links}"))
                 if opts.get("missing_proof", True):
-                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}   Target status : {emp_target_status}'))
-                else:
+                    story.append(bullet(f'MISSING PROOF: {self.employee_missing_proof(e, tasks, report_date)}{target_status_str}'))
+                elif opts.get("target_status", True):
                     story.append(bullet(f'Target status : {emp_target_status}'))
                 if opts.get("tasks", True):
                     story.append(Paragraph("TASKS / WORK ITEMS", styles["RSSection"]))
@@ -6973,23 +7207,29 @@ class MainWindow(QMainWindow):
                             row += [task["title"] if task else "N/A",task_status_label(task["status"]) if task else "N/A",task["progress"] if task else "N/A"]
                         w.writerow(row)
             else:
-                headers=["Report date","Employee ID","Employee","Department","Role","Target"]
+                include_target = bool(opts.get("target", True))
+                headers=["Report date","Employee ID","Employee","Department","Role"]
+                if include_target:
+                    headers.append("Target")
                 report_rows=self.report_data(report_date,employee_id)
                 def task_proof_links(task):
                     return task_evidence_urls(task) if task else []
                 max_proof_links=max([len(task_proof_links(t)) for _e,tasks,_a in report_rows for t in tasks] or [1])
                 max_proof_links=max(1,max_proof_links)
                 proof_headers=["Proof link"] if max_proof_links==1 else [f"Proof link {index+1}" for index in range(max_proof_links)]
-                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof"),("target_status","Target status"),("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")]
+                field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof")]
+                if opts.get("target_status", True):
+                    field_keys.append(("target_status","Target status"))
+                field_keys.extend([("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")])
                 def _is_csv_field_active(k):
                     if k == "due_time": return is_due_time_included(opts)
                     if k == "remarks": return is_remarks_included(opts)
-                    if k == "target_status": return True
+                    if k == "target_status": return bool(opts.get("target_status", True))
                     return bool(opts.get(k, True))
                 headers += [label for key,label in field_keys if key!="proof" and _is_csv_field_active(key)]
                 proof_idx = [k for k,_l in field_keys].index("proof")
                 if opts.get("proof",True):
-                    insert_at=6+sum(1 for key,_label in field_keys[:proof_idx] if _is_csv_field_active(key))
+                    insert_at=(6 if include_target else 5)+sum(1 for key,_label in field_keys[:proof_idx] if _is_csv_field_active(key))
                     headers[insert_at:insert_at]=proof_headers
                 w.writerow(headers)
                 for e,tasks,_att in report_rows:
@@ -6997,7 +7237,9 @@ class MainWindow(QMainWindow):
                     emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
                     emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
                     eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
-                    base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A",emp_target]
+                    base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A"]
+                    if include_target:
+                        base.append(emp_target)
                     task_rows=tasks or [None]
                     for t in task_rows:
                         links=task_proof_links(t)
@@ -7124,16 +7366,18 @@ class MainWindow(QMainWindow):
             tgt_info = self.db.get_employee_target(e["id"], d) if hasattr(self.db, "get_employee_target") else None
             emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
             emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+            target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
+            target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
             lines.append(f"Name : {e['name']}")
-            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}   Target: {emp_target}')
+            if opts.get("identity",True): lines.append(f'• Employee ID: {e["employee_code"] or "N/A"} | Department: {e["department"] or "N/A"} | Role: {e["designation"] or "N/A"}{target_str}')
             if opts.get("contact",False): lines.append(f'• Phone: {e["phone"] or "N/A"} | Email: {e["email"] or "N/A"}')
             eod=self.source_status(e,"work",d) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
             if opts.get("work_status",True): lines.append(f"• WORK / EOD STATUS: {eod}")
             if opts.get("late_links",True):
                 lines.append(f'• LATE: {self.source_status(e,"late",d) or "Review required"} | LINKS: {self.source_status(e,"links",d) or "Not independently checked"}')
             if opts.get("missing_proof",True):
-                lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}   Target status : {emp_target_status}')
-            else:
+                lines.append(f'• MISSING PROOF: {self.employee_missing_proof(e,tasks,d)}{target_status_str}')
+            elif opts.get("target_status", True):
                 lines.append(f'• Target status : {emp_target_status}')
             if opts.get("tasks",True):
                 lines.append("TASKS / WORK ITEMS")

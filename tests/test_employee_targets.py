@@ -78,6 +78,36 @@ def test_employee_targets_crud_and_report_formatting(tmp_path, monkeypatch):
         pdf_text = " ".join(getattr(f, "text", "") for f in captured_story if hasattr(f, "text"))
         assert "Target: Complete 5 audits" in pdf_text
         assert "Target status : In Progress" in pdf_text
+
+        # 7. Verify Checkbox toggling in Print Center (disabling target and target status)
+        window.eod_checks["target"].setChecked(False)
+        window.eod_checks["target_status"].setChecked(False)
+        opts_unchecked = window.selected_eod_options()
+        assert opts_unchecked["target"] is False
+        assert opts_unchecked["target_status"] is False
+
+        preview_unchecked = window.report_preview_text(today, emp_id)
+        assert "Target: Complete 5 audits" not in preview_unchecked
+        assert "Target status :" not in preview_unchecked
+
+        csv_unchecked_path = tmp_path / "target_unchecked.csv"
+        window.export_report_csv(csv_unchecked_path, today, emp_id, "Audit / EOD", opts_unchecked)
+        with open(csv_unchecked_path, encoding="utf-8-sig") as f:
+            csv_un_headers = list(csv.reader(f))[0]
+        assert "Target" not in csv_un_headers
+        assert "Target status" not in csv_un_headers
+
+        # 8. Verify Home Update Banner and Neon Attendance Gauge
+        assert hasattr(window, "home_update_banner")
+        assert window.home_update_banner.isHidden()
+        window.show_update_alert("1.2.99")
+        assert not window.home_update_banner.isHidden()
+        assert "1.2.99" in window.home_update_text.text()
+
+        assert hasattr(window, "neon_attendance_gauge")
+        window.neon_attendance_gauge.set_percent(85, 17, 20)
+        assert window.neon_attendance_gauge.percent == 85
+        assert window.neon_attendance_gauge.present == 17
     finally:
         window.close()
         database.conn.close()
