@@ -2141,11 +2141,11 @@ class AnalogClockWidget(QWidget):
         if text_w > 20:
             date_str = now.strftime("%a, %d %b")
             time_str = now.strftime("%I:%M:%S %p")
-            painter.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
-            painter.setPen(QColor("#F8FAFC"))
+            painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+            painter.setPen(QColor("#FFFFFF"))
             painter.drawText(QRectF(text_x, center_y - 17, text_w, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, date_str)
-            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Normal))
-            painter.setPen(QColor("#94A3B8"))
+            painter.setFont(QFont("Segoe UI", 8, QFont.Weight.DemiBold))
+            painter.setPen(QColor("#38BDF8"))
             painter.drawText(QRectF(text_x, center_y + 1, text_w, 16), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, time_str)
 
 
@@ -2763,11 +2763,15 @@ class MainWindow(QMainWindow):
         self.clock_mode_btn = QPushButton("🕒")
         self.clock_mode_btn.setObjectName("clockModeBtn")
         self.clock_mode_btn.setFixedSize(26, 26)
+        self.clock_mode_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.clock_mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clock_mode_btn.setToolTip("Switch clock mode (Digital / Analog)")
         self.clock_mode_btn.setStyleSheet(
-            "QPushButton#clockModeBtn { background: rgba(255, 255, 255, 0.12); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 6px; font-size: 12px; } "
-            "QPushButton#clockModeBtn:hover { background: rgba(255, 255, 255, 0.25); color: #FFFFFF; }"
+            "QPushButton#clockModeBtn { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; "
+            "padding: 0; margin: 0; background: rgba(255, 255, 255, 0.16); color: #FFFFFF; "
+            "border: 1px solid rgba(255, 255, 255, 0.32); border-radius: 6px; "
+            "font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; } "
+            "QPushButton#clockModeBtn:hover { background: rgba(255, 255, 255, 0.32); border-color: #38BDF8; }"
         )
         self.clock_mode_btn.clicked.connect(self.toggle_clock_mode)
         clock_frame_layout = QHBoxLayout(self.header_clock_frame)
@@ -2775,35 +2779,41 @@ class MainWindow(QMainWindow):
         clock_frame_layout.setSpacing(4)
         clock_frame_layout.addWidget(self.header_clock, 1)
         clock_frame_layout.addWidget(self.header_clock_analog, 1)
-        clock_frame_layout.addWidget(self.clock_mode_btn, 0)
-        brand_layout.addWidget(self.header_clock_frame)
-        self.header_clock.show()
-        main_content_layout.addWidget(self.brand_banner)
+        clock_frame_layout.addWidget(self.clock_mode_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Persistent database actions stay visible regardless of the selected input tab.
-        self.shared_sync_bar = QFrame()
-        self.shared_sync_bar.setObjectName("sharedDatabaseSyncBar")
-        self.shared_sync_bar.setStyleSheet("#sharedDatabaseSyncBar{background:rgba(15,23,42,210);border-bottom:1px solid rgba(148,163,184,110);}")
-        shared_sync_layout = QHBoxLayout(self.shared_sync_bar)
-        shared_sync_layout.setContentsMargins(14, 6, 14, 6)
-        shared_sync_layout.setSpacing(8)
-        self.shared_sync_status = QLabel("Database sync status loads in Settings & Backup.")
-        self.shared_sync_status.setWordWrap(True)
-        self.shared_sync_status.setMinimumWidth(0)
-        self.shared_sync_status.setStyleSheet("color:#F8FAFC;font-size:11px;")
-        shared_sync_layout.addWidget(self.shared_sync_status, 1)
-        self.shared_sync_push_button = QPushButton("Push to Git DB")
+        # Persistent database actions shifted to the top brand header panel
+        self.shared_sync_push_button = QPushButton("Push Data")
+        self.shared_sync_push_button.setObjectName("headerSyncPushBtn")
         self.shared_sync_pull_button = QPushButton("Pull Latest Data")
+        self.shared_sync_pull_button.setObjectName("headerSyncPullBtn")
         for sync_button in (self.shared_sync_push_button, self.shared_sync_pull_button):
-            sync_button.setMinimumHeight(32)
-            sync_button.setStyleSheet("QPushButton{background:#334155;color:#FFFFFF;border:1px solid #64748B;border-radius:7px;padding:5px 11px;font-weight:600;} QPushButton:hover{background:#475569;}")
+            sync_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            sync_button.setMinimumHeight(34)
+            sync_button.setStyleSheet(
+                "QPushButton { background: rgba(15, 23, 42, 0.55); color: #FFFFFF; "
+                "border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 9px; "
+                "padding: 6px 14px; font-weight: 700; font-size: 9.5pt; } "
+                "QPushButton:hover { background: rgba(15, 23, 42, 0.85); border-color: #38BDF8; color: #FFFFFF; } "
+                "QPushButton:pressed { background: rgba(15, 23, 42, 0.95); } "
+                "QPushButton:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); "
+                "border-color: rgba(255, 255, 255, 0.12); }"
+            )
         self.shared_sync_push_button.setToolTip("Push the current encrypted business-data snapshot.")
         self.shared_sync_pull_button.setToolTip("Pull the latest snapshot after developer-password authorization.")
         self.shared_sync_push_button.clicked.connect(self.sync_github_database_now)
         self.shared_sync_pull_button.clicked.connect(self.pull_latest_github_database)
-        shared_sync_layout.addWidget(self.shared_sync_push_button)
-        shared_sync_layout.addWidget(self.shared_sync_pull_button)
-        main_content_layout.addWidget(self.shared_sync_bar)
+
+        # Retain dummy status widget for safe background setText updates without displaying status message in UI
+        self.shared_sync_status = QLabel()
+        self.shared_sync_status.hide()
+        self.shared_sync_bar = None
+
+        brand_layout.addWidget(self.shared_sync_push_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        brand_layout.addWidget(self.shared_sync_pull_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        brand_layout.addSpacing(6)
+        brand_layout.addWidget(self.header_clock_frame, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.header_clock.show()
+        main_content_layout.addWidget(self.brand_banner)
 
         self.tabs = QTabWidget()
         self.tabs.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -2924,7 +2934,7 @@ class MainWindow(QMainWindow):
     def refresh_header_clock(self):
         now = datetime.now()
         if hasattr(self, "header_clock"):
-            self.header_clock.setText(now.strftime("%a, %d %b  %I:%M:%S %p"))
+            self.header_clock.setText(f"{now.strftime('%a, %d %b')}\n{now.strftime('%I:%M:%S %p')}")
         if hasattr(self, "header_clock_analog"):
             self.header_clock_analog.set_time(now)
 
@@ -3029,12 +3039,31 @@ class MainWindow(QMainWindow):
                 border: 1px solid #A5B4FC; border-radius: 16px; margin: 8px 10px; }
             QLabel#brandLogo { background: rgba(15,23,42,110); border: 2px solid #A5B4FC; border-radius: 13px; padding: 3px; }
             QFrame#headerClockFrame { background: transparent; border: 0; }
-            QFrame#headerClockFrame QLabel#headerClock { background: rgba(15,23,42,205); color: #FFFFFF;
-                border: 1px solid rgba(255,255,255,145); border-radius: 10px; padding: 7px 12px; font-size: 10pt; font-weight: 700; }
+            QFrame#headerClockFrame QLabel#headerClock, QFrame#brandBanner QLabel#headerClock {
+                background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700;
+            }
             QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 19pt; font-weight: 800; }
             QLabel#brandSubheading { background: transparent; color: #F1F5F9; font-size: 10pt; }
-            QFrame#brandBanner QWidget#headerClock { background: rgba(15,23,42,145); color: #FFFFFF;
-                border: 1px solid rgba(255,255,255,100); border-radius: 10px; padding: 7px 12px; font-size: 10pt; font-weight: 700; }
+            QPushButton#clockModeBtn { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
+                padding: 0; margin: 0; background: rgba(255, 255, 255, 0.16); color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.32); border-radius: 6px;
+                font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; }
+            QPushButton#clockModeBtn:hover { background: rgba(255, 255, 255, 0.32); border-color: #38BDF8; }
+            QPushButton#headerSyncPushBtn, QPushButton#headerSyncPullBtn {
+                min-height: 34px; max-height: 38px; padding: 6px 14px;
+                background: rgba(15, 23, 42, 0.55); color: #FFFFFF;
+                border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 9px;
+                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700;
+            }
+            QPushButton#headerSyncPushBtn:hover, QPushButton#headerSyncPullBtn:hover {
+                background: rgba(15, 23, 42, 0.85); border-color: #38BDF8; color: #FFFFFF;
+            }
+            QPushButton#headerSyncPushBtn:pressed, QPushButton#headerSyncPullBtn:pressed {
+                background: rgba(15, 23, 42, 0.95);
+            }
+            QPushButton#headerSyncPushBtn:disabled, QPushButton#headerSyncPullBtn:disabled {
+                background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12);
+            }
             QWidget#pageHeader { background: #FFFFFF; color: #0F172A; }
             QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
                 border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
@@ -3045,8 +3074,7 @@ class MainWindow(QMainWindow):
             QPushButton#sidebarNavButton:hover { background: #EDE9FE; color: #4C1D95; border-color: #C4B5FD; }
             QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,225),stop:1 rgba(219,39,119,150));
                 color: #FFFFFF; border: 1px solid #C4B5FD; }
-            QWidget#headerClock { background: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1;
-                border-radius: 9px; padding: 4px 9px; font-size: 9pt; font-weight: 700; }
+            QWidget#headerClock { background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }
             QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
                 border-radius: 10px; font-size: 18pt; font-weight: 800; padding: 0;
                 min-width: 34px; max-width: 36px; min-height: 28px; max-height: 32px; margin: 2px; }
@@ -4377,7 +4405,7 @@ class MainWindow(QMainWindow):
         sync_box = QGroupBox("Encrypted cloud database sync")
         sync_layout = QVBoxLayout(sync_box)
         sync_note = QLabel(
-            "Database changes stay on this computer until you select Push to Git DB. That action "
+            "Database changes stay on this computer until you select Push Data. That action "
             "sends an encrypted business-data snapshot through the secure sync service. Login and recovery credentials and local "
             "settings are excluded. Pull Latest Data requires the emergency developer password."
         )
@@ -4393,7 +4421,7 @@ class MainWindow(QMainWindow):
         sync_layout.addWidget(self.github_sync_install_label)
 
         sync_actions = QHBoxLayout()
-        self.github_sync_now_button = QPushButton("Push to Git DB")
+        self.github_sync_now_button = QPushButton("Push Data")
         self.github_sync_now_button.setToolTip(
             "Upload this installation’s encrypted database snapshot. Local edits are not uploaded until you click this button."
         )
