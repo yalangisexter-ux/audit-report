@@ -441,8 +441,11 @@ class CloudflareChatTab(QWidget):
         self.history = QTextEdit()
         self.history.setReadOnly(True)
         self.history.setAcceptRichText(False)
+        self.history.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.history.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         self.history.setStyleSheet(
-            "QTextEdit{background:rgba(248,250,252,245);color:#0f172a;border:1px solid #e2e8f0;border-radius:10px;padding:10px;}"
+            "QTextEdit { background: rgba(248,250,252,245); color: #0f172a; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; selection-background-color: transparent; } "
+            "QTextEdit:focus { border: 1px solid #cbd5e1; outline: none; }"
         )
         right.addWidget(self.history, 1)
 
@@ -982,15 +985,15 @@ class CloudflareChatTab(QWidget):
                 display_label = f"{sender_name} (You)"
                 align = "right"
                 if is_dark:
-                    bubble_bg = "#1E1B4B"
-                    bubble_border = "#4338CA"
-                    sender_color = "#A5B4FC"
+                    bubble_bg = "#1E293B"
+                    bubble_border = "#334155"
+                    sender_color = "#38BDF8"
                     stamp_color = "#94A3B8"
                     text_color = "#F8FAFC"
                 else:
-                    bubble_bg = "#EEF2FF"
-                    bubble_border = "#C7D2FE"
-                    sender_color = "#4F46E5"
+                    bubble_bg = "#F1F5F9"
+                    bubble_border = "#CBD5E1"
+                    sender_color = "#2563EB"
                     stamp_color = "#64748B"
                     text_color = "#0F172A"
             else:
@@ -1003,7 +1006,7 @@ class CloudflareChatTab(QWidget):
                     stamp_color = "#94A3B8"
                     text_color = "#F8FAFC"
                 else:
-                    bubble_bg = "#F8FAFC"
+                    bubble_bg = "#FFFFFF"
                     bubble_border = "#E2E8F0"
                     sender_color = "#0D9488"
                     stamp_color = "#64748B"
@@ -1023,8 +1026,12 @@ class CloudflareChatTab(QWidget):
         body_bg = "#0B1120" if is_dark else "transparent"
         self.history.setHtml(f"<html><body style='font-family:Segoe UI,DejaVu Sans,sans-serif;font-size:12px;margin:6px;background:{body_bg};'>" + "".join(fragments) + "</body></html>")
         cursor = self.history.textCursor()
+        cursor.clearSelection()
         cursor.movePosition(cursor.MoveOperation.End)
         self.history.setTextCursor(cursor)
+        scrollbar = self.history.verticalScrollBar()
+        if scrollbar is not None:
+            scrollbar.setValue(scrollbar.maximum())
 
     def _send_message(self):
         text = self.message_edit.text().strip()

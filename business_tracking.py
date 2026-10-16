@@ -457,6 +457,12 @@ class BusinessTrackingTab(QWidget):
         self.refresh_orders()
         self.refresh_services()
         self.refresh_activities()
+        parent_win = self.window()
+        if parent_win is not None and hasattr(parent_win, "refresh_home_business_snapshot"):
+            try:
+                parent_win.refresh_home_business_snapshot()
+            except Exception:
+                pass
 
     def refresh_dashboard(self):
         c = self.db.conn

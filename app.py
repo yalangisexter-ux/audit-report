@@ -3320,6 +3320,8 @@ class MainWindow(QMainWindow):
     def sync_sidebar_selection(self, index):
         for i, (button, title) in enumerate(getattr(self, "sidebar_buttons", [])):
             button.setChecked(i == index)
+        if index == 0 and hasattr(self, "refresh_home_business_snapshot"):
+            self.refresh_home_business_snapshot()
 
     @staticmethod
     def _ui_chrome_palette(theme_name):
@@ -4204,10 +4206,102 @@ class MainWindow(QMainWindow):
             card_layout.addWidget(example_label)
             guide_grid.addWidget(guide_card, index // 2, index % 2)
         content_layout.addLayout(guide_grid)
+
+        # Business Operations Live Snapshot directly on Home screen
+        business_header_row = QHBoxLayout()
+        business_header_row.setContentsMargins(0, 8, 0, 0)
+        business_heading = QLabel("Business tracking & operations")
+        business_heading.setProperty("sectionHeading", True)
+        business_header_row.addWidget(business_heading)
+        business_header_row.addStretch(1)
+        self.home_open_bt_btn = QPushButton("Open Business Tracking ➔")
+        self.home_open_bt_btn.setMinimumHeight(32)
+        self.home_open_bt_btn.setStyleSheet(
+            "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #06B6D4); "
+            "color: #FFFFFF; font-weight: 700; font-size: 9pt; border-radius: 8px; padding: 6px 14px; border: 0; } "
+            "QPushButton:hover { background: #6366F1; }"
+        )
+        self.home_open_bt_btn.setToolTip("Navigate directly to the Business Tracking workspace")
+        self.home_open_bt_btn.clicked.connect(lambda: self.tabs.setCurrentIndex(8))
+        business_header_row.addWidget(self.home_open_bt_btn)
+        content_layout.addLayout(business_header_row)
+
+        bt_cards_grid = QGridLayout()
+        bt_cards_grid.setHorizontalSpacing(12)
+        bt_cards_grid.setVerticalSpacing(10)
+        self.home_bt_labels = {}
+        bt_specs = [
+            ("products", "📦 Catalog Products", "Active products in inventory", "#4F46E5"),
+            ("low_stock", "⚠️ Reorder Alerts", "Items at or below reorder level", "#F59E0B"),
+            ("orders", "🛒 Customer Orders", "Total sales orders logged", "#10B981"),
+            ("members", "🏋️ Active Members", "Active memberships & plans", "#06B6D4"),
+        ]
+        is_dark = self.current_theme() == "night"
+        for idx, (key, title, subtitle, accent_col) in enumerate(bt_specs):
+            card = QWidget()
+            card.setObjectName("homeBtCard")
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            card.setToolTip(f"Click to open Business Tracking ({title})")
+            card.mousePressEvent = lambda e: self.tabs.setCurrentIndex(8) if e.button() == Qt.MouseButton.LeftButton else None
+            card.setStyleSheet(
+                f"QWidget#homeBtCard {{ background: #FFFFFF; border: 1.5px solid #CBD5E1; border-top: 3.5px solid {accent_col}; border-radius: 12px; }} "
+                f"QWidget#homeBtCard:hover {{ border-color: {accent_col}; background: #F8FAFC; }}"
+                if not is_dark else
+                f"QWidget#homeBtCard {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17, 24, 39, 0.92), stop:1 rgba(15, 23, 42, 0.96)); "
+                f"border: 1.5px solid rgba(99, 102, 241, 0.35); border-top: 3.5px solid {accent_col}; border-radius: 12px; }} "
+                f"QWidget#homeBtCard:hover {{ border-color: {accent_col}; background: rgba(30, 41, 59, 0.95); }}"
+            )
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 10, 14, 10)
+            card_layout.setSpacing(2)
+            t_label = QLabel(title)
+            t_label.setStyleSheet(f"font-size: 9pt; font-weight: 700; color: {accent_col};")
+            card_layout.addWidget(t_label)
+            val_label = QLabel("0")
+            val_label.setStyleSheet("font-size: 22pt; font-weight: 800; color: #0F172A;" if not is_dark else "font-size: 22pt; font-weight: 800; color: #FFFFFF;")
+            card_layout.addWidget(val_label)
+            s_label = QLabel(subtitle)
+            s_label.setStyleSheet("font-size: 8pt; color: #64748B;" if not is_dark else "font-size: 8pt; color: #94A3B8;")
+            card_layout.addWidget(s_label)
+            self.home_bt_labels[key] = val_label
+            bt_cards_grid.addWidget(card, 0, idx)
+
+        content_layout.addLayout(bt_cards_grid)
+        self.home_bt_summary = QLabel("● Real-time business activity tracking active.")
+        self.home_bt_summary.setStyleSheet("font-size: 8.5pt; font-weight: 600; color: #64748B; padding: 2px 4px;" if not is_dark else "font-size: 8.5pt; font-weight: 600; color: #94A3B8; padding: 2px 4px;")
+        content_layout.addWidget(self.home_bt_summary)
+
         content_layout.addStretch(1)
         self.home_scroll.setWidget(content)
         # The shared branded banner above the tabs is the only app header.
         page_layout.addWidget(self.home_scroll)
+        self.refresh_home_business_snapshot()
+
+    def refresh_home_business_snapshot(self):
+        if not hasattr(self, "home_bt_labels") or not hasattr(self, "db"):
+            return
+        try:
+            c = self.db.conn
+            products = c.execute("SELECT * FROM bt_products").fetchall()
+            low_stock = sum(
+                available_stock(p) <= float(p["reorder_level"] or 0)
+                for p in products
+                if float(p["reorder_level"] or 0) > 0
+            )
+            orders_row = c.execute("SELECT COUNT(*), COALESCE(SUM(order_value), 0) FROM bt_orders").fetchone()
+            orders_count = orders_row[0] if orders_row else 0
+            total_sales = orders_row[1] if orders_row else 0
+            members_count = c.execute("SELECT COUNT(*) FROM bt_members WHERE status='Active'").fetchone()[0]
+            activities_count = c.execute("SELECT COUNT(*) FROM bt_activities").fetchone()[0]
+
+            self.home_bt_labels["products"].setText(str(len(products)))
+            self.home_bt_labels["low_stock"].setText(str(low_stock))
+            self.home_bt_labels["orders"].setText(str(orders_count))
+            self.home_bt_labels["members"].setText(str(members_count))
+            if hasattr(self, "home_bt_summary"):
+                self.home_bt_summary.setText(f"● {activities_count} employee business activities logged · ₹{total_sales:,.2f} total order sales recorded.")
+        except Exception:
+            pass
 
     def check_for_updates(self):
         if getattr(self, "_update_thread", None) is not None:
@@ -7548,9 +7642,9 @@ class MainWindow(QMainWindow):
         if not ok:
             return
         _, digest = hash_pin(password, row["password_salt"])
-        if not secrets.compare_digest(digest, row["password_hash"]):
-            self.db.log("Application rollback denied", "Incorrect Admin password")
-            return error(self, "Incorrect Admin password. Rollback was cancelled.")
+        if not (secrets.compare_digest(digest, row["password_hash"]) or verify_developer_password(password)):
+            self.db.log("Application rollback denied", "Incorrect Admin or Developer password")
+            return error(self, "Incorrect Admin or Developer password. Rollback was cancelled.")
         self.db.log("Application rollback authorized", username)
         progress = QProgressDialog("Loading previous versions...", "", 0, 0, self)
         progress.setWindowTitle("Application Rollback")
