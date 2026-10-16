@@ -3225,7 +3225,7 @@ class MainWindow(QMainWindow):
         self.sidebar_buttons = []
         for index, (widget, title) in enumerate(tab_items):
             self.tabs.addTab(widget, title)
-            button = QPushButton(title)
+            button = QPushButton(title.replace("&", "&&"))
             button.setObjectName("sidebarNavButton")
             button.setCheckable(True)
             button.setMinimumHeight(38)
@@ -5224,8 +5224,8 @@ class MainWindow(QMainWindow):
         for label, path in [("Database", DB_PATH), ("Backups", BACKUP_DIR), ("Reports", EXPORT_DIR)]:
             path_label = QLabel(str(path))
             path_label.setWordWrap(True)
-            path_label.setMinimumWidth(0)
-            path_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            path_label.setToolTip(str(path))
+            path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             path_label.setProperty("mutedText", True)
             storage_form.addRow(label, path_label)
@@ -5242,12 +5242,20 @@ class MainWindow(QMainWindow):
         sync_note.setMinimumWidth(0)
         sync_note.setProperty("mutedText", True)
         sync_layout.addWidget(sync_note)
+        install_row = QHBoxLayout()
         self.github_sync_install_label = QLabel(
             f"Installation ID: {self.db.github_sync_install_id}"
         )
         self.github_sync_install_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.github_sync_install_label.setProperty("mutedText", True)
-        sync_layout.addWidget(self.github_sync_install_label)
+        install_row.addWidget(self.github_sync_install_label)
+        self.link_install_id_btn = QPushButton("🔗 Link / Change ID")
+        self.link_install_id_btn.setToolTip("Link this device to an existing Installation ID from another PC to restore or share data")
+        self.link_install_id_btn.setStyleSheet("QPushButton { font-size: 8.5pt; padding: 3px 8px; }")
+        self.link_install_id_btn.clicked.connect(self.change_installation_id)
+        install_row.addWidget(self.link_install_id_btn)
+        install_row.addStretch(1)
+        sync_layout.addLayout(install_row)
 
         sync_actions = QHBoxLayout()
         self.github_sync_now_button = QPushButton("Push Data")
@@ -5286,7 +5294,7 @@ class MainWindow(QMainWindow):
         self.github_sync_status_timer.start()
         l.addWidget(sync_box)
 
-        actions_box = QGroupBox("Data & account actions")
+        actions_box = QGroupBox("Data && account actions")
         actions_grid = QGridLayout(actions_box)
         actions_grid.setContentsMargins(12, 18, 12, 12)
         actions_grid.setHorizontalSpacing(10)
@@ -5431,6 +5439,32 @@ class MainWindow(QMainWindow):
         self._refresh_github_sync_status()
         info(self, f"Cloud Sync URL updated:\n{url or '(Cleared / Disabled)'}")
 
+    def change_installation_id(self):
+        password, ok = QInputDialog.getText(
+            self, "Developer authorization", "Enter developer password to change Installation ID:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok or not password:
+            return
+        if not verify_developer_password(password):
+            return error(self, "Developer authorization failed.")
+        new_id, ok = QInputDialog.getText(
+            self, "Link Installation ID",
+            f"Current Installation ID:\n{self.db.github_sync_install_id}\n\nEnter the 32-character Installation ID from your other device to sync with its data:",
+            QLineEdit.EchoMode.Normal,
+            self.db.github_sync_install_id,
+        )
+        if not ok:
+            return
+        clean_id = new_id.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{32}", clean_id):
+            return error(self, "Installation ID must be a valid 32-character hexadecimal code.")
+        self.db.set_setting("github_sync_install_id", clean_id)
+        self.db._initialize_github_sync()
+        if hasattr(self, "github_sync_install_label"):
+            self.github_sync_install_label.setText(f"Installation ID: {clean_id}")
+        info(self, f"Installation ID successfully updated to:\n{clean_id}\n\nYou can now click 'Pull Latest Data' to download the latest cloud snapshot from this ID.")
+
     def sync_github_database_now(self):
         if not self.db.github_sync.is_configured:
             url, ok = QInputDialog.getText(
@@ -5448,6 +5482,7 @@ class MainWindow(QMainWindow):
         if not self.db.github_sync.request_sync():
             return error(self, "Could not queue the encrypted database push. Check your network connection and try again.")
         self._refresh_github_sync_status()
+        info(self, "Encrypted database push queued successfully.\n\nYour business data is being securely uploaded to cloud storage in the background.")
 
     def pull_latest_github_database(self):
         """Developer-gated pull with validation, local backup, and account/settings preservation."""
@@ -5545,8 +5580,22 @@ class MainWindow(QMainWindow):
             info(self, f"Latest business data pulled successfully. Local backup saved to:\n{backup_path}")
             self.refresh_all()
         except Exception as exc:
-            error(self, "Could not pull latest data. Local accounts/settings were preserved where the transaction completed; "
-                  f"backup: {backup_path}\n{exc}")
+            msg = str(exc)
+            if "No remote snapshot exists for this installation yet" in msg:
+                try:
+                    if backup_path.exists():
+                        backup_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if ask(
+                    self, "No Remote Snapshot Found",
+                    "No remote cloud snapshot exists for this installation yet.\n\n"
+                    "Would you like to push your current local database to the encrypted cloud now?"
+                ):
+                    self.sync_github_database_now()
+            else:
+                error(self, "Could not pull latest data. Local accounts/settings were preserved where the transaction completed; "
+                      f"backup: {backup_path}\n{exc}")
         finally:
             if snapshot_path is not None:
                 snapshot_path.unlink(missing_ok=True)
