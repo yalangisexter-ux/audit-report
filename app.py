@@ -413,7 +413,7 @@ def is_known_task_status(status):
     """Return False for blank, unselected, and legacy NA task states."""
     value = normalized_task_status(status)
     return value in {
-        "not started", "in progress", "submitted", "completed", "blocked",
+        "not started", "in progress", "partially completed", "submitted", "completed", "blocked",
         "pending review", "pending", "cancelled",
     }
 
@@ -1770,6 +1770,7 @@ class TaskDialog(QDialog):
     STATUSES=[
         ("Not started", "Not started"),
         ("In progress", "In progress"),
+        ("Partially completed", "Partially completed"),
         ("Submitted", "Submitted"),
         ("Completed", "Completed"),
         ("Blocked", "Blocked"),
@@ -1778,7 +1779,7 @@ class TaskDialog(QDialog):
         ("Cancelled", "Cancelled"),
         ("Not selected", None),
     ]
-    def __init__(self, db, parent=None, row=None, employee_id=None):
+    def __init__(self, db, parent=None, row=None, employee_id=None, task_date=None):
         super().__init__(parent); self.setWindowTitle("Task details"); self.setMinimumWidth(520)
         self.layout=QFormLayout(self); self.db=db; self.row=row
         self.employee=QComboBox()
@@ -1787,7 +1788,11 @@ class TaskDialog(QDialog):
             idx=self.employee.findData(employee_id)
             if idx >= 0: self.employee.setCurrentIndex(idx)
         self.date=QDateEdit(); configure_date_edit(self.date); self.date.setDisplayFormat("yyyy-MM-dd")
-        parsed_task_date = QDate.fromString(row["task_date"], "yyyy-MM-dd") if row and row["task_date"] else None
+        parsed_task_date = None
+        if row and row["task_date"]:
+            parsed_task_date = QDate.fromString(row["task_date"], "yyyy-MM-dd")
+        elif task_date:
+            parsed_task_date = task_date if isinstance(task_date, QDate) else QDate.fromString(str(task_date), "yyyy-MM-dd")
         self.date.setDate(parsed_task_date if (parsed_task_date and parsed_task_date.isValid()) else QDate.currentDate())
         self.title=QLineEdit(row["title"] if row else "")
         self.details=QTextEdit(row["details"] if row else ""); self.details.setMaximumHeight(70)
@@ -1832,7 +1837,7 @@ class TaskDialog(QDialog):
         self.date.dateChanged.connect(_on_emp_or_date_changed)
 
         self.layout.addRow("Employee *", self.employee); self.layout.addRow("Task date", self.date)
-        self.layout.addRow("Employee target", self.target_input); self.layout.addRow("Target status", self.target_status_input)
+        self.layout.addRow("Target", self.target_input); self.layout.addRow("Target status", self.target_status_input)
         self.layout.addRow("Task title *", self.title); self.layout.addRow("Description", self.details)
         self.layout.addRow("Due time", self.due); self.layout.addRow("Priority", self.priority)
         self.layout.addRow("Status", self.status); self.layout.addRow("Progress", self.progress)
@@ -4568,40 +4573,6 @@ class MainWindow(QMainWindow):
         filter_row.addWidget(self.task_count_badge)
         task_toolbar_card_layout.addLayout(filter_row)
 
-        target_row = QHBoxLayout()
-        target_row.setSpacing(10)
-
-        target_label = QLabel("🎯 Target:")
-        target_label.setStyleSheet("font-weight: 600;")
-        self.employee_target_input = QLineEdit()
-        self.employee_target_input.setPlaceholderText("Type custom target (e.g. NA or 5 tasks)")
-        self.employee_target_input.setClearButtonEnabled(True)
-        self.employee_target_input.setMinimumWidth(180)
-        self.employee_target_input.setMaximumWidth(260)
-        self.employee_target_input.editingFinished.connect(self.save_employee_target_from_input)
-
-        target_status_label = QLabel("📊 Target status:")
-        target_status_label.setStyleSheet("font-weight: 600;")
-        self.employee_target_status_input = QLineEdit()
-        self.employee_target_status_input.setPlaceholderText("Type custom target status (e.g. NA or Completed)")
-        self.employee_target_status_input.setClearButtonEnabled(True)
-        self.employee_target_status_input.setMinimumWidth(180)
-        self.employee_target_status_input.setMaximumWidth(260)
-        self.employee_target_status_input.editingFinished.connect(self.save_employee_target_from_input)
-
-        self.save_target_btn = QPushButton("💾 Save Target")
-        self.save_target_btn.setToolTip("Save target and target status for selected employee and date")
-        self.save_target_btn.clicked.connect(self.save_employee_target_from_input)
-
-        target_row.addWidget(target_label)
-        target_row.addWidget(self.employee_target_input)
-        target_row.addWidget(target_status_label)
-        target_row.addWidget(self.employee_target_status_input)
-        target_row.addWidget(self.save_target_btn)
-        target_row.addStretch(1)
-
-        task_toolbar_card_layout.addLayout(target_row)
-
         actions_row = QHBoxLayout()
         actions_row.setSpacing(8)
 
@@ -5490,6 +5461,7 @@ class MainWindow(QMainWindow):
             "active": ("#DCFCE7", "#166534"),
             "present": ("#DCFCE7", "#166534"),
             "provided": ("#DCFCE7", "#166534"),
+            "partially completed": ("#FEF3C7", "#92400E"),
             "pending": ("#FEF3C7", "#92400E"),
             "pending review": ("#FEF3C7", "#92400E"),
             "in progress": ("#DBEAFE", "#1E40AF"),
@@ -5806,8 +5778,7 @@ class MainWindow(QMainWindow):
         self.db.log("Employee deleted",e["name"]); self.refresh_all()
 
     def add_task(self):
-        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData())
-        d.date.setDate(self.task_date.date())
+        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date())
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
@@ -6157,87 +6128,13 @@ class MainWindow(QMainWindow):
             self.set_row_items(self.task_table, r, vals, status_cols={3, 4})
         if hasattr(self, "task_count_badge"):
             self.task_count_badge.setText(f"Tasks: {len(rows)}")
-        if hasattr(self, "employee_target_input"):
-            self.employee_target_input.blockSignals(True)
-            self.employee_target_status_input.blockSignals(True)
-            if eid:
-                tinfo = self.db.get_employee_target(eid, d)
-                self.employee_target_input.setText(tinfo.get("target", ""))
-                self.employee_target_status_input.setText(tinfo.get("target_status", ""))
-                self.employee_target_input.setEnabled(True)
-                self.employee_target_status_input.setEnabled(True)
-                self.save_target_btn.setEnabled(True)
-                emp = self.db.employee(eid)
-                ename = emp["name"] if emp else "Selected employee"
-                self.employee_target_input.setPlaceholderText(f"Target for {ename} (e.g. NA)")
-                self.employee_target_status_input.setPlaceholderText(f"Target status for {ename} (e.g. NA)")
-            else:
-                self.employee_target_input.setText("")
-                self.employee_target_status_input.setText("")
-                self.employee_target_input.setEnabled(False)
-                self.employee_target_status_input.setEnabled(False)
-                self.save_target_btn.setEnabled(False)
-                self.employee_target_input.setPlaceholderText("Select an employee above to set Target")
-                self.employee_target_status_input.setPlaceholderText("Select an employee above to set Target status")
-            self.employee_target_input.blockSignals(False)
-            self.employee_target_status_input.blockSignals(False)
         self.refresh_dashboard()
 
     def _on_task_table_selection_changed(self):
-        if not hasattr(self, "task_table") or not hasattr(self, "employee_target_input"):
-            return
-        selected_rows = self.task_table.selectionModel().selectedRows()
-        if not selected_rows:
-            return
-        row = selected_rows[0].row()
-        item = self.task_table.item(row, 0)
-        if not item:
-            return
-        try:
-            task_id = int(item.text())
-        except (ValueError, TypeError):
-            return
-        task_row = self.db.task(task_id) if hasattr(self.db, "task") else None
-        if not task_row:
-            return
-        eid = task_row["employee_id"]
-        d = self.task_date.date().toString("yyyy-MM-dd")
-        tinfo = self.db.get_employee_target(eid, d)
-        self.employee_target_input.blockSignals(True)
-        self.employee_target_status_input.blockSignals(True)
-        self.employee_target_input.setText(tinfo.get("target", ""))
-        self.employee_target_status_input.setText(tinfo.get("target_status", ""))
-        self.employee_target_input.setEnabled(True)
-        self.employee_target_status_input.setEnabled(True)
-        self.save_target_btn.setEnabled(True)
-        emp = self.db.employee(eid)
-        ename = emp["name"] if emp else "Selected employee"
-        self.employee_target_input.setPlaceholderText(f"Target for {ename} (e.g. NA)")
-        self.employee_target_status_input.setPlaceholderText(f"Target status for {ename} (e.g. NA)")
-        self.employee_target_input.blockSignals(False)
-        self.employee_target_status_input.blockSignals(False)
+        pass
 
     def save_employee_target_from_input(self):
-        eid = self.task_filter.currentData() if hasattr(self, "task_filter") else None
-        if not eid and hasattr(self, "task_table"):
-            selected_rows = self.task_table.selectionModel().selectedRows()
-            if selected_rows:
-                item = self.task_table.item(selected_rows[0].row(), 0)
-                if item:
-                    try:
-                        task_id = int(item.text())
-                        task_row = self.db.task(task_id) if hasattr(self.db, "task") else None
-                        if task_row:
-                            eid = task_row["employee_id"]
-                    except (ValueError, TypeError):
-                        pass
-        if not eid:
-            return
-        d = self.task_date.date().toString("yyyy-MM-dd")
-        target_val = self.employee_target_input.text().strip()
-        status_val = self.employee_target_status_input.text().strip()
-        self.db.set_employee_target(eid, d, target_val, status_val)
-        self.db.log("Employee target updated", f"Employee {eid} on {d}: Target='{target_val}', Status='{status_val}'")
+        pass
 
     def tracking_start_date(self, employee):
         if employee["joining_date"]:

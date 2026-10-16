@@ -108,6 +108,31 @@ def test_employee_targets_crud_and_report_formatting(tmp_path, monkeypatch):
         window.neon_attendance_gauge.set_percent(85, 17, 20)
         assert window.neon_attendance_gauge.percent == 85
         assert window.neon_attendance_gauge.present == 17
+
+        # 9. Verify Task Manager toolbar target inputs are removed
+        assert not hasattr(window, "employee_target_input")
+        assert not hasattr(window, "save_target_btn")
+
+        # 10. Verify TaskDialog contains Target and Target status inputs and 'Partially completed' status
+        assert ("Partially completed", "Partially completed") in app.TaskDialog.STATUSES
+        assert app.is_known_task_status("Partially completed")
+        assert not app.is_explicitly_completed_task_status("Partially completed")
+
+        dialog = app.TaskDialog(database, window, employee_id=emp_id, task_date=today)
+        assert hasattr(dialog, "target_input")
+        assert hasattr(dialog, "target_status_input")
+        assert dialog.target_input.text() == "Complete 5 audits"
+        assert dialog.target_status_input.text() == "In Progress"
+
+        # Update target in dialog and accept
+        dialog.target_input.setText("Complete 10 audits")
+        dialog.target_status_input.setText("5/10 Done")
+        dialog.accept()
+
+        updated_target = database.get_employee_target(emp_id, today)
+        assert updated_target["target"] == "Complete 10 audits"
+        assert updated_target["target_status"] == "5/10 Done"
+        dialog.close()
     finally:
         window.close()
         database.conn.close()
