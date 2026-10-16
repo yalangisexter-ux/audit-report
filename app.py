@@ -46,7 +46,7 @@ def resource_path(relative_path):
 
 
 def brand_mark_pixmap(size):
-    """Create the premium Raw Strength Calisthenics brand emblem at the requested size."""
+    """Create the premium Raw Strength Calisthenics executive brand crest at the requested size."""
     size = max(24, int(size))
     if QApplication.instance() is None:
         _ = QApplication([""])
@@ -58,87 +58,105 @@ def brand_mark_pixmap(size):
 
     cx = size / 2.0
     cy = size / 2.0
-    top = size * 0.05
-    bottom = size * 0.95
-    left = size * 0.05
-    right = size * 0.95
-    mid_y = size * 0.62
+    s = float(size)
 
-    # 1. Geometric Diamond / Hexagonal Shield Crest
-    shield_path = QPainterPath()
-    shield_path.moveTo(cx, top)
-    shield_path.lineTo(right, size * 0.22)
-    shield_path.lineTo(right, mid_y)
-    shield_path.lineTo(cx, bottom)
-    shield_path.lineTo(left, mid_y)
-    shield_path.lineTo(left, size * 0.22)
-    shield_path.closeSubpath()
+    # 1. Outer Aerodynamic Executive Shield Crest
+    shield = QPainterPath()
+    shield.moveTo(cx, s * 0.05)
+    shield.lineTo(s * 0.93, s * 0.20)
+    shield.lineTo(s * 0.93, s * 0.58)
+    shield.cubicTo(s * 0.93, s * 0.78, cx + s * 0.15, s * 0.92, cx, s * 0.96)
+    shield.cubicTo(cx - s * 0.15, s * 0.92, s * 0.07, s * 0.78, s * 0.07, s * 0.58)
+    shield.lineTo(s * 0.07, s * 0.20)
+    shield.closeSubpath()
 
-    # Premium obsidian-titanium dark fill
-    bg_gradient = QLinearGradient(0, top, 0, bottom)
-    bg_gradient.setColorAt(0.0, QColor("#1E293B"))
-    bg_gradient.setColorAt(0.4, QColor("#0F172A"))
+    # Premium Obsidian-Titanium Deep Gradient Fill
+    bg_gradient = QLinearGradient(0, 0, s, s)
+    bg_gradient.setColorAt(0.0, QColor("#0F172A"))
+    bg_gradient.setColorAt(0.5, QColor("#0A0E1A"))
     bg_gradient.setColorAt(1.0, QColor("#020617"))
-    painter.fillPath(shield_path, bg_gradient)
+    painter.fillPath(shield, bg_gradient)
 
-    # 2. Precision Metallic Rim (Cyan to Electric Indigo)
-    rim_pen = QLinearGradient(left, top, right, bottom)
+    # 2. Precision Metallic Rim (Neon Cyan to Royal Indigo to Violet)
+    rim_pen = QLinearGradient(0, s * 0.10, s, s * 0.90)
     rim_pen.setColorAt(0.0, QColor("#38BDF8"))
-    rim_pen.setColorAt(0.5, QColor("#818CF8"))
+    rim_pen.setColorAt(0.5, QColor("#6366F1"))
     rim_pen.setColorAt(1.0, QColor("#C084FC"))
-    painter.setPen(QPen(QBrush(rim_pen), max(1.5, size * 0.045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawPath(shield_path)
+    painter.setPen(QPen(QBrush(rim_pen), max(2.0, s * 0.045), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    painter.drawPath(shield)
 
-    # 3. Inner Subtle Depth Border
-    inner_shield = QPainterPath()
-    inner_inset = size * 0.07
-    inner_shield.moveTo(cx, top + inner_inset)
-    inner_shield.lineTo(right - inner_inset, size * 0.23)
-    inner_shield.lineTo(right - inner_inset, mid_y - inner_inset * 0.5)
-    inner_shield.lineTo(cx, bottom - inner_inset)
-    inner_shield.lineTo(left + inner_inset, mid_y - inner_inset * 0.5)
-    inner_shield.lineTo(left + inner_inset, size * 0.23)
-    inner_shield.closeSubpath()
-    painter.setPen(QPen(QColor(255, 255, 255, 30), max(1.0, size * 0.02)))
-    painter.drawPath(inner_shield)
+    # 3. Inner Depth Bezel
+    inner = QPainterPath()
+    inset = s * 0.07
+    inner.moveTo(cx, s * 0.05 + inset * 1.1)
+    inner.lineTo(s * 0.93 - inset, s * 0.20 + inset * 0.3)
+    inner.lineTo(s * 0.93 - inset, s * 0.58 - inset * 0.2)
+    inner.cubicTo(s * 0.93 - inset, s * 0.75, cx + s * 0.12, s * 0.90 - inset, cx, s * 0.96 - inset * 1.1)
+    inner.cubicTo(cx - s * 0.12, s * 0.90 - inset, s * 0.07 + inset, s * 0.75, s * 0.07 + inset, s * 0.58 - inset * 0.2)
+    inner.lineTo(s * 0.07 + inset, s * 0.20 + inset * 0.3)
+    inner.closeSubpath()
+    painter.setPen(QPen(QColor(255, 255, 255, 40), max(1.0, s * 0.018)))
+    painter.drawPath(inner)
 
-    # 4. Calisthenics Core Emblem:
-    # A. Pull-up / Parallel Bar across upper region
-    bar_y = size * 0.27
-    bar_pen = QPen(QColor("#38BDF8"), max(1.8, size * 0.038), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-    painter.setPen(bar_pen)
-    painter.drawLine(QPointF(size * 0.22, bar_y), QPointF(size * 0.78, bar_y))
+    # 4. Calisthenics Apex Performance Chevrons (Dual Wings of Power)
+    c1 = QPainterPath()
+    c1.moveTo(s * 0.30, s * 0.28)
+    c1.lineTo(cx, s * 0.15)
+    c1.lineTo(s * 0.70, s * 0.28)
+    c1.lineTo(cx, s * 0.21)
+    c1.closeSubpath()
+    c1_grad = QLinearGradient(s * 0.30, 0, s * 0.70, 0)
+    c1_grad.setColorAt(0.0, QColor("#38BDF8"))
+    c1_grad.setColorAt(0.5, QColor("#FFFFFF"))
+    c1_grad.setColorAt(1.0, QColor("#818CF8"))
+    painter.fillPath(c1, c1_grad)
 
-    # B. Symmetrical Gymnastic Rings suspended from the bar
-    ring_radius = size * 0.10
-    strap_pen = QPen(QColor(203, 213, 225, 180), max(1.0, size * 0.022))
-    painter.setPen(strap_pen)
-    painter.drawLine(QPointF(size * 0.30, bar_y), QPointF(size * 0.30, size * 0.35))
-    painter.drawLine(QPointF(size * 0.70, bar_y), QPointF(size * 0.70, size * 0.35))
+    c2 = QPainterPath()
+    c2.moveTo(s * 0.24, s * 0.39)
+    c2.lineTo(cx, s * 0.26)
+    c2.lineTo(s * 0.76, s * 0.39)
+    c2.lineTo(cx, s * 0.32)
+    c2.closeSubpath()
+    c2_grad = QLinearGradient(s * 0.24, 0, s * 0.76, 0)
+    c2_grad.setColorAt(0.0, QColor("#0284C7"))
+    c2_grad.setColorAt(0.5, QColor("#38BDF8"))
+    c2_grad.setColorAt(1.0, QColor("#6366F1"))
+    painter.fillPath(c2, c2_grad)
 
-    ring_pen = QPen(QColor("#F8FAFC"), max(1.4, size * 0.032))
-    painter.setPen(ring_pen)
-    painter.drawEllipse(QPointF(size * 0.30, size * 0.42), ring_radius, ring_radius)
-    painter.drawEllipse(QPointF(size * 0.70, size * 0.42), ring_radius, ring_radius)
-
-    # C. Dynamic "RSC" Athletic Typography
-    painter.setPen(QColor("#FFFFFF"))
-    font_size = max(8, round(size * 0.22))
+    # 5. Central Dynamic RSC Athletic Typography
+    font_size = max(10, round(s * 0.25))
     font = QFont("Segoe UI", font_size, QFont.Weight.Black)
-    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(0.5, size * 0.02))
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(1.2, s * 0.028))
     painter.setFont(font)
-    text_rect = QRectF(size * 0.08, size * 0.50, size * 0.84, size * 0.28)
-    painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "RSC")
 
-    # D. Electric Accent Chevron at Apex
-    chevron = QPainterPath()
-    ch_y = size * 0.82
-    chevron.moveTo(size * 0.36, ch_y - size * 0.03)
-    chevron.lineTo(cx, ch_y + size * 0.04)
-    chevron.lineTo(size * 0.64, ch_y - size * 0.03)
-    painter.setPen(QPen(QColor("#38BDF8"), max(1.8, size * 0.042), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-    painter.drawPath(chevron)
+    # Shadow for depth
+    painter.setPen(QColor(0, 0, 0, 200))
+    painter.drawText(QRectF(0, s * 0.44 + 1.2, s, s * 0.32), Qt.AlignmentFlag.AlignCenter, "RSC")
+
+    # Brilliant white face
+    painter.setPen(QColor("#FFFFFF"))
+    painter.drawText(QRectF(0, s * 0.44, s, s * 0.32), Qt.AlignmentFlag.AlignCenter, "RSC")
+
+    # 6. Subtle Lower Athletic Jewel / Line
+    if s >= 80:
+        sub_size = max(4, round(s * 0.065))
+        sub_font = QFont("Segoe UI", sub_size, QFont.Weight.Bold)
+        sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(0.8, s * 0.020))
+        painter.setFont(sub_font)
+        painter.setPen(QColor("#38BDF8"))
+        painter.drawText(QRectF(s * 0.15, s * 0.73, s * 0.70, s * 0.12), Qt.AlignmentFlag.AlignCenter, "STRENGTH")
+    else:
+        line_y = s * 0.76
+        line_grad = QLinearGradient(s * 0.30, line_y, s * 0.70, line_y)
+        line_grad.setColorAt(0.0, QColor(56, 189, 248, 0))
+        line_grad.setColorAt(0.5, QColor("#38BDF8"))
+        line_grad.setColorAt(1.0, QColor(129, 140, 248, 0))
+        painter.setPen(QPen(QBrush(line_grad), max(1.5, s * 0.035), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(s * 0.30, line_y), QPointF(s * 0.70, line_y))
+
+    painter.setBrush(QColor("#A855F7"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(QPointF(cx, s * 0.86), max(1.6, s * 0.025), max(1.6, s * 0.025))
 
     painter.end()
     return pixmap
@@ -2388,12 +2406,35 @@ class AnimatedBackground(QWidget):
         "Ocean Waves": ("ocean_waves.jpg", "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Lord Shiva": ("lord_shiva.jpg", "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Love & Couples": ("love_couples.jpg", "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
+        "Love Couple": ("love_couples.jpg", "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
     }
+
+    @classmethod
+    def _normalize_mode(cls, mode):
+        if not mode:
+            return "Ambient Glow"
+        m = str(mode).strip().lower()
+        if m in ("shiva", "lord shiva", "loard shiva"):
+            return "Lord Shiva"
+        if m in ("love & couples", "love & couple", "love couple", "love couples", "love and couples"):
+            return "Love & Couples"
+        if m in ("milky way waves", "milky way wave"):
+            return "Milky Way Waves"
+        if m in ("milky way",):
+            return "Milky Way"
+        if m in ("ocean waves", "ocean"):
+            return "Ocean Waves"
+        if m in ("galaxy",):
+            return "Galaxy"
+        for s in cls.STYLES:
+            if s.lower() == m:
+                return s
+        return mode if mode in cls.STYLES else "Ambient Glow"
 
     def __init__(self, parent=None, mode="Ambient Glow"):
         super().__init__(parent)
         # Normalize the former duplicate option for existing saved preferences.
-        self.mode = "Lord Shiva" if mode == "Shiva" else (mode if mode in self.STYLES else "Ambient Glow")
+        self.mode = "Lord Shiva" if mode == "Shiva" else self._normalize_mode(mode)
         self.wallpaper_pixmap = QPixmap()
         self.photo_loader = None
         self.phase = 0.0
@@ -2454,7 +2495,7 @@ class AnimatedBackground(QWidget):
             QTimer.singleShot(0, self._load_wallpaper_image)
 
     def set_mode(self, mode):
-        self.mode = "Lord Shiva" if mode == "Shiva" else (mode if mode in self.STYLES else "Ambient Glow")
+        self.mode = "Lord Shiva" if mode == "Shiva" else self._normalize_mode(mode)
         self.init_particles()
         self._load_wallpaper_image()
         self.update()
@@ -2588,33 +2629,37 @@ class AnimatedBackground(QWidget):
                 for i in range(3):
                     aura_r = int(max(w, h) * (0.24 + i * 0.16))
                     aura = QRadialGradient(cx, cy, aura_r)
-                    alpha = (42 - i * 11) if not is_day else (28 - i * 7)
+                    alpha = (48 - i * 11) if not is_day else (38 - i * 8)
                     aura.setColorAt(0.0, QColor(56, 189, 248, alpha))
-                    aura.setColorAt(0.48, QColor(129, 140, 248, int(alpha * 0.65)))
+                    aura.setColorAt(0.48, QColor(129, 140, 248, int(alpha * 0.70)))
                     aura.setColorAt(1.0, QColor(0, 0, 0, 0))
                     painter.fillRect(rect, aura)
                 moon_path = QPainterPath()
                 moon_path.moveTo(cx - 32, cy - 22)
                 moon_path.cubicTo(cx - 10, cy - 42, cx + 32, cy - 32, cx + 42, cy)
                 moon_path.cubicTo(cx + 26, cy - 16, cx - 6, cy - 18, cx - 32, cy - 22)
-                moon_color = QColor(241, 245, 249, 120 if not is_day else 75)
+                moon_color = QColor(241, 245, 249, 140 if not is_day else 110)
                 painter.fillPath(moon_path, moon_color)
+                # Meditative celestial beacon / trishula shaft
+                trident_pen = QPen(QColor(56, 189, 248, 110 if is_day else 150), max(2.0, w * 0.002))
+                painter.setPen(trident_pen)
+                painter.drawLine(QPointF(cx, cy - 50), QPointF(cx, cy + 80))
 
-            elif self.mode == "Love & Couples":
+            elif self.mode in ("Love & Couples", "Love Couple"):
                 cx, cy = w * 0.5, h * 0.45
                 love_grad = QRadialGradient(cx, cy, max(w, h) * 0.48)
-                love_grad.setColorAt(0.0, QColor(244, 63, 94, 52 if not is_day else 30))
-                love_grad.setColorAt(0.48, QColor(217, 70, 239, 32 if not is_day else 20))
+                love_grad.setColorAt(0.0, QColor(244, 63, 94, 65 if not is_day else 45))
+                love_grad.setColorAt(0.48, QColor(217, 70, 239, 45 if not is_day else 32))
                 love_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
                 painter.fillRect(rect, love_grad)
-                for i, p in enumerate(self.particles[:14]):
+                for i, p in enumerate(self.particles[:16]):
                     hx, hy = p["x"], p["y"]
-                    hs = 7 + (i % 6) * 2
+                    hs = 8 + (i % 6) * 2
                     heart_path = QPainterPath()
                     heart_path.moveTo(hx, hy + hs * 0.3)
                     heart_path.cubicTo(hx - hs * 0.6, hy - hs * 0.5, hx - hs, hy + hs * 0.2, hx, hy + hs)
                     heart_path.cubicTo(hx + hs, hy + hs * 0.2, hx + hs * 0.6, hy - hs * 0.5, hx, hy + hs * 0.3)
-                    painter.fillPath(heart_path, QColor(244, 114, 182, int(p["opacity"] * (150 if not is_day else 85))))
+                    painter.fillPath(heart_path, QColor(244, 114, 182, int(p["opacity"] * (180 if not is_day else 125))))
 
         if self.mode in ("Ambient Glow", "Aurora Waves"):
             colors = ([(124, 92, 252, 30), (34, 211, 238, 22), (232, 121, 249, 16)]
@@ -2828,16 +2873,16 @@ class MainWindow(QMainWindow):
         self.header_clock_analog.clicked.connect(self.toggle_clock_mode)
         self.clock_mode_btn = QPushButton("🕒")
         self.clock_mode_btn.setObjectName("clockModeBtn")
-        self.clock_mode_btn.setFixedSize(26, 26)
+        self.clock_mode_btn.setFixedSize(28, 28)
         self.clock_mode_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.clock_mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clock_mode_btn.setToolTip("Switch clock mode (Digital / Analog)")
         self.clock_mode_btn.setStyleSheet(
-            "QPushButton#clockModeBtn { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px; "
-            "padding: 0; margin: 0; background: rgba(255, 255, 255, 0.16); color: #FFFFFF; "
-            "border: 1px solid rgba(255, 255, 255, 0.32); border-radius: 6px; "
+            "QPushButton#clockModeBtn { min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px; "
+            "padding: 0; margin: 0; background: rgba(255, 255, 255, 0.12); color: #FFFFFF; "
+            "border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 7px; "
             "font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; } "
-            "QPushButton#clockModeBtn:hover { background: rgba(255, 255, 255, 0.32); border-color: #38BDF8; }"
+            "QPushButton#clockModeBtn:hover { background: rgba(56, 189, 248, 0.35); border-color: #38BDF8; color: #FFFFFF; }"
         )
         self.clock_mode_btn.clicked.connect(self.toggle_clock_mode)
         clock_frame_layout = QHBoxLayout(self.header_clock_frame)
@@ -2852,18 +2897,26 @@ class MainWindow(QMainWindow):
         self.shared_sync_push_button.setObjectName("headerSyncPushBtn")
         self.shared_sync_pull_button = QPushButton("Pull Latest Data")
         self.shared_sync_pull_button.setObjectName("headerSyncPullBtn")
-        for sync_button in (self.shared_sync_push_button, self.shared_sync_pull_button):
-            sync_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            sync_button.setMinimumHeight(34)
-            sync_button.setStyleSheet(
-                "QPushButton { background: rgba(15, 23, 42, 0.55); color: #FFFFFF; "
-                "border: 1px solid rgba(255, 255, 255, 0.30); border-radius: 9px; "
-                "padding: 6px 14px; font-weight: 700; font-size: 9.5pt; } "
-                "QPushButton:hover { background: rgba(15, 23, 42, 0.85); border-color: #38BDF8; color: #FFFFFF; } "
-                "QPushButton:pressed { background: rgba(15, 23, 42, 0.95); } "
-                "QPushButton:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); "
-                "border-color: rgba(255, 255, 255, 0.12); }"
-            )
+        self.shared_sync_push_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.shared_sync_push_button.setMinimumHeight(36)
+        self.shared_sync_push_button.setStyleSheet(
+            "QPushButton#headerSyncPushBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(14, 165, 233, 0.28), stop:1 rgba(2, 132, 199, 0.38)); "
+            "color: #F0F9FF; border: 1.5px solid rgba(56, 189, 248, 0.55); border-radius: 9px; "
+            "padding: 6px 15px; font-weight: 700; font-size: 9.5pt; letter-spacing: 0.3px; } "
+            "QPushButton#headerSyncPushBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1); border-color: #38BDF8; color: #FFFFFF; } "
+            "QPushButton#headerSyncPushBtn:pressed { background: #0369A1; } "
+            "QPushButton#headerSyncPushBtn:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
+        )
+        self.shared_sync_pull_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.shared_sync_pull_button.setMinimumHeight(36)
+        self.shared_sync_pull_button.setStyleSheet(
+            "QPushButton#headerSyncPullBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(99, 102, 241, 0.28), stop:1 rgba(79, 70, 229, 0.38)); "
+            "color: #EEF2FF; border: 1.5px solid rgba(129, 140, 248, 0.55); border-radius: 9px; "
+            "padding: 6px 15px; font-weight: 700; font-size: 9.5pt; letter-spacing: 0.3px; } "
+            "QPushButton#headerSyncPullBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5); border-color: #A5B4FC; color: #FFFFFF; } "
+            "QPushButton#headerSyncPullBtn:pressed { background: #4338CA; } "
+            "QPushButton#headerSyncPullBtn:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
+        )
         self.shared_sync_push_button.setToolTip("Push the current encrypted business-data snapshot.")
         self.shared_sync_pull_button.setToolTip("Pull the latest snapshot after developer-password authorization.")
         self.shared_sync_push_button.clicked.connect(self.sync_github_database_now)
@@ -3102,25 +3155,25 @@ class MainWindow(QMainWindow):
             QWidget#navigationSidebar { background: #FFFFFF; border-right: 1px solid #E2E8F0; }
             QWidget#mainContentSurface { background: transparent; }
             QWidget#titleBar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0; }
-            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #0B1120,stop:1 #020617);
-                border: 1px solid rgba(255, 255, 255, 0.10); border-top: 2px solid #38BDF8; border-radius: 16px; margin: 8px 10px; }
+            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #0B1120,stop:1 #020617);
+                border: 1px solid rgba(255, 255, 255, 0.12); border-top: 2px solid #38BDF8; border-radius: 14px; margin: 6px 12px; }
             QLabel#brandLogo { background: rgba(15,23,42,160); border: 2px solid rgba(56, 189, 248, 0.40); border-radius: 14px; padding: 2px; }
-            QFrame#headerClockFrame { background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; }
+            QFrame#headerClockFrame { background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; }
             QFrame#headerClockFrame QLabel#headerClock, QFrame#brandBanner QLabel#headerClock {
                 background: transparent; color: #F8FAFC; border: 0; padding: 2px 6px; font-size: 9.5pt; font-weight: 700;
             }
-            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 16pt; font-weight: 800; letter-spacing: 0.8px; }
-            QLabel#brandSubheading { background: transparent; color: #94A3B8; font-size: 9pt; font-weight: 600; letter-spacing: 0.5px; }
-            QPushButton#clockModeBtn { min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
-                padding: 0; margin: 0; background: rgba(15, 23, 42, 0.65); color: #F8FAFC;
-                border: 1px solid rgba(255, 255, 255, 0.20); border-radius: 6px;
+            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 15pt; font-weight: 800; letter-spacing: 0.8px; }
+            QLabel#brandSubheading { background: transparent; color: #94A3B8; font-size: 8.5pt; font-weight: 600; letter-spacing: 0.6px; }
+            QPushButton#clockModeBtn { min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+                padding: 0; margin: 0; background: rgba(255, 255, 255, 0.12); color: #F8FAFC;
+                border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 7px;
                 font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; }
-            QPushButton#clockModeBtn:hover { background: rgba(56, 189, 248, 0.25); border-color: #38BDF8; }
+            QPushButton#clockModeBtn:hover { background: rgba(56, 189, 248, 0.35); border-color: #38BDF8; color: #FFFFFF; }
             QPushButton#headerSyncPushBtn {
-                min-height: 34px; max-height: 38px; padding: 6px 14px;
-                background: rgba(15, 23, 42, 0.70); color: #E0F2FE;
-                border: 1px solid rgba(56, 189, 248, 0.40); border-radius: 9px;
-                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700;
+                min-height: 36px; max-height: 38px; padding: 6px 15px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(14, 165, 233, 0.28), stop:1 rgba(2, 132, 199, 0.38)); color: #F0F9FF;
+                border: 1.5px solid rgba(56, 189, 248, 0.55); border-radius: 9px;
+                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 0.3px;
             }
             QPushButton#headerSyncPushBtn:hover {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1);
@@ -3128,10 +3181,10 @@ class MainWindow(QMainWindow):
             }
             QPushButton#headerSyncPushBtn:pressed { background: #0369A1; }
             QPushButton#headerSyncPullBtn {
-                min-height: 34px; max-height: 38px; padding: 6px 14px;
-                background: rgba(15, 23, 42, 0.70); color: #EEF2FF;
-                border: 1px solid rgba(129, 140, 248, 0.40); border-radius: 9px;
-                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700;
+                min-height: 36px; max-height: 38px; padding: 6px 15px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(99, 102, 241, 0.28), stop:1 rgba(79, 70, 229, 0.38)); color: #EEF2FF;
+                border: 1.5px solid rgba(129, 140, 248, 0.55); border-radius: 9px;
+                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 0.3px;
             }
             QPushButton#headerSyncPullBtn:hover {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5);
@@ -3514,7 +3567,7 @@ class MainWindow(QMainWindow):
             for surface in self.findChildren(QWidget, object_name):
                 surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
                 surface.setAutoFillBackground(False)
-                surface.setStyleSheet(f"QWidget#{object_name} {{ background: transparent; border: 0; }}")
+                surface.setStyleSheet(f"QWidget#{object_name} {{ background-color: {background}; color: {foreground}; border: 1px solid {border}; border-radius: 16px; }}")
 
         for scroll in self.findChildren(QScrollArea):
             scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -3525,10 +3578,10 @@ class MainWindow(QMainWindow):
                 scroll.viewport().setStyleSheet("background: transparent; border: 0;")
 
         # Ensure cards, toolbars, and panels on all tabs remain fully opaque
-        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "kpiCard", "dashboardPanel"):
-            for frame in self.findChildren(QFrame, card_id):
-                frame.setStyleSheet(
-                    f"QFrame#{card_id} {{ background-color: {background}; color: {foreground}; "
+        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "kpiCard", "dashboardPanel", "sessionStrip", "guideItem", "settingsContent"):
+            for widget in self.findChildren(QWidget, card_id):
+                widget.setStyleSheet(
+                    f"QWidget#{card_id} {{ background-color: {background}; color: {foreground}; "
                     f"border: 1px solid {border}; border-radius: 14px; }}"
                 )
 
@@ -3655,9 +3708,35 @@ class MainWindow(QMainWindow):
             ("▣", "EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups."),
             ("⚙", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build."),
         ]
+        session_strip.setStyleSheet(
+            "QWidget#sessionStrip { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px; padding: 12px; }"
+            if self.current_theme() != "night" else
+            "QWidget#sessionStrip { background: #0F172A; border: 1px solid #334155; border-radius: 14px; padding: 12px; }"
+        )
+        self.update_button.setStyleSheet(
+            "QPushButton { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1); "
+            "color: #FFFFFF; border: 1px solid #38BDF8; border-radius: 8px; padding: 6px 14px; font-weight: 700; font-size: 9.5pt; } "
+            "QPushButton:hover { background: #0369A1; border-color: #7DD3FC; }"
+        )
+        self.rollback_button.setStyleSheet(
+            "QPushButton { background: rgba(15, 23, 42, 0.06); color: #334155; border: 1px solid #CBD5E1; "
+            "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
+            "QPushButton:hover { background: #F1F5F9; color: #0F172A; border-color: #94A3B8; }"
+            if self.current_theme() != "night" else
+            "QPushButton { background: rgba(255, 255, 255, 0.08); color: #CBD5E1; border: 1px solid #475569; "
+            "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
+            "QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
+        )
         for index, (symbol, section, guidance, example) in enumerate(guide_items):
             guide_card = QWidget()
             guide_card.setObjectName("guideItem")
+            guide_card.setStyleSheet(
+                "QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; border-radius: 14px; } "
+                "QWidget#guideItem:hover { border-color: #A78BFA; background: #FAF5FF; }"
+                if self.current_theme() != "night" else
+                "QWidget#guideItem { background: #0F172A; border: 1px solid #334155; border-left: 4px solid #A78BFA; border-radius: 14px; } "
+                "QWidget#guideItem:hover { border-color: #C4B5FD; background: #1E293B; }"
+            )
             card_layout = QVBoxLayout(guide_card)
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(5)
@@ -3857,6 +3936,9 @@ class MainWindow(QMainWindow):
             (self.tasks_tab, "Task Manager"),
             (self.attendance_tab, "Attendance & Working Calendar"),
         ]
+        is_dark = self.current_theme() == "night"
+        card_bg = "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111827, stop:1 #0B0F19)" if is_dark else "#FFFFFF"
+        val_col = "#FFFFFF" if is_dark else "#0F172A"
         for (heading, symbol, accent, icon_background, icon_border, subtitle_desc), (target_page, page_name) in zip(specs, kpi_nav_targets):
             card = QGroupBox(heading)
             card.setObjectName("kpiCard")
@@ -3864,9 +3946,9 @@ class MainWindow(QMainWindow):
             card.setToolTip(f"Click to open {page_name} ({heading.title()})")
             card.mousePressEvent = lambda e, p=target_page: self.tabs.setCurrentWidget(p) if e.button() == Qt.MouseButton.LeftButton else None
             card.setStyleSheet(
-                f"QGroupBox#kpiCard {{ background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111827, stop:1 #0B0F19); "
-                f"border: 1.5px solid {accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
-                f"QGroupBox#kpiCard:hover {{ border: 2px solid {accent}; background: #162032; }} "
+                f"QGroupBox#kpiCard {{ background: {card_bg}; "
+                f"border: 1.5px solid {accent}; border-top: 3.5px solid {accent}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
+                f"QGroupBox#kpiCard:hover {{ border: 2px solid {accent}; border-top: 4px solid {accent}; }} "
                 f"QGroupBox#kpiCard::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 2px 8px; "
                 f"background: {accent}; color: #FFFFFF; border-radius: 5px; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px; }}"
             )
@@ -3882,7 +3964,7 @@ class MainWindow(QMainWindow):
             value = QLabel("0")
             value.setProperty("metricValue", True)
             value.setToolTip(f"Current {heading.lower()} count. Click to view.")
-            value.setStyleSheet("font-size: 24pt; font-weight: 800; color: #FFFFFF;")
+            value.setStyleSheet(f"font-size: 24pt; font-weight: 800; color: {val_col};")
             metric_col.addWidget(value)
             sub_label = QLabel(f"● {subtitle_desc}")
             sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 600; color: {accent}; letter-spacing: 0.3px;")
@@ -3929,7 +4011,9 @@ class MainWindow(QMainWindow):
         self.dashboard_recent = QTableWidget(0, 5)
         self.dashboard_recent.setHorizontalHeaderLabels(["#", "Employee ID", "Name", "Role", "Status"])
         self.dashboard_recent.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        for column, width in enumerate((72, 112, 112, 100, 86)):
+        self.dashboard_recent.horizontalHeader().setStretchLastSection(True)
+        self.dashboard_recent.verticalHeader().setDefaultSectionSize(40)
+        for column, width in enumerate((62, 110, 130, 110, 80)):
             self.dashboard_recent.setColumnWidth(column, width)
         self.dashboard_recent.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_recent.verticalHeader().setVisible(False)
@@ -3945,7 +4029,9 @@ class MainWindow(QMainWindow):
         self.dashboard_tasks = QTableWidget(0, 5)
         self.dashboard_tasks.setHorizontalHeaderLabels(["Employee", "Task", "Status", "Progress", "Due"])
         self.dashboard_tasks.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        for column, width in enumerate((105, 150, 98, 90, 78)):
+        self.dashboard_tasks.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.dashboard_tasks.verticalHeader().setDefaultSectionSize(40)
+        for column, width in enumerate((110, 150, 95, 95, 75)):
             self.dashboard_tasks.setColumnWidth(column, width)
         self.dashboard_tasks.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dashboard_tasks.verticalHeader().setVisible(False)
@@ -3967,6 +4053,8 @@ class MainWindow(QMainWindow):
         self.dashboard_attendance_table = QTableWidget(0, 3)
         self.dashboard_attendance_table.setHorizontalHeaderLabels(["Employee", "Status", "Check-in"])
         self.dashboard_attendance_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.dashboard_attendance_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.dashboard_attendance_table.verticalHeader().setDefaultSectionSize(40)
         for column, width in enumerate((145, 105, 96)):
             self.dashboard_attendance_table.setColumnWidth(column, width)
         self.dashboard_attendance_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
