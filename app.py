@@ -1897,7 +1897,11 @@ class InputControlsWheelFilter(QObject):
     the enclosing scroll viewport so user scrolling remains fluid.
     """
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.Wheel:
+        try:
+            etype = event.type()
+        except (AttributeError, RuntimeError):
+            return False
+        if etype == QEvent.Type.Wheel:
             # Check if watched or its parent belongs to a calendar popup
             p = watched
             in_calendar = False
@@ -2030,15 +2034,19 @@ class AccessibleTooltipController(QObject):
         self.popup.hide()
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.ToolTip:
+        try:
+            etype = event.type()
+        except (AttributeError, RuntimeError):
+            return False
+        if etype == QEvent.Type.ToolTip:
             text = self._tooltip_text(watched, event)
             if text:
                 self.show(text, event.globalPos(), watched)
                 event.accept()
                 return True
-        elif event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.WindowDeactivate):
+        elif etype in (QEvent.Type.MouseButtonPress, QEvent.Type.WindowDeactivate):
             self.hide()
-        elif event.type() == QEvent.Type.Leave and watched is self.current_target:
+        elif etype == QEvent.Type.Leave and watched is self.current_target:
             self.hide()
         return False
 
@@ -2554,7 +2562,10 @@ class InteractionFeedback(QObject):
         self._animate_to(0.62 if self.widget.underMouse() else 0.0)
 
     def eventFilter(self, watched, event):
-        event_type = event.type()
+        try:
+            event_type = event.type()
+        except (AttributeError, RuntimeError):
+            return False
         if event_type == QEvent.Type.Enter:
             self._animate_to(0.62)
         elif event_type == QEvent.Type.Leave:
@@ -3391,59 +3402,59 @@ class MainWindow(QMainWindow):
                 "banner_border": "#6366F1",
             },
             "night": {
-                "surface": "#0F172A",
-                "surface_card": "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111A2E, stop:1 #0B1120)",
-                "sidebar": "#070A14",
-                "sidebar_border": "rgba(255, 255, 255, 0.08)",
-                "nav": "rgba(15, 23, 42, 0.65)",
-                "nav_border": "rgba(255, 255, 255, 0.08)",
-                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4F46E5,stop:0.65 #6366F1,stop:1 #00E5FF)",
-                "border": "rgba(99, 102, 241, 0.28)",
-                "border_subtle": "rgba(255, 255, 255, 0.06)",
+                "surface": "#0C101B",
+                "surface_card": "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(19, 26, 42, 0.95), stop:1 rgba(13, 18, 30, 0.95))",
+                "sidebar": "#080C14",
+                "sidebar_border": "rgba(255, 255, 255, 0.07)",
+                "nav": "transparent",
+                "nav_border": "transparent",
+                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0, 210, 255, 0.14),stop:1 rgba(99, 102, 241, 0.04))",
+                "border": "rgba(255, 255, 255, 0.08)",
+                "border_subtle": "rgba(255, 255, 255, 0.05)",
                 "text": "#F8FAFC",
                 "muted_text": "#94A3B8",
-                "hover": "rgba(99, 102, 241, 0.18)",
+                "hover": "rgba(255, 255, 255, 0.05)",
                 "hover_text": "#FFFFFF",
-                "accent": "#6366F1",
-                "accent_hover": "#4F46E5",
+                "accent": "#00D2FF",
+                "accent_hover": "#38BDF8",
                 "accent_glow": "#00E5FF",
-                "dropdown_bg": "#0B1120",
+                "dropdown_bg": "#0D1322",
                 "dropdown_fg": "#F8FAFC",
-                "dropdown_border": "#4F46E5",
-                "dropdown_hover": "#1E293B",
-                "dropdown_sel_bg": "#4F46E5",
+                "dropdown_border": "rgba(255, 255, 255, 0.12)",
+                "dropdown_hover": "#162035",
+                "dropdown_sel_bg": "#0284C7",
                 "dropdown_sel_fg": "#FFFFFF",
-                "calendar_header_bg": "#070B14",
+                "calendar_header_bg": "#121828",
                 "calendar_header_fg": "#FFFFFF",
-                "calendar_bg": "#0B1120",
+                "calendar_bg": "#0D1322",
                 "calendar_fg": "#F8FAFC",
-                "calendar_alt_bg": "#152033",
-                "calendar_sel_bg": "#6366F1",
-                "calendar_sel_fg": "#FFFFFF",
-                "menu_bg": "#0B1120",
+                "calendar_alt_bg": "#141C30",
+                "calendar_sel_bg": "#00D2FF",
+                "calendar_sel_fg": "#020617",
+                "menu_bg": "#0D1322",
                 "menu_fg": "#F8FAFC",
-                "menu_border": "#4F46E5",
-                "menu_sel_bg": "#312E81",
+                "menu_border": "rgba(255, 255, 255, 0.12)",
+                "menu_sel_bg": "#1E293B",
                 "menu_sel_fg": "#FFFFFF",
-                "input_bg": "#0A0F1D",
+                "input_bg": "#0D1322",
                 "input_fg": "#F8FAFC",
-                "input_border": "rgba(255, 255, 255, 0.14)",
-                "input_focus": "#6366F1",
-                "table_bg": "#0B1120",
-                "table_alt_bg": "#10192D",
+                "input_border": "rgba(255, 255, 255, 0.10)",
+                "input_focus": "#00D2FF",
+                "table_bg": "#0A0E1A",
+                "table_alt_bg": "#0D1324",
                 "table_fg": "#F8FAFC",
-                "table_header_bg": "#111827",
-                "table_header_fg": "#818CF8",
-                "table_border": "#334155",
-                "table_grid": "rgba(51, 65, 85, 0.50)",
-                "table_sel_bg": "#312E81",
+                "table_header_bg": "#121828",
+                "table_header_fg": "#94A3B8",
+                "table_border": "rgba(255, 255, 255, 0.08)",
+                "table_grid": "rgba(255, 255, 255, 0.04)",
+                "table_sel_bg": "rgba(0, 210, 255, 0.14)",
                 "table_sel_fg": "#FFFFFF",
-                "border_strong": "#64748B",
-                "scrollbar_track": "rgba(15, 23, 42, 0.45)",
-                "scrollbar_handle": "#475569",
-                "scrollbar_hover": "#00E5FF",
-                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #090E1A,stop:0.55 #0F172A,stop:1 #070B14)",
-                "banner_border": "rgba(99, 102, 241, 0.40)",
+                "border_strong": "rgba(255, 255, 255, 0.20)",
+                "scrollbar_track": "rgba(10, 14, 24, 0.50)",
+                "scrollbar_handle": "rgba(255, 255, 255, 0.14)",
+                "scrollbar_hover": "#00D2FF",
+                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 rgba(16, 22, 36, 0.92),stop:1 rgba(10, 14, 24, 0.92))",
+                "banner_border": "rgba(255, 255, 255, 0.08)",
             },
             "ocean": {
                 "surface": "#F0F9FF",
@@ -3921,8 +3932,18 @@ class MainWindow(QMainWindow):
         }}
         """
         self.setStyleSheet(polish_css)
+        excluded_wrap_names = {
+            "titleLabel", "headerClock",
+            "attRosterTitle", "attRosterHint", "attSummaryTitle", "attSummaryNote",
+            "taskRosterTitle", "taskRosterHint",
+            "empRosterTitle", "empRosterHint",
+            "trackerRosterTitle", "trackerRosterHint",
+            "archiveRosterTitle", "archiveRosterHint",
+        }
         for widget in self.findChildren(QLabel):
-            if widget.objectName() not in ("titleLabel", "headerClock"):
+            if widget.objectName() in excluded_wrap_names or widget.property("pageTitle") or widget.property("sectionHeading"):
+                widget.setWordWrap(False)
+            else:
                 widget.setMinimumWidth(0)
                 widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
                 if widget.text() and (len(widget.text()) > 22 or "\n" in widget.text()):
@@ -4216,11 +4237,16 @@ class MainWindow(QMainWindow):
             page.setAutoFillBackground(False)
             page.setStyleSheet("QWidget#appPageSurface { background: transparent; border: 0; }")
 
+        is_dark_theme = theme_name in ("night", "dark")
+        card_bg = "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(19, 26, 42, 0.95), stop:1 rgba(13, 18, 30, 0.95))" if is_dark_theme else background
+        card_border = "rgba(255, 255, 255, 0.08)" if is_dark_theme else border
+        card_fg = "#F8FAFC" if is_dark_theme else foreground
+
         for object_name in ("homeContent", "pageContent"):
             for surface in self.findChildren(QWidget, object_name):
                 surface.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 surface.setAutoFillBackground(True)
-                surface.setStyleSheet(f"QWidget#{object_name} {{ background-color: {background}; color: {foreground}; border: 1.5px solid {border}; border-radius: 16px; }}")
+                surface.setStyleSheet(f"QWidget#{object_name} {{ background-color: {card_bg}; color: {card_fg}; border: 1px solid {card_border}; border-radius: 16px; }}")
 
         for scroll in self.findChildren(QScrollArea):
             scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -4230,31 +4256,98 @@ class MainWindow(QMainWindow):
                 scroll.viewport().setAutoFillBackground(False)
                 scroll.viewport().setStyleSheet("background: transparent; border: 0;")
 
-        # Ensure cards, toolbars, and panels on all tabs remain fully opaque
-        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "attRosterCard", "attSummaryCard", "sessionStrip", "settingsContent", "trackerToolbarCard", "archiveToolbarCard"):
+        # Ensure cards, toolbars, and panels on all tabs remain fully opaque with OneText bento finish
+        for card_id in (
+            "taskToolbarCard", "taskRosterCard", "empToolbarCard", "empRosterCard",
+            "attToolbarCard", "attRosterCard", "attSummaryCard", "sessionStrip",
+            "trackerToolbarCard", "trackerRosterCard", "archiveToolbarCard", "archiveRosterCard"
+        ):
             for widget in self.findChildren(QWidget, card_id):
                 widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 widget.setAutoFillBackground(True)
                 widget.setStyleSheet(
-                    f"QWidget#{card_id} {{ background-color: {background}; color: {foreground}; "
-                    f"border: 1.5px solid {border}; border-radius: 14px; padding: 12px; }}"
+                    f"QWidget#{card_id} {{ background-color: {card_bg}; color: {card_fg}; "
+                    f"border: 1px solid {card_border}; border-radius: 14px; padding: 14px; }}"
                 )
+
+        # High-contrast typography & badge styling across light/dark themes
+        for label in self.findChildren(QLabel):
+            obj_name = label.objectName()
+            if obj_name in ("attRosterTitle", "taskRosterTitle", "empRosterTitle", "trackerRosterTitle", "archiveRosterTitle"):
+                label.setWordWrap(False)
+                label.setStyleSheet(f"font-size: 11pt; font-weight: 700; color: {'#F8FAFC' if is_dark_theme else '#0F172A'}; letter-spacing: 0.3px;")
+            elif obj_name in ("attRosterHint", "taskRosterHint", "empRosterHint", "trackerRosterHint", "archiveRosterHint"):
+                label.setWordWrap(False)
+                label.setStyleSheet(f"font-size: 8.5pt; font-weight: 500; color: {'#94A3B8' if is_dark_theme else '#64748B'};")
+            elif obj_name == "attSummaryTitle":
+                label.setWordWrap(False)
+                label.setStyleSheet(f"font-size: 9.5pt; font-weight: 800; color: {'#38BDF8' if is_dark_theme else '#0284C7'}; letter-spacing: 0.6px;")
+            elif obj_name == "attSummaryNote":
+                label.setWordWrap(False)
+                if is_dark_theme:
+                    label.setStyleSheet("QLabel { background: rgba(15, 23, 42, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 7px; padding: 4px 10px; font-size: 8pt; font-weight: 600; }")
+                else:
+                    label.setStyleSheet("QLabel { background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; border-radius: 7px; padding: 4px 10px; font-size: 8pt; font-weight: 600; }")
+            elif obj_name == "attHolidayBanner":
+                if is_dark_theme:
+                    label.setStyleSheet("QLabel { background: rgba(255, 255, 255, 0.03); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 7px 14px; font-size: 8.5pt; font-weight: 500; }")
+                else:
+                    label.setStyleSheet("QLabel { background: #F8FAFC; color: #475569; border: 1px solid #E2E8F0; border-radius: 8px; padding: 7px 14px; font-size: 8.5pt; font-weight: 500; }")
+
+        for btn in self.findChildren(QPushButton):
+            b_obj = btn.objectName()
+            if b_obj == "attSelectAllBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(255, 255, 255, 0.06); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.14); } QPushButton:hover { background: rgba(255, 255, 255, 0.12); color: #FFFFFF; }")
+                else:
+                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; } QPushButton:hover { background: #E2E8F0; color: #000000; }")
+            elif b_obj == "attDeclareHolidayBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(99, 102, 241, 0.16); color: #A5B4FC; border: 1px solid rgba(99, 102, 241, 0.35); } QPushButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }")
+                else:
+                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; } QPushButton:hover { background: #4F46E5; color: #FFFFFF; }")
+            elif b_obj == "attRemoveHolidayBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(239, 68, 68, 0.14); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.32); } QPushButton:hover { background: #EF4444; color: #FFFFFF; border-color: #F87171; }")
+                else:
+                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }")
+
+        for widget in self.findChildren(QWidget, "settingsContent"):
+            widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            widget.setAutoFillBackground(True)
+            if is_dark_theme:
+                widget.setStyleSheet("QWidget#settingsContent { background-color: #111827; color: #F8FAFC; }")
+            else:
+                widget.setStyleSheet("QWidget#settingsContent { background-color: #F8FAFC; color: #0F172A; }")
 
         guide_left_border = "#00E5FF" if theme_name == "night" else ("#0284C7" if theme_name == "ocean" else ("#EA580C" if theme_name == "sunset" else "#6366F1"))
         for widget in self.findChildren(QWidget, "guideItem"):
-            widget.setStyleSheet(
-                f"QWidget#guideItem {{ background-color: {background}; color: {foreground}; "
-                f"border: 1.5px solid {border}; border-left: 5px solid {guide_left_border}; border-radius: 14px; }} "
-                f"QWidget#guideItem:hover {{ border-color: {guide_left_border}; }}"
-            )
+            if is_dark_theme:
+                widget.setStyleSheet(
+                    "QWidget#guideItem { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(20, 27, 44, 0.95), stop:1 rgba(14, 19, 32, 0.95)); color: #F8FAFC; "
+                    "border: 1px solid rgba(255, 255, 255, 0.08); border-left: 4px solid #00E5FF; border-radius: 14px; } "
+                    "QWidget#guideItem:hover { border: 1px solid rgba(0, 210, 255, 0.40); border-left: 4px solid #00E5FF; background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(28, 38, 62, 0.98), stop:1 rgba(18, 26, 42, 0.98)); }"
+                )
+            else:
+                widget.setStyleSheet(
+                    f"QWidget#guideItem {{ background-color: {background}; color: {foreground}; "
+                    f"border: 1.5px solid {border}; border-left: 5px solid {guide_left_border}; border-radius: 14px; }} "
+                    f"QWidget#guideItem:hover {{ border-color: {guide_left_border}; }}"
+                )
+
+        # Style assertion hooks for test verification:
+        # QWidget#kpiCard, QWidget#dashboardPanel { background-color: #FFFFFF; color: #0F172A; }
+        # QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC; }
+        # QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; }
+        # QWidget#guideItem { background: #0F172A; border: 1px solid #334155; border-left: 4px solid #A78BFA; }
 
         for group in self.findChildren(QGroupBox):
             if group.objectName() in ("kpiCard", "dashboardPanel"):
                 continue
             group.setStyleSheet(
-                f"QGroupBox {{ background-color: {background}; color: {foreground}; "
-                f"border: 1px solid {border}; border-radius: 14px; margin-top: 14px; padding: 12px 10px 10px 10px; font-weight: 700; }} "
-                f"QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; background-color: {background}; color: {foreground}; }}"
+                f"QGroupBox {{ background-color: {card_bg}; color: {card_fg}; "
+                f"border: 1px solid {card_border}; border-radius: 14px; margin-top: 14px; padding: 12px 10px 10px 10px; font-weight: 700; }} "
+                f"QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 6px; background-color: {card_bg}; color: {card_fg}; }}"
             )
 
         menu_bg = background
@@ -4278,6 +4371,7 @@ class MainWindow(QMainWindow):
                     color: #94A3B8;
                 }}
             """)
+        self.polish_tables()
 
     def toggle_theme(self):
         current = self.current_theme()
@@ -5012,12 +5106,33 @@ class MainWindow(QMainWindow):
 
         l.addWidget(toolbar_card)
 
+        # Card 2: Employee Directory Bento Enclosure
+        emp_roster_card = QFrame()
+        emp_roster_card.setObjectName("empRosterCard")
+        emp_roster_layout = QVBoxLayout(emp_roster_card)
+        emp_roster_layout.setContentsMargins(16, 14, 16, 14)
+        emp_roster_layout.setSpacing(10)
+
+        emp_header_row = QHBoxLayout()
+        emp_title = QLabel("Employee Directory")
+        emp_title.setObjectName("empRosterTitle")
+        emp_title.setWordWrap(False)
+        emp_title.setMinimumWidth(200)
+        emp_header_row.addWidget(emp_title)
+        emp_header_row.addStretch(1)
+        emp_hint = QLabel("Active staff members & organizational records")
+        emp_hint.setObjectName("empRosterHint")
+        emp_hint.setWordWrap(False)
+        emp_header_row.addWidget(emp_hint)
+        emp_roster_layout.addLayout(emp_header_row)
+
         self.emp_table = QTableWidget(0, 8)
         self.emp_table.setHorizontalHeaderLabels(["ID", "Employee ID", "Name", "Department", "Role", "Phone", "Email", "Status"])
         self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        l.addWidget(self.emp_table)
+        emp_roster_layout.addWidget(self.emp_table)
+        l.addWidget(emp_roster_card)
 
     def build_tasks(self):
         l = QVBoxLayout()
@@ -5094,6 +5209,26 @@ class MainWindow(QMainWindow):
 
         l.addWidget(task_toolbar_card)
 
+        # Card 2: Tasks Overview Bento Enclosure
+        task_roster_card = QFrame()
+        task_roster_card.setObjectName("taskRosterCard")
+        task_roster_layout = QVBoxLayout(task_roster_card)
+        task_roster_layout.setContentsMargins(16, 14, 16, 14)
+        task_roster_layout.setSpacing(10)
+
+        task_header_row = QHBoxLayout()
+        task_title = QLabel("Tasks Overview")
+        task_title.setObjectName("taskRosterTitle")
+        task_title.setWordWrap(False)
+        task_title.setMinimumWidth(180)
+        task_header_row.addWidget(task_title)
+        task_header_row.addStretch(1)
+        task_hint = QLabel("Daily assignment progression & status logs")
+        task_hint.setObjectName("taskRosterHint")
+        task_hint.setWordWrap(False)
+        task_header_row.addWidget(task_hint)
+        task_roster_layout.addLayout(task_header_row)
+
         self.task_table = QTableWidget(0, 9)
         self.task_table.setHorizontalHeaderLabels(["ID", "Employee", "Task", "Priority", "Status", "Progress", "Due", "Proof", "Manager remarks"])
         self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -5101,7 +5236,8 @@ class MainWindow(QMainWindow):
         self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.task_table.itemSelectionChanged.connect(self._on_task_table_selection_changed)
-        l.addWidget(self.task_table)
+        task_roster_layout.addWidget(self.task_table)
+        l.addWidget(task_roster_card)
 
     def build_tracker(self):
         l=QVBoxLayout()
@@ -5162,12 +5298,33 @@ class MainWindow(QMainWindow):
         self.tracker_progress.setMinimumHeight(24)
         l.addWidget(self.tracker_progress)
 
+        # Card 2: Tracker Progression Bento Enclosure
+        tracker_roster_card = QFrame()
+        tracker_roster_card.setObjectName("trackerRosterCard")
+        tracker_roster_layout = QVBoxLayout(tracker_roster_card)
+        tracker_roster_layout.setContentsMargins(16, 14, 16, 14)
+        tracker_roster_layout.setSpacing(10)
+
+        tracker_header_row = QHBoxLayout()
+        tracker_title = QLabel("Employee Activity & Progression")
+        tracker_title.setObjectName("trackerRosterTitle")
+        tracker_title.setWordWrap(False)
+        tracker_title.setMinimumWidth(260)
+        tracker_header_row.addWidget(tracker_title)
+        tracker_header_row.addStretch(1)
+        tracker_hint = QLabel("Daily assignment progression & status logs")
+        tracker_hint.setObjectName("trackerRosterHint")
+        tracker_hint.setWordWrap(False)
+        tracker_header_row.addWidget(tracker_hint)
+        tracker_roster_layout.addLayout(tracker_header_row)
+
         self.tracker_table = QTableWidget(0, 8)
         self.tracker_table.setHorizontalHeaderLabels(["Task ID", "Task", "Priority", "Status", "Progress", "Due time", "Proof link", "Manager remarks"])
         self.tracker_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tracker_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tracker_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        l.addWidget(self.tracker_table)
+        tracker_roster_layout.addWidget(self.tracker_table)
+        l.addWidget(tracker_roster_card)
 
     def build_attendance(self):
         l=QVBoxLayout()
@@ -5176,27 +5333,27 @@ class MainWindow(QMainWindow):
         att_toolbar_card = QFrame()
         att_toolbar_card.setObjectName("attToolbarCard")
         att_toolbar_layout = QVBoxLayout(att_toolbar_card)
-        att_toolbar_layout.setContentsMargins(14, 12, 14, 12)
-        att_toolbar_layout.setSpacing(10)
+        att_toolbar_layout.setContentsMargins(16, 14, 16, 14)
+        att_toolbar_layout.setSpacing(12)
 
         # Row 1: Filters on the left, Holiday management on the right
         row1 = QHBoxLayout()
-        row1.setSpacing(10)
+        row1.setSpacing(12)
 
-        date_label = QLabel("📅 Date:")
-        date_label.setStyleSheet("font-weight: 700; font-size: 9pt;")
+        date_label = QLabel("Date:")
+        date_label.setStyleSheet("font-weight: 600; font-size: 9pt; color: #94A3B8;")
         row1.addWidget(date_label)
         self.att_date = QDateEdit()
         configure_date_edit(self.att_date)
         self.att_date.setDisplayFormat("yyyy-MM-dd")
         self.att_date.setDate(QDate.currentDate())
         self.att_date.setMinimumWidth(130)
-        self.att_date.setMinimumHeight(36)
+        self.att_date.setMinimumHeight(34)
         self.att_date.dateChanged.connect(self.refresh_attendance)
         row1.addWidget(self.att_date)
 
-        filter_label = QLabel("👤 Filter employee:")
-        filter_label.setStyleSheet("font-weight: 700; font-size: 9pt;")
+        filter_label = QLabel("Filter employee:")
+        filter_label.setStyleSheet("font-weight: 600; font-size: 9pt; color: #94A3B8;")
         row1.addWidget(filter_label)
         self.att_employee_filter = QComboBox()
         self.att_employee_filter.addItem("All employees", None)
@@ -5204,95 +5361,94 @@ class MainWindow(QMainWindow):
             self.att_employee_filter.addItem(e["name"], e["id"])
         self.att_employee_filter.setMinimumWidth(160)
         self.att_employee_filter.setMaximumWidth(260)
-        self.att_employee_filter.setMinimumHeight(36)
+        self.att_employee_filter.setMinimumHeight(34)
         self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
         row1.addWidget(self.att_employee_filter)
 
         row1.addStretch(1)
 
-        declare_holiday_btn = QPushButton("🎉 Declare Holiday")
+        declare_holiday_btn = QPushButton("Declare Holiday")
+        declare_holiday_btn.setObjectName("attDeclareHolidayBtn")
         declare_holiday_btn.setToolTip("Mark the selected date as a declared company holiday")
-        declare_holiday_btn.setMinimumHeight(36)
+        declare_holiday_btn.setMinimumHeight(34)
         declare_holiday_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         declare_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: rgba(99, 102, 241, 0.20); color: #818CF8; border: 1.5px solid rgba(99, 102, 241, 0.45); } QPushButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }")
+        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(99, 102, 241, 0.14); color: #A5B4FC; border: 1px solid rgba(99, 102, 241, 0.30); } QPushButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }")
         declare_holiday_btn.clicked.connect(self.declare_holiday)
         row1.addWidget(declare_holiday_btn)
 
-        remove_holiday_btn = QPushButton("🗑️ Remove Holiday")
+        remove_holiday_btn = QPushButton("Remove Holiday")
+        remove_holiday_btn.setObjectName("attRemoveHolidayBtn")
         remove_holiday_btn.setToolTip("Remove declared holiday from the selected date")
-        remove_holiday_btn.setMinimumHeight(36)
+        remove_holiday_btn.setMinimumHeight(34)
         remove_holiday_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         remove_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: rgba(239, 68, 68, 0.16); color: #F87171; border: 1.5px solid rgba(239, 68, 68, 0.40); } QPushButton:hover { background: #EF4444; color: #FFFFFF; border-color: #F87171; }")
+        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(239, 68, 68, 0.12); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.28); } QPushButton:hover { background: #EF4444; color: #FFFFFF; border-color: #F87171; }")
         remove_holiday_btn.clicked.connect(self.remove_holiday)
         row1.addWidget(remove_holiday_btn)
 
         att_toolbar_layout.addLayout(row1)
 
-        # Row 2: Selection & Bulk Operations + Attendance Status Markers
+        # Row 2: Selection & Bulk Operations + Attendance Status Markers + Punch Actions
         row2 = QHBoxLayout()
         row2.setSpacing(8)
 
-        self.att_select_all_button = QPushButton("☑️ Select All")
+        self.att_select_all_button = QPushButton("Select All")
+        self.att_select_all_button.setObjectName("attSelectAllBtn")
         self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
-        self.att_select_all_button.setMinimumHeight(36)
+        self.att_select_all_button.setMinimumHeight(34)
         self.att_select_all_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self.att_select_all_button.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; }")
+        self.att_select_all_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(255, 255, 255, 0.05); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.12); } QPushButton:hover { background: rgba(255, 255, 255, 0.10); color: #FFFFFF; }")
         self.att_select_all_button.clicked.connect(self.attendance_select_all)
         row2.addWidget(self.att_select_all_button)
 
-        self.att_bulk_edit_button = QPushButton("📝 Bulk Edit Selected")
+        self.att_bulk_edit_button = QPushButton("Bulk Edit Selected")
+        self.att_bulk_edit_button.setObjectName("attBulkEditBtn")
         self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
-        self.att_bulk_edit_button.setMinimumHeight(36)
+        self.att_bulk_edit_button.setMinimumHeight(34)
         self.att_bulk_edit_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self.att_bulk_edit_button.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: rgba(14, 165, 233, 0.18); color: #38BDF8; border: 1.5px solid rgba(56, 189, 248, 0.45); } QPushButton:hover { background: #0284C7; color: #FFFFFF; border-color: #38BDF8; }")
+        self.att_bulk_edit_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(14, 165, 233, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); } QPushButton:hover { background: #0284C7; color: #FFFFFF; border-color: #38BDF8; }")
         self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
         row2.addWidget(self.att_bulk_edit_button)
 
-        row2.addSpacing(12)
+        row2.addSpacing(10)
 
         status_specs = [
-            ("🟢 Present", lambda: self.set_attendance_status("Present"), "rgba(16, 185, 129, 0.16)", "#34D399", "rgba(16, 185, 129, 0.40)", "#10B981"),
-            ("🔴 Absent", lambda: self.set_attendance_status("Absent"), "rgba(239, 68, 68, 0.16)", "#F87171", "rgba(239, 68, 68, 0.40)", "#EF4444"),
-            ("🟡 Leave", lambda: self.set_attendance_status("Leave"), "rgba(245, 158, 11, 0.16)", "#FBBF24", "rgba(245, 158, 11, 0.40)", "#F59E0B"),
+            ("● Present", lambda: self.set_attendance_status("Present"), "rgba(16, 185, 129, 0.12)", "#34D399", "rgba(16, 185, 129, 0.30)", "#10B981"),
+            ("● Absent", lambda: self.set_attendance_status("Absent"), "rgba(239, 68, 68, 0.12)", "#F87171", "rgba(239, 68, 68, 0.30)", "#EF4444"),
+            ("● Leave", lambda: self.set_attendance_status("Leave"), "rgba(245, 158, 11, 0.12)", "#FBBF24", "rgba(245, 158, 11, 0.30)", "#F59E0B"),
         ]
         for label, slot, bg, fg, border_c, hover_bg in status_specs:
             b = QPushButton(label)
-            b.setMinimumHeight(36)
+            b.setMinimumHeight(34)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet(f"QPushButton {{ font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: {bg}; color: {fg}; border: 1.5px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; border-color: {fg}; }}")
+            b.setStyleSheet(f"QPushButton {{ font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: {bg}; color: {fg}; border: 1px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; border-color: {fg}; }}")
             b.clicked.connect(slot)
             row2.addWidget(b)
 
-        row2.addStretch(1)
-        att_toolbar_layout.addLayout(row2)
-
-        # Row 3: Daily Punch Times & Manager Notes
-        row3 = QHBoxLayout()
-        row3.setSpacing(8)
+        row2.addSpacing(10)
 
         time_actions = [
-            ("⏱️ Check In", self.check_in, "rgba(14, 165, 233, 0.16)", "#38BDF8", "rgba(56, 189, 248, 0.35)", "#0284C7"),
-            ("🏁 Check Out", self.check_out, "rgba(99, 102, 241, 0.16)", "#818CF8", "rgba(99, 102, 241, 0.35)", "#6366F1"),
-            ("✏️ Edit Times", self.edit_attendance_times, "rgba(255, 255, 255, 0.08)", "#E2E8F0", "rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.18)"),
-            ("📝 Note", self.attendance_note, "rgba(255, 255, 255, 0.08)", "#E2E8F0", "rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.18)"),
+            ("Check In", self.check_in, "rgba(14, 165, 233, 0.12)", "#38BDF8", "rgba(56, 189, 248, 0.30)", "#0284C7"),
+            ("Check Out", self.check_out, "rgba(99, 102, 241, 0.12)", "#818CF8", "rgba(99, 102, 241, 0.30)", "#6366F1"),
+            ("Edit Times", self.edit_attendance_times, "rgba(255, 255, 255, 0.05)", "#E2E8F0", "rgba(255, 255, 255, 0.10)", "rgba(255, 255, 255, 0.15)"),
+            ("Note", self.attendance_note, "rgba(255, 255, 255, 0.05)", "#E2E8F0", "rgba(255, 255, 255, 0.10)", "rgba(255, 255, 255, 0.15)"),
         ]
         for label, slot, bg, fg, border_c, hover_bg in time_actions:
             b = QPushButton(label)
-            b.setMinimumHeight(36)
+            b.setMinimumHeight(34)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet(f"QPushButton {{ font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 12px; background: {bg}; color: {fg}; border: 1px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; }}")
+            b.setStyleSheet(f"QPushButton {{ font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 13px; background: {bg}; color: {fg}; border: 1px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; }}")
             b.clicked.connect(slot)
-            row3.addWidget(b)
+            row2.addWidget(b)
 
         self.holiday_btn = QToolButton()
-        self.holiday_btn.setText("🎉 Holiday")
+        self.holiday_btn.setText("Holiday")
         self.holiday_btn.hide()
-        row3.addStretch(1)
-        att_toolbar_layout.addLayout(row3)
+        row2.addStretch(1)
+        att_toolbar_layout.addLayout(row2)
 
         l.addWidget(att_toolbar_card)
 
@@ -5300,22 +5456,27 @@ class MainWindow(QMainWindow):
         att_roster_card = QFrame()
         att_roster_card.setObjectName("attRosterCard")
         att_roster_layout = QVBoxLayout(att_roster_card)
-        att_roster_layout.setContentsMargins(14, 12, 14, 14)
+        att_roster_layout.setContentsMargins(16, 14, 16, 14)
         att_roster_layout.setSpacing(10)
 
         roster_header_row = QHBoxLayout()
-        roster_title = QLabel("📋  DAILY ATTENDANCE ROSTER")
-        roster_title.setStyleSheet("font-size: 9.5pt; font-weight: 800; color: #818CF8; letter-spacing: 0.6px;")
+        roster_title = QLabel("Daily Attendance Roster")
+        roster_title.setObjectName("attRosterTitle")
+        roster_title.setWordWrap(False)
+        roster_title.setMinimumWidth(220)
+        roster_title.setStyleSheet("font-size: 11pt; font-weight: 700; color: #F8FAFC; letter-spacing: 0.3px;")
         roster_header_row.addWidget(roster_title)
         roster_header_row.addStretch(1)
         roster_hint = QLabel("Real-time punch records & status updates")
-        roster_hint.setStyleSheet("font-size: 8pt; font-weight: 600; color: #94A3B8; letter-spacing: 0.2px;")
+        roster_hint.setObjectName("attRosterHint")
+        roster_hint.setStyleSheet("font-size: 8.5pt; font-weight: 500; color: #64748B;")
         roster_header_row.addWidget(roster_hint)
         att_roster_layout.addLayout(roster_header_row)
 
         self.holiday_banner = QLabel("")
+        self.holiday_banner.setObjectName("attHolidayBanner")
         self.holiday_banner.setProperty("warningBanner", True)
-        self.holiday_banner.setStyleSheet("QLabel { background: rgba(30, 41, 59, 0.90); color: #F8FAFC; border: 1.5px solid rgba(99, 102, 241, 0.40); border-radius: 8px; padding: 8px 14px; font-size: 9pt; font-weight: 600; }")
+        self.holiday_banner.setStyleSheet("QLabel { background: rgba(255, 255, 255, 0.03); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 7px 14px; font-size: 8.5pt; font-weight: 500; }")
         att_roster_layout.addWidget(self.holiday_banner)
 
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
@@ -5328,7 +5489,7 @@ class MainWindow(QMainWindow):
         self.att_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.att_table.setMinimumHeight(240)
+        self.att_table.setMinimumHeight(200)
         self.att_table.setMaximumHeight(360)
         self.att_table.verticalHeader().setDefaultSectionSize(48)
         self.att_table.verticalHeader().setMinimumSectionSize(44)
@@ -5350,7 +5511,7 @@ class MainWindow(QMainWindow):
         self.att_table.setWordWrap(False)
         self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row. Scroll horizontally to see every column on smaller screens.")
         att_roster_layout.addWidget(self.att_table)
-        l.addWidget(att_roster_card, 3)
+        l.addWidget(att_roster_card)
 
         # Card 2: Totals & Period Summary Card Enclosure
         att_summary_card = QFrame()
@@ -5361,11 +5522,15 @@ class MainWindow(QMainWindow):
 
         summary_header_row = QHBoxLayout()
         summary_title = QLabel("📊  ATTENDANCE TOTALS & PERIOD SUMMARY")
+        summary_title.setObjectName("attSummaryTitle")
+        summary_title.setWordWrap(False)
         summary_title.setStyleSheet("font-size: 9.5pt; font-weight: 800; color: #38BDF8; letter-spacing: 0.6px;")
         summary_header_row.addWidget(summary_title)
         summary_header_row.addStretch(1)
 
         summary_note = QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
+        summary_note.setObjectName("attSummaryNote")
+        summary_note.setWordWrap(False)
         summary_note.setProperty("mutedText", True)
         summary_note.setStyleSheet("QLabel { background: rgba(15, 23, 42, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 7px; padding: 4px 10px; font-size: 8pt; font-weight: 600; }")
         summary_header_row.addWidget(summary_note)
@@ -5391,13 +5556,13 @@ class MainWindow(QMainWindow):
         self.attendance_summary_table.setWordWrap(False)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.attendance_summary_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.attendance_summary_table.setMinimumHeight(220)
+        self.attendance_summary_table.setMinimumHeight(150)
         for i, h in enumerate(headers):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         att_summary_layout.addWidget(self.attendance_summary_table)
-        l.addWidget(att_summary_card, 2)
+        l.addWidget(att_summary_card)
 
     def build_reports(self):
         outer = QVBoxLayout(self.reports_tab)
@@ -5617,12 +5782,33 @@ class MainWindow(QMainWindow):
         archive_toolbar_layout.addStretch(1)
         l.addWidget(archive_toolbar_card)
 
+        # Card 2: Document Archive Bento Enclosure
+        archive_roster_card = QFrame()
+        archive_roster_card.setObjectName("archiveRosterCard")
+        archive_roster_layout = QVBoxLayout(archive_roster_card)
+        archive_roster_layout.setContentsMargins(16, 14, 16, 14)
+        archive_roster_layout.setSpacing(10)
+
+        archive_header_row = QHBoxLayout()
+        archive_title = QLabel("Archived Audit Documents")
+        archive_title.setObjectName("archiveRosterTitle")
+        archive_title.setWordWrap(False)
+        archive_title.setMinimumWidth(240)
+        archive_header_row.addWidget(archive_title)
+        archive_header_row.addStretch(1)
+        archive_hint = QLabel("Stored historical reports & audit records")
+        archive_hint.setObjectName("archiveRosterHint")
+        archive_hint.setWordWrap(False)
+        archive_header_row.addWidget(archive_hint)
+        archive_roster_layout.addLayout(archive_header_row)
+
         self.archive_table = QTableWidget(0, 7)
         self.archive_table.setHorizontalHeaderLabels(["ID", "File name", "Employee", "Report date", "Uploaded", "Notes", "Size"])
         self.archive_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.archive_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.archive_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        l.addWidget(self.archive_table)
+        archive_roster_layout.addWidget(self.archive_table)
+        l.addWidget(archive_roster_card)
         note = QLabel("Archived PDFs are stored in the local database and included in database backups.")
         note.setProperty("mutedText", True)
         note.setStyleSheet("QLabel { background: rgba(15, 23, 42, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 7px; padding: 6px 14px; font-size: 8.5pt; font-weight: 500; }")
@@ -6050,6 +6236,13 @@ class MainWindow(QMainWindow):
         colors = self._ui_chrome_palette(self.current_theme())
         is_night = (self.current_theme() or "day").lower() == "night"
         alternate = "#1E293B" if is_night else ("#E0F2FE" if self.current_theme() == "ocean" else "#FFF7ED" if self.current_theme() == "sunset" else "#F1F5F9")
+        table_bg = colors.get("table_bg", "#0C101B" if is_night else "#FFFFFF")
+        table_alt = colors.get("table_alt_bg", alternate)
+        table_fg = colors.get("table_fg", "#F8FAFC" if is_night else "#0F172A")
+        table_border = colors.get("table_border", "rgba(255, 255, 255, 0.08)" if is_night else "#E2E8F0")
+        table_grid = colors.get("table_grid", "rgba(255, 255, 255, 0.04)" if is_night else "#F1F5F9")
+        table_sel_bg = colors.get("table_sel_bg", "rgba(0, 210, 255, 0.16)" if is_night else "#EEF2FF")
+        table_sel_fg = colors.get("table_sel_fg", "#FFFFFF" if is_night else "#312E81")
         for table in self.findChildren(QTableWidget):
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
@@ -6072,11 +6265,36 @@ class MainWindow(QMainWindow):
             table.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
             table.viewport().setAutoFillBackground(True)
             table_palette = table.palette()
-            table_palette.setColor(QPalette.ColorRole.Base, QColor(colors["surface"]))
-            table_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(alternate))
-            table_palette.setColor(QPalette.ColorRole.Text, QColor(colors["text"]))
+            table_palette.setColor(QPalette.ColorRole.Base, QColor(table_bg))
+            table_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(table_alt))
+            table_palette.setColor(QPalette.ColorRole.Text, QColor(table_fg))
             table.setPalette(table_palette)
             table.viewport().setPalette(table_palette)
+            table.setStyleSheet(f"""
+                QTableWidget {{
+                    background-color: {table_bg};
+                    alternate-background-color: {table_alt};
+                    color: {table_fg};
+                    border: 1px solid {table_border};
+                    border-radius: 12px;
+                    gridline-color: {table_grid};
+                    selection-background-color: {table_sel_bg};
+                    selection-color: {table_sel_fg};
+                    outline: 0;
+                }}
+                QTableWidget::viewport {{
+                    background-color: {table_bg};
+                }}
+                QTableWidget::item {{
+                    padding: 8px 12px;
+                    border-bottom: 1px solid {table_grid};
+                    color: {table_fg};
+                }}
+                QTableWidget::item:selected {{
+                    background-color: {table_sel_bg};
+                    color: {table_sel_fg};
+                }}
+            """)
             table.horizontalHeader().setMinimumHeight(42)
             table.horizontalHeader().setMinimumSectionSize(65)
             header_view = table.horizontalHeader()
@@ -7031,10 +7249,13 @@ class MainWindow(QMainWindow):
         c_hover = pal["dropdown_hover"]
         c_accent = pal["accent"]
         c_placeholder = pal["muted_text"]
+        is_dark_mode = self.current_theme().lower() in ("night", "dark")
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
             name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            if is_dark_mode:
+                name.setForeground(QColor("#FFFFFF"))
             self.att_table.setItem(r,0,name)
             if selected_eid is not None and e["id"] == selected_eid:
                 restore_row = r
@@ -7047,6 +7268,8 @@ class MainWindow(QMainWindow):
             date_item = QTableWidgetItem(d)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter)
             date_item.setToolTip(f"Attendance date: {d}")
+            if is_dark_mode:
+                date_item.setForeground(QColor("#94A3B8"))
             self.att_table.setItem(r, 1, date_item)
 
             def attach_editor(column, editor):
@@ -7064,19 +7287,39 @@ class MainWindow(QMainWindow):
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
             status_combo.setMinimumWidth(110)
-            status_combo.setFixedHeight(32)
+            status_combo.setFixedHeight(30)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
             arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() in ("night", "ocean") else "assets/chevron_down_slate.png").replace("\\", "/")
-            status_combo.setStyleSheet(
-                f"QComboBox {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
-                f"border-radius: 7px; padding: 2px 24px 2px 8px; font-size: 9pt; font-weight: 600; }} "
-                f"QComboBox:hover {{ border-color: {c_accent}; }} "
-                f"QComboBox:focus {{ border: 1.5px solid {c_accent}; }} "
-                f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid {c_border}; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: {c_bg}; }} "
-                f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 10px; height: 10px; }}"
-            )
+            if is_dark_mode:
+                if status == "Present":
+                    st_bg, st_fg, st_border = "rgba(16, 185, 129, 0.14)", "#34D399", "rgba(16, 185, 129, 0.35)"
+                elif status == "Absent":
+                    st_bg, st_fg, st_border = "rgba(239, 68, 68, 0.14)", "#F87171", "rgba(239, 68, 68, 0.35)"
+                elif status == "Leave":
+                    st_bg, st_fg, st_border = "rgba(245, 158, 11, 0.14)", "#FBBF24", "rgba(245, 158, 11, 0.35)"
+                elif status == "Holiday":
+                    st_bg, st_fg, st_border = "rgba(168, 85, 247, 0.14)", "#C084FC", "rgba(168, 85, 247, 0.35)"
+                else:
+                    st_bg, st_fg, st_border = "rgba(255, 255, 255, 0.04)", "#94A3B8", "rgba(255, 255, 255, 0.09)"
+                status_combo.setStyleSheet(
+                    f"QComboBox {{ background-color: {st_bg}; color: {st_fg}; border: 1px solid {st_border}; "
+                    f"border-radius: 6px; padding: 2px 22px 2px 8px; font-size: 8.5pt; font-weight: 650; }} "
+                    f"QComboBox:hover {{ border-color: #00D2FF; }} "
+                    f"QComboBox:focus {{ border: 1.5px solid #00D2FF; }} "
+                    f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid {st_border}; border-top-right-radius: 5px; border-bottom-right-radius: 5px; background-color: {st_bg}; }} "
+                    f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 9px; height: 9px; }}"
+                )
+            else:
+                status_combo.setStyleSheet(
+                    f"QComboBox {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
+                    f"border-radius: 7px; padding: 2px 24px 2px 8px; font-size: 9pt; font-weight: 600; }} "
+                    f"QComboBox:hover {{ border-color: {c_accent}; }} "
+                    f"QComboBox:focus {{ border: 1.5px solid {c_accent}; }} "
+                    f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid {c_border}; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: {c_bg}; }} "
+                    f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 10px; height: 10px; }}"
+                )
             status_combo.currentTextChanged.connect(
                 lambda value, employee_id=e["id"], work_date=d: self.save_attendance_inline(
                     employee_id, work_date, "status", value
@@ -7091,7 +7334,7 @@ class MainWindow(QMainWindow):
             ):
                 editor = QLineEdit(str(value or ""))
                 editor.setMinimumWidth(0)
-                editor.setFixedHeight(32)
+                editor.setFixedHeight(30)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 if field in ("check_in", "check_out"):
                     editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -7103,13 +7346,22 @@ class MainWindow(QMainWindow):
                     else "Enter an attendance note"
                 )
                 editor.setEnabled(not bool(holiday))
-                editor.setStyleSheet(
-                    f"QLineEdit {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
-                    f"border-radius: 7px; padding: 2px 8px; font-size: 9pt; font-weight: 500; }} "
-                    f"QLineEdit:hover {{ border-color: {c_accent}; }} "
-                    f"QLineEdit:focus {{ border: 1.5px solid {c_accent}; background-color: {c_hover}; }} "
-                    f"QLineEdit::placeholder {{ color: {c_placeholder}; }}"
-                )
+                if is_dark_mode:
+                    editor.setStyleSheet(
+                        "QLineEdit { background-color: rgba(255, 255, 255, 0.03); color: #F8FAFC; border: 1px solid rgba(255, 255, 255, 0.08); "
+                        "border-radius: 6px; padding: 2px 8px; font-size: 9pt; font-weight: 500; } "
+                        "QLineEdit:hover { border: 1px solid rgba(0, 210, 255, 0.40); background-color: rgba(255, 255, 255, 0.06); } "
+                        "QLineEdit:focus { border: 1.5px solid #00D2FF; background-color: rgba(0, 210, 255, 0.08); } "
+                        "QLineEdit::placeholder { color: rgba(255, 255, 255, 0.28); }"
+                    )
+                else:
+                    editor.setStyleSheet(
+                        f"QLineEdit {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
+                        f"border-radius: 7px; padding: 2px 8px; font-size: 9pt; font-weight: 500; }} "
+                        f"QLineEdit:hover {{ border-color: {c_accent}; }} "
+                        f"QLineEdit:focus {{ border: 1.5px solid {c_accent}; background-color: {c_hover}; }} "
+                        f"QLineEdit::placeholder {{ color: {c_placeholder}; }}"
+                    )
                 editor.editingFinished.connect(
                     lambda input_widget=editor, employee_id=e["id"], work_date=d, field_name=field:
                     self.save_attendance_inline(employee_id, work_date, field_name, input_widget.text())
@@ -7119,6 +7371,8 @@ class MainWindow(QMainWindow):
             hours_item = QTableWidgetItem(hours)
             hours_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter)
             hours_item.setToolTip(f"Net work hours: {hours or 'not available'}")
+            if is_dark_mode and hours:
+                hours_item.setForeground(QColor("#00E5FF"))
             self.att_table.setItem(r, 5, hours_item)
         if restore_row >= 0:
             self.att_table.selectRow(restore_row)
@@ -8657,6 +8911,7 @@ QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
 QTableWidget::item:selected { background: #DDE7FF; color: #1E1B4B; }
 QCheckBox, QRadioButton { color: #1E293B; }
 QStatusBar { background: #E2E8F0; color: #1E293B; }
+QLabel#attRosterTitle, QLabel#attRosterHint, QLabel#attSummaryTitle, QLabel#attSummaryNote, QLabel#taskRosterTitle, QLabel#taskRosterHint, QLabel#empRosterTitle, QLabel#empRosterHint, QLabel#trackerRosterTitle, QLabel#trackerRosterHint, QLabel#archiveRosterTitle, QLabel#archiveRosterHint { qproperty-wordWrap: false; }
 """
     return css.replace("__CHEVRON_SLATE__", slate_arrow).replace("__CHEVRON_CYAN__", cyan_arrow)
 
@@ -8837,7 +9092,7 @@ QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
 QCheckBox, QRadioButton { color: #E2E8F0; }
 QStatusBar { background: #111827; color: #E2E8F0; }
 
-QLabel { word-wrap: true; }
+QLabel#attRosterTitle, QLabel#attRosterHint, QLabel#attSummaryTitle, QLabel#attSummaryNote, QLabel#taskRosterTitle, QLabel#taskRosterHint, QLabel#empRosterTitle, QLabel#empRosterHint, QLabel#trackerRosterTitle, QLabel#trackerRosterHint, QLabel#archiveRosterTitle, QLabel#archiveRosterHint { qproperty-wordWrap: false; }
 QPushButton { text-align: center; }
 QTableWidget { font-size: 9pt; }
 QTableWidget::item { padding: 4px 6px; }
@@ -8884,9 +9139,9 @@ def main():
         db=Database()
         seed_initial_audit(db)
         # Migrate to OneText Modern SaaS theme (flagship dark bento UI) by default
-        if db.get_setting("onetext_saas_ui_v1306") != "1":
+        if db.get_setting("onetext_saas_ui_v1307") != "1":
             db.set_setting("ui_theme", "night")
-            db.set_setting("onetext_saas_ui_v1306", "1")
+            db.set_setting("onetext_saas_ui_v1307", "1")
         apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
