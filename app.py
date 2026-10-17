@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime, date
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
-from PySide6.QtCore import Qt, QSize, QDate, QTime, QEvent, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QPointF, QRectF, QTimer
+from PySide6.QtCore import Qt, QSize, QDate, QTime, QEvent, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QPointF, QRect, QRectF, QTimer
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QComboBox, QSpinBox,
@@ -2981,13 +2981,26 @@ class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); ensure_accessible_tooltip_controller(); ensure_combobox_wheel_filter(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
         self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(brand_mark_pixmap(128)))
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Window
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowSystemMenuHint
+        )
+        self._is_maximized = False
+        self._normal_geometry = None
         screen = QApplication.primaryScreen()
         available = screen.availableGeometry() if screen else None
         if available:
             self.setMinimumSize(min(1080, available.width()), min(700, available.height()))
-            self.resize(min(1380, available.width()), min(860, available.height()))
-            self.move(available.center() - self.rect().center())
+            norm_w = min(1380, max(900, available.width() - 40))
+            norm_h = min(860, max(600, available.height() - 40))
+            norm_x = available.x() + (available.width() - norm_w) // 2
+            norm_y = available.y() + (available.height() - norm_h) // 2
+            self._normal_geometry = QRect(norm_x, norm_y, norm_w, norm_h)
+            # Default to full available work area (which completely respects and reveals the Windows taskbar)
+            self.setGeometry(available)
+            self._is_maximized = True
         else:
             self.resize(1380, 860); self.setMinimumSize(1080, 700)
         self._drag_pos = None
@@ -3010,20 +3023,15 @@ class MainWindow(QMainWindow):
         # Keep the original icon for the Windows taskbar/window, but remove the
         # redundant icon button from the visible title bar.
         self.header_logo_menu.hide()
+
+        # Navigation buttons kept as hidden instances for API compatibility without polluting the header UI
         self.header_prev = QPushButton("‹")
         self.header_prev.setObjectName("headerNavButton")
-        self.header_prev.setToolTip("Previous page")
-        self.header_prev.setFixedSize(32, 28)
+        self.header_prev.hide()
         self.header_next = QPushButton("›")
         self.header_next.setObjectName("headerNavButton")
-        self.header_next.setToolTip("Next page")
-        self.header_next.setFixedSize(32, 28)
-        nav_btn_style = "QPushButton#headerNavButton { background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; font-size: 13pt; font-weight: 700; min-width: 0; padding: 0 0 2px 0; } QPushButton#headerNavButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }"
-        self.header_prev.setStyleSheet(nav_btn_style)
-        self.header_next.setStyleSheet(nav_btn_style)
+        self.header_next.hide()
 
-        title_layout.addWidget(self.header_prev)
-        title_layout.addWidget(self.header_next)
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("titleLabel")
         self.title_label.setMinimumWidth(0)
@@ -3035,29 +3043,43 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
-        btn_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
-        close_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+        btn_style = (
+            "QPushButton#titleBtnMin, QPushButton#titleBtnMax { "
+            "background: rgba(255, 255, 255, 0.08); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.16); "
+            "border-radius: 6px; font-size: 10pt; font-weight: 700; min-width: 0; padding: 0; margin: 0; } "
+            "QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { "
+            "background: rgba(255, 255, 255, 0.22); color: #FFFFFF; border-color: rgba(255, 255, 255, 0.35); } "
+            "QPushButton#titleBtnMin:pressed, QPushButton#titleBtnMax:pressed { background: rgba(255, 255, 255, 0.30); }"
+        )
+        close_style = (
+            "QPushButton#titleBtnClose { "
+            "background: rgba(239, 68, 68, 0.16); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); "
+            "border-radius: 6px; font-size: 10pt; font-weight: 700; min-width: 0; padding: 0; margin: 0; } "
+            "QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; border-color: #EF4444; } "
+            "QPushButton#titleBtnClose:pressed { background: #B91C1C; }"
+        )
 
         self.btn_min = QPushButton("—")
         self.btn_min.setObjectName("titleBtnMin")
-        self.btn_min.setFixedSize(36, 28)
+        self.btn_min.setFixedSize(38, 28)
         self.btn_min.setStyleSheet(btn_style)
         self.btn_min.setToolTip("Minimize"); self.btn_min.clicked.connect(self.showMinimized)
         title_layout.addWidget(self.btn_min)
 
-        self.btn_max = QPushButton("□")
+        self.btn_max = QPushButton("❐" if getattr(self, "_is_maximized", False) else "□")
         self.btn_max.setObjectName("titleBtnMax")
-        self.btn_max.setFixedSize(36, 28)
+        self.btn_max.setFixedSize(38, 28)
         self.btn_max.setStyleSheet(btn_style)
         self.btn_max.setToolTip("Maximize / Restore"); self.btn_max.clicked.connect(self.toggle_maximize)
         title_layout.addWidget(self.btn_max)
 
         self.btn_close = QPushButton("✕")
         self.btn_close.setObjectName("titleBtnClose")
-        self.btn_close.setFixedSize(36, 28)
+        self.btn_close.setFixedSize(38, 28)
         self.btn_close.setStyleSheet(close_style)
         self.btn_close.setToolTip("Close"); self.btn_close.clicked.connect(self.close)
         title_layout.addWidget(self.btn_close)
+        self.title_bar.mouseDoubleClickEvent = lambda e: self.toggle_maximize() if e.button() == Qt.MouseButton.LeftButton else None
 
         # Animated background
         self.bg_anim = AnimatedBackground(mode=self.db.get_setting("animation_style", "Ambient Glow") or "Ambient Glow")
@@ -3989,21 +4011,57 @@ class MainWindow(QMainWindow):
         self.polish_tables()
 
     def toggle_maximize(self):
-        if self.isMaximized():
-            self.showNormal()
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else None
+        if getattr(self, "_is_maximized", False):
+            if getattr(self, "_normal_geometry", None):
+                self.setGeometry(self._normal_geometry)
+            else:
+                if avail:
+                    norm_w = min(1380, max(900, avail.width() - 40))
+                    norm_h = min(860, max(600, avail.height() - 40))
+                    norm_x = avail.x() + (avail.width() - norm_w) // 2
+                    norm_y = avail.y() + (avail.height() - norm_h) // 2
+                    self.setGeometry(norm_x, norm_y, norm_w, norm_h)
+                else:
+                    self.resize(1380, 860)
+            self._is_maximized = False
             self.btn_max.setText("□")
         else:
-            self.showMaximized()
+            self._normal_geometry = self.geometry()
+            if avail:
+                self.setGeometry(avail)
+            else:
+                self.showMaximized()
+            self._is_maximized = True
             self.btn_max.setText("❐")
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 36:
+        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 42:
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event):
         if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            if getattr(self, "_is_maximized", False):
+                screen = QApplication.primaryScreen()
+                avail = screen.availableGeometry() if screen else None
+                norm_w = self._normal_geometry.width() if getattr(self, "_normal_geometry", None) else (min(1380, avail.width() - 40) if avail else 1380)
+                norm_h = self._normal_geometry.height() if getattr(self, "_normal_geometry", None) else (min(860, avail.height() - 40) if avail else 860)
+                cur_x = int(event.globalPosition().x())
+                cur_y = int(event.globalPosition().y())
+                new_x = cur_x - norm_w // 2
+                new_y = cur_y - 20
+                if avail:
+                    new_x = max(avail.x(), min(new_x, avail.x() + avail.width() - norm_w))
+                    new_y = max(avail.y(), min(new_y, avail.y() + avail.height() - norm_h))
+                self._normal_geometry = QRect(new_x, new_y, norm_w, norm_h)
+                self.setGeometry(self._normal_geometry)
+                self._is_maximized = False
+                self.btn_max.setText("□")
+                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            else:
+                self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -4213,8 +4271,21 @@ class MainWindow(QMainWindow):
                 pass
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
-            btn_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
-            close_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
+            btn_style = (
+                "QPushButton#titleBtnMin, QPushButton#titleBtnMax { "
+                "background: rgba(255, 255, 255, 0.08); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.16); "
+                "border-radius: 6px; font-size: 10pt; font-weight: 700; min-width: 0; padding: 0; margin: 0; } "
+                "QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { "
+                "background: rgba(255, 255, 255, 0.22); color: #FFFFFF; border-color: rgba(255, 255, 255, 0.35); } "
+                "QPushButton#titleBtnMin:pressed, QPushButton#titleBtnMax:pressed { background: rgba(255, 255, 255, 0.30); }"
+            )
+            close_style = (
+                "QPushButton#titleBtnClose { "
+                "background: rgba(239, 68, 68, 0.16); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); "
+                "border-radius: 6px; font-size: 10pt; font-weight: 700; min-width: 0; padding: 0; margin: 0; } "
+                "QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; border-color: #EF4444; } "
+                "QPushButton#titleBtnClose:pressed { background: #B91C1C; }"
+            )
             self.btn_min.setStyleSheet(btn_style)
             self.btn_max.setStyleSheet(btn_style)
             self.btn_close.setStyleSheet(close_style)
@@ -4294,23 +4365,166 @@ class MainWindow(QMainWindow):
                 else:
                     label.setStyleSheet("QLabel { background: #F8FAFC; color: #475569; border: 1px solid #E2E8F0; border-radius: 8px; padding: 7px 14px; font-size: 8.5pt; font-weight: 500; }")
 
+        # Tactile, high-contrast button styling across light/dark themes
         for btn in self.findChildren(QPushButton):
             b_obj = btn.objectName()
-            if b_obj == "attSelectAllBtn":
+            # Primary gradient buttons
+            if b_obj in ("taskAddBtn", "empAddBtn", "archiveUploadBtn"):
                 if is_dark_theme:
-                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(255, 255, 255, 0.06); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.14); } QPushButton:hover { background: rgba(255, 255, 255, 0.12); color: #FFFFFF; }")
+                    btn.setStyleSheet(
+                        f"QPushButton#{b_obj} {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); "
+                        f"color: #FFFFFF; font-weight: 700; border: 1.5px solid #818CF8; border-radius: 9px; padding: 6px 14px; font-size: 8.5pt; }} "
+                        f"QPushButton#{b_obj}:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); border-color: #A5B4FC; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: #3730A3; }}"
+                    )
                 else:
-                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; } QPushButton:hover { background: #E2E8F0; color: #000000; }")
+                    btn.setStyleSheet(
+                        f"QPushButton#{b_obj} {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); "
+                        f"color: #FFFFFF; font-weight: 700; border: 1.5px solid #6366F1; border-radius: 9px; padding: 6px 14px; font-size: 8.5pt; }} "
+                        f"QPushButton#{b_obj}:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); border-color: #4338CA; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: #3730A3; }}"
+                    )
+            # Danger / Delete buttons
+            elif b_obj in ("taskDeleteBtn", "empDeleteBtn", "archiveDeleteBtn", "attRemoveHolidayBtn"):
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        f"QPushButton#{b_obj} {{ background: rgba(239, 68, 68, 0.16); color: #FCA5A5; border: 1.5px solid rgba(239, 68, 68, 0.38); "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; }} "
+                        f"QPushButton#{b_obj}:hover {{ background: #EF4444; color: #FFFFFF; border-color: #F87171; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: #DC2626; }}"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        f"QPushButton#{b_obj} {{ background: #FEF2F2; color: #DC2626; border: 1.5px solid #FECACA; "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; }} "
+                        f"QPushButton#{b_obj}:hover {{ background: #DC2626; color: #FFFFFF; border-color: #B91C1C; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: #991B1B; }}"
+                    )
+            # Secondary general actions (Refresh, Edit, Select All, Proof, View, Export, Note, Edit Times, etc.)
+            elif b_obj in (
+                "taskEditBtn", "taskBulkEditBtn", "taskSelectAllBtn", "taskProofBtn", "taskRefreshBtn",
+                "empEditBtn", "empToggleBtn", "empRefreshBtn", "trackerRefreshBtn",
+                "archiveViewBtn", "archiveExportBtn", "archiveRefreshBtn",
+                "attSelectAllBtn", "attEditTimesBtn", "attNoteBtn"
+            ):
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        f"QPushButton#{b_obj} {{ background: rgba(255, 255, 255, 0.07); color: #F8FAFC; border: 1.5px solid rgba(255, 255, 255, 0.18); "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; }} "
+                        f"QPushButton#{b_obj}:hover {{ background: rgba(255, 255, 255, 0.14); color: #FFFFFF; border-color: #818CF8; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: rgba(255, 255, 255, 0.20); }}"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        f"QPushButton#{b_obj} {{ background: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; }} "
+                        f"QPushButton#{b_obj}:hover {{ background: #F1F5F9; color: #4F46E5; border-color: #6366F1; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: #E2E8F0; }}"
+                    )
+            # Attendance specific colored action buttons
+            elif b_obj == "attBulkEditBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attBulkEditBtn { background: rgba(14, 165, 233, 0.16); color: #38BDF8; border: 1.5px solid rgba(56, 189, 248, 0.40); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attBulkEditBtn:hover { background: #0284C7; color: #FFFFFF; border-color: #38BDF8; } "
+                        "QPushButton#attBulkEditBtn:pressed { background: #0369A1; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attBulkEditBtn { background: #F0F9FF; color: #0284C7; border: 1.5px solid #7DD3FC; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attBulkEditBtn:hover { background: #0284C7; color: #FFFFFF; border-color: #0369A1; } "
+                        "QPushButton#attBulkEditBtn:pressed { background: #075985; }"
+                    )
+            elif b_obj == "attPresentBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attPresentBtn { background: rgba(16, 185, 129, 0.16); color: #34D399; border: 1.5px solid rgba(16, 185, 129, 0.38); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attPresentBtn:hover { background: #10B981; color: #FFFFFF; border-color: #34D399; } "
+                        "QPushButton#attPresentBtn:pressed { background: #059669; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attPresentBtn { background: #ECFDF5; color: #059669; border: 1.5px solid #6EE7B7; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attPresentBtn:hover { background: #10B981; color: #FFFFFF; border-color: #059669; } "
+                        "QPushButton#attPresentBtn:pressed { background: #047857; }"
+                    )
+            elif b_obj == "attAbsentBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attAbsentBtn { background: rgba(239, 68, 68, 0.16); color: #F87171; border: 1.5px solid rgba(239, 68, 68, 0.38); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attAbsentBtn:hover { background: #EF4444; color: #FFFFFF; border-color: #F87171; } "
+                        "QPushButton#attAbsentBtn:pressed { background: #DC2626; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attAbsentBtn { background: #FEF2F2; color: #DC2626; border: 1.5px solid #FCA5A5; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attAbsentBtn:hover { background: #EF4444; color: #FFFFFF; border-color: #DC2626; } "
+                        "QPushButton#attAbsentBtn:pressed { background: #B91C1C; }"
+                    )
+            elif b_obj == "attLeaveBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attLeaveBtn { background: rgba(245, 158, 11, 0.16); color: #FBBF24; border: 1.5px solid rgba(245, 158, 11, 0.38); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attLeaveBtn:hover { background: #F59E0B; color: #FFFFFF; border-color: #FBBF24; } "
+                        "QPushButton#attLeaveBtn:pressed { background: #D97706; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attLeaveBtn { background: #FFFBEB; color: #D97706; border: 1.5px solid #FCD34D; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attLeaveBtn:hover { background: #F59E0B; color: #FFFFFF; border-color: #D97706; } "
+                        "QPushButton#attLeaveBtn:pressed { background: #B45309; }"
+                    )
+            elif b_obj == "attCheckInBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attCheckInBtn { background: rgba(14, 165, 233, 0.16); color: #38BDF8; border: 1.5px solid rgba(56, 189, 248, 0.38); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; } "
+                        "QPushButton#attCheckInBtn:hover { background: #0284C7; color: #FFFFFF; border-color: #38BDF8; } "
+                        "QPushButton#attCheckInBtn:pressed { background: #0369A1; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attCheckInBtn { background: #F0F9FF; color: #0284C7; border: 1.5px solid #7DD3FC; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; } "
+                        "QPushButton#attCheckInBtn:hover { background: #0284C7; color: #FFFFFF; border-color: #0369A1; } "
+                        "QPushButton#attCheckInBtn:pressed { background: #075985; }"
+                    )
+            elif b_obj == "attCheckOutBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attCheckOutBtn { background: rgba(99, 102, 241, 0.16); color: #A5B4FC; border: 1.5px solid rgba(99, 102, 241, 0.38); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; } "
+                        "QPushButton#attCheckOutBtn:hover { background: #6366F1; color: #FFFFFF; border-color: #A5B4FC; } "
+                        "QPushButton#attCheckOutBtn:pressed { background: #4F46E5; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attCheckOutBtn { background: #EEF2FF; color: #4F46E5; border: 1.5px solid #A5B4FC; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; } "
+                        "QPushButton#attCheckOutBtn:hover { background: #6366F1; color: #FFFFFF; border-color: #4F46E5; } "
+                        "QPushButton#attCheckOutBtn:pressed { background: #4338CA; }"
+                    )
             elif b_obj == "attDeclareHolidayBtn":
                 if is_dark_theme:
-                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(99, 102, 241, 0.16); color: #A5B4FC; border: 1px solid rgba(99, 102, 241, 0.35); } QPushButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }")
+                    btn.setStyleSheet(
+                        "QPushButton#attDeclareHolidayBtn { background: rgba(99, 102, 241, 0.16); color: #A5B4FC; border: 1.5px solid rgba(99, 102, 241, 0.35); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attDeclareHolidayBtn:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }"
+                    )
                 else:
-                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; } QPushButton:hover { background: #4F46E5; color: #FFFFFF; }")
-            elif b_obj == "attRemoveHolidayBtn":
-                if is_dark_theme:
-                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(239, 68, 68, 0.14); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.32); } QPushButton:hover { background: #EF4444; color: #FFFFFF; border-color: #F87171; }")
-                else:
-                    btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }")
+                    btn.setStyleSheet(
+                        "QPushButton#attDeclareHolidayBtn { background: #EEF2FF; color: #4338CA; border: 1.5px solid #C7D2FE; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attDeclareHolidayBtn:hover { background: #4F46E5; color: #FFFFFF; }"
+                    )
 
         for widget in self.findChildren(QWidget, "settingsContent"):
             widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
@@ -5071,7 +5285,9 @@ class MainWindow(QMainWindow):
         search_row.addWidget(self.emp_search, 1)
 
         refresh_emp_btn = QPushButton("🔄 Refresh")
+        refresh_emp_btn.setObjectName("empRefreshBtn")
         refresh_emp_btn.setToolTip("Reload employee directory")
+        refresh_emp_btn.setMinimumHeight(36)
         refresh_emp_btn.clicked.connect(self.refresh_employees)
         search_row.addWidget(refresh_emp_btn)
 
@@ -5083,23 +5299,18 @@ class MainWindow(QMainWindow):
         actions_row = QHBoxLayout()
         actions_row.setSpacing(8)
         actions = [
-            ("➕ Add Employee", self.add_employee, "Add a new employee record", True),
-            ("✏️ Edit Selected", self.edit_employee, "Edit the selected employee", False),
-            ("🔄 Activate / Deactivate", self.toggle_employee, "Toggle active status for selected employee", False),
-            ("🗑️ Delete Employee", self.delete_employee, "Permanently delete the selected employee", False),
+            ("➕ Add Employee", self.add_employee, "Add a new employee record", True, "empAddBtn"),
+            ("✏️ Edit Selected", self.edit_employee, "Edit the selected employee", False, "empEditBtn"),
+            ("🔄 Activate / Deactivate", self.toggle_employee, "Toggle active status for selected employee", False, "empToggleBtn"),
+            ("🗑️ Delete Employee", self.delete_employee, "Permanently delete the selected employee", False, "empDeleteBtn"),
         ]
-        for label, slot, tip, is_primary in actions:
+        for label, slot, tip, is_primary, obj_name in actions:
             b = QPushButton(label)
+            b.setObjectName(obj_name)
             b.clicked.connect(slot)
             b.setToolTip(tip)
             b.setMinimumHeight(36)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if is_primary:
-                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
-            elif "Delete" in label:
-                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
-            else:
-                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 8px; padding: 6px 12px; }")
             actions_row.addWidget(b)
         actions_row.addStretch(1)
         toolbar_layout.addLayout(actions_row)
@@ -5169,7 +5380,9 @@ class MainWindow(QMainWindow):
         filter_row.addWidget(self.task_filter)
 
         refresh_tasks_btn = QPushButton("🔄 Refresh")
+        refresh_tasks_btn.setObjectName("taskRefreshBtn")
         refresh_tasks_btn.setToolTip("Reload tasks for the selected date and employee")
+        refresh_tasks_btn.setMinimumHeight(36)
         refresh_tasks_btn.clicked.connect(self.refresh_tasks)
         filter_row.addWidget(refresh_tasks_btn)
 
@@ -5184,25 +5397,20 @@ class MainWindow(QMainWindow):
         actions_row.setSpacing(8)
 
         task_actions = [
-            ("➕ Add Task", self.add_task, "Create a new task for the selected date", True),
-            ("✏️ Edit Selected", self.edit_task, "Edit one selected task", False),
-            ("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False),
-            ("☑️ Select All", self.task_table_select_all, "Select every task shown for the selected date and employee filter", False),
-            ("🗑️ Delete Selected", self.delete_task, "Delete the selected task", False),
-            ("🔗 Open Proof", self.open_proof, "Open proof/evidence link in browser", False),
+            ("➕ Add Task", self.add_task, "Create a new task for the selected date", True, "taskAddBtn"),
+            ("✏️ Edit Selected", self.edit_task, "Edit one selected task", False, "taskEditBtn"),
+            ("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False, "taskBulkEditBtn"),
+            ("☑️ Select All", self.task_table_select_all, "Select every task shown for the selected date and employee filter", False, "taskSelectAllBtn"),
+            ("🗑️ Delete Selected", self.delete_task, "Delete the selected task", False, "taskDeleteBtn"),
+            ("🔗 Open Proof", self.open_proof, "Open proof/evidence link in browser", False, "taskProofBtn"),
         ]
-        for label, slot, tip, is_primary in task_actions:
+        for label, slot, tip, is_primary, obj_name in task_actions:
             b = QPushButton(label)
+            b.setObjectName(obj_name)
             b.clicked.connect(slot)
             b.setToolTip(tip)
             b.setMinimumHeight(36)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if is_primary:
-                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 5px 11px; font-size: 8.5pt; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
-            elif "Delete" in label:
-                b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
-            else:
-                b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; }")
             actions_row.addWidget(b)
         actions_row.addStretch(1)
         task_toolbar_card_layout.addLayout(actions_row)
@@ -5275,11 +5483,11 @@ class MainWindow(QMainWindow):
         filters.addWidget(self.tracker_date)
 
         refresh_button = QPushButton("🔄 Refresh")
+        refresh_button.setObjectName("trackerRefreshBtn")
         refresh_button.setToolTip("Reload tasks for the selected employee and date")
         refresh_button.setMinimumHeight(36)
         refresh_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        refresh_button.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; }")
         refresh_button.clicked.connect(self.refresh_tracker)
         filters.addWidget(refresh_button)
         filters.addStretch(1)
@@ -5398,7 +5606,7 @@ class MainWindow(QMainWindow):
         self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
         self.att_select_all_button.setMinimumHeight(34)
         self.att_select_all_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self.att_select_all_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(255, 255, 255, 0.05); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.12); } QPushButton:hover { background: rgba(255, 255, 255, 0.10); color: #FFFFFF; }")
+        self.att_select_all_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.att_select_all_button.clicked.connect(self.attendance_select_all)
         row2.addWidget(self.att_select_all_button)
 
@@ -5407,40 +5615,40 @@ class MainWindow(QMainWindow):
         self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
         self.att_bulk_edit_button.setMinimumHeight(34)
         self.att_bulk_edit_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        self.att_bulk_edit_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: rgba(14, 165, 233, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.35); } QPushButton:hover { background: #0284C7; color: #FFFFFF; border-color: #38BDF8; }")
+        self.att_bulk_edit_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
         row2.addWidget(self.att_bulk_edit_button)
 
         row2.addSpacing(10)
 
         status_specs = [
-            ("● Present", lambda: self.set_attendance_status("Present"), "rgba(16, 185, 129, 0.12)", "#34D399", "rgba(16, 185, 129, 0.30)", "#10B981"),
-            ("● Absent", lambda: self.set_attendance_status("Absent"), "rgba(239, 68, 68, 0.12)", "#F87171", "rgba(239, 68, 68, 0.30)", "#EF4444"),
-            ("● Leave", lambda: self.set_attendance_status("Leave"), "rgba(245, 158, 11, 0.12)", "#FBBF24", "rgba(245, 158, 11, 0.30)", "#F59E0B"),
+            ("● Present", lambda: self.set_attendance_status("Present"), "attPresentBtn"),
+            ("● Absent", lambda: self.set_attendance_status("Absent"), "attAbsentBtn"),
+            ("● Leave", lambda: self.set_attendance_status("Leave"), "attLeaveBtn"),
         ]
-        for label, slot, bg, fg, border_c, hover_bg in status_specs:
+        for label, slot, obj_name in status_specs:
             b = QPushButton(label)
+            b.setObjectName(obj_name)
             b.setMinimumHeight(34)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet(f"QPushButton {{ font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 14px; background: {bg}; color: {fg}; border: 1px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; border-color: {fg}; }}")
             b.clicked.connect(slot)
             row2.addWidget(b)
 
         row2.addSpacing(10)
 
         time_actions = [
-            ("Check In", self.check_in, "rgba(14, 165, 233, 0.12)", "#38BDF8", "rgba(56, 189, 248, 0.30)", "#0284C7"),
-            ("Check Out", self.check_out, "rgba(99, 102, 241, 0.12)", "#818CF8", "rgba(99, 102, 241, 0.30)", "#6366F1"),
-            ("Edit Times", self.edit_attendance_times, "rgba(255, 255, 255, 0.05)", "#E2E8F0", "rgba(255, 255, 255, 0.10)", "rgba(255, 255, 255, 0.15)"),
-            ("Note", self.attendance_note, "rgba(255, 255, 255, 0.05)", "#E2E8F0", "rgba(255, 255, 255, 0.10)", "rgba(255, 255, 255, 0.15)"),
+            ("Check In", self.check_in, "attCheckInBtn"),
+            ("Check Out", self.check_out, "attCheckOutBtn"),
+            ("Edit Times", self.edit_attendance_times, "attEditTimesBtn"),
+            ("Note", self.attendance_note, "attNoteBtn"),
         ]
-        for label, slot, bg, fg, border_c, hover_bg in time_actions:
+        for label, slot, obj_name in time_actions:
             b = QPushButton(label)
+            b.setObjectName(obj_name)
             b.setMinimumHeight(34)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet(f"QPushButton {{ font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 13px; background: {bg}; color: {fg}; border: 1px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; }}")
             b.clicked.connect(slot)
             row2.addWidget(b)
 
@@ -5766,18 +5974,19 @@ class MainWindow(QMainWindow):
         archive_toolbar_layout.setContentsMargins(14, 12, 14, 12)
         archive_toolbar_layout.setSpacing(8)
 
-        for label, slot in [("📤 Upload PDF(s)", self.upload_eod_pdfs), ("👁️ View Selected", self.open_archived_pdf), ("💾 Export Selected", self.export_archived_pdf), ("🗑️ Delete Selected", self.delete_archived_pdf), ("🔄 Refresh", self.refresh_archive)]:
+        for label, slot, obj_name in [
+            ("📤 Upload PDF(s)", self.upload_eod_pdfs, "archiveUploadBtn"),
+            ("👁️ View Selected", self.open_archived_pdf, "archiveViewBtn"),
+            ("💾 Export Selected", self.export_archived_pdf, "archiveExportBtn"),
+            ("🗑️ Delete Selected", self.delete_archived_pdf, "archiveDeleteBtn"),
+            ("🔄 Refresh", self.refresh_archive, "archiveRefreshBtn")
+        ]:
             b = QPushButton(label)
+            b.setObjectName(obj_name)
             b.clicked.connect(slot)
             b.setMinimumHeight(36)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if "Upload" in label:
-                b.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 9px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
-            elif "Delete" in label:
-                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 9px; padding: 6px 12px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
-            else:
-                b.setStyleSheet("QPushButton { font-weight: 600; border-radius: 9px; padding: 6px 12px; }")
             archive_toolbar_layout.addWidget(b)
         archive_toolbar_layout.addStretch(1)
         l.addWidget(archive_toolbar_card)
@@ -8744,15 +8953,19 @@ QLabel { padding: 1px; color: #0F172A; }
 QWidget#titleBar { background: #0F172A; border: 0; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax {
-    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
-    background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
+    min-width: 38px; max-width: 38px; min-height: 28px; max-height: 28px; padding: 0; margin: 0;
+    background: rgba(255, 255, 255, 0.08); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px; font-size: 10pt; font-weight: 700;
 }
-QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: rgba(255, 255, 255, 0.22); color: #FFFFFF; border-color: rgba(255, 255, 255, 0.35); }
+QPushButton#titleBtnMin:pressed, QPushButton#titleBtnMax:pressed { background: rgba(255, 255, 255, 0.30); }
 QPushButton#titleBtnClose {
-    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
-    background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
+    min-width: 38px; max-width: 38px; min-height: 28px; max-height: 28px; padding: 0; margin: 0;
+    background: rgba(239, 68, 68, 0.16); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 6px; font-size: 10pt; font-weight: 700;
 }
-QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
+QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; border-color: #EF4444; }
+QPushButton#titleBtnClose:pressed { background: #B91C1C; }
 QPushButton#titleFileBtn { background: transparent; color: #C7D2E8; border: 0; border-radius: 4px; padding: 0 10px; font-weight: 600; }
 QPushButton#titleFileBtn:hover { background: #1E2F52; color: #FFFFFF; }
 QPushButton#titleFileBtn::menu-indicator { image: none; }
@@ -8929,15 +9142,19 @@ QMainWindow { background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #080C14, s
 QWidget#titleBar { background: #070B14; border-bottom: 1px solid #111827; }
 QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }
 QPushButton#titleBtnMin, QPushButton#titleBtnMax {
-    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
-    background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
+    min-width: 38px; max-width: 38px; min-height: 28px; max-height: 28px; padding: 0; margin: 0;
+    background: rgba(255, 255, 255, 0.08); color: #F1F5F9; border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 6px; font-size: 10pt; font-weight: 700;
 }
-QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: rgba(255, 255, 255, 0.12); color: #FFFFFF; }
+QPushButton#titleBtnMin:hover, QPushButton#titleBtnMax:hover { background: rgba(255, 255, 255, 0.22); color: #FFFFFF; border-color: rgba(255, 255, 255, 0.35); }
+QPushButton#titleBtnMin:pressed, QPushButton#titleBtnMax:pressed { background: rgba(255, 255, 255, 0.30); }
 QPushButton#titleBtnClose {
-    min-width: 0; max-width: 32px; min-height: 0; max-height: 28px; padding: 0; margin: 0;
-    background: transparent; color: #94A3B8; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700;
+    min-width: 38px; max-width: 38px; min-height: 28px; max-height: 28px; padding: 0; margin: 0;
+    background: rgba(239, 68, 68, 0.16); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35);
+    border-radius: 6px; font-size: 10pt; font-weight: 700;
 }
-QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; }
+QPushButton#titleBtnClose:hover { background: #DC2626; color: #FFFFFF; border-color: #EF4444; }
+QPushButton#titleBtnClose:pressed { background: #B91C1C; }
 QTabWidget::pane { border: 0; background: transparent; top: 0; margin-top: 0; }
 QTabWidget { background: transparent; }
 QMenuBar { background: #0F172A; border-bottom: 1px solid #1E293B; padding: 5px 10px; color: #F8FAFC; }
@@ -9179,7 +9396,7 @@ def main():
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
         info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
-    win=MainWindow(db, active_user); win.apply_theme(); win.showMaximized()
+    win=MainWindow(db, active_user); win.apply_theme(); win.show()
     if resume_user is not None and resume_tab < win.tabs.count():
         win.tabs.setCurrentIndex(resume_tab)
     return app.exec()
