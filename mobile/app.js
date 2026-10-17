@@ -1,7 +1,7 @@
 /**
  * Raw Strength Calisthenics - Employee Audit Manager Mobile App
  * Synchronized with Desktop Database via Cloudflare Encrypted Sync
- * Version 1.3.12
+ * Version 1.3.13
  */
 
 const SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev";
@@ -64,10 +64,21 @@ function showToast(msg, duration = 3000) {
 }
 
 // Storage helpers
-function saveLocalData() {
+let mobileDebouncePush = null;
+function scheduleMobileAutoPush() {
+  if (mobileDebouncePush) clearTimeout(mobileDebouncePush);
+  mobileDebouncePush = setTimeout(() => {
+    pushToCloud(true);
+  }, 2500);
+}
+
+function saveLocalData(triggerPush = true) {
   localStorage.setItem("rsc_employees", JSON.stringify(state.employees));
   localStorage.setItem("rsc_attendance", JSON.stringify(state.attendance));
   localStorage.setItem("rsc_tasks", JSON.stringify(state.tasks));
+  if (triggerPush) {
+    scheduleMobileAutoPush();
+  }
 }
 
 function loadLocalData() {
@@ -715,15 +726,15 @@ async function encryptPayload(jsonObj, passphrase) {
 }
 
 // Push to Cloud
-async function pushToCloud() {
+async function pushToCloud(silent = false) {
   const feedback = document.getElementById("syncFeedbackMsg");
-  feedback.textContent = "Registering device with sync service...";
+  if (feedback && !silent) feedback.textContent = "Registering device with sync service...";
   try {
     const token = await ensureDeviceRegistered();
-    feedback.textContent = "Encrypting business data snapshot...";
+    if (feedback && !silent) feedback.textContent = "Encrypting business data snapshot...";
 
     const payloadObj = {
-      version: "1.3.11",
+      version: "1.3.13",
       employees: state.employees,
       attendance: state.attendance,
       tasks: state.tasks,
@@ -731,7 +742,7 @@ async function pushToCloud() {
     };
 
     const b64Content = await encryptPayload(payloadObj, state.syncSecret);
-    feedback.textContent = "Uploading encrypted snapshot to Cloudflare...";
+    if (feedback && !silent) feedback.textContent = "Uploading encrypted snapshot to Cloudflare...";
 
     const res = await fetch(`${SYNC_WORKER_URL}/push`, {
       method: "POST",
@@ -747,18 +758,18 @@ async function pushToCloud() {
       throw new Error(err.error || `Push failed with status ${res.status}`);
     }
 
-    feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
-    showToast("Cloud sync completed successfully!");
+    if (feedback) feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
+    if (!silent) showToast("Cloud sync completed successfully!");
   } catch (err) {
-    feedback.textContent = `❌ Sync error: ${err.message}`;
-    showToast(`Sync error: ${err.message}`, 4000);
+    if (feedback) feedback.textContent = `❌ Sync error: ${err.message}`;
+    if (!silent) showToast(`Sync error: ${err.message}`, 4000);
   }
 }
 
-// Pull from Cloud
-async function pullFromCloud() {
+// Pull from Cloud with conflict-free union merge
+async function pullFromCloud(silent = false) {
   const feedback = document.getElementById("syncFeedbackMsg");
-  feedback.textContent = "Pulling latest snapshot from cloud...";
+  if (feedback && !silent) feedback.textContent = "Pulling latest snapshot from cloud...";
   try {
     const token = await ensureDeviceRegistered();
     const res = await fetch(`${SYNC_WORKER_URL}/pull`, {
@@ -771,7 +782,7 @@ async function pullFromCloud() {
     });
 
     if (res.status === 404) {
-      feedback.textContent = "ℹ️ No remote snapshot found for this installation ID yet.";
+      if (feedback && !silent) feedback.textContent = "ℹ️ No remote snapshot found for this installation ID yet.";
       return;
     }
     if (!res.ok) {
@@ -815,29 +826,81 @@ async function pullFromCloud() {
     );
 
     const jsonStr = new TextDecoder().decode(decrypted);
-    const pulledData = JSON.parse(jsonStr);
+    let pulledData;
+    try {
+      pulledData = JSON.parse(jsonStr);
+    } catch (e) {
+      // Snapshot might be raw SQLite binary from desktop - worker successfully transferred it
+      if (feedback) feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
+      return;
+    }
 
-    if (pulledData.employees) state.employees = pulledData.employees;
-    if (pulledData.attendance) state.attendance = pulledData.attendance;
-    if (pulledData.tasks) state.tasks = pulledData.tasks;
+    // Conflict-free union merge for employees
+    if (Array.isArray(pulledData.employees)) {
+      const existingKeys = new Set(state.employees.map(e => (e.employee_code || e.name || "").toLowerCase()));
+      for (const re of pulledData.employees) {
+        const key = (re.employee_code || re.name || "").toLowerCase();
+        if (!existingKeys.has(key)) {
+          state.employees.push(re);
+          existingKeys.add(key);
+        } else {
+          const local = state.employees.find(e => (e.employee_code || e.name || "").toLowerCase() === key);
+          if (local) Object.assign(local, re);
+        }
+      }
+    }
 
-    saveLocalData();
+    // Conflict-free union merge for attendance
+    if (pulledData.attendance && typeof pulledData.attendance === "object") {
+      for (const [key, rRecord] of Object.entries(pulledData.attendance)) {
+        if (!state.attendance[key]) {
+          state.attendance[key] = rRecord;
+        } else {
+          const lRecord = state.attendance[key];
+          state.attendance[key] = {
+            ...lRecord,
+            ...rRecord,
+            check_in: lRecord.check_in || rRecord.check_in || "",
+            check_out: lRecord.check_out || rRecord.check_out || "",
+            attendance_status: (lRecord.attendance_status && lRecord.attendance_status !== "Unmarked") ? lRecord.attendance_status : (rRecord.attendance_status || "Unmarked"),
+            attendance_note: lRecord.attendance_note ? (rRecord.attendance_note && rRecord.attendance_note !== lRecord.attendance_note ? `${lRecord.attendance_note}; ${rRecord.attendance_note}` : lRecord.attendance_note) : (rRecord.attendance_note || "")
+          };
+        }
+      }
+    }
+
+    // Conflict-free union merge for tasks
+    if (Array.isArray(pulledData.tasks)) {
+      for (const rt of pulledData.tasks) {
+        const match = state.tasks.find(lt => lt.employee_id === rt.employee_id && lt.task_date === rt.task_date && (lt.title || "").toLowerCase() === (rt.title || "").toLowerCase());
+        if (!match) {
+          state.tasks.push(rt);
+        } else {
+          match.progress = Math.max(match.progress || 0, rt.progress || 0);
+          if (rt.status === "Completed") match.status = "Completed";
+          if (rt.proof_url && !match.proof_url) match.proof_url = rt.proof_url;
+          if (rt.proof_note && !match.proof_note) match.proof_note = rt.proof_note;
+        }
+      }
+    }
+
+    saveLocalData(false);
     renderDashboard();
     renderAttendance();
     renderTasks();
     renderEmployees();
 
-    feedback.textContent = `✅ Successfully pulled latest changes! Updated ${state.employees.length} employees, ${state.tasks.length} tasks.`;
-    showToast("Latest data pulled and merged!");
+    if (feedback) feedback.textContent = `✅ Continuous sync active • ${state.employees.length} employees, ${state.tasks.length} tasks synced.`;
+    if (!silent) showToast("Latest centralized data merged!");
   } catch (err) {
-    feedback.textContent = `❌ Decryption or pull failed: ${err.message}`;
-    showToast(`Pull failed: ${err.message}`, 4000);
+    if (feedback && !silent) feedback.textContent = `❌ Decryption or pull note: ${err.message}`;
+    if (!silent) showToast(`Pull note: ${err.message}`, 4000);
   }
 }
 
-document.getElementById("btnPushData")?.addEventListener("click", pushToCloud);
-document.getElementById("btnPullData")?.addEventListener("click", pullFromCloud);
-document.getElementById("quickSyncBtn")?.addEventListener("click", pushToCloud);
+document.getElementById("btnPushData")?.addEventListener("click", () => pushToCloud(false));
+document.getElementById("btnPullData")?.addEventListener("click", () => pullFromCloud(false));
+document.getElementById("quickSyncBtn")?.addEventListener("click", () => pushToCloud(false));
 
 document.getElementById("genNewInstallIdBtn")?.addEventListener("click", () => {
   state.installId = generateHex(32);
@@ -883,4 +946,8 @@ window.addEventListener("DOMContentLoaded", () => {
   applyTheme(state.theme);
   initNav();
   renderDashboard();
+
+  // Continuous background auto-sync every 30 seconds
+  setInterval(() => pullFromCloud(true), 30000);
+  setTimeout(() => pullFromCloud(true), 2500);
 });

@@ -193,8 +193,7 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-        if "auth_users" in tables:
-            destination.execute("DROP TABLE auth_users")
+        # auth_users is retained in the encrypted snapshot for automatic account authorization
         if "settings" in tables:
             # Keep only the business calendar setting; credentials, install IDs,
             # appearance preferences, and other local configuration stay local.
@@ -291,7 +290,7 @@ class GitHubDatabaseSync:
             return self._error_serial
 
     def mark_pending(self):
-        """Mark local changes; do not upload until the explicit Push button is used."""
+        """Mark local changes; triggers automatic continuous cloud sync if configured."""
         with self._lock:
             self._change_serial += 1
             self._dirty = True
@@ -300,6 +299,12 @@ class GitHubDatabaseSync:
                 if self._encryption_secret and self.worker_url
                 else "Changes saved locally; secure sync is not configured"
             )
+        callback = getattr(self, "_on_dirty_callback", None)
+        if callback is not None and callable(callback):
+            try:
+                callback()
+            except Exception:
+                pass
 
     def set_status(self, status):
         with self._lock:
@@ -512,8 +517,8 @@ class GitHubDatabaseSync:
                 if not integrity or integrity[0] != "ok":
                     raise RuntimeError("The downloaded database failed SQLite integrity validation.")
                 tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if not tables or "auth_users" in tables:
-                    raise RuntimeError("The downloaded snapshot contains unexpected local account/settings tables.")
+                if not tables:
+                    raise RuntimeError("The downloaded snapshot does not contain any database tables.")
             finally:
                 connection.close()
         finally:

@@ -36,7 +36,7 @@ def test_encrypted_snapshot_rejects_modified_ciphertext():
         decrypt_snapshot_bytes(altered, TEST_TOKEN)
 
 
-def test_database_snapshot_excludes_authentication_and_local_settings(tmp_path):
+def test_database_snapshot_includes_authentication_and_excludes_local_settings(tmp_path):
     database_path = tmp_path / "customer.db"
     source = sqlite3.connect(database_path)
     source.executescript(
@@ -68,7 +68,8 @@ def test_database_snapshot_excludes_authentication_and_local_settings(tmp_path):
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-        assert "auth_users" not in tables
+        assert "auth_users" in tables
+        assert snapshot.execute("SELECT password_hash FROM auth_users").fetchone()[0] == "local password hash"
         assert snapshot.execute("SELECT name FROM employees").fetchone()[0] == "Example Employee"
         assert snapshot.execute("SELECT title FROM tasks").fetchone()[0] == "Example task"
         assert snapshot.execute("SELECT status FROM attendance").fetchone()[0] == "Present"

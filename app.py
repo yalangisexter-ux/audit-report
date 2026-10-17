@@ -1143,7 +1143,7 @@ class Database:
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           username TEXT NOT NULL COLLATE NOCASE UNIQUE,
           display_name TEXT NOT NULL DEFAULT '',
-          role TEXT NOT NULL CHECK(role IN ('Admin','HR')),
+          role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
           password_salt TEXT NOT NULL,
           password_hash TEXT NOT NULL,
           security_question TEXT NOT NULL,
@@ -1306,6 +1306,37 @@ class Database:
         except Exception:
             self.conn.rollback()
             raise
+        # Additive migration for auth_users table to allow Developer, Staff, and Employee roles
+        try:
+            row = self.conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'").fetchone()
+            if row and row[0] and "CHECK" in row[0] and "'Developer'" not in row[0]:
+                self.conn.execute("PRAGMA foreign_keys=OFF")
+                self.conn.execute("""
+                    CREATE TABLE IF NOT EXISTS auth_users_migrated(
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                      display_name TEXT NOT NULL DEFAULT '',
+                      role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
+                      password_salt TEXT NOT NULL,
+                      password_hash TEXT NOT NULL,
+                      security_question TEXT NOT NULL,
+                      answer_salt TEXT NOT NULL,
+                      answer_hash TEXT NOT NULL,
+                      active INTEGER NOT NULL DEFAULT 1,
+                      created_at TEXT NOT NULL,
+                      updated_at TEXT NOT NULL
+                    )
+                """)
+                self.conn.execute("""
+                    INSERT INTO auth_users_migrated(id, username, display_name, role, password_salt, password_hash, security_question, answer_salt, answer_hash, active, created_at, updated_at)
+                    SELECT id, username, display_name, role, password_salt, password_hash, security_question, answer_salt, answer_hash, active, created_at, updated_at
+                    FROM auth_users
+                """)
+                self.conn.execute("DROP TABLE auth_users")
+                self.conn.execute("ALTER TABLE auth_users_migrated RENAME TO auth_users")
+                self.conn.execute("PRAGMA foreign_keys=ON")
+        except Exception as e:
+            logging.getLogger("db").debug(f"auth_users migration notice: {e}")
         # Do not create a known/default credential. Authentication is handled by
         # the first-run Admin account and per-user password/recovery records.
         self.conn.commit()
@@ -1407,6 +1438,308 @@ class Database:
         return self.conn.execute("""SELECT d.id,d.employee_id,d.report_date,d.file_name,d.mime_type,d.notes,d.uploaded_at,e.name AS employee_name
                                   FROM archived_documents d LEFT JOIN employees e ON e.id=d.employee_id
                                   ORDER BY d.uploaded_at DESC""").fetchall()
+
+def is_privileged_user(user_or_role) -> bool:
+    """Return True if user has unrestricted Admin or Developer privileges."""
+    if isinstance(user_or_role, dict):
+        role = str(user_or_role.get("role", "")).strip().lower()
+        username = str(user_or_role.get("username", "")).strip().lower()
+    else:
+        role = str(user_or_role or "").strip().lower()
+        username = ""
+    if role:
+        return role in ("admin", "developer")
+    return username in ("admin", "developer", "dev")
+
+
+def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path: Path | str) -> dict:
+    """
+    Intelligently merge a downloaded remote database snapshot into local_conn.
+    All data is union-merged without destructive table replacement:
+    - auth_users: matched by username COLLATE NOCASE; new users added, updates merged, admin privileges preserved.
+    - employees: matched by employee_code / name; new employees appended, remote_to_local_id mapped.
+    - attendance: matched by (employee, work_date); check-ins/outs and statuses merged without loss.
+    - tasks: matched by (employee, task_date, title); merged by progress/updated_at, non-duplicates appended.
+    - employee_targets: matched by (employee, target_date); merged.
+    - holidays: matched by holiday_date; merged.
+    - archived_documents: matched by (file_name, report_date); merged.
+    - source_reports: matched by (report_date, source_filename); merged.
+    - settings: only shared business calendar / config merged; local credentials/themes preserved.
+    - audit_log: non-duplicates appended.
+    """
+    remote = sqlite3.connect(str(snapshot_path), timeout=25)
+    remote.row_factory = sqlite3.Row
+    stats = {"users": 0, "employees": 0, "attendance": 0, "tasks": 0}
+    try:
+        remote_tables = {
+            r[0] for r in remote.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
+        }
+        
+        local_conn.execute("PRAGMA foreign_keys=OFF")
+        local_conn.execute("BEGIN IMMEDIATE")
+        
+        # 1. Merge auth_users
+        if "auth_users" in remote_tables:
+            remote_users = remote.execute("SELECT * FROM auth_users").fetchall()
+            local_users = {
+                dict(r)["username"].strip().lower(): dict(r)
+                for r in local_conn.execute("SELECT * FROM auth_users").fetchall()
+            }
+            for ru in remote_users:
+                ru_dict = dict(ru)
+                uname = str(ru_dict.get("username", "")).strip().lower()
+                if not uname:
+                    continue
+                if uname not in local_users:
+                    local_conn.execute(
+                        """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
+                           security_question, answer_salt, answer_hash, active, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (ru_dict["username"], ru_dict.get("display_name", ""), ru_dict.get("role", "Staff"),
+                         ru_dict["password_salt"], ru_dict["password_hash"],
+                         ru_dict.get("security_question", ""), ru_dict.get("answer_salt", ""), ru_dict.get("answer_hash", ""),
+                         int(ru_dict.get("active", 1)), ru_dict.get("created_at", now_text()), ru_dict.get("updated_at", now_text()))
+                    )
+                    stats["users"] += 1
+                else:
+                    lu = local_users[uname]
+                    r_upd = str(ru_dict.get("updated_at") or "")
+                    l_upd = str(lu.get("updated_at") or "")
+                    if r_upd > l_upd:
+                        new_role = ru_dict.get("role", lu.get("role", "Staff"))
+                        # Protect primary local admin/developer accounts from downgrade
+                        remote_role = ru_dict.get("role", "Staff")
+                        if is_privileged_user(lu) and not is_privileged_user(remote_role):
+                            new_role = lu.get("role", "Admin")
+                        local_conn.execute(
+                            """UPDATE auth_users SET display_name=?, role=?, password_salt=?, password_hash=?,
+                               security_question=?, answer_salt=?, answer_hash=?, active=?, updated_at=?
+                               WHERE id=?""",
+                            (ru_dict.get("display_name", lu.get("display_name", "")), new_role,
+                             ru_dict["password_salt"], ru_dict["password_hash"],
+                             ru_dict.get("security_question", ""), ru_dict.get("answer_salt", ""), ru_dict.get("answer_hash", ""),
+                             int(ru_dict.get("active", 1)), r_upd, lu["id"])
+                        )
+                        stats["users"] += 1
+
+        # 2. Merge employees & build remote_id -> local_id map
+        remote_to_local_emp_id = {}
+        if "employees" in remote_tables:
+            remote_emps = remote.execute("SELECT * FROM employees").fetchall()
+            local_emps = [dict(r) for r in local_conn.execute("SELECT * FROM employees").fetchall()]
+            local_by_code = {
+                str(r.get("employee_code") or "").strip().lower(): r
+                for r in local_emps if str(r.get("employee_code") or "").strip()
+            }
+            local_by_name = {
+                str(r.get("name") or "").strip().lower(): r
+                for r in local_emps
+            }
+            
+            for re in remote_emps:
+                re_dict = dict(re)
+                rcode = str(re_dict.get("employee_code") or "").strip().lower()
+                rname = str(re_dict.get("name") or "").strip().lower()
+                matched_local = None
+                if rcode and rcode in local_by_code:
+                    matched_local = local_by_code[rcode]
+                elif rname in local_by_name:
+                    matched_local = local_by_name[rname]
+                
+                if matched_local is None:
+                    cur = local_conn.execute(
+                        """INSERT INTO employees(employee_code, name, department, designation, phone, email, joining_date, active, notes, created_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                        (re_dict.get("employee_code", ""), re_dict.get("name", ""), re_dict.get("department", ""),
+                         re_dict.get("designation", ""), re_dict.get("phone", ""), re_dict.get("email", ""),
+                         re_dict.get("joining_date", ""), int(re_dict.get("active", 1)), re_dict.get("notes", ""),
+                         re_dict.get("created_at", now_text()))
+                    )
+                    new_id = cur.lastrowid
+                    remote_to_local_emp_id[re_dict["id"]] = new_id
+                    stats["employees"] += 1
+                else:
+                    lid = matched_local["id"]
+                    remote_to_local_emp_id[re_dict["id"]] = lid
+                    updates = []
+                    vals = []
+                    for col in ("department", "designation", "phone", "email", "notes"):
+                        if not matched_local.get(col) and re_dict.get(col):
+                            updates.append(f"{col}=?")
+                            vals.append(re_dict[col])
+                    if updates:
+                        vals.append(lid)
+                        local_conn.execute(f"UPDATE employees SET {', '.join(updates)} WHERE id=?", vals)
+
+        # 3. Merge attendance
+        if "attendance" in remote_tables:
+            remote_att = remote.execute("SELECT * FROM attendance").fetchall()
+            for ra in remote_att:
+                ra_dict = dict(ra)
+                lid = remote_to_local_emp_id.get(ra_dict["employee_id"])
+                if not lid:
+                    continue
+                wdate = ra_dict.get("work_date", "")
+                la_row = local_conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (lid, wdate)).fetchone()
+                if la_row is None:
+                    local_conn.execute(
+                        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, break_minutes, attendance_status, attendance_note, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?)""",
+                        (lid, wdate, ra_dict.get("check_in", ""), ra_dict.get("check_out", ""),
+                         int(ra_dict.get("break_minutes", 0)), ra_dict.get("attendance_status", "Unmarked"),
+                         ra_dict.get("attendance_note", ""), ra_dict.get("updated_at", now_text()))
+                    )
+                    stats["attendance"] += 1
+                else:
+                    la = dict(la_row)
+                    c_in = la.get("check_in") or ra_dict.get("check_in") or ""
+                    c_out = la.get("check_out") or ra_dict.get("check_out") or ""
+                    status = la.get("attendance_status") or "Unmarked"
+                    r_status = ra_dict.get("attendance_status") or "Unmarked"
+                    r_upd = str(ra_dict.get("updated_at") or "")
+                    l_upd = str(la.get("updated_at") or "")
+                    if (status in ("Unmarked", "", None) and r_status not in ("Unmarked", "", None)) or (r_upd > l_upd and r_status != "Unmarked"):
+                        status = r_status
+                    break_mins = max(int(la.get("break_minutes") or 0), int(ra_dict.get("break_minutes") or 0))
+                    note = la.get("attendance_note") or ""
+                    rnote = ra_dict.get("attendance_note") or ""
+                    if rnote and rnote not in note:
+                        note = f"{note}; {rnote}".strip("; ")
+                    upd = max(l_upd, r_upd, now_text())
+                    local_conn.execute(
+                        """UPDATE attendance SET check_in=?, check_out=?, break_minutes=?, attendance_status=?, attendance_note=?, updated_at=?
+                           WHERE id=?""",
+                        (c_in, c_out, break_mins, status, note, upd, la["id"])
+                    )
+
+        # 4. Merge tasks
+        if "tasks" in remote_tables:
+            remote_tasks = remote.execute("SELECT * FROM tasks").fetchall()
+            for rt in remote_tasks:
+                rt_dict = dict(rt)
+                lid = remote_to_local_emp_id.get(rt_dict["employee_id"])
+                if not lid:
+                    continue
+                tdate = rt_dict.get("task_date", "")
+                ttitle = str(rt_dict.get("title") or "").strip()
+                lt_row = local_conn.execute(
+                    "SELECT * FROM tasks WHERE employee_id=? AND task_date=? AND title=? COLLATE NOCASE",
+                    (lid, tdate, ttitle)
+                ).fetchone()
+                if lt_row is None:
+                    local_conn.execute(
+                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status,
+                           progress, proof_url, proof_note, submitted_at, manager_note, expose_link, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (lid, tdate, ttitle, rt_dict.get("details", ""), rt_dict.get("due_time", ""),
+                         rt_dict.get("priority", "Normal"), rt_dict.get("status", "Not started"),
+                         int(rt_dict.get("progress", 0)), rt_dict.get("proof_url", ""), rt_dict.get("proof_note", ""),
+                         rt_dict.get("submitted_at", ""), rt_dict.get("manager_note", ""),
+                         int(rt_dict.get("expose_link", 0)), rt_dict.get("created_at", now_text()),
+                         rt_dict.get("updated_at", now_text()))
+                    )
+                    stats["tasks"] += 1
+                else:
+                    lt = dict(lt_row)
+                    new_progress = max(int(lt.get("progress") or 0), int(rt_dict.get("progress") or 0))
+                    new_status = lt.get("status", "Not started")
+                    if rt_dict.get("status") == "Completed" or (int(rt_dict.get("progress") or 0) > int(lt.get("progress") or 0)):
+                        new_status = rt_dict.get("status", new_status)
+                    p_url = lt.get("proof_url") or rt_dict.get("proof_url") or ""
+                    p_note = lt.get("proof_note") or rt_dict.get("proof_note") or ""
+                    if rt_dict.get("proof_note") and rt_dict.get("proof_note") not in (lt.get("proof_note") or ""):
+                        p_note = f"{lt.get('proof_note') or ''}; {rt_dict.get('proof_note')}".strip("; ")
+                    m_note = lt.get("manager_note") or rt_dict.get("manager_note") or ""
+                    if rt_dict.get("manager_note") and rt_dict.get("manager_note") not in (lt.get("manager_note") or ""):
+                        m_note = f"{lt.get('manager_note') or ''}; {rt_dict.get('manager_note')}".strip("; ")
+                    exp_link = max(int(lt.get("expose_link") or 0), int(rt_dict.get("expose_link") or 0))
+                    r_upd = str(rt_dict.get("updated_at") or "")
+                    l_upd = str(lt.get("updated_at") or "")
+                    upd = max(l_upd, r_upd, now_text())
+                    local_conn.execute(
+                        """UPDATE tasks SET progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, updated_at=?
+                           WHERE id=?""",
+                        (new_progress, new_status, p_url, p_note, m_note, exp_link, upd, lt["id"])
+                    )
+
+        # 5. Merge employee_targets
+        if "employee_targets" in remote_tables:
+            for rtg in remote.execute("SELECT * FROM employee_targets").fetchall():
+                rtg_dict = dict(rtg)
+                lid = remote_to_local_emp_id.get(rtg_dict["employee_id"])
+                if not lid:
+                    continue
+                ltg_row = local_conn.execute("SELECT * FROM employee_targets WHERE employee_id=? AND target_date=?", (lid, rtg_dict["target_date"])).fetchone()
+                if ltg_row is None:
+                    local_conn.execute(
+                        """INSERT INTO employee_targets(employee_id, target_date, target, target_status, updated_at)
+                           VALUES(?,?,?,?,?)""",
+                        (lid, rtg_dict["target_date"], rtg_dict.get("target", ""), rtg_dict.get("target_status", ""), rtg_dict.get("updated_at", now_text()))
+                    )
+                elif str(rtg_dict.get("updated_at") or "") > str(dict(ltg_row).get("updated_at") or ""):
+                    local_conn.execute(
+                        """UPDATE employee_targets SET target=?, target_status=?, updated_at=? WHERE id=?""",
+                        (rtg_dict.get("target", ""), rtg_dict.get("target_status", ""), rtg_dict.get("updated_at", now_text()), dict(ltg_row)["id"])
+                    )
+
+        # 6. Merge holidays
+        if "holidays" in remote_tables:
+            for rh in remote.execute("SELECT * FROM holidays").fetchall():
+                rh_dict = dict(rh)
+                local_conn.execute(
+                    """INSERT INTO holidays(holiday_date, holiday_name, created_at)
+                       VALUES(?,?,?)
+                       ON CONFLICT(holiday_date) DO UPDATE SET
+                         holiday_name=CASE WHEN holiday_name='' OR holiday_name IS NULL THEN excluded.holiday_name ELSE holiday_name END""",
+                    (rh_dict["holiday_date"], rh_dict.get("holiday_name", ""), rh_dict.get("created_at", now_text()))
+                )
+
+        # 7. Merge archived_documents
+        if "archived_documents" in remote_tables:
+            for rd in remote.execute("SELECT * FROM archived_documents").fetchall():
+                rd_dict = dict(rd)
+                lid = remote_to_local_emp_id.get(rd_dict["employee_id"]) if rd_dict.get("employee_id") else None
+                ld = local_conn.execute(
+                    "SELECT id FROM archived_documents WHERE file_name=? AND report_date=?",
+                    (rd_dict["file_name"], rd_dict.get("report_date", ""))
+                ).fetchone()
+                if ld is None:
+                    local_conn.execute(
+                        """INSERT INTO archived_documents(employee_id, report_date, file_name, mime_type, content, notes, uploaded_at)
+                           VALUES(?,?,?,?,?,?,?)""",
+                        (lid, rd_dict.get("report_date", ""), rd_dict["file_name"], rd_dict.get("mime_type", "application/pdf"),
+                         rd_dict["content"], rd_dict.get("notes", ""), rd_dict.get("uploaded_at", now_text()))
+                    )
+
+        # 8. Merge source_reports
+        if "source_reports" in remote_tables:
+            for rs in remote.execute("SELECT * FROM source_reports").fetchall():
+                rs_dict = dict(rs)
+                local_conn.execute(
+                    """INSERT OR IGNORE INTO source_reports(report_date, source_filename, raw_text, imported_at)
+                       VALUES(?,?,?,?)""",
+                    (rs_dict["report_date"], rs_dict["source_filename"], rs_dict.get("raw_text", ""), rs_dict.get("imported_at", now_text()))
+                )
+
+        # 9. Merge settings (only shared business settings like working_weekdays)
+        if "settings" in remote_tables:
+            for rk in ("working_weekdays", "initial_audit_2026_10_09_imported"):
+                r_val = remote.execute("SELECT value FROM settings WHERE key=?", (rk,)).fetchone()
+                if r_val and r_val[0]:
+                    local_conn.execute(
+                        "INSERT INTO settings(key, value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (rk, r_val[0])
+                    )
+
+        local_conn.commit()
+    except Exception:
+        local_conn.rollback()
+        raise
+    finally:
+        local_conn.execute("PRAGMA foreign_keys=ON")
+        remote.close()
+    return stats
+
 
 _SHOW_DIALOG_HOOK = None
 
@@ -1679,6 +2012,8 @@ class AccountSetupDialog(QDialog):
                 (username, self.display_name.text().strip(), "Admin", psalt, phash,
                  self.question.currentText(), asalt, ahash, now_text(), now_text()))
             self.db.conn.commit()
+            if hasattr(self.db, "github_sync") and self.db.github_sync.is_configured:
+                self.db.github_sync.request_sync()
         except sqlite3.IntegrityError:
             return error(self, "That username already exists. Choose another one.")
         self.db.log("Administrator account created", username)
@@ -3453,6 +3788,7 @@ class MainWindow(QMainWindow):
         self.refresh_all()
         # Check for update in background and display home banner if a newer release exists
         QTimer.singleShot(2500, self._check_updates_silently)
+        self._init_auto_sync()
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
 
@@ -6604,7 +6940,7 @@ class MainWindow(QMainWindow):
         self.github_sync_status_label.setMinimumWidth(0)
         self.github_sync_status_label.setProperty("mutedText", True)
         sync_layout.addWidget(self.github_sync_status_label)
-        if self.user_role != "Admin":
+        if not self.is_admin_or_dev:
             self.github_sync_now_button.setEnabled(False)
             self.github_sync_pull_button.setEnabled(False)
         self._refresh_github_sync_status()
@@ -6624,7 +6960,7 @@ class MainWindow(QMainWindow):
             ("Restore database", self.restore_backup, "Restore a database backup without changing the application version"),
             ("Change password", self.change_password, "Change your login password"),
             ("Recovery question", self.update_recovery_question, "Update your password recovery question"),
-            ("Manage accounts", self.manage_accounts, "Create or manage HR and Admin accounts"),
+            ("Manage accounts", self.manage_accounts, "Create or manage user accounts and assign limited access"),
             ("Export employees CSV", self.export_employees_csv, "Export employee list to CSV"),
             ("Expose all proof links", self.apply_global_expose_links, "Expose proof links for all employee tasks and reports"),
         ]
@@ -6637,9 +6973,12 @@ class MainWindow(QMainWindow):
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
             button.setMinimumHeight(38)
             actions_grid.addWidget(button, index // 3, index % 3)
-            if label == "Manage accounts" and self.user_role != "Admin":
+            if label == "Manage accounts" and not self.is_admin_or_dev:
                 button.setEnabled(False)
-                button.setToolTip("Only an Admin account can manage user accounts.")
+                button.setToolTip("Only an Admin or Developer account can manage user accounts.")
+            elif label == "Restore database" and not self.is_admin_or_dev:
+                button.setEnabled(False)
+                button.setToolTip("Only an Admin or Developer account can restore database backups.")
         for col in range(3):
             actions_grid.setColumnStretch(col, 1)
         l.addWidget(actions_box)
@@ -6750,9 +7089,9 @@ class MainWindow(QMainWindow):
         sync = getattr(self.db, "github_sync", None)
         if label is None or sync is None:
             return
-        credential_state = "Secure sync is ready." if sync.is_configured else "Secure sync is not configured in this build."
+        credential_state = "Auto-Sync is live & continuous." if sync.is_configured else "Secure sync is not configured in this build."
         label.setText(credential_state + " " + sync.status)
-        push_enabled = sync.is_configured and not sync.is_busy and self.user_role == "Admin"
+        push_enabled = sync.is_configured and not sync.is_busy and self.is_admin_or_dev
         push_button = getattr(self, "github_sync_now_button", None)
         if push_button is not None:
             push_button.setEnabled(push_enabled)
@@ -6764,7 +7103,7 @@ class MainWindow(QMainWindow):
             shared_push.setEnabled(push_enabled)
         shared_pull = getattr(self, "shared_sync_pull_button", None)
         if shared_pull is not None:
-            shared_pull.setEnabled(sync.is_configured and self.user_role == "Admin" and not sync.is_busy)
+            shared_pull.setEnabled(sync.is_configured and self.is_admin_or_dev and not sync.is_busy)
 
     def configure_github_sync_url(self):
         current = self.db.get_setting("db_sync_worker_url", "") or getattr(self.db.github_sync, "worker_url", "")
@@ -6808,6 +7147,87 @@ class MainWindow(QMainWindow):
             self.github_sync_install_label.setText(f"Installation ID: {clean_id}")
         info(self, f"Installation ID successfully updated to:\n{clean_id}\n\nYou can now click 'Pull Latest Data' to download the latest cloud snapshot from this ID.")
 
+    @property
+    def is_admin_or_dev(self):
+        return is_privileged_user(self.current_user)
+
+    def _init_auto_sync(self):
+        self._auto_sync_running = False
+        self._auto_sync_timer = QTimer(self)
+        self._auto_sync_timer.setInterval(30000)
+        self._auto_sync_timer.timeout.connect(self._background_auto_sync)
+        self._auto_sync_timer.start()
+
+        self._debounce_sync_timer = QTimer(self)
+        self._debounce_sync_timer.setSingleShot(True)
+        self._debounce_sync_timer.timeout.connect(self._background_auto_sync)
+
+        if hasattr(self.db, "github_sync"):
+            self.db.github_sync._on_dirty_callback = lambda: self.schedule_auto_sync(delay_ms=2000)
+
+        QTimer.singleShot(1500, self._background_auto_sync)
+
+    def schedule_auto_sync(self, delay_ms=2500, immediate=False):
+        sync = getattr(self.db, "github_sync", None)
+        if sync is None or not sync.is_configured:
+            return
+        if immediate:
+            self._background_auto_sync()
+        else:
+            if hasattr(self, "_debounce_sync_timer"):
+                self._debounce_sync_timer.start(delay_ms)
+
+    def _background_auto_sync(self):
+        sync = getattr(self.db, "github_sync", None)
+        if sync is None or not sync.is_configured or sync.is_busy:
+            return
+        if getattr(self, "_auto_sync_running", False):
+            return
+        self._auto_sync_running = True
+
+        def run_sync_thread():
+            raw = None
+            try:
+                try:
+                    raw = sync.download_latest_snapshot(prefer_latest=True)
+                except Exception as ex:
+                    if "No remote snapshot" not in str(ex):
+                        logging.getLogger("auto_sync").debug(f"Auto-sync pull check: {ex}")
+
+                if raw:
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(prefix="rsc_autosync_", suffix=".sqlite3", delete=False) as h:
+                        tpath = Path(h.name)
+                        h.write(raw)
+                    QTimer.singleShot(0, lambda: self._apply_snapshot_merge(tpath))
+                    return
+
+                if sync.is_dirty:
+                    sync.request_sync()
+            except Exception as e:
+                logging.getLogger("auto_sync").debug(f"Auto-sync worker note: {e}")
+            finally:
+                self._auto_sync_running = False
+
+        threading.Thread(target=run_sync_thread, name="auto-sync-thread", daemon=True).start()
+
+    def _apply_snapshot_merge(self, tpath: Path):
+        try:
+            stats = merge_remote_database_snapshot(self.db.conn, tpath)
+            if sum(stats.values()) > 0:
+                self.refresh_all()
+                self._refresh_github_sync_status()
+            if self.db.github_sync.is_dirty or sum(stats.values()) > 0:
+                self.db.github_sync.request_sync()
+        except Exception as exc:
+            logging.getLogger("auto_sync").warning(f"Snapshot merge error: {exc}")
+        finally:
+            self._auto_sync_running = False
+            try:
+                tpath.unlink(missing_ok=True)
+            except Exception:
+                pass
+
     def sync_github_database_now(self):
         if not self.db.github_sync.is_configured:
             url, ok = QInputDialog.getText(
@@ -6822,10 +7242,9 @@ class MainWindow(QMainWindow):
                 self._refresh_github_sync_status()
             else:
                 return error(self, "Secure database sync is not configured. Please set the Sync Worker URL.")
-        if not self.db.github_sync.request_sync():
-            return error(self, "Could not queue the encrypted database push. Check your network connection and try again.")
+        self.schedule_auto_sync(immediate=True)
         self._refresh_github_sync_status()
-        info(self, "Encrypted database push queued successfully.\n\nYour business data is being securely uploaded to cloud storage in the background.")
+        info(self, "Centralized sync triggered.\n\nYour data is being continuously synchronized with encrypted cloud storage in the background.")
 
     def pull_latest_github_database(self):
         """Developer-gated pull with validation, local backup, and account/settings preservation."""
@@ -6856,8 +7275,8 @@ class MainWindow(QMainWindow):
             return error(self, "An encrypted database sync is already running. Wait for it to finish.")
         if not ask(
             self, "Pull latest database data",
-            "This replaces local business records with the latest committed snapshot for this installation. "
-            "A backup will be created first. Local accounts and settings will be preserved. Continue?",
+            "This pulls and merges the latest cloud snapshot conflict-free with your local database without losing any employee work.\n"
+            "A safety backup will be created first. Continue?",
         ):
             return
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -6886,57 +7305,12 @@ class MainWindow(QMainWindow):
             with tempfile.NamedTemporaryFile(prefix="rsc_pull_", suffix=".sqlite3", delete=False) as handle:
                 snapshot_path = Path(handle.name)
                 handle.write(raw)
-            remote = sqlite3.connect(str(snapshot_path), timeout=20)
-            remote.row_factory = sqlite3.Row
-            try:
-                remote_tables = {
-                    row[0] for row in remote.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                }
-                local_tables = {
-                    row[0] for row in self.db.conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-                    ).fetchall()
-                }
-                table_names = sorted(
-                    (remote_tables & local_tables) - {"settings", "auth_users"}
-                )
-                if not table_names:
-                    raise RuntimeError("No compatible business tables were found in the downloaded snapshot.")
-                connection = self.db.conn
-                connection.execute("PRAGMA foreign_keys=OFF")
-                connection.execute("ATTACH DATABASE ? AS remote_snapshot", (str(snapshot_path),))
-                try:
-                    connection.execute("BEGIN IMMEDIATE")
-                    for table in table_names:
-                        quoted = '"' + table.replace('"', '""') + '"'
-                        columns = [
-                            row[1] for row in connection.execute(f"PRAGMA main.table_info({quoted})").fetchall()
-                        ]
-                        remote_columns = {
-                            row[1] for row in connection.execute(f"PRAGMA remote_snapshot.table_info({quoted})").fetchall()
-                        }
-                        common = [column for column in columns if column in remote_columns]
-                        if not common:
-                            continue
-                        column_sql = ", ".join('"' + name.replace('"', '""') + '"' for name in common)
-                        connection.execute(f"DELETE FROM main.{quoted}")
-                        connection.execute(
-                            f"INSERT INTO main.{quoted} ({column_sql}) SELECT {column_sql} FROM remote_snapshot.{quoted}"
-                        )
-                    connection.commit()
-                except Exception:
-                    connection.rollback()
-                    raise
-                finally:
-                    connection.execute("DETACH DATABASE remote_snapshot")
-                    connection.execute("PRAGMA foreign_keys=ON")
-            finally:
-                remote.close()
-            self.db.github_sync.set_status("Pulled latest committed business data")
-            info(self, f"Latest business data pulled successfully. Local backup saved to:\n{backup_path}")
+            stats = merge_remote_database_snapshot(self.db.conn, snapshot_path)
+            self.db.github_sync.set_status("Merged latest centralized business data")
+            info(self, f"Latest cloud business data merged conflict-free successfully.\n\nMerged records:\n• {stats.get('users', 0)} account(s)\n• {stats.get('employees', 0)} employee(s)\n• {stats.get('attendance', 0)} attendance record(s)\n• {stats.get('tasks', 0)} task(s)\n\nLocal safety backup saved to:\n{backup_path}")
             self.refresh_all()
+            if self.db.github_sync.is_dirty or sum(stats.values()) > 0:
+                self.db.github_sync.request_sync()
         except Exception as exc:
             msg = str(exc)
             if "No remote snapshot exists for this installation yet" in msg:
@@ -6963,6 +7337,12 @@ class MainWindow(QMainWindow):
         timer = getattr(self, "github_sync_status_timer", None)
         if timer is not None:
             timer.stop()
+        auto_timer = getattr(self, "_auto_sync_timer", None)
+        if auto_timer is not None:
+            auto_timer.stop()
+        deb_timer = getattr(self, "_debounce_sync_timer", None)
+        if deb_timer is not None:
+            deb_timer.stop()
         chat_tab = getattr(self, "chat_tab", None)
         if chat_tab is not None:
             chat_tab.shutdown()
@@ -7477,6 +7857,8 @@ class MainWindow(QMainWindow):
         self.db.log("Employee status changed",f'{e["name"]}: {"Active" if active else "Inactive"}'); self.refresh_all()
 
     def delete_employee(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can delete employee records.")
         eid=self.selected_id(self.emp_table)
         if not eid: return error(self,"Select an employee first.")
         e=self.db.employee(eid)
@@ -7492,6 +7874,7 @@ class MainWindow(QMainWindow):
             pass
         self.db.conn.execute("DELETE FROM employees WHERE id=?",(eid,)); self.db.conn.commit()
         self.db.log("Employee deleted",e["name"]); self.refresh_all()
+        self.schedule_auto_sync()
 
     def add_task(self):
         d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date())
@@ -7814,6 +8197,8 @@ class MainWindow(QMainWindow):
             self.db.log("Attendance note updated",f"employee={eid}, date={d}, note={note}"); self.refresh_all()
 
     def declare_holiday(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can declare holidays.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         old=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(d,)).fetchone()
         if old: return info(self,f"Holiday already declared: {old['holiday_name'] or 'Holiday'}")
@@ -7824,14 +8209,18 @@ class MainWindow(QMainWindow):
         if not ask(self,"Confirm holiday",f"Declare {d} as '{name}'? This date will be excluded from working-day counts for all employees."): return
         self.db.conn.execute("INSERT INTO holidays(holiday_date,holiday_name,created_at) VALUES(?,?,?)",(d,name,now_text()))
         self.db.conn.commit(); self.db.log("Holiday declared",f"{d}: {name}"); self.refresh_all()
+        self.schedule_auto_sync()
 
     def remove_holiday(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can remove holidays.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         row=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(d,)).fetchone()
         if not row: return info(self,"No holiday is declared for the selected date.")
         if not ask(self,"Remove holiday",f"Remove holiday '{row['holiday_name']}' on {d}?"): return
         self.db.conn.execute("DELETE FROM holidays WHERE holiday_date=?",(d,)); self.db.conn.commit()
         self.db.log("Holiday removed",d); self.refresh_all()
+        self.schedule_auto_sync()
 
     def refresh_tasks(self):
         if not hasattr(self,"task_table"): return
@@ -9147,9 +9536,9 @@ class MainWindow(QMainWindow):
             return False
 
     def rollback_application(self):
-        """Require an Admin role and password before installing a previous build."""
-        if self.user_role != "Admin":
-            return error(self, "Only an Admin can roll back the application.")
+        """Require an Admin or Developer role and password before installing a previous build."""
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can roll back the application.")
         username = str(self.current_user.get("username", ""))
         row = self.db.conn.execute(
             "SELECT password_salt, password_hash, active FROM auth_users WHERE username=?",
@@ -9229,6 +9618,8 @@ class MainWindow(QMainWindow):
             error(self, "Application rollback failed. Database data was not intentionally changed.\n" + str(exc))
 
     def restore_backup(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can restore database backups.")
         path,_=QFileDialog.getOpenFileName(self,"Select database backup",str(BACKUP_DIR),"SQLite database (*.db)")
         if not path: return
         if not ask(self,"Restore backup","This replaces current data. A backup of the current database will be created first. Continue?"): return
@@ -9419,48 +9810,123 @@ class MainWindow(QMainWindow):
         info(self, "Your password recovery question and answer have been updated.")
 
     def manage_accounts(self):
-        if self.user_role != "Admin":
-            return error(self, "Only an Admin account can manage HR/Admin accounts.")
-        dialog = QDialog(self); dialog.setWindowTitle("Manage HR / Admin Accounts"); dialog.setMinimumWidth(600)
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can manage user accounts.")
+        dialog = QDialog(self); dialog.setWindowTitle("Manage User Accounts & Access Permissions"); dialog.setMinimumWidth(640)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Create a separate login for HR or Admin. Each user must set their own recovery question and answer."))
+        layout.addWidget(QLabel("Manage user accounts and assign limited access (Staff/HR) or full administration (Admin/Developer)."))
         table = QTableWidget(0, 5); table.setHorizontalHeaderLabels(["Username", "Display name", "Role", "Status", "Created"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        for row in self.db.conn.execute("SELECT username,display_name,role,active,created_at FROM auth_users ORDER BY username COLLATE NOCASE").fetchall():
-            idx=table.rowCount(); table.insertRow(idx)
-            for col,val in enumerate([row["username"],row["display_name"],row["role"],"Active" if row["active"] else "Disabled",row["created_at"]]):
-                if col == 3:
-                    item = self.status_item(val)
-                else:
-                    item = QTableWidgetItem(str(val))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if col in (2, 3, 4) else Qt.AlignmentFlag.AlignLeft))
-                item.setToolTip(str(val))
-                table.setItem(idx, col, item)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        def reload_table():
+            table.setRowCount(0)
+            for row in self.db.conn.execute("SELECT username,display_name,role,active,created_at FROM auth_users ORDER BY username COLLATE NOCASE").fetchall():
+                idx=table.rowCount(); table.insertRow(idx)
+                for col,val in enumerate([row["username"],row["display_name"],row["role"],"Active" if row["active"] else "Disabled",row["created_at"]]):
+                    if col == 3:
+                        item = self.status_item(val)
+                    else:
+                        item = QTableWidgetItem(str(val))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if col in (2, 3, 4) else Qt.AlignmentFlag.AlignLeft))
+                    item.setToolTip(str(val))
+                    table.setItem(idx, col, item)
+        reload_table()
         layout.addWidget(table)
-        formbox=QGroupBox("Create account"); form=QFormLayout(formbox)
-        username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["HR","Admin"])
+
+        manage_row = QHBoxLayout()
+        toggle_active_btn = QPushButton("Toggle Active / Disabled")
+        change_role_btn = QPushButton("Change Role")
+        reset_pw_btn = QPushButton("Reset Password")
+        manage_row.addWidget(toggle_active_btn)
+        manage_row.addWidget(change_role_btn)
+        manage_row.addWidget(reset_pw_btn)
+        manage_row.addStretch(1)
+        layout.addLayout(manage_row)
+
+        def toggle_active():
+            row_idx = table.currentRow()
+            if row_idx < 0: return error(dialog, "Select a user from the table first.")
+            uname = table.item(row_idx, 0).text()
+            u_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=?", (uname,)).fetchone()
+            if not u_row: return error(dialog, "User not found.")
+            if uname.lower() == str(self.current_user.get("username", "")).lower() and u_row["active"]:
+                return error(dialog, "You cannot disable your own active account.")
+            new_active = 0 if u_row["active"] else 1
+            self.db.conn.execute("UPDATE auth_users SET active=?, updated_at=? WHERE id=?", (new_active, now_text(), u_row["id"]))
+            self.db.conn.commit()
+            self.db.log("User status changed", f"{uname}: {'Active' if new_active else 'Disabled'}")
+            self.schedule_auto_sync(immediate=True)
+            reload_table()
+            info(dialog, f"Account '{uname}' is now {'Active' if new_active else 'Disabled'}.")
+        toggle_active_btn.clicked.connect(toggle_active)
+
+        def change_role():
+            row_idx = table.currentRow()
+            if row_idx < 0: return error(dialog, "Select a user from the table first.")
+            uname = table.item(row_idx, 0).text()
+            u_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=?", (uname,)).fetchone()
+            if not u_row: return error(dialog, "User not found.")
+            roles = ["Staff", "HR", "Admin", "Developer"]
+            current_role_idx = roles.index(u_row["role"]) if u_row["role"] in roles else 0
+            new_role, ok = QInputDialog.getItem(dialog, "Change User Role", f"Select new role/access level for {uname}:", roles, current_role_idx, False)
+            if not ok or not new_role: return
+            self.db.conn.execute("UPDATE auth_users SET role=?, updated_at=? WHERE id=?", (new_role, now_text(), u_row["id"]))
+            self.db.conn.commit()
+            self.db.log("User role changed", f"{uname} -> {new_role}")
+            self.schedule_auto_sync(immediate=True)
+            reload_table()
+            info(dialog, f"Role for '{uname}' updated to '{new_role}'.")
+        change_role_btn.clicked.connect(change_role)
+
+        def reset_user_password():
+            row_idx = table.currentRow()
+            if row_idx < 0: return error(dialog, "Select a user from the table first.")
+            uname = table.item(row_idx, 0).text()
+            u_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=?", (uname,)).fetchone()
+            if not u_row: return error(dialog, "User not found.")
+            new_pw, ok = QInputDialog.getText(dialog, "Reset Password", f"Enter new password for {uname}:", QLineEdit.Password)
+            if not ok or not new_pw: return
+            if not password_is_strong(new_pw):
+                return error(dialog, "Password must be 8+ characters with letters and numbers.")
+            ps, ph = hash_pin(new_pw)
+            self.db.conn.execute("UPDATE auth_users SET password_salt=?, password_hash=?, updated_at=? WHERE id=?", (ps, ph, now_text(), u_row["id"]))
+            self.db.conn.commit()
+            self.db.log("User password reset by admin", uname)
+            self.schedule_auto_sync(immediate=True)
+            info(dialog, f"Password for '{uname}' reset successfully and synchronized.")
+        reset_pw_btn.clicked.connect(reset_user_password)
+
+        formbox=QGroupBox("Create new account"); form=QFormLayout(formbox)
+        username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["Staff", "HR", "Admin", "Developer"])
         password=QLineEdit(); password.setEchoMode(QLineEdit.Password)
         question=QComboBox(); question.addItems(SECURITY_QUESTIONS)
         answer=QLineEdit(); answer.setEchoMode(QLineEdit.Password)
-        form.addRow("Username",username); form.addRow("Display name",display); form.addRow("Role",role)
-        form.addRow("Temporary/new password",password); form.addRow("Recovery question",question); form.addRow("Recovery answer",answer)
+        form.addRow("Username / User ID",username); form.addRow("Display name",display); form.addRow("Role / Access level",role)
+        form.addRow("Initial password",password); form.addRow("Recovery question",question); form.addRow("Recovery answer",answer)
         layout.addWidget(formbox)
         buttons=QHBoxLayout(); create=QPushButton("Create account"); close=QPushButton("Close")
         buttons.addWidget(create); buttons.addWidget(close); layout.addLayout(buttons)
         close.clicked.connect(dialog.reject)
         def create_account():
             u=username.text().strip(); d=display.text().strip(); pw=password.text(); ans=normalized_answer(answer.text())
+            r_val = role.currentText()
             if not u or not d: return error(dialog,"Enter username and display name.")
             if not password_is_strong(pw): return error(dialog,"Password must be 8+ characters with letters and numbers.")
             if len(ans)<2: return error(dialog,"Enter a recovery answer.")
+            # Enforce case-insensitive unique username
+            existing = self.db.conn.execute("SELECT id FROM auth_users WHERE username=? COLLATE NOCASE", (u,)).fetchone()
+            if existing:
+                return error(dialog, f"User ID / Username '{u}' already exists.\nUsernames must be unique across all devices.")
             ps,ph=hash_pin(pw); aus,ah=hash_pin(ans)
             try:
                 self.db.conn.execute("INSERT INTO auth_users(username,display_name,role,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)",
-                    (u,d,role.currentText(),ps,ph,question.currentText(),aus,ah,now_text(),now_text()))
-                self.db.conn.commit(); self.db.log("HR/Admin account created",f"{u} ({role.currentText()})")
+                    (u,d,r_val,ps,ph,question.currentText(),aus,ah,now_text(),now_text()))
+                self.db.conn.commit(); self.db.log("User account created",f"{u} ({r_val})")
+                self.schedule_auto_sync(immediate=True)
             except sqlite3.IntegrityError:
-                return error(dialog,"That username already exists.")
-            info(dialog,"Account created. Share the login details securely with the account owner.")
+                return error(dialog,f"That username '{u}' already exists.")
+            info(dialog,f"Account '{u}' ({r_val}) created and synchronized with cloud successfully.")
             dialog.accept()
         create.clicked.connect(create_account)
         dialog.exec()
@@ -9924,6 +10390,22 @@ def main():
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
+    if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
+        if hasattr(db, "github_sync") and db.github_sync.is_configured:
+            try:
+                raw = db.github_sync.download_latest_snapshot(prefer_latest=True)
+                if raw:
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(prefix="rsc_init_", suffix=".sqlite3", delete=False) as h:
+                        tpath = Path(h.name)
+                        h.write(raw)
+                    try:
+                        merge_remote_database_snapshot(db.conn, tpath)
+                    finally:
+                        tpath.unlink(missing_ok=True)
+            except Exception as e:
+                logging.getLogger("startup").debug(f"Initial cloud pull skipped: {e}")
+
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
         setup_dialog = AccountSetupDialog(db)
         if setup_dialog.exec() != QDialog.Accepted:
