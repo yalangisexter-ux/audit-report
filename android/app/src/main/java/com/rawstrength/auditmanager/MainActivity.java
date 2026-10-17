@@ -60,7 +60,7 @@ public class MainActivity extends AppCompatActivity {
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
-                MainActivity.this.runOnUiThread(request::grant);
+                MainActivity.this.runOnUiThread(() -> request.grant(request.getResources()));
             }
 
             @Override
