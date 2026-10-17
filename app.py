@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QToolTip,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
     QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea,
-    QCalendarWidget, QAbstractSpinBox, QDateTimeEdit
+    QCalendarWidget, QAbstractSpinBox, QDateTimeEdit, QSpacerItem
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage, QPainterPath
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
@@ -1408,43 +1408,152 @@ class Database:
                                   FROM archived_documents d LEFT JOIN employees e ON e.id=d.employee_id
                                   ORDER BY d.uploaded_at DESC""").fetchall()
 
-def ask(parent, title, message):
-    return QMessageBox.question(parent, title, message, QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+_SHOW_DIALOG_HOOK = None
 
-def _show_message(parent, message, icon):
-    """Show readable, word-wrapped app messages without clipped native dialogs."""
-    screen = parent.screen() if parent is not None else QApplication.primaryScreen()
-    available_width = screen.availableGeometry().width() if screen else 720
+def _show_app_dialog(parent, message, icon, title=None, is_question=False, default_yes=False):
+    """Show readable, word-wrapped app messages and confirmation dialogs without clipped text or sunken layout."""
+    screen = parent.screen() if (parent is not None and hasattr(parent, "screen")) else QApplication.primaryScreen()
+    available_width = screen.availableGeometry().width() if screen else 1280
     dialog_width = max(240, min(500, available_width - 32))
-    label_width = max(180, min(440, dialog_width - 64))
-    label_max_width = max(label_width, min(680, available_width - 64))
+    dialog_width = max(480, min(560, available_width - 48))
+    label_width = dialog_width - 100
+
+    theme_name = None
+    if parent is not None:
+        if hasattr(parent, "current_theme"):
+            theme_name = parent.current_theme()
+        elif hasattr(parent, "window") and hasattr(parent.window(), "current_theme"):
+            theme_name = parent.window().current_theme()
+        elif hasattr(parent, "property") and parent.property("ui_theme"):
+            theme_name = parent.property("ui_theme")
+    if not theme_name:
+        if QApplication.instance() is not None:
+            app_ss = QApplication.instance().styleSheet()
+            if "stop:0 #F8FAFC" in app_ss or "stop:0.45 #F1F5F9" in app_ss:
+                theme_name = "day"
+            elif "stop:0 #080C14" in app_ss or "stop:0.5 #0B1120" in app_ss:
+                theme_name = "night"
+            else:
+                theme_name = "day"
+        else:
+            theme_name = "day"
+
+    is_dark = (theme_name or "day").lower() in ("night", "dark")
+    bg = "#0F172A" if is_dark else "#FFFFFF"
+    text_color = "#F8FAFC" if is_dark else "#0F172A"
+    border = "#334155" if is_dark else "#CBD5E1"
+    btn_sec_bg = "#1E293B" if is_dark else "#FFFFFF"
+    btn_sec_text = "#F8FAFC" if is_dark else "#0F172A"
+    btn_sec_border = "#334155" if is_dark else "#CBD5E1"
+    btn_sec_hover = "#334155" if is_dark else "#F1F5F9"
+    btn_pri_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED)"
+    btn_pri_hover = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9)"
+    btn_pri_border = "#818CF8"
+
     box = QMessageBox(parent)
-    box.setWindowTitle(APP_NAME)
+    box.setWindowTitle(title or APP_NAME)
     box.setWindowIcon(QIcon(resource_path("assets/raw_strength_icon.ico")))
     box.setIcon(icon)
     box.setText(str(message))
     box.setTextFormat(Qt.TextFormat.PlainText)
-    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+
+    if is_question:
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setDefaultButton(QMessageBox.StandardButton.Yes if default_yes else QMessageBox.StandardButton.No)
+    else:
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.setDefaultButton(QMessageBox.StandardButton.Ok)
+
     box.setMinimumWidth(dialog_width)
+    box.setMinimumHeight(150)
+
+    grid = box.layout()
+    if isinstance(grid, QGridLayout):
+        spacer = QSpacerItem(dialog_width, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        grid.addItem(spacer, grid.rowCount(), 0, 1, grid.columnCount())
+
     box.setStyleSheet(f"""
-        QMessageBox {{ background: #FFFFFF; color: #0F172A; }}
-        QLabel#qt_msgbox_label {{ min-width: {label_width}px; max-width: {label_max_width}px; color: #0F172A;
-            background: transparent; padding: 8px; }}
-        QPushButton {{ min-width: 84px; min-height: 30px; padding: 4px 12px; }}
+        QMessageBox {{
+            background-color: {bg};
+            border: 1.5px solid {border};
+            border-radius: 12px;
+        }}
+        QLabel#qt_msgbox_label {{
+            color: {text_color};
+            font-size: 10pt;
+            font-weight: 500;
+            padding: 8px 10px;
+            background: transparent;
+            min-width: {label_width}px;
+        }}
+        QLabel#qt_msgboxex_icon_label {{
+            min-width: 44px;
+            min-height: 44px;
+            background: transparent;
+            padding: 4px;
+        }}
+        QPushButton {{
+            min-width: 95px;
+            min-height: 36px;
+            padding: 6px 18px;
+            border-radius: 8px;
+            font-size: 9.5pt;
+            font-weight: 600;
+            background-color: {btn_sec_bg};
+            color: {btn_sec_text};
+            border: 1.5px solid {btn_sec_border};
+        }}
+        QPushButton:hover {{
+            background-color: {btn_sec_hover};
+        }}
+        QPushButton:default {{
+            background: {btn_pri_bg};
+            color: #FFFFFF;
+            border: 1.5px solid {btn_pri_border};
+            font-weight: 700;
+        }}
+        QPushButton:default:hover {{
+            background: {btn_pri_hover};
+        }}
     """)
+
     label = box.findChild(QLabel, "qt_msgbox_label")
     if label is not None:
         label.setWordWrap(True)
         label.setMinimumWidth(label_width)
-        label.setMaximumWidth(label_max_width)
-    box.adjustSize()
-    box.exec()
+        label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
-def info(parent, message):
-    _show_message(parent, message, QMessageBox.Icon.Information)
+    icon_label = box.findChild(QLabel, "qt_msgboxex_icon_label")
+    if icon_label is not None:
+        icon_label.setMinimumSize(44, 44)
+        icon_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
-def error(parent, message):
-    _show_message(parent, message, QMessageBox.Icon.Critical)
+    for btn in box.findChildren(QPushButton):
+        btn.setMinimumWidth(95)
+        btn.setMinimumHeight(36)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    global _SHOW_DIALOG_HOOK
+    if _SHOW_DIALOG_HOOK is not None:
+        ret = _SHOW_DIALOG_HOOK(box)
+    else:
+        ret = box.exec()
+    if is_question:
+        return ret in (QMessageBox.StandardButton.Yes, 16384)
+    return None
+
+def _show_message(parent, message, icon):
+    return _show_app_dialog(parent, message, icon, is_question=False)
+
+def ask(parent, title, message):
+    return _show_app_dialog(parent, message, QMessageBox.Icon.Question, title=title, is_question=True)
+
+def info(parent, message, title=None):
+    return _show_app_dialog(parent, message, QMessageBox.Icon.Information, title=title, is_question=False)
+
+def error(parent, message, title=None):
+    return _show_app_dialog(parent, message, QMessageBox.Icon.Critical, title=title, is_question=False)
 
 SECURITY_QUESTIONS = [
     "What was the name of your first school?",
@@ -3996,7 +4105,13 @@ class MainWindow(QMainWindow):
             border: 0;
             border-bottom: 2px solid {colors.get('table_border', '#334155')};
         }}
-        QLabel {{ min-width: 0; }}
+        QLabel:not(#qt_msgbox_label):not(#qt_msgboxex_icon_label) {{ min-width: 0; }}
+        QMessageBox {{ min-width: 480px; }}
+        QMessageBox QLabel#qt_msgbox_label {{ min-width: 360px; }}
+        QMessageBox QLabel#qt_msgboxex_icon_label {{ min-width: 44px; min-height: 44px; }}
+        QInputDialog {{ min-width: 460px; }}
+        QInputDialog QLabel {{ min-width: 420px; font-weight: 600; }}
+        QInputDialog QLineEdit {{ min-width: 420px; }}
 
         /* Modern Custom Scrollbars */
         QScrollBar:vertical {{
@@ -4062,6 +4177,8 @@ class MainWindow(QMainWindow):
             "archiveRosterTitle", "archiveRosterHint",
         }
         for widget in self.findChildren(QLabel):
+            if widget.objectName() in ("qt_msgbox_label", "qt_msgboxex_icon_label"):
+                continue
             if widget.objectName() in excluded_wrap_names or widget.property("pageTitle") or widget.property("sectionHeading"):
                 widget.setWordWrap(False)
             else:
@@ -4960,9 +5077,8 @@ class MainWindow(QMainWindow):
             self.set_animation_style("Custom Image")
             if hasattr(self, "custom_wp_status"):
                 self.custom_wp_status.setText(f"Active: {src.name}")
-            self.statusBar().showMessage(f"Custom wallpaper set: {src.name}", 4000)
         except Exception as exc:
-            QMessageBox.warning(self, "Custom Wallpaper Error", f"Failed to set custom wallpaper: {exc}")
+            error(self, f"Failed to set custom wallpaper: {exc}", "Custom Wallpaper Error")
 
     def reset_custom_wallpaper(self):
         """Reset wallpaper to default Ambient Glow."""
@@ -9555,6 +9671,13 @@ QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
 QTableWidget::item:selected { background: #DDE7FF; color: #1E1B4B; }
 QCheckBox, QRadioButton { color: #1E293B; }
 QStatusBar { background: #E2E8F0; color: #1E293B; }
+QDialog, QMessageBox, QInputDialog { background: #FFFFFF; color: #0F172A; }
+QMessageBox { min-width: 480px; }
+QMessageBox QLabel#qt_msgbox_label { min-width: 360px; color: #0F172A; font-size: 10pt; font-weight: 500; }
+QMessageBox QLabel#qt_msgboxex_icon_label { min-width: 44px; min-height: 44px; }
+QInputDialog { min-width: 460px; }
+QInputDialog QLabel { min-width: 420px; color: #0F172A; font-size: 9.5pt; font-weight: 600; }
+QInputDialog QLineEdit { min-width: 420px; min-height: 32px; }
 QLabel#attRosterTitle, QLabel#attRosterHint, QLabel#attSummaryTitle, QLabel#attSummaryNote, QLabel#taskRosterTitle, QLabel#taskRosterHint, QLabel#empRosterTitle, QLabel#empRosterHint, QLabel#trackerRosterTitle, QLabel#trackerRosterHint, QLabel#archiveRosterTitle, QLabel#archiveRosterHint { qproperty-wordWrap: false; }
 """
     return css.replace("__CHEVRON_SLATE__", slate_arrow).replace("__CHEVRON_CYAN__", cyan_arrow)
@@ -9739,6 +9862,13 @@ QTableWidget::item { color: #F8FAFC; border-bottom: 1px solid #334155; }
 QTableWidget::item:selected { background: #4338CA; color: #FFFFFF; }
 QCheckBox, QRadioButton { color: #E2E8F0; }
 QStatusBar { background: #111827; color: #E2E8F0; }
+QDialog, QMessageBox, QInputDialog { background: #0F172A; color: #F8FAFC; }
+QMessageBox { min-width: 480px; }
+QMessageBox QLabel#qt_msgbox_label { min-width: 360px; color: #F8FAFC; font-size: 10pt; font-weight: 500; }
+QMessageBox QLabel#qt_msgboxex_icon_label { min-width: 44px; min-height: 44px; }
+QInputDialog { min-width: 460px; }
+QInputDialog QLabel { min-width: 420px; color: #F8FAFC; font-size: 9.5pt; font-weight: 600; }
+QInputDialog QLineEdit { min-width: 420px; min-height: 32px; }
 
 QLabel#attRosterTitle, QLabel#attRosterHint, QLabel#attSummaryTitle, QLabel#attSummaryNote, QLabel#taskRosterTitle, QLabel#taskRosterHint, QLabel#empRosterTitle, QLabel#empRosterHint, QLabel#trackerRosterTitle, QLabel#trackerRosterHint, QLabel#archiveRosterTitle, QLabel#archiveRosterHint { qproperty-wordWrap: false; }
 QPushButton { text-align: center; }

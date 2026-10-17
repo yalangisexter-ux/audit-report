@@ -775,6 +775,9 @@ body.theme-day .att-row-card {
   border-radius: 20px;
   font-size: 13px;
   font-weight: 600;
+  max-width: 90vw;
+  text-align: center;
+  word-break: break-word;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   animation: toastIn 0.25s ease;
 }

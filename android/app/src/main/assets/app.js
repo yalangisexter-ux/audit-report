@@ -1,7 +1,7 @@
 /**
  * Raw Strength Calisthenics - Employee Audit Manager Mobile App
  * Synchronized with Desktop Database via Cloudflare Encrypted Sync
- * Version 1.3.11
+ * Version 1.3.12
  */
 
 const SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev";
