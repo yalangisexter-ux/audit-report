@@ -2619,7 +2619,7 @@ class WallpaperPhotoLoader(QThread):
 
 class AnimatedBackground(QWidget):
     """High-resolution photographic wallpapers with gentle Ken Burns motion and particles."""
-    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Lord Shiva", "Love Couple", "Love & Couples", "Cyberpunk Neon", "Calisthenics Power", "Cosmic Nebula")
+    STYLES = ("Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles", "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves", "Ocean Waves", "Lord Shiva", "Love Couple", "Love & Couples", "Cyberpunk Neon", "Calisthenics Power", "Cosmic Nebula", "Custom Image")
     PHOTO_WALLPAPERS = {
         "Galaxy": ("galaxy.jpg", "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
         "Milky Way": ("milky_way.jpg", "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"),
@@ -2655,6 +2655,8 @@ class AnimatedBackground(QWidget):
             return "Ocean Waves"
         if m in ("galaxy",):
             return "Galaxy"
+        if m in ("custom", "custom image", "custom wallpaper", "custom photo"):
+            return "Custom Image"
         for s in cls.STYLES:
             if s.lower() == m:
                 return s
@@ -2664,6 +2666,7 @@ class AnimatedBackground(QWidget):
         super().__init__(parent)
         # Normalize the former duplicate option for existing saved preferences.
         self.mode = "Lord Shiva" if mode == "Shiva" else self._normalize_mode(mode)
+        self.custom_wallpaper_path = ""
         self.wallpaper_pixmap = QPixmap()
         self.photo_loader = None
         self.phase = 0.0
@@ -2675,11 +2678,43 @@ class AnimatedBackground(QWidget):
         self.init_particles()
         self._load_wallpaper_image()
 
+    def set_custom_wallpaper_path(self, path):
+        self.custom_wallpaper_path = str(path) if path else ""
+        if self.mode == "Custom Image":
+            self._load_wallpaper_image()
+
     def _wallpaper_cache_path(self, filename):
         local_root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
         return local_root / "EmployeeAuditManager" / "wallpapers" / filename
 
     def _load_wallpaper_image(self):
+        if self.mode == "Custom Image":
+            path = getattr(self, "custom_wallpaper_path", "")
+            if not path:
+                try:
+                    win = self.window()
+                    if win and hasattr(win, "db"):
+                        path = win.db.get_setting("custom_wallpaper_path") or ""
+                except Exception:
+                    pass
+            if not path:
+                local_root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+                wp_dir = local_root / "EmployeeAuditManager" / "wallpapers"
+                for ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
+                    candidate = wp_dir / f"custom_wallpaper{ext}"
+                    if candidate.is_file():
+                        path = str(candidate)
+                        break
+            if path and Path(path).is_file():
+                pixmap = QPixmap(str(path))
+                if not pixmap.isNull():
+                    self.wallpaper_pixmap = pixmap
+                    self.update()
+                    return
+            self.wallpaper_pixmap = QPixmap()
+            self.update()
+            return
+
         entry = self.PHOTO_WALLPAPERS.get(self.mode)
         if not entry:
             self.wallpaper_pixmap = QPixmap()
@@ -4852,17 +4887,28 @@ class MainWindow(QMainWindow):
         """
 
         for combo in self.findChildren(QComboBox):
+            parent_w = combo.parent()
+            parent_name = parent_w.objectName() if parent_w else ""
+            parent_cls = parent_w.metaObject().className() if parent_w else ""
+            if parent_name == "attendanceEditorCell" or "Table" in parent_cls or "Cell" in parent_cls or combo.property("in_table_cell"):
+                continue
             combo.setStyleSheet(combo_css)
             combo.setMinimumWidth(max(170, combo.minimumWidth()))
 
         for date_edit in self.findChildren(QDateEdit):
+            parent_w = date_edit.parent()
+            parent_name = parent_w.objectName() if parent_w else ""
+            parent_cls = parent_w.metaObject().className() if parent_w else ""
+            if parent_name == "attendanceEditorCell" or "Table" in parent_cls or "Cell" in parent_cls or date_edit.property("in_table_cell"):
+                continue
             date_edit.setStyleSheet(date_css)
             date_edit.setMinimumWidth(max(150, date_edit.minimumWidth()))
 
         for le in self.findChildren(QLineEdit):
             parent_w = le.parent()
+            parent_name = parent_w.objectName() if parent_w else ""
             parent_cls = parent_w.metaObject().className() if parent_w else ""
-            if "Table" in parent_cls or "Cell" in parent_cls:
+            if parent_name == "attendanceEditorCell" or "Table" in parent_cls or "Cell" in parent_cls or le.property("in_table_cell"):
                 continue
             le.setStyleSheet(line_edit_css)
 
@@ -4880,8 +4926,53 @@ class MainWindow(QMainWindow):
             combo = getattr(self, combo_name, None)
             if combo is not None and combo.currentText() != style_name:
                 combo.blockSignals(True)
-                combo.setCurrentText(style_name)
+                if combo.findText(style_name) >= 0:
+                    combo.setCurrentText(style_name)
                 combo.blockSignals(False)
+        if style_name == "Custom Image":
+            wp_path = self.db.get_setting("custom_wallpaper_path")
+            if not wp_path or not Path(wp_path).is_file():
+                QTimer.singleShot(100, self.browse_custom_wallpaper)
+
+    def browse_custom_wallpaper(self):
+        """Open a file dialog to pick an image for custom wallpaper."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Custom Wallpaper",
+            "",
+            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*.*)",
+        )
+        if not file_path:
+            return
+        src = Path(file_path)
+        if not src.is_file():
+            return
+        try:
+            local_root = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+            wp_dir = local_root / "EmployeeAuditManager" / "wallpapers"
+            wp_dir.mkdir(parents=True, exist_ok=True)
+            dest = wp_dir / f"custom_wallpaper{src.suffix.lower()}"
+            import shutil
+            shutil.copy2(src, dest)
+            self.db.set_setting("custom_wallpaper_path", str(dest))
+            if hasattr(self, "bg_anim"):
+                self.bg_anim.set_custom_wallpaper_path(str(dest))
+            self.set_animation_style("Custom Image")
+            if hasattr(self, "custom_wp_status"):
+                self.custom_wp_status.setText(f"Active: {src.name}")
+            self.statusBar().showMessage(f"Custom wallpaper set: {src.name}", 4000)
+        except Exception as exc:
+            QMessageBox.warning(self, "Custom Wallpaper Error", f"Failed to set custom wallpaper: {exc}")
+
+    def reset_custom_wallpaper(self):
+        """Reset wallpaper to default Ambient Glow."""
+        self.db.set_setting("custom_wallpaper_path", "")
+        if hasattr(self, "bg_anim"):
+            self.bg_anim.set_custom_wallpaper_path("")
+        self.set_animation_style("Ambient Glow")
+        if hasattr(self, "custom_wp_status"):
+            self.custom_wp_status.setText("Default wallpaper active")
+        self.statusBar().showMessage("Wallpaper reset to default", 3000)
 
     def build_home(self):
 
@@ -4995,17 +5086,31 @@ class MainWindow(QMainWindow):
         home_wallpaper_label = QLabel("Live wallpaper")
         home_wallpaper_label.setProperty("mutedText", True)
         session_layout.addWidget(home_wallpaper_label, 2, 2)
+        wp_container = QWidget()
+        wp_container.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        wp_layout = QHBoxLayout(wp_container)
+        wp_layout.setContentsMargins(0, 0, 0, 0)
+        wp_layout.setSpacing(6)
         self.home_wallpaper_combo = QComboBox()
         self.home_wallpaper_combo.setObjectName("homeWallpaperDropdown")
         self.home_wallpaper_combo.addItems(list(AnimatedBackground.STYLES))
         saved_wallpaper = self.db.get_setting("animation_style", "Galaxy") or "Galaxy"
         if self.home_wallpaper_combo.findText(saved_wallpaper) >= 0:
             self.home_wallpaper_combo.setCurrentText(saved_wallpaper)
-        self.home_wallpaper_combo.setMinimumWidth(145)
-        self.home_wallpaper_combo.setMaximumWidth(220)
+        self.home_wallpaper_combo.setMinimumWidth(130)
+        self.home_wallpaper_combo.setMaximumWidth(200)
         self.home_wallpaper_combo.setToolTip("Choose the animated background for the application")
         self.home_wallpaper_combo.currentTextChanged.connect(self.set_animation_style)
-        session_layout.addWidget(self.home_wallpaper_combo, 2, 3)
+        wp_layout.addWidget(self.home_wallpaper_combo)
+
+        self.home_browse_wallpaper_btn = QPushButton("📁 Browse")
+        self.home_browse_wallpaper_btn.setObjectName("homeBrowseWallpaperBtn")
+        self.home_browse_wallpaper_btn.setToolTip("Browse and select a custom wallpaper image from your computer")
+        self.home_browse_wallpaper_btn.setFixedHeight(34)
+        self.home_browse_wallpaper_btn.clicked.connect(self.browse_custom_wallpaper)
+        wp_layout.addWidget(self.home_browse_wallpaper_btn)
+
+        session_layout.addWidget(wp_container, 2, 3)
         content_layout.addWidget(session_strip)
 
         guide_heading = QLabel("Workspace guide")
@@ -5982,8 +6087,8 @@ class MainWindow(QMainWindow):
         self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setMinimumHeight(200)
         self.att_table.setMaximumHeight(360)
-        self.att_table.verticalHeader().setDefaultSectionSize(48)
-        self.att_table.verticalHeader().setMinimumSectionSize(44)
+        self.att_table.verticalHeader().setDefaultSectionSize(52)
+        self.att_table.verticalHeader().setMinimumSectionSize(48)
         for c, align in enumerate([
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter,
@@ -6478,6 +6583,28 @@ class MainWindow(QMainWindow):
         animation_row.addStretch(1)
         appearance_layout.addLayout(animation_row)
 
+        custom_wp_row = QHBoxLayout()
+        custom_wp_label = QLabel("Custom wallpaper")
+        self.browse_wallpaper_btn = QPushButton("📁 Browse Custom Wallpaper...")
+        self.browse_wallpaper_btn.setObjectName("settingsBrowseWallpaperBtn")
+        self.browse_wallpaper_btn.setToolTip("Select any PNG, JPG, or WEBP image from your computer to use as live background")
+        self.browse_wallpaper_btn.clicked.connect(self.browse_custom_wallpaper)
+        self.clear_wallpaper_btn = QPushButton("Reset to Default")
+        self.clear_wallpaper_btn.setObjectName("settingsResetWallpaperBtn")
+        self.clear_wallpaper_btn.setToolTip("Reset to the default animated background")
+        self.clear_wallpaper_btn.clicked.connect(self.reset_custom_wallpaper)
+        self.custom_wp_status = QLabel("")
+        self.custom_wp_status.setStyleSheet("color: #94A3B8; font-size: 8.5pt;")
+        custom_wp_path = self.db.get_setting("custom_wallpaper_path")
+        if custom_wp_path and Path(custom_wp_path).is_file():
+            self.custom_wp_status.setText(f"Active: {Path(custom_wp_path).name}")
+        custom_wp_row.addWidget(custom_wp_label)
+        custom_wp_row.addWidget(self.browse_wallpaper_btn)
+        custom_wp_row.addWidget(self.clear_wallpaper_btn)
+        custom_wp_row.addWidget(self.custom_wp_status)
+        custom_wp_row.addStretch(1)
+        appearance_layout.addLayout(custom_wp_row)
+
         clock_row = QHBoxLayout()
         clock_label = QLabel("Clock display mode")
         self.clock_mode_combo = QComboBox()
@@ -6743,7 +6870,7 @@ class MainWindow(QMainWindow):
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)
             is_att = table is getattr(self, "att_table", None)
-            row_height = 48 if is_att else 40
+            row_height = 52 if is_att else 40
             table.verticalHeader().setDefaultSectionSize(row_height)
             table.verticalHeader().setMinimumSectionSize(max(36, row_height - 6))
             table.setCornerButtonEnabled(False)
@@ -6765,6 +6892,16 @@ class MainWindow(QMainWindow):
             table_palette.setColor(QPalette.ColorRole.Text, QColor(table_fg))
             table.setPalette(table_palette)
             table.viewport().setPalette(table_palette)
+            att_cell_css = """
+                QWidget#attendanceEditorCell QComboBox {
+                    min-height: 26px; max-height: 28px; height: 28px;
+                    padding: 1px 22px 1px 8px; border-radius: 6px; font-size: 8.5pt;
+                }
+                QWidget#attendanceEditorCell QLineEdit {
+                    min-height: 26px; max-height: 28px; height: 28px;
+                    padding: 1px 8px; border-radius: 6px; font-size: 8.5pt;
+                }
+            """ if is_att else ""
             table.setStyleSheet(f"""
                 QTableWidget {{
                     background-color: {table_bg};
@@ -6789,6 +6926,7 @@ class MainWindow(QMainWindow):
                     background-color: {table_sel_bg};
                     color: {table_sel_fg};
                 }}
+                {att_cell_css}
             """)
             table.horizontalHeader().setMinimumHeight(42)
             table.horizontalHeader().setMinimumSectionSize(65)
@@ -7747,6 +7885,7 @@ class MainWindow(QMainWindow):
         is_dark_mode = self.current_theme().lower() in ("night", "dark")
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
+            self.att_table.setRowHeight(r, 52)
             name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             if is_dark_mode:
@@ -7770,6 +7909,8 @@ class MainWindow(QMainWindow):
             def attach_editor(column, editor):
                 cell = QWidget()
                 cell.setObjectName("attendanceEditorCell")
+                cell.setProperty("in_table_cell", True)
+                editor.setProperty("in_table_cell", True)
                 cell.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
                 cell_layout = QHBoxLayout(cell)
                 cell_layout.setContentsMargins(4, 2, 4, 2)
@@ -7779,10 +7920,12 @@ class MainWindow(QMainWindow):
                 self.att_table.setCellWidget(r, column, cell)
 
             status_combo = QComboBox()
+            status_combo.setObjectName("attendanceStatusCombo")
+            status_combo.setProperty("in_table_cell", True)
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
             status_combo.setMinimumWidth(110)
-            status_combo.setFixedHeight(30)
+            status_combo.setFixedHeight(28)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
@@ -7828,8 +7971,10 @@ class MainWindow(QMainWindow):
                 (6, a["attendance_note"] if a else "", "note"),
             ):
                 editor = QLineEdit(str(value or ""))
+                editor.setObjectName("attendanceFieldEditor")
+                editor.setProperty("in_table_cell", True)
                 editor.setMinimumWidth(0)
-                editor.setFixedHeight(30)
+                editor.setFixedHeight(28)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 if field in ("check_in", "check_out"):
                     editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
