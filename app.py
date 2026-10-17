@@ -3392,58 +3392,58 @@ class MainWindow(QMainWindow):
             },
             "night": {
                 "surface": "#0F172A",
-                "surface_card": "#0F172A",
-                "sidebar": "#090D16",
-                "sidebar_border": "#1E293B",
-                "nav": "#0F172A",
-                "nav_border": "#1E293B",
-                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4338CA,stop:1 #6366F1)",
-                "border": "#334155",
-                "border_subtle": "rgba(51, 65, 85, 0.50)",
+                "surface_card": "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #111A2E, stop:1 #0B1120)",
+                "sidebar": "#070A14",
+                "sidebar_border": "rgba(255, 255, 255, 0.08)",
+                "nav": "rgba(15, 23, 42, 0.65)",
+                "nav_border": "rgba(255, 255, 255, 0.08)",
+                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4F46E5,stop:0.65 #6366F1,stop:1 #00E5FF)",
+                "border": "rgba(99, 102, 241, 0.28)",
+                "border_subtle": "rgba(255, 255, 255, 0.06)",
                 "text": "#F8FAFC",
                 "muted_text": "#94A3B8",
-                "hover": "#1E293B",
-                "hover_text": "#F8FAFC",
+                "hover": "rgba(99, 102, 241, 0.18)",
+                "hover_text": "#FFFFFF",
                 "accent": "#6366F1",
                 "accent_hover": "#4F46E5",
-                "accent_glow": "#818CF8",
-                "dropdown_bg": "#0F172A",
+                "accent_glow": "#00E5FF",
+                "dropdown_bg": "#0B1120",
                 "dropdown_fg": "#F8FAFC",
-                "dropdown_border": "#334155",
+                "dropdown_border": "#4F46E5",
                 "dropdown_hover": "#1E293B",
                 "dropdown_sel_bg": "#4F46E5",
                 "dropdown_sel_fg": "#FFFFFF",
                 "calendar_header_bg": "#070B14",
                 "calendar_header_fg": "#FFFFFF",
-                "calendar_bg": "#0F172A",
+                "calendar_bg": "#0B1120",
                 "calendar_fg": "#F8FAFC",
-                "calendar_alt_bg": "#1E293B",
+                "calendar_alt_bg": "#152033",
                 "calendar_sel_bg": "#6366F1",
                 "calendar_sel_fg": "#FFFFFF",
-                "menu_bg": "#0F172A",
+                "menu_bg": "#0B1120",
                 "menu_fg": "#F8FAFC",
-                "menu_border": "#334155",
+                "menu_border": "#4F46E5",
                 "menu_sel_bg": "#312E81",
                 "menu_sel_fg": "#FFFFFF",
-                "input_bg": "#0B1120",
+                "input_bg": "#0A0F1D",
                 "input_fg": "#F8FAFC",
-                "input_border": "#334155",
+                "input_border": "rgba(255, 255, 255, 0.14)",
                 "input_focus": "#6366F1",
-                "table_bg": "#0F172A",
-                "table_alt_bg": "#152033",
+                "table_bg": "#0B1120",
+                "table_alt_bg": "#10192D",
                 "table_fg": "#F8FAFC",
-                "table_header_bg": "#1E293B",
-                "table_header_fg": "#F8FAFC",
+                "table_header_bg": "#111827",
+                "table_header_fg": "#818CF8",
                 "table_border": "#334155",
-                "table_grid": "rgba(51, 65, 85, 0.60)",
+                "table_grid": "rgba(51, 65, 85, 0.50)",
                 "table_sel_bg": "#312E81",
                 "table_sel_fg": "#FFFFFF",
                 "border_strong": "#64748B",
                 "scrollbar_track": "rgba(15, 23, 42, 0.45)",
                 "scrollbar_handle": "#475569",
-                "scrollbar_hover": "#818CF8",
-                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0B1120,stop:0.55 #0F172A,stop:1 #090D16)",
-                "banner_border": "#334155",
+                "scrollbar_hover": "#00E5FF",
+                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #090E1A,stop:0.55 #0F172A,stop:1 #070B14)",
+                "banner_border": "rgba(99, 102, 241, 0.40)",
             },
             "ocean": {
                 "surface": "#F0F9FF",
@@ -3604,7 +3604,8 @@ class MainWindow(QMainWindow):
                         color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
                     QPushButton#sidebarNavButton:checked {{
                         background: {nav_active};
-                        color: #FFFFFF; border: 1px solid {colors['accent_glow']}; font-weight: 700; }}
+                        color: #FFFFFF; border: 1px solid {colors['accent_glow']};
+                        border-left: 4px solid #00E5FF; font-weight: 700; }}
                 """)
         for header in self.findChildren(QWidget, "pageHeader"):
             header.setStyleSheet(
@@ -3759,7 +3760,7 @@ class MainWindow(QMainWindow):
             font-size: 9.5pt; font-weight: 600; text-align: left; padding: 9px 12px; }}
         QPushButton#sidebarNavButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
         QPushButton#sidebarNavButton:checked {{ background: {colors['nav_active_grad']};
-            color: #FFFFFF; border: 1px solid {colors['accent_glow']}; font-weight: 700; }}
+            color: #FFFFFF; border: 1px solid {colors['accent_glow']}; border-left: 4px solid #00E5FF; font-weight: 700; }}
         QWidget#headerClock {{ background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }}
         QPushButton#headerNavButton {{ background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 6px; font-size: 13pt; font-weight: 700; padding: 0 0 2px 0;
@@ -4148,7 +4149,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(header_row)
 
     def current_theme(self):
-        return self.db.get_setting("ui_theme", "day") or "day"
+        return self.db.get_setting("ui_theme", "night") or "night"
 
     def apply_theme(self, theme_name=None):
         theme_name = theme_name or self.current_theme()
@@ -5251,16 +5252,17 @@ class MainWindow(QMainWindow):
 
         row2.addSpacing(12)
 
-        for label, slot in [
-            ("🟢 Present", lambda: self.set_attendance_status("Present")),
-            ("🔴 Absent", lambda: self.set_attendance_status("Absent")),
-            ("🟡 Leave", lambda: self.set_attendance_status("Leave")),
-        ]:
+        status_specs = [
+            ("🟢 Present", lambda: self.set_attendance_status("Present"), "rgba(16, 185, 129, 0.16)", "#34D399", "rgba(16, 185, 129, 0.40)", "#10B981"),
+            ("🔴 Absent", lambda: self.set_attendance_status("Absent"), "rgba(239, 68, 68, 0.16)", "#F87171", "rgba(239, 68, 68, 0.40)", "#EF4444"),
+            ("🟡 Leave", lambda: self.set_attendance_status("Leave"), "rgba(245, 158, 11, 0.16)", "#FBBF24", "rgba(245, 158, 11, 0.40)", "#F59E0B"),
+        ]
+        for label, slot, bg, fg, border_c, hover_bg in status_specs:
             b = QPushButton(label)
             b.setMinimumHeight(36)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; }")
+            b.setStyleSheet(f"QPushButton {{ font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: {bg}; color: {fg}; border: 1.5px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; border-color: {fg}; }}")
             b.clicked.connect(slot)
             row2.addWidget(b)
 
@@ -5272,17 +5274,17 @@ class MainWindow(QMainWindow):
         row3.setSpacing(8)
 
         time_actions = [
-            ("⏱️ Check In", self.check_in),
-            ("🏁 Check Out", self.check_out),
-            ("✏️ Edit Times", self.edit_attendance_times),
-            ("📝 Note", self.attendance_note),
+            ("⏱️ Check In", self.check_in, "rgba(14, 165, 233, 0.16)", "#38BDF8", "rgba(56, 189, 248, 0.35)", "#0284C7"),
+            ("🏁 Check Out", self.check_out, "rgba(99, 102, 241, 0.16)", "#818CF8", "rgba(99, 102, 241, 0.35)", "#6366F1"),
+            ("✏️ Edit Times", self.edit_attendance_times, "rgba(255, 255, 255, 0.08)", "#E2E8F0", "rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.18)"),
+            ("📝 Note", self.attendance_note, "rgba(255, 255, 255, 0.08)", "#E2E8F0", "rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.18)"),
         ]
-        for label, slot in time_actions:
+        for label, slot, bg, fg, border_c, hover_bg in time_actions:
             b = QPushButton(label)
             b.setMinimumHeight(36)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 12px; }")
+            b.setStyleSheet(f"QPushButton {{ font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 12px; background: {bg}; color: {fg}; border: 1px solid {border_c}; }} QPushButton:hover {{ background: {hover_bg}; color: #FFFFFF; }}")
             b.clicked.connect(slot)
             row3.addWidget(b)
 
@@ -8881,12 +8883,11 @@ def main():
     try:
         db=Database()
         seed_initial_audit(db)
-        # Migrate existing installs to the requested white UI once. Later manual
-        # theme selections are preserved by this migration flag.
-        if db.get_setting("white_ui_wallpaper_fix_v1241") != "1":
-            db.set_setting("ui_theme", "day")
-            db.set_setting("white_ui_wallpaper_fix_v1241", "1")
-        apply_app_theme(app, db.get_setting("ui_theme", "day") or "day")
+        # Migrate to OneText Modern SaaS theme (flagship dark bento UI) by default
+        if db.get_setting("onetext_saas_ui_v1306") != "1":
+            db.set_setting("ui_theme", "night")
+            db.set_setting("onetext_saas_ui_v1306", "1")
+        apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
