@@ -2795,8 +2795,8 @@ class AnimatedBackground(QWidget):
                 veil.setColorAt(0.0, QColor(255, 255, 255, max(18, fade - 3)))
                 veil.setColorAt(1.0, QColor(255, 255, 255, min(30, fade + 3)))
             else:
-                veil.setColorAt(0.0, QColor(3, 7, 18, 175))
-                veil.setColorAt(1.0, QColor(3, 7, 18, 215))
+                veil.setColorAt(0.0, QColor(3, 7, 18, 215))
+                veil.setColorAt(1.0, QColor(3, 7, 18, 240))
             painter.fillRect(rect, veil)
         else:
             # Procedural generative live wallpapers guarantee all styles animate offline
@@ -2961,8 +2961,8 @@ class AnimatedBackground(QWidget):
             painter.fillRect(rect, final_veil)
         else:
             final_veil = QLinearGradient(0, 0, 0, h)
-            final_veil.setColorAt(0.0, QColor(4, 7, 18, 120))
-            final_veil.setColorAt(1.0, QColor(4, 7, 18, 160))
+            final_veil.setColorAt(0.0, QColor(4, 7, 18, 175))
+            final_veil.setColorAt(1.0, QColor(4, 7, 18, 215))
             painter.fillRect(rect, final_veil)
         painter.end()
 
@@ -3610,7 +3610,7 @@ class MainWindow(QMainWindow):
             header.setStyleSheet(
                 f"QWidget#pageHeader {{ background: {surface}; color: {colors['text']}; }}"
             )
-        for card_id in ("attToolbarCard", "taskToolbarCard", "empToolbarCard", "sessionStrip", "trackerToolbarCard", "archiveToolbarCard"):
+        for card_id in ("attToolbarCard", "attRosterCard", "attSummaryCard", "taskToolbarCard", "empToolbarCard", "sessionStrip", "trackerToolbarCard", "archiveToolbarCard"):
             for card in self.findChildren(QWidget, card_id):
                 card.setStyleSheet(f"QWidget#{card_id} {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 12px; }}")
         for banner in self.findChildren(QFrame, "brandBanner"):
@@ -4230,7 +4230,7 @@ class MainWindow(QMainWindow):
                 scroll.viewport().setStyleSheet("background: transparent; border: 0;")
 
         # Ensure cards, toolbars, and panels on all tabs remain fully opaque
-        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "sessionStrip", "settingsContent", "trackerToolbarCard", "archiveToolbarCard"):
+        for card_id in ("taskToolbarCard", "empToolbarCard", "attToolbarCard", "attRosterCard", "attSummaryCard", "sessionStrip", "settingsContent", "trackerToolbarCard", "archiveToolbarCard"):
             for widget in self.findChildren(QWidget, card_id):
                 widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 widget.setAutoFillBackground(True)
@@ -5294,10 +5294,28 @@ class MainWindow(QMainWindow):
 
         l.addWidget(att_toolbar_card)
 
+        # Card 1: Daily Attendance Roster Enclosure
+        att_roster_card = QFrame()
+        att_roster_card.setObjectName("attRosterCard")
+        att_roster_layout = QVBoxLayout(att_roster_card)
+        att_roster_layout.setContentsMargins(14, 12, 14, 14)
+        att_roster_layout.setSpacing(10)
+
+        roster_header_row = QHBoxLayout()
+        roster_title = QLabel("📋  DAILY ATTENDANCE ROSTER")
+        roster_title.setStyleSheet("font-size: 9.5pt; font-weight: 800; color: #818CF8; letter-spacing: 0.6px;")
+        roster_header_row.addWidget(roster_title)
+        roster_header_row.addStretch(1)
+        roster_hint = QLabel("Real-time punch records & status updates")
+        roster_hint.setStyleSheet("font-size: 8pt; font-weight: 600; color: #94A3B8; letter-spacing: 0.2px;")
+        roster_header_row.addWidget(roster_hint)
+        att_roster_layout.addLayout(roster_header_row)
+
         self.holiday_banner = QLabel("")
         self.holiday_banner.setProperty("warningBanner", True)
         self.holiday_banner.setStyleSheet("QLabel { background: rgba(30, 41, 59, 0.90); color: #F8FAFC; border: 1.5px solid rgba(99, 102, 241, 0.40); border-radius: 8px; padding: 8px 14px; font-size: 9pt; font-weight: 600; }")
-        l.addWidget(self.holiday_banner)
+        att_roster_layout.addWidget(self.holiday_banner)
+
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
         att_header = self.att_table.horizontalHeader()
         att_header.setSectionResizeMode(QHeaderView.Interactive)
@@ -5308,8 +5326,8 @@ class MainWindow(QMainWindow):
         self.att_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.att_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.att_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.att_table.setMinimumHeight(230)
-        self.att_table.setMaximumHeight(350)
+        self.att_table.setMinimumHeight(240)
+        self.att_table.setMaximumHeight(360)
         self.att_table.verticalHeader().setDefaultSectionSize(48)
         self.att_table.verticalHeader().setMinimumSectionSize(44)
         for c, align in enumerate([
@@ -5329,11 +5347,28 @@ class MainWindow(QMainWindow):
         self.att_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.att_table.setWordWrap(False)
         self.att_table.setToolTip("Update attendance directly using the Status, Check-in, Check-out and Note fields in each employee row. Scroll horizontally to see every column on smaller screens.")
-        l.addWidget(self.att_table, 3)
-        summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
+        att_roster_layout.addWidget(self.att_table)
+        l.addWidget(att_roster_card, 3)
+
+        # Card 2: Totals & Period Summary Card Enclosure
+        att_summary_card = QFrame()
+        att_summary_card.setObjectName("attSummaryCard")
+        att_summary_layout = QVBoxLayout(att_summary_card)
+        att_summary_layout.setContentsMargins(14, 12, 14, 14)
+        att_summary_layout.setSpacing(10)
+
+        summary_header_row = QHBoxLayout()
+        summary_title = QLabel("📊  ATTENDANCE TOTALS & PERIOD SUMMARY")
+        summary_title.setStyleSheet("font-size: 9.5pt; font-weight: 800; color: #38BDF8; letter-spacing: 0.6px;")
+        summary_header_row.addWidget(summary_title)
+        summary_header_row.addStretch(1)
+
+        summary_note = QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
-        summary_note.setStyleSheet("QLabel { background: rgba(15, 23, 42, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 7px; padding: 6px 14px; font-size: 8.5pt; font-weight: 500; }")
-        l.addWidget(summary_note)
+        summary_note.setStyleSheet("QLabel { background: rgba(15, 23, 42, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 7px; padding: 4px 10px; font-size: 8pt; font-weight: 600; }")
+        summary_header_row.addWidget(summary_note)
+        att_summary_layout.addLayout(summary_header_row)
+
         self.attendance_summary_table=QTableWidget(0,8)
         headers = ["Employee","Start date","Work days","Present","Absent","Leave","Holidays","Total present"]
         self.attendance_summary_table.setHorizontalHeaderLabels(headers)
@@ -5359,7 +5394,8 @@ class MainWindow(QMainWindow):
             self.attendance_summary_table.horizontalHeaderItem(i).setToolTip(h)
         self.attendance_summary_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.attendance_summary_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        l.addWidget(self.attendance_summary_table, 2)
+        att_summary_layout.addWidget(self.attendance_summary_table)
+        l.addWidget(att_summary_card, 2)
 
     def build_reports(self):
         outer = QVBoxLayout(self.reports_tab)
