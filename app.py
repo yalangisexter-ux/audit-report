@@ -2982,9 +2982,9 @@ class MainWindow(QMainWindow):
         super().__init__(); ensure_accessible_tooltip_controller(); ensure_combobox_wheel_filter(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
         self.setWindowTitle(APP_NAME); self.setWindowIcon(QIcon(brand_mark_pixmap(128)))
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Window
+            Qt.WindowType.Window
             | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
             | Qt.WindowType.WindowSystemMenuHint
         )
         self._is_maximized = False
@@ -2997,18 +2997,18 @@ class MainWindow(QMainWindow):
             norm_h = min(860, max(600, available.height() - 40))
             norm_x = available.x() + (available.width() - norm_w) // 2
             norm_y = available.y() + (available.height() - norm_h) // 2
+            self.resize(norm_w, norm_h)
+            self.move(norm_x, norm_y)
             self._normal_geometry = QRect(norm_x, norm_y, norm_w, norm_h)
-            # Default to full available work area (which completely respects and reveals the Windows taskbar)
-            self.setGeometry(available)
-            self._is_maximized = True
         else:
             self.resize(1380, 860); self.setMinimumSize(1080, 700)
         self._drag_pos = None
 
-        # Custom title bar
+        # Custom title bar (hidden in native window mode so the top is clean and not empty)
         self.title_bar = QWidget()
         self.title_bar.setObjectName("titleBar")
-        self.title_bar.setFixedHeight(42)
+        self.title_bar.setFixedHeight(0)
+        self.title_bar.hide()
         title_layout = QHBoxLayout(self.title_bar)
         title_layout.setContentsMargins(10, 0, 12, 0)
         title_layout.setSpacing(8)
@@ -3247,7 +3247,7 @@ class MainWindow(QMainWindow):
         # The wallpaper stays behind the page surfaces; content panels remain high-contrast.
         self.bg_anim.setParent(central)
         self.bg_anim.lower()
-        self.bg_anim.setGeometry(0, 42, self.width(), self.height() - 42)
+        self.bg_anim.setGeometry(0, 0, self.width(), self.height())
 
         self.home_tab=QWidget(); self.dashboard=QWidget(); self.employees_tab=QWidget(); self.tasks_tab=QWidget(); self.tracker_tab=QWidget(); self.attendance_tab=QWidget(); self.reports_tab=QWidget(); self.archive_tab=QWidget(); self.settings_tab=QWidget()
         for page in (self.home_tab, self.dashboard, self.employees_tab, self.tasks_tab, self.tracker_tab, self.attendance_tab, self.reports_tab, self.archive_tab, self.settings_tab):
@@ -3659,15 +3659,17 @@ class MainWindow(QMainWindow):
         if hasattr(self, "rollback_button"):
             if is_dark:
                 self.rollback_button.setStyleSheet(
-                    "QPushButton { background: rgba(255, 255, 255, 0.08); color: #CBD5E1; border: 1px solid #475569; "
-                    "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
-                    "QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
+                    "QPushButton#homeRollbackBtn { background: #1E293B; color: #F8FAFC; border: 1.5px solid #475569; "
+                    "border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 9.5pt; } "
+                    "QPushButton#homeRollbackBtn:hover { background: #334155; color: #FFFFFF; border-color: #818CF8; } "
+                    "QPushButton#homeRollbackBtn:pressed { background: #0F172A; }"
                 )
             else:
                 self.rollback_button.setStyleSheet(
-                    f"QPushButton {{ background: {colors.get('nav', surface)}; color: {colors['text']}; border: 1px solid {border}; "
-                    "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
-                    f"QPushButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent']}; }}"
+                    f"QPushButton#homeRollbackBtn {{ background: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; "
+                    "border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 9.5pt; } "
+                    f"QPushButton#homeRollbackBtn:hover {{ background: #F1F5F9; color: #4F46E5; border-color: #6366F1; }} "
+                    "QPushButton#homeRollbackBtn:pressed { background: #E2E8F0; }"
                 )
         for date_edit in self.findChildren(QDateEdit):
             calendar = date_edit.calendarWidget()
@@ -3869,7 +3871,40 @@ class MainWindow(QMainWindow):
         QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {{
             color: {colors['muted_text']}; background-color: {colors['dropdown_hover']};
         }}
-        QPushButton {{ min-height: 34px; padding: 7px 14px; border-radius: 10px; font-weight: 600; }}
+        QPushButton {{
+            min-height: 34px;
+            padding: 7px 15px;
+            border-radius: 9px;
+            font-weight: 600;
+            font-size: 9pt;
+            text-align: center;
+            background-color: {"#1E293B" if is_dark_theme else "#FFFFFF"};
+            color: {"#F8FAFC" if is_dark_theme else "#0F172A"};
+            border: 1.5px solid {"#334155" if is_dark_theme else "#CBD5E1"};
+        }}
+        QPushButton:hover {{
+            background-color: {"#334155" if is_dark_theme else "#F1F5F9"};
+            color: {"#FFFFFF" if is_dark_theme else "#312E81"};
+            border-color: {"#818CF8" if is_dark_theme else "#6366F1"};
+        }}
+        QPushButton:pressed {{
+            background-color: {"#0F172A" if is_dark_theme else "#E2E8F0"};
+        }}
+        QPushButton:disabled {{
+            background-color: {"rgba(30, 41, 59, 0.40)" if is_dark_theme else "rgba(241, 245, 249, 0.60)"};
+            color: {"#64748B" if is_dark_theme else "#94A3B8"};
+            border-color: {"rgba(51, 65, 85, 0.40)" if is_dark_theme else "rgba(203, 213, 225, 0.60)"};
+        }}
+        QPushButton[primary="true"], QPushButton:default {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED);
+            color: #FFFFFF;
+            font-weight: 700;
+            border: 1.5px solid #818CF8;
+        }}
+        QPushButton[primary="true"]:hover, QPushButton:default:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9);
+            border-color: #A5B4FC;
+        }}
         QTableWidget {{
             gridline-color: {colors['border']};
             background-color: {colors.get('table_bg', '#0F172A')};
@@ -4011,67 +4046,31 @@ class MainWindow(QMainWindow):
         self.polish_tables()
 
     def toggle_maximize(self):
-        screen = QApplication.primaryScreen()
-        avail = screen.availableGeometry() if screen else None
-        if getattr(self, "_is_maximized", False):
-            if getattr(self, "_normal_geometry", None):
-                self.setGeometry(self._normal_geometry)
-            else:
-                if avail:
-                    norm_w = min(1380, max(900, avail.width() - 40))
-                    norm_h = min(860, max(600, avail.height() - 40))
-                    norm_x = avail.x() + (avail.width() - norm_w) // 2
-                    norm_y = avail.y() + (avail.height() - norm_h) // 2
-                    self.setGeometry(norm_x, norm_y, norm_w, norm_h)
-                else:
-                    self.resize(1380, 860)
+        if self.isMaximized():
+            self.showNormal()
             self._is_maximized = False
-            self.btn_max.setText("□")
+            if hasattr(self, "btn_max"):
+                self.btn_max.setText("□")
         else:
-            self._normal_geometry = self.geometry()
-            if avail:
-                self.setGeometry(avail)
-            else:
-                self.showMaximized()
+            self.showMaximized()
             self._is_maximized = True
-            self.btn_max.setText("❐")
+            if hasattr(self, "btn_max"):
+                self.btn_max.setText("❐")
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 42:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            event.accept()
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            if getattr(self, "_is_maximized", False):
-                screen = QApplication.primaryScreen()
-                avail = screen.availableGeometry() if screen else None
-                norm_w = self._normal_geometry.width() if getattr(self, "_normal_geometry", None) else (min(1380, avail.width() - 40) if avail else 1380)
-                norm_h = self._normal_geometry.height() if getattr(self, "_normal_geometry", None) else (min(860, avail.height() - 40) if avail else 860)
-                cur_x = int(event.globalPosition().x())
-                cur_y = int(event.globalPosition().y())
-                new_x = cur_x - norm_w // 2
-                new_y = cur_y - 20
-                if avail:
-                    new_x = max(avail.x(), min(new_x, avail.x() + avail.width() - norm_w))
-                    new_y = max(avail.y(), min(new_y, avail.y() + avail.height() - norm_h))
-                self._normal_geometry = QRect(new_x, new_y, norm_w, norm_h)
-                self.setGeometry(self._normal_geometry)
-                self._is_maximized = False
-                self.btn_max.setText("□")
-                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            else:
-                self.move(event.globalPosition().toPoint() - self._drag_pos)
-            event.accept()
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         self._drag_pos = None
-        event.accept()
+        super().mouseReleaseEvent(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "bg_anim"):
-            self.bg_anim.setGeometry(0, 42, self.width(), max(1, self.height() - 42))
+            self.bg_anim.setGeometry(0, 0, self.width(), max(1, self.height()))
             self.bg_anim.init_particles()
         self._apply_responsive_layout()
         # Main content geometry settles after QMainWindow finishes processing the
@@ -4400,12 +4399,13 @@ class MainWindow(QMainWindow):
                         f"QPushButton#{b_obj}:hover {{ background: #DC2626; color: #FFFFFF; border-color: #B91C1C; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #991B1B; }}"
                     )
-            # Secondary general actions (Refresh, Edit, Select All, Proof, View, Export, Note, Edit Times, etc.)
+            # Secondary general actions (Refresh, Edit, Select All, Proof, View, Export, Note, Edit Times, Settings Actions, etc.)
             elif b_obj in (
                 "taskEditBtn", "taskBulkEditBtn", "taskSelectAllBtn", "taskProofBtn", "taskRefreshBtn",
                 "empEditBtn", "empToggleBtn", "empRefreshBtn", "trackerRefreshBtn",
                 "archiveViewBtn", "archiveExportBtn", "archiveRefreshBtn",
-                "attSelectAllBtn", "attEditTimesBtn", "attNoteBtn"
+                "attSelectAllBtn", "attEditTimesBtn", "attNoteBtn",
+                "settingsActionBtn", "settingsSyncConfigBtn", "settingsSyncLinkBtn"
             ):
                 if is_dark_theme:
                     btn.setStyleSheet(
@@ -4524,6 +4524,68 @@ class MainWindow(QMainWindow):
                         "QPushButton#attDeclareHolidayBtn { background: #EEF2FF; color: #4338CA; border: 1.5px solid #C7D2FE; "
                         "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
                         "QPushButton#attDeclareHolidayBtn:hover { background: #4F46E5; color: #FFFFFF; }"
+                    )
+            elif b_obj == "settingsSyncPushBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#settingsSyncPushBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(14, 165, 233, 0.28), stop:1 rgba(2, 132, 199, 0.38)); "
+                        "color: #F0F9FF; border: 1.5px solid rgba(56, 189, 248, 0.55); border-radius: 9px; padding: 7px 16px; font-weight: 700; font-size: 9pt; } "
+                        "QPushButton#settingsSyncPushBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1); border-color: #38BDF8; color: #FFFFFF; } "
+                        "QPushButton#settingsSyncPushBtn:pressed { background: #0369A1; } "
+                        "QPushButton#settingsSyncPushBtn:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#settingsSyncPushBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1); "
+                        "color: #FFFFFF; border: 1.5px solid #0284C7; border-radius: 9px; padding: 7px 16px; font-weight: 700; font-size: 9pt; } "
+                        "QPushButton#settingsSyncPushBtn:hover { background: #0369A1; border-color: #075985; } "
+                        "QPushButton#settingsSyncPushBtn:disabled { background: rgba(241, 245, 249, 0.60); color: #94A3B8; border-color: rgba(203, 213, 225, 0.60); }"
+                    )
+            elif b_obj == "settingsSyncPullBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#settingsSyncPullBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(99, 102, 241, 0.28), stop:1 rgba(79, 70, 229, 0.38)); "
+                        "color: #EEF2FF; border: 1.5px solid rgba(129, 140, 248, 0.55); border-radius: 9px; padding: 7px 16px; font-weight: 700; font-size: 9pt; } "
+                        "QPushButton#settingsSyncPullBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5); border-color: #A5B4FC; color: #FFFFFF; } "
+                        "QPushButton#settingsSyncPullBtn:pressed { background: #4338CA; } "
+                        "QPushButton#settingsSyncPullBtn:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#settingsSyncPullBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #4F46E5, stop:1 #4338CA); "
+                        "color: #FFFFFF; border: 1.5px solid #4F46E5; border-radius: 9px; padding: 7px 16px; font-weight: 700; font-size: 9pt; } "
+                        "QPushButton#settingsSyncPullBtn:hover { background: #4338CA; border-color: #3730A3; } "
+                        "QPushButton#settingsSyncPullBtn:disabled { background: rgba(241, 245, 249, 0.60); color: #94A3B8; border-color: rgba(203, 213, 225, 0.60); }"
+                    )
+            elif b_obj == "homeRollbackBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#homeRollbackBtn { background: #1E293B; color: #F8FAFC; border: 1.5px solid #475569; "
+                        "border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 9.5pt; } "
+                        "QPushButton#homeRollbackBtn:hover { background: #334155; color: #FFFFFF; border-color: #818CF8; } "
+                        "QPushButton#homeRollbackBtn:pressed { background: #0F172A; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#homeRollbackBtn { background: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; "
+                        "border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 9.5pt; } "
+                        "QPushButton#homeRollbackBtn:hover { background: #F1F5F9; color: #4F46E5; border-color: #6366F1; } "
+                        "QPushButton#homeRollbackBtn:pressed { background: #E2E8F0; }"
+                    )
+            elif b_obj == "homeUpdateBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#homeUpdateBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #0369A1); "
+                        "color: #FFFFFF; border: 1.5px solid #38BDF8; border-radius: 9px; padding: 7px 16px; font-weight: 700; font-size: 9.5pt; } "
+                        "QPushButton#homeUpdateBtn:hover { background: #0369A1; border-color: #7DD3FC; } "
+                        "QPushButton#homeUpdateBtn:pressed { background: #075985; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#homeUpdateBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); "
+                        "color: #FFFFFF; border: 1.5px solid #6366F1; border-radius: 9px; padding: 7px 16px; font-weight: 700; font-size: 9.5pt; } "
+                        "QPushButton#homeUpdateBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); border-color: #4338CA; } "
+                        "QPushButton#homeUpdateBtn:pressed { background: #3730A3; }"
                     )
 
         for widget in self.findChildren(QWidget, "settingsContent"):
@@ -4680,11 +4742,13 @@ class MainWindow(QMainWindow):
         version_label.setProperty("mutedText", True)
         session_layout.addWidget(version_label, 1, 0)
         self.update_button = QPushButton("⬇  Check for updates")
+        self.update_button.setObjectName("homeUpdateBtn")
         self.update_button.setToolTip("Check GitHub for the latest application installer")
         self.update_button.setMinimumWidth(150)
         self.update_button.clicked.connect(self.check_for_updates)
         session_layout.addWidget(self.update_button, 1, 1)
         self.rollback_button = QPushButton("↶ Roll back")
+        self.rollback_button.setObjectName("homeRollbackBtn")
         self.rollback_button.setToolTip("Install a previous application version (Admin password required)")
         self.rollback_button.setMinimumWidth(120)
         self.rollback_button.clicked.connect(self.rollback_application)
@@ -4757,13 +4821,15 @@ class MainWindow(QMainWindow):
             "QPushButton:hover { background: #0369A1; border-color: #7DD3FC; }"
         )
         self.rollback_button.setStyleSheet(
-            "QPushButton { background: rgba(15, 23, 42, 0.06); color: #334155; border: 1px solid #CBD5E1; "
-            "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
-            "QPushButton:hover { background: #F1F5F9; color: #0F172A; border-color: #94A3B8; }"
+            "QPushButton#homeRollbackBtn { background: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; "
+            "border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 9.5pt; } "
+            "QPushButton#homeRollbackBtn:hover { background: #F1F5F9; color: #4F46E5; border-color: #6366F1; } "
+            "QPushButton#homeRollbackBtn:pressed { background: #E2E8F0; }"
             if self.current_theme() != "night" else
-            "QPushButton { background: rgba(255, 255, 255, 0.08); color: #CBD5E1; border: 1px solid #475569; "
-            "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
-            "QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
+            "QPushButton#homeRollbackBtn { background: #1E293B; color: #F8FAFC; border: 1.5px solid #475569; "
+            "border-radius: 9px; padding: 7px 14px; font-weight: 600; font-size: 9.5pt; } "
+            "QPushButton#homeRollbackBtn:hover { background: #334155; color: #FFFFFF; border-color: #818CF8; } "
+            "QPushButton#homeRollbackBtn:pressed { background: #0F172A; }"
         )
         for index, (symbol, section, guidance, example, tab_idx) in enumerate(guide_items):
             guide_card = QWidget()
@@ -6064,8 +6130,8 @@ class MainWindow(QMainWindow):
         self.github_sync_install_label.setProperty("mutedText", True)
         install_row.addWidget(self.github_sync_install_label)
         self.link_install_id_btn = QPushButton("🔗 Link / Change ID")
+        self.link_install_id_btn.setObjectName("settingsSyncLinkBtn")
         self.link_install_id_btn.setToolTip("Link this device to an existing Installation ID from another PC to restore or share data")
-        self.link_install_id_btn.setStyleSheet("QPushButton { font-size: 8.5pt; padding: 3px 8px; }")
         self.link_install_id_btn.clicked.connect(self.change_installation_id)
         install_row.addWidget(self.link_install_id_btn)
         install_row.addStretch(1)
@@ -6073,16 +6139,19 @@ class MainWindow(QMainWindow):
 
         sync_actions = QHBoxLayout()
         self.github_sync_now_button = QPushButton("Push Data")
+        self.github_sync_now_button.setObjectName("settingsSyncPushBtn")
         self.github_sync_now_button.setToolTip(
             "Upload this installation’s encrypted database snapshot. Local edits are not uploaded until you click this button."
         )
         self.github_sync_now_button.clicked.connect(self.sync_github_database_now)
         self.github_sync_pull_button = QPushButton("Pull Latest Data")
+        self.github_sync_pull_button.setObjectName("settingsSyncPullBtn")
         self.github_sync_pull_button.setToolTip(
             "Developer-only: validate and pull the latest committed snapshot for this installation. A backup is created first."
         )
         self.github_sync_pull_button.clicked.connect(self.pull_latest_github_database)
         self.github_sync_config_button = QPushButton("⚙️ Configure Cloud Sync")
+        self.github_sync_config_button.setObjectName("settingsSyncConfigBtn")
         self.github_sync_config_button.setToolTip(
             "Set or update the Cloudflare Sync Worker URL for database backup and synchronization."
         )
@@ -6124,6 +6193,7 @@ class MainWindow(QMainWindow):
         ]
         for index, (label, slot, tip) in enumerate(actions):
             button = QPushButton(label)
+            button.setObjectName("settingsActionBtn")
             button.clicked.connect(slot)
             button.setToolTip(tip)
             button.setMinimumWidth(0)
@@ -9396,7 +9466,7 @@ def main():
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
         info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
-    win=MainWindow(db, active_user); win.apply_theme(); win.show()
+    win=MainWindow(db, active_user); win.apply_theme(); win.showMaximized()
     if resume_user is not None and resume_tab < win.tabs.count():
         win.tabs.setCurrentIndex(resume_tab)
     return app.exec()
