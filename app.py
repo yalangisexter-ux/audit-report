@@ -2795,8 +2795,8 @@ class AnimatedBackground(QWidget):
                 veil.setColorAt(0.0, QColor(255, 255, 255, max(18, fade - 3)))
                 veil.setColorAt(1.0, QColor(255, 255, 255, min(30, fade + 3)))
             else:
-                veil.setColorAt(0.0, QColor(3, 7, 18, 52))
-                veil.setColorAt(1.0, QColor(3, 7, 18, 92))
+                veil.setColorAt(0.0, QColor(3, 7, 18, 175))
+                veil.setColorAt(1.0, QColor(3, 7, 18, 215))
             painter.fillRect(rect, veil)
         else:
             # Procedural generative live wallpapers guarantee all styles animate offline
@@ -2961,8 +2961,8 @@ class AnimatedBackground(QWidget):
             painter.fillRect(rect, final_veil)
         else:
             final_veil = QLinearGradient(0, 0, 0, h)
-            final_veil.setColorAt(0.0, QColor(4, 7, 18, 70))
-            final_veil.setColorAt(1.0, QColor(4, 7, 18, 110))
+            final_veil.setColorAt(0.0, QColor(4, 7, 18, 120))
+            final_veil.setColorAt(1.0, QColor(4, 7, 18, 160))
             painter.fillRect(rect, final_veil)
         painter.end()
 
@@ -2999,6 +2999,20 @@ class MainWindow(QMainWindow):
         # Keep the original icon for the Windows taskbar/window, but remove the
         # redundant icon button from the visible title bar.
         self.header_logo_menu.hide()
+        self.header_prev = QPushButton("‹")
+        self.header_prev.setObjectName("headerNavButton")
+        self.header_prev.setToolTip("Previous page")
+        self.header_prev.setFixedSize(32, 28)
+        self.header_next = QPushButton("›")
+        self.header_next.setObjectName("headerNavButton")
+        self.header_next.setToolTip("Next page")
+        self.header_next.setFixedSize(32, 28)
+        nav_btn_style = "QPushButton#headerNavButton { background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; font-size: 13pt; font-weight: 700; min-width: 0; padding: 0 0 2px 0; } QPushButton#headerNavButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }"
+        self.header_prev.setStyleSheet(nav_btn_style)
+        self.header_next.setStyleSheet(nav_btn_style)
+
+        title_layout.addWidget(self.header_prev)
+        title_layout.addWidget(self.header_next)
         self.title_label = QLabel(APP_NAME)
         self.title_label.setObjectName("titleLabel")
         self.title_label.setMinimumWidth(0)
@@ -3010,15 +3024,6 @@ class MainWindow(QMainWindow):
         self.header_clock.setMinimumWidth(165)
         self.header_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.header_clock.setToolTip("Current local date and time")
-        # The clock belongs to the shared branded banner, not the top title strip.
-        self.header_prev = QPushButton("‹")
-        self.header_prev.setObjectName("headerNavButton")
-        self.header_prev.setToolTip("Previous page")
-        self.header_prev.setFixedSize(36, 32)
-        self.header_next = QPushButton("›")
-        self.header_next.setObjectName("headerNavButton")
-        self.header_next.setToolTip("Next page")
-        self.header_next.setFixedSize(36, 32)
         btn_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
         close_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: #DC2626; color: #FFFFFF; }"
 
@@ -3063,9 +3068,14 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle.setObjectName("sidebarToggle")
         self.sidebar_toggle.setToolTip("Collapse or expand navigation")
         self.sidebar_toggle.setMinimumHeight(38)
+        self.sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar_toggle.setStyleSheet(
+            "QPushButton#sidebarToggle { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(99, 102, 241, 0.35), stop:1 rgba(147, 51, 234, 0.35)); "
+            "color: #F8FAFC; border: 1px solid rgba(165, 180, 252, 0.40); border-radius: 10px; font-size: 9.5pt; font-weight: 700; padding: 7px 12px; } "
+            "QPushButton#sidebarToggle:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; border-color: #C4B5FD; }"
+        )
         self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
         self.sidebar_layout.addWidget(self.sidebar_toggle)
-        self.sidebar_layout.addWidget(self.header_prev)
 
         self.main_content = QWidget()
         self.main_content.setObjectName("mainContentSurface")
@@ -3234,7 +3244,6 @@ class MainWindow(QMainWindow):
             self.sidebar_layout.addWidget(button)
             self.sidebar_buttons.append((button, title))
         self.sidebar_layout.addStretch(1)
-        self.sidebar_layout.addWidget(self.header_next)
         # Navigation already exists in the persistent sidebar.
         self.header_logo_menu.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
         self._tab_animation = None
@@ -3365,15 +3374,28 @@ class MainWindow(QMainWindow):
                 "input_fg": "#0F172A",
                 "input_border": "#CBD5E1",
                 "input_focus": "#6D28D9",
+                "table_bg": "#FFFFFF",
+                "table_alt_bg": "#F8FAFC",
+                "table_fg": "#0F172A",
+                "table_header_bg": "#F1F5F9",
+                "table_header_fg": "#0F172A",
+                "table_border": "#CBD5E1",
+                "table_grid": "#E2E8F0",
+                "table_sel_bg": "#E0E7FF",
+                "table_sel_fg": "#312E81",
+                "border_strong": "#94A3B8",
+                "scrollbar_track": "rgba(241, 245, 249, 0.60)",
+                "scrollbar_handle": "#CBD5E1",
+                "scrollbar_hover": "#6D28D9",
                 "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #1E293B,stop:1 #0F172A)",
                 "banner_border": "#6366F1",
             },
             "night": {
                 "surface": "#111827",
-                "surface_card": "rgba(15, 23, 42, 0.92)",
-                "sidebar": "rgba(10, 15, 29, 0.85)",
+                "surface_card": "rgba(15, 23, 42, 0.98)",
+                "sidebar": "rgba(10, 15, 29, 0.92)",
                 "sidebar_border": "rgba(51, 65, 85, 0.70)",
-                "nav": "rgba(30, 41, 59, 0.70)",
+                "nav": "rgba(30, 41, 59, 0.75)",
                 "nav_border": "rgba(51, 65, 85, 0.75)",
                 "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4F46E5,stop:1 #00E5FF)",
                 "border": "#334155",
@@ -3407,13 +3429,26 @@ class MainWindow(QMainWindow):
                 "input_fg": "#F8FAFC",
                 "input_border": "#334155",
                 "input_focus": "#7C3AED",
+                "table_bg": "#0F172A",
+                "table_alt_bg": "#152033",
+                "table_fg": "#F8FAFC",
+                "table_header_bg": "#1E293B",
+                "table_header_fg": "#F8FAFC",
+                "table_border": "#334155",
+                "table_grid": "rgba(51, 65, 85, 0.60)",
+                "table_sel_bg": "#312E81",
+                "table_sel_fg": "#FFFFFF",
+                "border_strong": "#64748B",
+                "scrollbar_track": "rgba(15, 23, 42, 0.45)",
+                "scrollbar_handle": "#475569",
+                "scrollbar_hover": "#818CF8",
                 "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #0B1120,stop:1 #020617)",
                 "banner_border": "#38BDF8",
             },
             "ocean": {
                 "surface": "#F0F9FF",
-                "surface_card": "rgba(240, 249, 255, 0.94)",
-                "sidebar": "rgba(240, 249, 255, 0.70)",
+                "surface_card": "rgba(240, 249, 255, 0.96)",
+                "sidebar": "rgba(240, 249, 255, 0.75)",
                 "sidebar_border": "rgba(186, 230, 253, 0.85)",
                 "nav": "rgba(224, 242, 254, 0.80)",
                 "nav_border": "rgba(186, 230, 253, 0.85)",
@@ -3449,13 +3484,26 @@ class MainWindow(QMainWindow):
                 "input_fg": "#0C4A6E",
                 "input_border": "#BAE6FD",
                 "input_focus": "#0284C7",
+                "table_bg": "#FFFFFF",
+                "table_alt_bg": "#F0F9FF",
+                "table_fg": "#0C4A6E",
+                "table_header_bg": "#E0F2FE",
+                "table_header_fg": "#0C4A6E",
+                "table_border": "#BAE6FD",
+                "table_grid": "#E0F2FE",
+                "table_sel_bg": "#BAE6FD",
+                "table_sel_fg": "#0369A1",
+                "border_strong": "#38BDF8",
+                "scrollbar_track": "rgba(224, 242, 254, 0.60)",
+                "scrollbar_handle": "#7DD3FC",
+                "scrollbar_hover": "#0284C7",
                 "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #082F49,stop:0.55 #0C4A6E,stop:1 #075985)",
                 "banner_border": "#00E5FF",
             },
             "sunset": {
                 "surface": "#FFF7ED",
-                "surface_card": "rgba(255, 247, 237, 0.94)",
-                "sidebar": "rgba(255, 247, 237, 0.70)",
+                "surface_card": "rgba(255, 247, 237, 0.96)",
+                "sidebar": "rgba(255, 247, 237, 0.75)",
                 "sidebar_border": "rgba(254, 215, 170, 0.85)",
                 "nav": "rgba(255, 237, 213, 0.80)",
                 "nav_border": "rgba(254, 215, 170, 0.85)",
@@ -3491,6 +3539,19 @@ class MainWindow(QMainWindow):
                 "input_fg": "#7C2D12",
                 "input_border": "#FED7AA",
                 "input_focus": "#EA580C",
+                "table_bg": "#FFFFFF",
+                "table_alt_bg": "#FFF7ED",
+                "table_fg": "#7C2D12",
+                "table_header_bg": "#FFEDD5",
+                "table_header_fg": "#7C2D12",
+                "table_border": "#FED7AA",
+                "table_grid": "#FFEDD5",
+                "table_sel_bg": "#FED7AA",
+                "table_sel_fg": "#9A3412",
+                "border_strong": "#FB923C",
+                "scrollbar_track": "rgba(255, 237, 213, 0.60)",
+                "scrollbar_handle": "#FDBA74",
+                "scrollbar_hover": "#EA580C",
                 "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #431407,stop:0.55 #7C2D12,stop:1 #290E05)",
                 "banner_border": "#FB923C",
             },
@@ -3543,12 +3604,13 @@ class MainWindow(QMainWindow):
             header.setStyleSheet(
                 f"QWidget#pageHeader {{ background: {surface}; color: {colors['text']}; }}"
             )
-        for strip in self.findChildren(QWidget, "sessionStrip"):
-            strip.setStyleSheet(f"QWidget#sessionStrip {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 12px; }}")
-        for card in self.findChildren(QFrame, "attToolbarCard"):
-            card.setStyleSheet(f"QFrame#attToolbarCard {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 8px; }}")
-        for card in self.findChildren(QFrame, "taskToolbarCard"):
-            card.setStyleSheet(f"QFrame#taskToolbarCard {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 8px; }}")
+        for card_id in ("attToolbarCard", "taskToolbarCard", "empToolbarCard", "sessionStrip"):
+            for card in self.findChildren(QFrame, card_id):
+                card.setStyleSheet(f"QFrame#{card_id} {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 12px; }}")
+        for banner in self.findChildren(QFrame, "brandBanner"):
+            banner.setStyleSheet(f"QFrame#brandBanner {{ background: {colors.get('banner_bg', surface)}; border: 1.5px solid {colors.get('banner_border', border)}; border-radius: 16px; }}")
+        for nav_btn in self.findChildren(QPushButton, "headerNavButton"):
+            nav_btn.setStyleSheet(f"QPushButton#headerNavButton {{ background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; font-size: 13pt; font-weight: 700; min-width: 0; padding: 0 0 2px 0; }} QPushButton#headerNavButton:hover {{ background: {colors['accent']}; color: #FFFFFF; border-color: {colors['accent_glow']}; }}")
         for guide in self.findChildren(QWidget, "guideItem"):
             guide.setStyleSheet(f"""
                 QWidget#guideItem {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-left: 5px solid {colors['accent']}; border-radius: 14px; }}
@@ -3771,25 +3833,60 @@ class MainWindow(QMainWindow):
             color: {colors['muted_text']}; background-color: {colors['dropdown_hover']};
         }}
         QPushButton {{ min-height: 34px; padding: 7px 14px; border-radius: 10px; font-weight: 600; }}
-        QTableWidget {{ gridline-color: {colors['border']}; }}
-        QHeaderView::section {{ padding: 9px 8px; }}
+        QTableWidget {{
+            gridline-color: {colors['border']};
+            background-color: {colors.get('table_bg', '#0F172A')};
+            alternate-background-color: {colors.get('table_alt_bg', '#152033')};
+            color: {colors.get('table_fg', '#F8FAFC')};
+            border: 1.5px solid {colors.get('table_border', '#334155')};
+            border-radius: 12px;
+            selection-background-color: {colors.get('table_sel_bg', '#312E81')};
+            selection-color: {colors.get('table_sel_fg', '#FFFFFF')};
+            outline: 0;
+            font-size: 9pt;
+        }}
+        QTableWidget::item {{ padding: 7px 9px; }}
+        QHeaderView::section {{
+            padding: 8px 9px; min-height: 24px;
+            background-color: {colors.get('table_header_bg', '#1E293B')};
+            color: {colors.get('table_header_fg', '#F8FAFC')};
+            font-weight: 700;
+            border: 0;
+            border-bottom: 2px solid {colors.get('table_border', '#334155')};
+            border-right: 1px solid {colors.get('table_grid', 'rgba(51, 65, 85, 0.40)')};
+        }}
+        QTableCornerButton::section {{
+            background-color: {colors.get('table_header_bg', '#1E293B')};
+            border: 0;
+            border-bottom: 2px solid {colors.get('table_border', '#334155')};
+        }}
         QLabel {{ min-width: 0; }}
 
         /* Modern Custom Scrollbars */
         QScrollBar:vertical {{
-            background: transparent; width: 10px; margin: 3px 2px 3px 2px;
+            background: {colors.get('scrollbar_track', 'rgba(15, 23, 42, 0.40)')};
+            width: 10px;
+            margin: 3px 2px 3px 2px;
+            border-radius: 5px;
         }}
         QScrollBar::handle:vertical {{
-            min-height: 28px; background: {colors['border']}; border-radius: 5px;
+            min-height: 32px;
+            background: {colors.get('scrollbar_handle', colors['border'])};
+            border-radius: 5px;
         }}
         QScrollBar::handle:vertical:hover {{
             background: {colors['accent']};
         }}
         QScrollBar:horizontal {{
-            background: transparent; height: 10px; margin: 2px 3px 2px 3px;
+            background: {colors.get('scrollbar_track', 'rgba(15, 23, 42, 0.40)')};
+            height: 10px;
+            margin: 2px 3px 2px 3px;
+            border-radius: 5px;
         }}
         QScrollBar::handle:horizontal {{
-            min-width: 28px; background: {colors['border']}; border-radius: 5px;
+            min-width: 32px;
+            background: {colors.get('scrollbar_handle', colors['border'])};
+            border-radius: 5px;
         }}
         QScrollBar::handle:horizontal:hover {{
             background: {colors['accent']};
@@ -3803,11 +3900,18 @@ class MainWindow(QMainWindow):
             min-height: 34px; padding: 7px 10px; margin: 2px;
             text-align: center; border-radius: 8px;
         }}
-        QGroupBox {{ margin-top: 14px; padding: 12px 10px 10px 10px; }}
-        QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
-        QTableWidget {{ gridline-color: {colors['border']}; }}
-        QTableWidget::item {{ padding: 7px 9px; }}
-        QHeaderView::section {{ padding: 8px 9px; min-height: 24px; }}
+        QGroupBox {{
+            margin-top: 14px; padding: 14px 12px 12px 12px;
+            background-color: {colors.get('surface_card', colors['surface'])};
+            color: {colors['text']};
+            border: 1.5px solid {colors['border']};
+            border-radius: 14px;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin; left: 14px; padding: 0 8px;
+            color: {colors['accent_glow'] if is_dark_theme else colors['accent']};
+            font-weight: 700; font-size: 9.5pt;
+        }}
         QScrollArea#homeScroll, QScrollArea#pageScroll {{
             border: 0; background: transparent;
         }}
@@ -3999,7 +4103,7 @@ class MainWindow(QMainWindow):
         content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         content.setAutoFillBackground(False)
         content.setObjectName("pageContent")
-        content_layout.setContentsMargins(18, 12, 18, 14)
+        content_layout.setContentsMargins(18, 12, 18, 32)
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
@@ -5030,26 +5134,27 @@ class MainWindow(QMainWindow):
         att_toolbar_card = QFrame()
         att_toolbar_card.setObjectName("attToolbarCard")
         att_toolbar_layout = QVBoxLayout(att_toolbar_card)
-        att_toolbar_layout.setContentsMargins(12, 10, 12, 10)
+        att_toolbar_layout.setContentsMargins(14, 12, 14, 12)
         att_toolbar_layout.setSpacing(10)
 
-        # Row 1: Date & Employee Filter & Selection
+        # Row 1: Filters on the left, Holiday management on the right
         row1 = QHBoxLayout()
         row1.setSpacing(10)
 
         date_label = QLabel("📅 Date:")
-        date_label.setStyleSheet("font-weight: 600;")
+        date_label.setStyleSheet("font-weight: 700; font-size: 9pt;")
         row1.addWidget(date_label)
         self.att_date = QDateEdit()
         configure_date_edit(self.att_date)
         self.att_date.setDisplayFormat("yyyy-MM-dd")
         self.att_date.setDate(QDate.currentDate())
-        self.att_date.setMinimumWidth(125)
+        self.att_date.setMinimumWidth(130)
+        self.att_date.setMinimumHeight(36)
         self.att_date.dateChanged.connect(self.refresh_attendance)
         row1.addWidget(self.att_date)
 
         filter_label = QLabel("👤 Filter employee:")
-        filter_label.setStyleSheet("font-weight: 600;")
+        filter_label.setStyleSheet("font-weight: 700; font-size: 9pt;")
         row1.addWidget(filter_label)
         self.att_employee_filter = QComboBox()
         self.att_employee_filter.addItem("All employees", None)
@@ -5057,45 +5162,53 @@ class MainWindow(QMainWindow):
             self.att_employee_filter.addItem(e["name"], e["id"])
         self.att_employee_filter.setMinimumWidth(160)
         self.att_employee_filter.setMaximumWidth(260)
+        self.att_employee_filter.setMinimumHeight(36)
         self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
         row1.addWidget(self.att_employee_filter)
 
-        self.att_select_all_button = QPushButton("☑️ Select All")
-        self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
-        self.att_select_all_button.setMinimumHeight(34)
-        self.att_select_all_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; }")
-        self.att_select_all_button.clicked.connect(self.attendance_select_all)
-        row1.addWidget(self.att_select_all_button)
-
-        self.att_bulk_edit_button = QPushButton("📝 Bulk Edit Selected")
-        self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
-        self.att_bulk_edit_button.setMinimumHeight(34)
-        self.att_bulk_edit_button.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; }")
-        self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
-        row1.addWidget(self.att_bulk_edit_button)
+        row1.addStretch(1)
 
         declare_holiday_btn = QPushButton("🎉 Declare Holiday")
         declare_holiday_btn.setToolTip("Mark the selected date as a declared company holiday")
-        declare_holiday_btn.setMinimumHeight(34)
+        declare_holiday_btn.setMinimumHeight(36)
+        declare_holiday_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         declare_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; background: rgba(99, 102, 241, 0.15); color: #6366F1; border: 1px solid rgba(99, 102, 241, 0.35); } QPushButton:hover { background: #6366F1; color: #FFFFFF; }")
+        declare_holiday_btn.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: rgba(99, 102, 241, 0.20); color: #818CF8; border: 1.5px solid rgba(99, 102, 241, 0.45); } QPushButton:hover { background: #6366F1; color: #FFFFFF; border-color: #818CF8; }")
         declare_holiday_btn.clicked.connect(self.declare_holiday)
         row1.addWidget(declare_holiday_btn)
 
         remove_holiday_btn = QPushButton("🗑️ Remove Holiday")
         remove_holiday_btn.setToolTip("Remove declared holiday from the selected date")
-        remove_holiday_btn.setMinimumHeight(34)
+        remove_holiday_btn.setMinimumHeight(36)
+        remove_holiday_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         remove_holiday_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; } QPushButton:hover { background: #FEE2E2; color: #DC2626; border-color: #EF4444; }")
+        remove_holiday_btn.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: rgba(239, 68, 68, 0.16); color: #F87171; border: 1.5px solid rgba(239, 68, 68, 0.40); } QPushButton:hover { background: #EF4444; color: #FFFFFF; border-color: #F87171; }")
         remove_holiday_btn.clicked.connect(self.remove_holiday)
         row1.addWidget(remove_holiday_btn)
 
-        row1.addStretch(1)
         att_toolbar_layout.addLayout(row1)
 
-        # Row 2: Status & Time Actions
+        # Row 2: Selection & Bulk tools on left, Status & Time tools on right
         row2 = QHBoxLayout()
         row2.setSpacing(8)
+
+        self.att_select_all_button = QPushButton("☑️ Select All")
+        self.att_select_all_button.setToolTip("Select all employees shown for the selected date")
+        self.att_select_all_button.setMinimumHeight(36)
+        self.att_select_all_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.att_select_all_button.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; }")
+        self.att_select_all_button.clicked.connect(self.attendance_select_all)
+        row2.addWidget(self.att_select_all_button)
+
+        self.att_bulk_edit_button = QPushButton("📝 Bulk Edit Selected")
+        self.att_bulk_edit_button.setToolTip("Apply chosen attendance fields to the selected employees")
+        self.att_bulk_edit_button.setMinimumHeight(36)
+        self.att_bulk_edit_button.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.att_bulk_edit_button.setStyleSheet("QPushButton { font-weight: 700; font-size: 9pt; border-radius: 9px; padding: 6px 14px; background: rgba(14, 165, 233, 0.18); color: #38BDF8; border: 1.5px solid rgba(56, 189, 248, 0.45); } QPushButton:hover { background: #0284C7; color: #FFFFFF; border-color: #38BDF8; }")
+        self.att_bulk_edit_button.clicked.connect(self.bulk_edit_attendance)
+        row2.addWidget(self.att_bulk_edit_button)
+
+        row2.addSpacing(10)
 
         status_actions = [
             ("🟢 Present", lambda: self.set_attendance_status("Present")),
@@ -5108,9 +5221,10 @@ class MainWindow(QMainWindow):
         ]
         for label, slot in status_actions:
             b = QPushButton(label)
-            b.setMinimumHeight(34)
+            b.setMinimumHeight(36)
+            b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 5px 10px; min-width: 0; }")
+            b.setStyleSheet("QPushButton { font-weight: 600; font-size: 8.5pt; border-radius: 8px; padding: 6px 11px; }")
             b.clicked.connect(slot)
             row2.addWidget(b)
 
@@ -5124,6 +5238,7 @@ class MainWindow(QMainWindow):
 
         self.holiday_banner = QLabel("")
         self.holiday_banner.setProperty("warningBanner", True)
+        self.holiday_banner.setStyleSheet("QLabel { background: rgba(30, 41, 59, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 8px; padding: 6px 14px; font-size: 8.5pt; font-weight: 500; }")
         l.addWidget(self.holiday_banner)
         self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
         att_header = self.att_table.horizontalHeader()
@@ -5159,6 +5274,7 @@ class MainWindow(QMainWindow):
         l.addWidget(self.att_table, 3)
         summary_note=QLabel("Attendance totals exclude declared holidays and non-working weekdays.")
         summary_note.setProperty("mutedText", True)
+        summary_note.setStyleSheet("QLabel { background: rgba(15, 23, 42, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); border-radius: 7px; padding: 6px 14px; font-size: 8.5pt; font-weight: 500; }")
         l.addWidget(summary_note)
         self.attendance_summary_table=QTableWidget(0,8)
         headers = ["Employee","Start date","Work days","Present","Absent","Leave","Holidays","Total present"]
@@ -6773,7 +6889,18 @@ class MainWindow(QMainWindow):
         selected_eid = self.attendance_selected_employee()
         d=self.att_date.date().toString("yyyy-MM-dd")
         holiday=self.db.get_holiday(d)
-        self.holiday_banner.setText(f"HOLIDAY: {holiday} — excluded from all working-day counts" if holiday else "No holiday declared for the selected date.")
+        if holiday:
+            self.holiday_banner.setText(f"🎉 HOLIDAY: {holiday} — excluded from all working-day counts")
+            self.holiday_banner.setStyleSheet(
+                "QLabel { background: rgba(245, 158, 11, 0.18); color: #FBBF24; border: 1.5px solid rgba(245, 158, 11, 0.45); "
+                "border-radius: 8px; padding: 6px 14px; font-weight: 700; font-size: 9pt; }"
+            )
+        else:
+            self.holiday_banner.setText("ℹ️ No holiday declared for the selected date.")
+            self.holiday_banner.setStyleSheet(
+                "QLabel { background: rgba(30, 41, 59, 0.70); color: #94A3B8; border: 1px solid rgba(51, 65, 85, 0.50); "
+                "border-radius: 8px; padding: 6px 14px; font-size: 8.5pt; font-weight: 500; }"
+            )
         rows={a["employee_id"]:a for a in self.db.attendance(d)}
         emps=self.db.employees(False)
         if hasattr(self, "att_employee_filter") and self.att_employee_filter.currentData() is not None:
@@ -6781,6 +6908,13 @@ class MainWindow(QMainWindow):
             emps = [e for e in emps if e["id"] == filter_id]
         self.att_table.setRowCount(0)
         restore_row = -1
+        pal = self._ui_chrome_palette(self.current_theme())
+        c_bg = pal["dropdown_bg"]
+        c_fg = pal["dropdown_fg"]
+        c_border = pal["dropdown_border"]
+        c_hover = pal["dropdown_hover"]
+        c_accent = pal["accent"]
+        c_placeholder = pal["muted_text"]
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
             name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
@@ -6799,11 +6933,6 @@ class MainWindow(QMainWindow):
             date_item.setToolTip(f"Attendance date: {d}")
             self.att_table.setItem(r, 1, date_item)
 
-            is_night_mode = (self.current_theme() or "day").lower() == "night"
-            c_bg = "#1E293B" if is_night_mode else "#F8FAFC"
-            c_fg = "#F8FAFC" if is_night_mode else "#0F172A"
-            c_border = "#475569" if is_night_mode else "#CBD5E1"
-
             def attach_editor(column, editor):
                 cell = QWidget()
                 cell.setObjectName("attendanceEditorCell")
@@ -6818,19 +6947,18 @@ class MainWindow(QMainWindow):
             status_combo = QComboBox()
             status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
             status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
-            status_combo.setMinimumWidth(0)
-            status_combo.setMinimumWidth(108)
-            status_combo.setFixedHeight(30)
+            status_combo.setMinimumWidth(110)
+            status_combo.setFixedHeight(32)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
-            arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() == "night" else "assets/chevron_down_slate.png").replace("\\", "/")
+            arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() in ("night", "ocean") else "assets/chevron_down_slate.png").replace("\\", "/")
             status_combo.setStyleSheet(
                 f"QComboBox {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
-                f"border-radius: 6px; padding: 2px 24px 2px 8px; font-size: 9pt; font-weight: 600; }} "
-                f"QComboBox:hover {{ border-color: #6366F1; }} "
-                f"QComboBox:focus {{ border: 1.5px solid #6366F1; }} "
-                f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid {c_border}; border-top-right-radius: 5px; border-bottom-right-radius: 5px; background-color: {c_bg}; }} "
+                f"border-radius: 7px; padding: 2px 24px 2px 8px; font-size: 9pt; font-weight: 600; }} "
+                f"QComboBox:hover {{ border-color: {c_accent}; }} "
+                f"QComboBox:focus {{ border: 1.5px solid {c_accent}; }} "
+                f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid {c_border}; border-top-right-radius: 6px; border-bottom-right-radius: 6px; background-color: {c_bg}; }} "
                 f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 10px; height: 10px; }}"
             )
             status_combo.currentTextChanged.connect(
@@ -6847,7 +6975,7 @@ class MainWindow(QMainWindow):
             ):
                 editor = QLineEdit(str(value or ""))
                 editor.setMinimumWidth(0)
-                editor.setFixedHeight(30)
+                editor.setFixedHeight(32)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 if field in ("check_in", "check_out"):
                     editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -6861,9 +6989,10 @@ class MainWindow(QMainWindow):
                 editor.setEnabled(not bool(holiday))
                 editor.setStyleSheet(
                     f"QLineEdit {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
-                    f"border-radius: 6px; padding: 2px 8px; font-size: 9pt; }} "
-                    f"QLineEdit:hover {{ border-color: #6366F1; }} "
-                    f"QLineEdit:focus {{ border: 1.5px solid #6366F1; background-color: {'#0F172A' if is_night_mode else '#FFFFFF'}; }}"
+                    f"border-radius: 7px; padding: 2px 8px; font-size: 9pt; font-weight: 500; }} "
+                    f"QLineEdit:hover {{ border-color: {c_accent}; }} "
+                    f"QLineEdit:focus {{ border: 1.5px solid {c_accent}; background-color: {c_hover}; }} "
+                    f"QLineEdit::placeholder {{ color: {c_placeholder}; }}"
                 )
                 editor.editingFinished.connect(
                     lambda input_widget=editor, employee_id=e["id"], work_date=d, field_name=field:
