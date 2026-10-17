@@ -212,44 +212,163 @@ class BusinessTrackingTab(QWidget):
         self.db = db
         setup_business_tables(db.conn)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.kpi_cards = []
+        self.heading = None
+        self.lbl_svc = None
+        self.lbl_mem = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 8)
 
         self.sub_tabs = QTabWidget()
-        self.sub_tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1.5px solid rgba(99, 102, 241, 0.35);
-                border-radius: 14px;
-                background: rgba(15, 23, 42, 0.90);
-                padding: 10px;
-            }
-            QTabBar::tab {
-                background: rgba(30, 41, 59, 0.85);
-                color: #CBD5E1;
-                font-weight: 700;
-                font-size: 9.5pt;
-                padding: 8px 18px;
-                margin-right: 6px;
-                border-radius: 8px;
-                border: 1px solid rgba(255, 255, 255, 0.08);
-            }
-            QTabBar::tab:selected {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #00E5FF);
-                color: #FFFFFF;
-                border: 1px solid #00E5FF;
-            }
-            QTabBar::tab:hover:!selected {
-                background: rgba(99, 102, 241, 0.35);
-                color: #FFFFFF;
-            }
-        """)
         self.sub_tabs.addTab(self._build_dashboard(), "📊 Dashboard")
         self.sub_tabs.addTab(self._build_products(), "📦 Products & Inventory")
         self.sub_tabs.addTab(self._build_orders(), "🛒 Orders")
         self.sub_tabs.addTab(self._build_services(), "🏋️ Services & Members")
         self.sub_tabs.addTab(self._build_activities(), "⚡ Employee Activities")
         layout.addWidget(self.sub_tabs)
+        self.apply_theme()
         self.refresh_all()
+
+    def apply_theme(self, theme_name=None):
+        if not theme_name and hasattr(self, "db") and hasattr(self.db, "get_setting"):
+            try:
+                theme_name = self.db.get_setting("ui_theme", "day")
+            except Exception:
+                theme_name = "day"
+        theme = (theme_name or "day").lower()
+        if theme in ("night", "dark"):
+            pane_bg = "rgba(15, 23, 42, 0.92)"
+            border = "rgba(99, 102, 241, 0.35)"
+            tab_bg = "rgba(30, 41, 59, 0.85)"
+            tab_fg = "#CBD5E1"
+            tab_sel_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #00E5FF)"
+            heading_color = "#F8FAFC"
+            kpi_card_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(17, 25, 50, 0.92), stop:1 rgba(9, 14, 30, 0.95))"
+            kpi_border = "rgba(99, 102, 241, 0.35)"
+            kpi_hover_border = "#00E5FF"
+            kpi_hover_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(23, 35, 70, 0.95), stop:1 rgba(15, 23, 42, 0.98))"
+            kpi_title_color = "#94A3B8"
+            kpi_value_color = "#00E5FF"
+            kpi_desc_color = "#94A3B8"
+            summary_color = "#E2E8F0"
+            subhead_color = "#818CF8"
+            search_bg = "#0B1120"
+            search_fg = "#F8FAFC"
+            search_border = "#334155"
+        elif theme == "ocean":
+            pane_bg = "rgba(240, 249, 255, 0.94)"
+            border = "#BAE6FD"
+            tab_bg = "rgba(224, 242, 254, 0.90)"
+            tab_fg = "#0C4A6E"
+            tab_sel_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #00E5FF)"
+            heading_color = "#0C4A6E"
+            kpi_card_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F0F9FF, stop:1 #E0F2FE)"
+            kpi_border = "#BAE6FD"
+            kpi_hover_border = "#0284C7"
+            kpi_hover_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E0F2FE, stop:1 #BAE6FD)"
+            kpi_title_color = "#0369A1"
+            kpi_value_color = "#0284C7"
+            kpi_desc_color = "#0C4A6E"
+            summary_color = "#0C4A6E"
+            subhead_color = "#0284C7"
+            search_bg = "#FFFFFF"
+            search_fg = "#0C4A6E"
+            search_border = "#BAE6FD"
+        elif theme == "sunset":
+            pane_bg = "rgba(255, 247, 237, 0.94)"
+            border = "#FED7AA"
+            tab_bg = "rgba(255, 237, 213, 0.90)"
+            tab_fg = "#7C2D12"
+            tab_sel_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EA580C, stop:1 #F43F5E)"
+            heading_color = "#7C2D12"
+            kpi_card_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFF7ED, stop:1 #FFEDD5)"
+            kpi_border = "#FED7AA"
+            kpi_hover_border = "#EA580C"
+            kpi_hover_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFEDD5, stop:1 #FED7AA)"
+            kpi_title_color = "#C2410C"
+            kpi_value_color = "#EA580C"
+            kpi_desc_color = "#7C2D12"
+            summary_color = "#7C2D12"
+            subhead_color = "#EA580C"
+            search_bg = "#FFFFFF"
+            search_fg = "#7C2D12"
+            search_border = "#FED7AA"
+        else:  # Day
+            pane_bg = "rgba(255, 255, 255, 0.95)"
+            border = "#CBD5E1"
+            tab_bg = "rgba(241, 245, 249, 0.90)"
+            tab_fg = "#334155"
+            tab_sel_bg = "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #6D28D9, stop:1 #DB2777)"
+            heading_color = "#0F172A"
+            kpi_card_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F8FAFC)"
+            kpi_border = "#CBD5E1"
+            kpi_hover_border = "#6D28D9"
+            kpi_hover_bg = "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #F8FAFC, stop:1 #EDE9FE)"
+            kpi_title_color = "#64748B"
+            kpi_value_color = "#6D28D9"
+            kpi_desc_color = "#64748B"
+            summary_color = "#334155"
+            subhead_color = "#6D28D9"
+            search_bg = "#FFFFFF"
+            search_fg = "#0F172A"
+            search_border = "#CBD5E1"
+
+        if hasattr(self, "sub_tabs"):
+            self.sub_tabs.setStyleSheet(f"""
+                QTabWidget::pane {{
+                    border: 1.5px solid {border};
+                    border-radius: 14px;
+                    background: {pane_bg};
+                    padding: 10px;
+                }}
+                QTabBar::tab {{
+                    background: {tab_bg};
+                    color: {tab_fg};
+                    font-weight: 700;
+                    font-size: 9.5pt;
+                    padding: 8px 18px;
+                    margin-right: 6px;
+                    border-radius: 8px;
+                    border: 1px solid {border};
+                }}
+                QTabBar::tab:selected {{
+                    background: {tab_sel_bg};
+                    color: #FFFFFF;
+                    border: 1px solid {border};
+                }}
+                QTabBar::tab:hover:!selected {{
+                    background: {tab_bg};
+                    color: {heading_color};
+                }}
+            """)
+        if hasattr(self, "heading") and self.heading:
+            self.heading.setStyleSheet(f"font-size: 15pt; font-weight: 800; color: {heading_color};")
+        if hasattr(self, "kpi_cards"):
+            for card, title_label, value_label, desc_label in self.kpi_cards:
+                card.setStyleSheet(f"""
+                    QWidget#kpiCard {{
+                        background: {kpi_card_bg};
+                        border: 1.5px solid {kpi_border};
+                        border-radius: 14px;
+                        padding: 8px;
+                    }}
+                    QWidget#kpiCard:hover {{
+                        border: 1.5px solid {kpi_hover_border};
+                        background: {kpi_hover_bg};
+                    }}
+                """)
+                title_label.setStyleSheet(f"font-size: 9.5pt; font-weight: 700; color: {kpi_title_color}; text-transform: uppercase; letter-spacing: 0.5px;")
+                value_label.setStyleSheet(f"font-size: 26pt; font-weight: 800; color: {kpi_value_color};")
+                desc_label.setStyleSheet(f"font-size: 8.5pt; color: {kpi_desc_color};")
+        if hasattr(self, "dash_summary"):
+            self.dash_summary.setStyleSheet(f"font-size: 10pt; font-weight: 600; color: {summary_color}; padding: 8px;")
+        if hasattr(self, "lbl_svc") and self.lbl_svc:
+            self.lbl_svc.setStyleSheet(f"font-weight: 700; font-size: 10.5pt; color: {subhead_color}; margin-top: 4px;")
+        if hasattr(self, "lbl_mem") and self.lbl_mem:
+            self.lbl_mem.setStyleSheet(f"font-weight: 700; font-size: 10.5pt; color: {subhead_color}; margin-top: 8px;")
+        for search_edit in (getattr(self, "prod_search", None), getattr(self, "order_search", None)):
+            if search_edit is not None:
+                search_edit.setStyleSheet(f"QLineEdit {{ background: {search_bg}; color: {search_fg}; border: 1.5px solid {search_border}; border-radius: 8px; padding: 6px 10px; }}")
 
     def _build_dashboard(self):
         w = QWidget()
@@ -257,15 +376,16 @@ class BusinessTrackingTab(QWidget):
         l.setContentsMargins(18, 18, 18, 18)
         l.setSpacing(14)
 
-        heading = QLabel("Business overview")
-        heading.setProperty("sectionHeading", True)
-        heading.setStyleSheet("font-size: 15pt; font-weight: 800; color: #FFFFFF;")
-        l.addWidget(heading)
+        self.heading = QLabel("Business overview")
+        self.heading.setProperty("sectionHeading", True)
+        self.heading.setStyleSheet("font-size: 15pt; font-weight: 800; color: #FFFFFF;")
+        l.addWidget(self.heading)
 
         cards = QGridLayout()
         cards.setHorizontalSpacing(12)
         cards.setVerticalSpacing(12)
         self.dashboard_metrics = {}
+        self.kpi_cards = []
         metric_specs = (
             ("products", "Products", "Catalog items"),
             ("low_stock", "Low stock", "At or below reorder level"),
@@ -308,6 +428,7 @@ class BusinessTrackingTab(QWidget):
             card_layout.addWidget(value_label)
             card_layout.addWidget(description_label)
             self.dashboard_metrics[key] = value_label
+            self.kpi_cards.append((card, title_label, value_label, description_label))
             cards.addWidget(card, index // 4, index % 4)
 
         l.addLayout(cards)
@@ -404,18 +525,18 @@ class BusinessTrackingTab(QWidget):
         row.addStretch()
         l.addLayout(row)
 
-        lbl_svc = QLabel("🏋️ Services & Training Programs")
-        lbl_svc.setStyleSheet("font-weight: 700; font-size: 10.5pt; color: #818CF8; margin-top: 4px;")
-        l.addWidget(lbl_svc)
+        self.lbl_svc = QLabel("🏋️ Services & Training Programs")
+        self.lbl_svc.setStyleSheet("font-weight: 700; font-size: 10.5pt; color: #818CF8; margin-top: 4px;")
+        l.addWidget(self.lbl_svc)
         self.svc_table = QTableWidget(0, 4)
         self.svc_table.setHorizontalHeaderLabels(["ID", "Service", "Mode", "Price"])
         self.svc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.svc_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         l.addWidget(self.svc_table)
 
-        lbl_mem = QLabel("👥 Active Memberships & Sessions")
-        lbl_mem.setStyleSheet("font-weight: 700; font-size: 10.5pt; color: #818CF8; margin-top: 8px;")
-        l.addWidget(lbl_mem)
+        self.lbl_mem = QLabel("👥 Active Memberships & Sessions")
+        self.lbl_mem.setStyleSheet("font-weight: 700; font-size: 10.5pt; color: #818CF8; margin-top: 8px;")
+        l.addWidget(self.lbl_mem)
         self.mem_table = QTableWidget(0, 5)
         self.mem_table.setHorizontalHeaderLabels(["ID", "Member", "Service", "Status", "Sessions left"])
         self.mem_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)

@@ -3328,51 +3328,171 @@ class MainWindow(QMainWindow):
         palettes = {
             "day": {
                 "surface": "#FFFFFF",
-                "sidebar": "rgba(255, 255, 255, 0.45)",
-                "sidebar_border": "rgba(226, 232, 240, 0.70)",
-                "nav": "rgba(248, 250, 252, 0.62)",
-                "nav_border": "rgba(226, 232, 240, 0.75)",
+                "surface_card": "rgba(255, 255, 255, 0.95)",
+                "sidebar": "rgba(255, 255, 255, 0.70)",
+                "sidebar_border": "rgba(226, 232, 240, 0.85)",
+                "nav": "rgba(248, 250, 252, 0.80)",
+                "nav_border": "rgba(226, 232, 240, 0.85)",
+                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,235),stop:1 rgba(219,39,119,175))",
                 "border": "#E2E8F0",
-                "text": "#1E293B",
-                "hover": "rgba(237, 233, 254, 0.85)",
+                "border_subtle": "rgba(226, 232, 240, 0.65)",
+                "text": "#0F172A",
+                "muted_text": "#64748B",
+                "hover": "rgba(237, 233, 254, 0.90)",
                 "hover_text": "#4C1D95",
                 "accent": "#6D28D9",
+                "accent_hover": "#5B21B6",
+                "accent_glow": "#A78BFA",
+                "dropdown_bg": "#FFFFFF",
+                "dropdown_fg": "#0F172A",
+                "dropdown_border": "#CBD5E1",
+                "dropdown_hover": "#F1F5F9",
+                "dropdown_sel_bg": "#6D28D9",
+                "dropdown_sel_fg": "#FFFFFF",
+                "calendar_header_bg": "#15233F",
+                "calendar_header_fg": "#FFFFFF",
+                "calendar_bg": "#FFFFFF",
+                "calendar_fg": "#0F172A",
+                "calendar_alt_bg": "#F8FAFC",
+                "calendar_sel_bg": "#6D28D9",
+                "calendar_sel_fg": "#FFFFFF",
+                "menu_bg": "#FFFFFF",
+                "menu_fg": "#0F172A",
+                "menu_border": "#CBD5E1",
+                "menu_sel_bg": "#EDE9FE",
+                "menu_sel_fg": "#4C1D95",
+                "input_bg": "#FFFFFF",
+                "input_fg": "#0F172A",
+                "input_border": "#CBD5E1",
+                "input_focus": "#6D28D9",
+                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #1E293B,stop:1 #0F172A)",
+                "banner_border": "#6366F1",
             },
             "night": {
                 "surface": "#111827",
-                "sidebar": "rgba(15, 23, 42, 0.52)",
+                "surface_card": "rgba(15, 23, 42, 0.92)",
+                "sidebar": "rgba(10, 15, 29, 0.85)",
                 "sidebar_border": "rgba(51, 65, 85, 0.70)",
-                "nav": "rgba(30, 41, 59, 0.65)",
+                "nav": "rgba(30, 41, 59, 0.70)",
                 "nav_border": "rgba(51, 65, 85, 0.75)",
+                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4F46E5,stop:1 #00E5FF)",
                 "border": "#334155",
-                "text": "#E2E8F0",
+                "border_subtle": "rgba(51, 65, 85, 0.50)",
+                "text": "#F8FAFC",
+                "muted_text": "#94A3B8",
                 "hover": "rgba(49, 46, 129, 0.85)",
                 "hover_text": "#F8FAFC",
                 "accent": "#7C3AED",
+                "accent_hover": "#6D28D9",
+                "accent_glow": "#38BDF8",
+                "dropdown_bg": "#0F172A",
+                "dropdown_fg": "#F8FAFC",
+                "dropdown_border": "#475569",
+                "dropdown_hover": "#1E293B",
+                "dropdown_sel_bg": "#6366F1",
+                "dropdown_sel_fg": "#FFFFFF",
+                "calendar_header_bg": "#070B14",
+                "calendar_header_fg": "#FFFFFF",
+                "calendar_bg": "#0F172A",
+                "calendar_fg": "#F8FAFC",
+                "calendar_alt_bg": "#1E293B",
+                "calendar_sel_bg": "#7C3AED",
+                "calendar_sel_fg": "#FFFFFF",
+                "menu_bg": "#0F172A",
+                "menu_fg": "#F8FAFC",
+                "menu_border": "#334155",
+                "menu_sel_bg": "#312E81",
+                "menu_sel_fg": "#FFFFFF",
+                "input_bg": "#0B1120",
+                "input_fg": "#F8FAFC",
+                "input_border": "#334155",
+                "input_focus": "#7C3AED",
+                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #0B1120,stop:1 #020617)",
+                "banner_border": "#38BDF8",
             },
             "ocean": {
                 "surface": "#F0F9FF",
-                "sidebar": "rgba(240, 249, 255, 0.48)",
-                "sidebar_border": "rgba(186, 230, 253, 0.70)",
-                "nav": "rgba(224, 242, 254, 0.65)",
-                "nav_border": "rgba(186, 230, 253, 0.75)",
+                "surface_card": "rgba(240, 249, 255, 0.94)",
+                "sidebar": "rgba(240, 249, 255, 0.70)",
+                "sidebar_border": "rgba(186, 230, 253, 0.85)",
+                "nav": "rgba(224, 242, 254, 0.80)",
+                "nav_border": "rgba(186, 230, 253, 0.85)",
+                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0284C7,stop:1 #06B6D4)",
                 "border": "#BAE6FD",
+                "border_subtle": "rgba(186, 230, 253, 0.65)",
                 "text": "#0C4A6E",
-                "hover": "rgba(207, 250, 254, 0.85)",
+                "muted_text": "#0369A1",
+                "hover": "rgba(207, 250, 254, 0.90)",
                 "hover_text": "#075985",
                 "accent": "#0284C7",
+                "accent_hover": "#0369A1",
+                "accent_glow": "#00E5FF",
+                "dropdown_bg": "#F0F9FF",
+                "dropdown_fg": "#0C4A6E",
+                "dropdown_border": "#BAE6FD",
+                "dropdown_hover": "#E0F2FE",
+                "dropdown_sel_bg": "#0284C7",
+                "dropdown_sel_fg": "#FFFFFF",
+                "calendar_header_bg": "#0C4A6E",
+                "calendar_header_fg": "#FFFFFF",
+                "calendar_bg": "#F0F9FF",
+                "calendar_fg": "#0C4A6E",
+                "calendar_alt_bg": "#E0F2FE",
+                "calendar_sel_bg": "#0284C7",
+                "calendar_sel_fg": "#FFFFFF",
+                "menu_bg": "#F0F9FF",
+                "menu_fg": "#0C4A6E",
+                "menu_border": "#BAE6FD",
+                "menu_sel_bg": "#BAE6FD",
+                "menu_sel_fg": "#0C4A6E",
+                "input_bg": "#FFFFFF",
+                "input_fg": "#0C4A6E",
+                "input_border": "#BAE6FD",
+                "input_focus": "#0284C7",
+                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #082F49,stop:0.55 #0C4A6E,stop:1 #075985)",
+                "banner_border": "#00E5FF",
             },
             "sunset": {
-                "surface": "#FFEDD5",
-                "sidebar": "rgba(255, 237, 213, 0.48)",
-                "sidebar_border": "rgba(254, 215, 170, 0.70)",
-                "nav": "rgba(255, 247, 237, 0.65)",
-                "nav_border": "rgba(254, 215, 170, 0.75)",
+                "surface": "#FFF7ED",
+                "surface_card": "rgba(255, 247, 237, 0.94)",
+                "sidebar": "rgba(255, 247, 237, 0.70)",
+                "sidebar_border": "rgba(254, 215, 170, 0.85)",
+                "nav": "rgba(255, 237, 213, 0.80)",
+                "nav_border": "rgba(254, 215, 170, 0.85)",
+                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #EA580C,stop:1 #F43F5E)",
                 "border": "#FED7AA",
+                "border_subtle": "rgba(254, 215, 170, 0.65)",
                 "text": "#7C2D12",
-                "hover": "rgba(254, 215, 170, 0.85)",
+                "muted_text": "#C2410C",
+                "hover": "rgba(254, 215, 170, 0.90)",
                 "hover_text": "#7C2D12",
                 "accent": "#EA580C",
+                "accent_hover": "#C2410C",
+                "accent_glow": "#FB923C",
+                "dropdown_bg": "#FFF7ED",
+                "dropdown_fg": "#7C2D12",
+                "dropdown_border": "#FED7AA",
+                "dropdown_hover": "#FFEDD5",
+                "dropdown_sel_bg": "#EA580C",
+                "dropdown_sel_fg": "#FFFFFF",
+                "calendar_header_bg": "#7C2D12",
+                "calendar_header_fg": "#FFFFFF",
+                "calendar_bg": "#FFF7ED",
+                "calendar_fg": "#7C2D12",
+                "calendar_alt_bg": "#FFEDD5",
+                "calendar_sel_bg": "#EA580C",
+                "calendar_sel_fg": "#FFFFFF",
+                "menu_bg": "#FFF7ED",
+                "menu_fg": "#7C2D12",
+                "menu_border": "#FED7AA",
+                "menu_sel_bg": "#FED7AA",
+                "menu_sel_fg": "#7C2D12",
+                "input_bg": "#FFFFFF",
+                "input_fg": "#7C2D12",
+                "input_border": "#FED7AA",
+                "input_focus": "#EA580C",
+                "banner_bg": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #431407,stop:0.55 #7C2D12,stop:1 #290E05)",
+                "banner_border": "#FB923C",
             },
         }
         return palettes.get((theme_name or "day").lower(), palettes["day"])
@@ -3391,63 +3511,91 @@ class MainWindow(QMainWindow):
         surface, border = colors["surface"], colors["border"]
         sidebar_bg = colors.get("sidebar", surface)
         sidebar_border = colors.get("sidebar_border", border)
+        is_dark = (theme_name or self.current_theme()).lower() in ("night", "dark")
         if hasattr(self, "sidebar"):
             self.sidebar.setStyleSheet(
                 f"QWidget#navigationSidebar {{ background: {sidebar_bg}; border-right: 1px solid {sidebar_border}; }}"
             )
         if hasattr(self, "title_bar"):
-            title_bg = "#070B14" if (theme_name or self.current_theme()).lower() == "night" else "#15233F"
-            title_border = "#111827" if (theme_name or self.current_theme()).lower() == "night" else "#1E2F52"
+            title_bg = "#070B14" if is_dark else "#15233F"
+            title_border = "#111827" if is_dark else "#1E2F52"
             self.title_bar.setStyleSheet(
                 f"QWidget#titleBar {{ background: {title_bg}; border-bottom: 1px solid {title_border}; }}"
             )
         if hasattr(self, "title_label"):
             self.title_label.setStyleSheet("QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }")
         if hasattr(self, "sidebar_buttons"):
-            nav_bg = colors.get("nav", colors['nav'])
+            nav_bg = colors.get("nav", surface)
             nav_border = colors.get("nav_border", border)
+            nav_active = colors.get("nav_active_grad", "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,235),stop:1 rgba(219,39,119,175))")
             for button, _title in self.sidebar_buttons:
                 button.setStyleSheet(f"""
                     QPushButton#sidebarNavButton {{ background: {nav_bg}; color: {colors['text']};
                         border: 1px solid {nav_border}; border-radius: 11px; font-size: 10pt;
                         font-weight: 600; text-align: left; padding: 8px 10px; }}
                     QPushButton#sidebarNavButton:hover {{ background: {colors['hover']};
-                        color: {colors['hover_text']}; border-color: #C4B5FD; }}
+                        color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
                     QPushButton#sidebarNavButton:checked {{
-                        background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,235),stop:1 rgba(219,39,119,175));
-                        color: #FFFFFF; border: 1px solid #C4B5FD; }}
+                        background: {nav_active};
+                        color: #FFFFFF; border: 1px solid {colors['accent_glow']}; font-weight: 700; }}
                 """)
         for header in self.findChildren(QWidget, "pageHeader"):
             header.setStyleSheet(
                 f"QWidget#pageHeader {{ background: {surface}; color: {colors['text']}; }}"
             )
+        for strip in self.findChildren(QWidget, "sessionStrip"):
+            strip.setStyleSheet(f"QWidget#sessionStrip {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 12px; }}")
+        for card in self.findChildren(QFrame, "attToolbarCard"):
+            card.setStyleSheet(f"QFrame#attToolbarCard {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 8px; }}")
+        for card in self.findChildren(QFrame, "taskToolbarCard"):
+            card.setStyleSheet(f"QFrame#taskToolbarCard {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-radius: 14px; padding: 8px; }}")
+        for guide in self.findChildren(QWidget, "guideItem"):
+            guide.setStyleSheet(f"""
+                QWidget#guideItem {{ background: {colors.get('surface_card', surface)}; border: 1.5px solid {border}; border-left: 5px solid {colors['accent']}; border-radius: 14px; }}
+                QWidget#guideItem:hover {{ border-color: {colors['accent']}; border-left: 5px solid {colors['accent_glow']}; background: {colors['hover']}; }}
+            """)
+        if hasattr(self, "rollback_button"):
+            if is_dark:
+                self.rollback_button.setStyleSheet(
+                    "QPushButton { background: rgba(255, 255, 255, 0.08); color: #CBD5E1; border: 1px solid #475569; "
+                    "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
+                    "QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"
+                )
+            else:
+                self.rollback_button.setStyleSheet(
+                    f"QPushButton {{ background: {colors.get('nav', surface)}; color: {colors['text']}; border: 1px solid {border}; "
+                    "border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 9.5pt; } "
+                    f"QPushButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent']}; }}"
+                )
         for date_edit in self.findChildren(QDateEdit):
             calendar = date_edit.calendarWidget()
             if calendar is not None:
-                header = "#070B14" if (theme_name or self.current_theme()).lower() == "night" else "#15233F"
                 calendar.setStyleSheet(f"""
-                    QCalendarWidget {{ background: {surface}; color: {colors['text']}; }}
-                    QCalendarWidget QWidget#qt_calendar_navigationbar,
-                    QCalendarWidget QToolButton, QCalendarWidget QSpinBox {{
-                        background: {header}; color: #FFFFFF; }}
-                    QCalendarWidget QAbstractItemView {{ background: {surface};
-                        alternate-background-color: {colors['nav']}; color: {colors['text']};
-                        selection-background-color: {colors['accent']}; selection-color: #FFFFFF; }}
-                    QCalendarWidget QAbstractItemView:disabled {{ color: #94A3B8; }}
+                    QCalendarWidget {{ background-color: {colors['calendar_bg']}; color: {colors['calendar_fg']}; border: 1.5px solid {colors['accent']}; border-radius: 12px; }}
+                    QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {colors['calendar_header_bg']}; min-height: 42px; border-top-left-radius: 10px; border-top-right-radius: 10px; }}
+                    QCalendarWidget QToolButton {{ background: transparent; color: #FFFFFF; border: 0; border-radius: 6px; padding: 6px 9px; font-weight: 700; }}
+                    QCalendarWidget QToolButton:hover {{ background: {colors['accent']}; color: #FFFFFF; }}
+                    QCalendarWidget QSpinBox {{ background: {colors['calendar_header_bg']}; color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 5px; padding: 3px 6px; }}
+                    QCalendarWidget QAbstractItemView {{ background: {colors['calendar_bg']};
+                        alternate-background-color: {colors['calendar_alt_bg']}; color: {colors['calendar_fg']};
+                        selection-background-color: {colors['calendar_sel_bg']}; selection-color: {colors['calendar_sel_fg']};
+                        outline: 0; gridline-color: {colors['border_subtle']}; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }}
+                    QCalendarWidget QAbstractItemView:enabled {{ color: {colors['calendar_fg']}; }}
+                    QCalendarWidget QAbstractItemView:disabled {{ color: {colors['muted_text']}; }}
                 """)
-        menu_bg = surface
-        menu_fg = colors["text"]
-        menu_border = border
-        menu_sel_bg = colors["hover"] if (theme_name or self.current_theme()).lower() != "night" else colors["accent"]
-        menu_sel_fg = colors["hover_text"] if (theme_name or self.current_theme()).lower() != "night" else "#FFFFFF"
+        menu_bg = colors["menu_bg"]
+        menu_fg = colors["menu_fg"]
+        menu_border = colors["menu_border"]
+        menu_sel_bg = colors["menu_sel_bg"]
+        menu_sel_fg = colors["menu_sel_fg"]
         for menu in self.findChildren(QMenu):
             menu.setStyleSheet(f"""
                 QMenu, QMenu#holidayMenu, QMenu#headerSectionMenu {{
                     background-color: {menu_bg}; color: {menu_fg};
-                    border: 1px solid {menu_border}; border-radius: 8px; padding: 6px;
+                    border: 1.5px solid {menu_border}; border-radius: 10px; padding: 6px;
                 }}
                 QMenu::item, QMenu#holidayMenu::item, QMenu#headerSectionMenu::item {{
-                    background-color: {menu_bg}; color: {menu_fg};
+                    background-color: transparent; color: {menu_fg};
                     padding: 8px 24px 8px 16px; border-radius: 6px;
                     font-size: 9.5pt; font-weight: 600;
                 }}
@@ -3455,17 +3603,17 @@ class MainWindow(QMainWindow):
                     background-color: {menu_sel_bg}; color: {menu_sel_fg};
                 }}
                 QMenu::item:disabled, QMenu#holidayMenu::item:disabled, QMenu#headerSectionMenu::item:disabled {{
-                    color: #94A3B8;
+                    color: {colors['muted_text']};
                 }}
             """)
         for combo in self.findChildren(QComboBox):
             view = combo.view()
             if view is not None:
                 view.setStyleSheet(f"""
-                    QListView {{ background-color: {menu_bg}; color: {menu_fg}; border: 1px solid {menu_border}; outline: 0; padding: 4px; border-radius: 8px; }}
-                    QListView::item {{ background-color: {menu_bg}; color: {menu_fg}; padding: 7px 10px; min-height: 24px; border-radius: 4px; }}
-                    QListView::item:selected {{ background-color: {colors['accent']}; color: #FFFFFF; }}
-                    QListView::item:hover {{ background-color: {colors['hover']}; color: {colors['hover_text']}; }}
+                    QListView {{ background-color: {colors['dropdown_bg']}; color: {colors['dropdown_fg']}; border: 1.5px solid {colors['dropdown_border']}; outline: 0; padding: 6px; border-radius: 10px; }}
+                    QListView::item {{ background-color: {colors['dropdown_bg']}; color: {colors['dropdown_fg']}; padding: 8px 12px; min-height: 24px; border-radius: 6px; }}
+                    QListView::item:selected {{ background-color: {colors['dropdown_sel_bg']}; color: {colors['dropdown_sel_fg']}; font-weight: 600; }}
+                    QListView::item:hover {{ background-color: {colors['dropdown_hover']}; color: {colors['dropdown_fg']}; }}
                 """)
 
     def _refresh_dashboard_action_styles(self, theme_name=None):
@@ -3485,194 +3633,186 @@ class MainWindow(QMainWindow):
 
     def apply_global_control_polish(self):
         """Apply consistent contrast, spacing, focus, and sizing to all interactive controls."""
-        self._apply_tooltip_palette(self.current_theme())
-        if "QWidget#headerClock" not in self.styleSheet():
-            is_dark_theme = (self.current_theme() or "day").lower() == "night"
-            slate_arrow = resource_path("assets/chevron_down_slate.png").replace("\\", "/")
-            white_arrow = resource_path("assets/chevron_down_white.png").replace("\\", "/")
-            active_arrow = white_arrow if is_dark_theme else slate_arrow
-            drop_bg = "#1E293B" if is_dark_theme else "#F8FAFC"
-            drop_border = "#334155" if is_dark_theme else "#CBD5E1"
-            drop_hover = "#334155" if is_dark_theme else "#E2E8F0"
-            sidebar_bg = "rgba(15, 23, 42, 0.52)" if is_dark_theme else "rgba(255, 255, 255, 0.45)"
-            sidebar_border = "rgba(51, 65, 85, 0.70)" if is_dark_theme else "rgba(226, 232, 240, 0.70)"
-            title_bg = "#070B14" if is_dark_theme else "#15233F"
-            title_border = "#111827" if is_dark_theme else "#1E2F52"
-            polish_css = """
-            QWidget#navigationSidebar { background: __SIDEBAR_BG__; border-right: 1px solid __SIDEBAR_BORDER__; }
-            QWidget#mainContentSurface { background: transparent; }
-            QWidget#titleBar { background: __TITLE_BG__; border-bottom: 1px solid __TITLE_BORDER__; }
-            QFrame#brandBanner { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #0F172A,stop:0.55 #0B1120,stop:1 #020617);
-                border: 1px solid rgba(255, 255, 255, 0.12); border-top: 2px solid #38BDF8; border-radius: 14px; margin: 6px 12px; }
-            QLabel#brandLogo { background: rgba(15,23,42,160); border: 2px solid rgba(56, 189, 248, 0.40); border-radius: 14px; padding: 2px; }
-            QFrame#headerClockFrame { background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; }
-            QFrame#headerClockFrame QLabel#headerClock, QFrame#brandBanner QLabel#headerClock {
-                background: transparent; color: #F8FAFC; border: 0; padding: 2px 6px; font-size: 9.5pt; font-weight: 700;
-            }
-            QLabel#brandHeading { background: transparent; color: #FFFFFF; font-size: 15pt; font-weight: 800; letter-spacing: 0.8px; }
-            QLabel#brandSubheading { background: transparent; color: #94A3B8; font-size: 8.5pt; font-weight: 600; letter-spacing: 0.6px; }
-            QPushButton#clockModeBtn { min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
-                padding: 0; margin: 0; background: rgba(255, 255, 255, 0.12); color: #F8FAFC;
-                border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 7px;
-                font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; }
-            QPushButton#clockModeBtn:hover { background: rgba(56, 189, 248, 0.35); border-color: #38BDF8; color: #FFFFFF; }
-            QPushButton#headerSyncPushBtn {
-                min-height: 36px; max-height: 38px; padding: 6px 15px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(14, 165, 233, 0.28), stop:1 rgba(2, 132, 199, 0.38)); color: #F0F9FF;
-                border: 1.5px solid rgba(56, 189, 248, 0.55); border-radius: 9px;
-                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 0.3px;
-            }
-            QPushButton#headerSyncPushBtn:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1);
-                border-color: #38BDF8; color: #FFFFFF;
-            }
-            QPushButton#headerSyncPushBtn:pressed { background: #0369A1; }
-            QPushButton#headerSyncPullBtn {
-                min-height: 36px; max-height: 38px; padding: 6px 15px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(99, 102, 241, 0.28), stop:1 rgba(79, 70, 229, 0.38)); color: #EEF2FF;
-                border: 1.5px solid rgba(129, 140, 248, 0.55); border-radius: 9px;
-                font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 0.3px;
-            }
-            QPushButton#headerSyncPullBtn:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5);
-                border-color: #A5B4FC; color: #FFFFFF;
-            }
-            QPushButton#headerSyncPullBtn:pressed { background: #4338CA; }
-            QPushButton#headerSyncPushBtn:disabled, QPushButton#headerSyncPullBtn:disabled {
-                background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12);
-            }
-            QWidget#pageHeader { background: #FFFFFF; color: #0F172A; }
-            QPushButton#sidebarToggle { background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
-                border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }
-            QPushButton#sidebarToggle:hover { background: rgba(8, 145, 178, 220); border-color: #67E8F9; }
-            QPushButton#sidebarNavButton { background: rgba(248, 250, 252, 0.62); color: #1E293B;
-                border: 1px solid rgba(226, 232, 240, 0.75); border-radius: 11px;
-                font-size: 10pt; font-weight: 600; text-align: left; padding: 8px 10px; }
-            QPushButton#sidebarNavButton:hover { background: rgba(237, 233, 254, 0.85); color: #4C1D95; border-color: #C4B5FD; }
-            QPushButton#sidebarNavButton:checked { background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(109,40,217,235),stop:1 rgba(219,39,119,175));
-                color: #FFFFFF; border: 1px solid #C4B5FD; }
-            QWidget#headerClock { background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }
-            QPushButton#headerNavButton { background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
-                border-radius: 10px; font-size: 18pt; font-weight: 800; padding: 0;
-                min-width: 34px; max-width: 36px; min-height: 28px; max-height: 32px; margin: 2px; }
-            QPushButton#headerNavButton:hover { background: #0891B2; border-color: #67E8F9; color: #FFFFFF; }
-            QToolButton#headerLogoMenu { background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #6D28D9,stop:1 #DB2777);
-                border: 1px solid #C4B5FD; border-radius: 10px; padding: 3px; }
-            QMenu, QMenu#holidayMenu, QMenu#headerSectionMenu {
-                background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 8px; padding: 6px;
-            }
-            QMenu::item, QMenu#holidayMenu::item, QMenu#headerSectionMenu::item {
-                background-color: #FFFFFF; color: #0F172A; padding: 8px 24px 8px 16px; border-radius: 6px;
-                font-size: 9.5pt; font-weight: 600;
-            }
-            QMenu::item:selected, QMenu#holidayMenu::item:selected, QMenu#headerSectionMenu::item:selected {
-                background-color: #EDE9FE; color: #4C1D95;
-            }
-            QMenu::item:disabled, QMenu#holidayMenu::item:disabled, QMenu#headerSectionMenu::item:disabled {
-                color: #94A3B8;
-            }
-            QComboBox QAbstractItemView, QComboBox QListView {
-                background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1;
-                selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0;
-            }
-            QComboBox QAbstractItemView::item, QComboBox QListView::item {
-                background-color: #FFFFFF; color: #0F172A; padding: 7px 10px; min-height: 24px;
-            }
-            QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected {
-                background-color: #6D28D9; color: #FFFFFF;
-            }
-            QCalendarWidget QWidget#qt_calendar_navigationbar { background: #15233F; }
-            QCalendarWidget QToolButton { background: #15233F; color: #FFFFFF; border: 0;
-                border-radius: 7px; padding: 6px 8px; font-weight: 700; }
-            QCalendarWidget QToolButton:hover { background: #6D28D9; }
-            QCalendarWidget QSpinBox { background: #15233F; color: #FFFFFF; border: 0; padding: 4px; }
-            QCalendarWidget QAbstractItemView { background: #F8FAFC; alternate-background-color: #E2E8F0;
-                color: #0F172A; selection-background-color: #6D28D9; selection-color: #FFFFFF; outline: 0; }
-            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
-            QDateEdit, QTimeEdit { min-height: 22px; }
-            QLineEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-                min-height: 24px; max-height: 36px; padding: 4px 9px; border-radius: 8px;
-            }
-            QComboBox, QDateEdit {
-                min-height: 26px; max-height: 36px; padding: 4px 32px 4px 9px; border-radius: 8px;
-            }
-            QComboBox::drop-down, QDateEdit::drop-down {
-                subcontrol-origin: padding; subcontrol-position: top right;
-                width: 28px; border-left: 1px solid __DROP_BORDER__;
-                border-top-right-radius: 7px; border-bottom-right-radius: 7px;
-                background-color: __DROP_BG__;
-            }
-            QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
-                background-color: __DROP_HOVER__;
-            }
-            QComboBox::down-arrow, QDateEdit::down-arrow {
-                image: url("__CHEVRON_ACTIVE__");
-                width: 12px; height: 12px;
-            }
-            QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
-                image: url("__CHEVRON_ACTIVE__");
-            }
-            QTextEdit, QPlainTextEdit { padding: 6px 10px; border-radius: 8px; }
-            QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
-            QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {
-                color: #64748B; background-color: #E2E8F0;
-            }
-            QPushButton { min-height: 34px; padding: 7px 14px; border-radius: 10px; font-weight: 600; }
-            QTableWidget { gridline-color: #CBD5E1; }
-            QHeaderView::section { padding: 9px 8px; }
-            QLabel { min-width: 0; }
+        theme_name = self.current_theme()
+        self._apply_tooltip_palette(theme_name)
+        colors = self._ui_chrome_palette(theme_name)
+        is_dark_theme = (theme_name or "day").lower() in ("night", "dark")
+        slate_arrow = resource_path("assets/chevron_down_slate.png").replace("\\", "/")
+        white_arrow = resource_path("assets/chevron_down_white.png").replace("\\", "/")
+        active_arrow = white_arrow if is_dark_theme else slate_arrow
 
-            /* Layout safety: controls must not clip their captions at Windows DPI scaling. */
-            QPushButton, QToolButton {
-                min-height: 34px; padding: 7px 10px; margin: 2px;
-                text-align: center; border-radius: 8px;
-            }
-            QGroupBox { margin-top: 14px; padding: 12px 10px 10px 10px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }
-            QTableWidget { gridline-color: #CBD5E1; }
-            QTableWidget::item { padding: 7px 9px; }
-            QHeaderView::section { padding: 8px 9px; min-height: 24px; }
-            QScrollArea#homeScroll, QScrollArea#pageScroll {
-                border: 0; background: transparent;
-            }
-            QScrollArea#homeScroll QScrollBar:vertical, QScrollArea#pageScroll QScrollBar:vertical {
-                width: 12px; background: #E2E8F0; margin: 3px 2px 3px 2px;
-            }
-            QScrollArea#homeScroll QScrollBar::handle:vertical, QScrollArea#pageScroll QScrollBar::handle:vertical {
-                min-height: 30px; background: #64748B; border-radius: 5px;
-            }
-            QCalendarWidget { background: #FFFFFF; color: #0F172A; }
-            QCalendarWidget QWidget#qt_calendar_navigationbar {
-                background: #15233F; min-height: 42px;
-            }
-            QCalendarWidget QToolButton {
-                background: #15233F; color: #FFFFFF; border: 0;
-                padding: 7px 9px; min-height: 28px; font-weight: 700;
-            }
-            QCalendarWidget QToolButton:hover { background: #5B21B6; color: #FFFFFF; }
-            QCalendarWidget QSpinBox {
-                background: #15233F; color: #FFFFFF; border: 1px solid #64748B;
-                padding: 4px 6px; min-height: 24px;
-            }
-            QCalendarWidget QAbstractItemView {
-                background: #FFFFFF; alternate-background-color: #F1F5F9;
-                color: #0F172A; selection-background-color: #6D28D9;
-                selection-color: #FFFFFF; outline: 0; gridline-color: #CBD5E1;
-            }
-            QCalendarWidget QAbstractItemView:enabled { color: #0F172A; }
-            QCalendarWidget QAbstractItemView:disabled { color: #94A3B8; }
-            """
-            self.setStyleSheet(
-                self.styleSheet() + polish_css
-                .replace("__SIDEBAR_BG__", sidebar_bg)
-                .replace("__SIDEBAR_BORDER__", sidebar_border)
-                .replace("__TITLE_BG__", title_bg)
-                .replace("__TITLE_BORDER__", title_border)
-                .replace("__DROP_BG__", drop_bg)
-                .replace("__DROP_BORDER__", drop_border)
-                .replace("__DROP_HOVER__", drop_hover)
-                .replace("__CHEVRON_ACTIVE__", active_arrow)
-            )
+        polish_css = f"""
+        QWidget#navigationSidebar {{ background: {colors['sidebar']}; border-right: 1px solid {colors['sidebar_border']}; }}
+        QWidget#mainContentSurface {{ background: transparent; }}
+        QWidget#titleBar {{ background: {"#070B14" if is_dark_theme else "#15233F"}; border-bottom: 1px solid {"#111827" if is_dark_theme else "#1E2F52"}; }}
+        QFrame#brandBanner {{ background: {colors['banner_bg']};
+            border: 1px solid rgba(255, 255, 255, 0.12); border-top: 2.5px solid {colors['banner_border']}; border-radius: 14px; margin: 6px 12px; }}
+        QLabel#brandLogo {{ background: rgba(15,23,42,160); border: 2px solid rgba(56, 189, 248, 0.40); border-radius: 14px; padding: 2px; }}
+        QFrame#headerClockFrame {{ background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; }}
+        QFrame#headerClockFrame QLabel#headerClock, QFrame#brandBanner QLabel#headerClock {{
+            background: transparent; color: #F8FAFC; border: 0; padding: 2px 6px; font-size: 9.5pt; font-weight: 700;
+        }}
+        QLabel#brandHeading {{ background: transparent; color: #FFFFFF; font-size: 15pt; font-weight: 800; letter-spacing: 0.8px; }}
+        QLabel#brandSubheading {{ background: transparent; color: #94A3B8; font-size: 8.5pt; font-weight: 600; letter-spacing: 0.6px; }}
+        QPushButton#clockModeBtn {{ min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+            padding: 0; margin: 0; background: rgba(255, 255, 255, 0.12); color: #F8FAFC;
+            border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 7px;
+            font-family: 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif; font-size: 13px; text-align: center; }}
+        QPushButton#clockModeBtn:hover {{ background: rgba(56, 189, 248, 0.35); border-color: #38BDF8; color: #FFFFFF; }}
+        QPushButton#headerSyncPushBtn {{
+            min-height: 36px; max-height: 38px; padding: 6px 15px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(14, 165, 233, 0.28), stop:1 rgba(2, 132, 199, 0.38)); color: #F0F9FF;
+            border: 1.5px solid rgba(56, 189, 248, 0.55); border-radius: 9px;
+            font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 0.3px;
+        }}
+        QPushButton#headerSyncPushBtn:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1);
+            border-color: #38BDF8; color: #FFFFFF;
+        }}
+        QPushButton#headerSyncPushBtn:pressed {{ background: #0369A1; }}
+        QPushButton#headerSyncPullBtn {{
+            min-height: 36px; max-height: 38px; padding: 6px 15px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(99, 102, 241, 0.28), stop:1 rgba(79, 70, 229, 0.38)); color: #EEF2FF;
+            border: 1.5px solid rgba(129, 140, 248, 0.55); border-radius: 9px;
+            font-family: 'Segoe UI', -apple-system, sans-serif; font-size: 9.5pt; font-weight: 700; letter-spacing: 0.3px;
+        }}
+        QPushButton#headerSyncPullBtn:hover {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5);
+            border-color: #A5B4FC; color: #FFFFFF;
+        }}
+        QPushButton#headerSyncPullBtn:pressed {{ background: #4338CA; }}
+        QPushButton#headerSyncPushBtn:disabled, QPushButton#headerSyncPullBtn:disabled {{
+            background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12);
+        }}
+        QWidget#pageHeader {{ background: {colors['surface']}; color: {colors['text']}; }}
+        QPushButton#sidebarToggle {{ background: rgba(109, 40, 217, 190); color: #FFFFFF; border: 1px solid rgba(196, 181, 253, 190);
+            border-radius: 11px; font-weight: 700; text-align: left; padding: 8px 11px; }}
+        QPushButton#sidebarToggle:hover {{ background: rgba(8, 145, 178, 220); border-color: #67E8F9; }}
+        QPushButton#sidebarNavButton {{ background: {colors['nav']}; color: {colors['text']};
+            border: 1px solid {colors['nav_border']}; border-radius: 11px;
+            font-size: 10pt; font-weight: 600; text-align: left; padding: 8px 10px; }}
+        QPushButton#sidebarNavButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
+        QPushButton#sidebarNavButton:checked {{ background: {colors['nav_active_grad']};
+            color: #FFFFFF; border: 1px solid {colors['accent_glow']}; font-weight: 700; }}
+        QWidget#headerClock {{ background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }}
+        QPushButton#headerNavButton {{ background: #6D28D9; color: #FFFFFF; border: 1px solid #A78BFA;
+            border-radius: 10px; font-size: 18pt; font-weight: 800; padding: 0;
+            min-width: 34px; max-width: 36px; min-height: 28px; max-height: 32px; margin: 2px; }}
+        QPushButton#headerNavButton:hover {{ background: #0891B2; border-color: #67E8F9; color: #FFFFFF; }}
+        QToolButton#headerLogoMenu {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #6D28D9,stop:1 #DB2777);
+            border: 1px solid #C4B5FD; border-radius: 10px; padding: 3px; }}
+        QMenu, QMenu#holidayMenu, QMenu#headerSectionMenu {{
+            background-color: {colors['menu_bg']}; color: {colors['menu_fg']}; border: 1.5px solid {colors['menu_border']}; border-radius: 10px; padding: 6px;
+        }}
+        QMenu::item, QMenu#holidayMenu::item, QMenu#headerSectionMenu::item {{
+            background-color: transparent; color: {colors['menu_fg']}; padding: 8px 24px 8px 16px; border-radius: 6px;
+            font-size: 9.5pt; font-weight: 600;
+        }}
+        QMenu::item:selected, QMenu#holidayMenu::item:selected, QMenu#headerSectionMenu::item:selected {{
+            background-color: {colors['menu_sel_bg']}; color: {colors['menu_sel_fg']};
+        }}
+        QMenu::item:disabled, QMenu#holidayMenu::item:disabled, QMenu#headerSectionMenu::item:disabled {{
+            color: {colors['muted_text']};
+        }}
+        QComboBox QAbstractItemView, QComboBox QListView {{
+            background-color: {colors['dropdown_bg']}; color: {colors['dropdown_fg']}; border: 1.5px solid {colors['dropdown_border']};
+            selection-background-color: {colors['dropdown_sel_bg']}; selection-color: {colors['dropdown_sel_fg']}; outline: 0;
+            border-radius: 10px; padding: 6px;
+        }}
+        QComboBox QAbstractItemView::item, QComboBox QListView::item {{
+            background-color: {colors['dropdown_bg']}; color: {colors['dropdown_fg']}; padding: 8px 12px; min-height: 24px; border-radius: 6px;
+        }}
+        QComboBox QAbstractItemView::item:hover, QComboBox QListView::item:hover {{
+            background-color: {colors['dropdown_hover']}; color: {colors['dropdown_fg']};
+        }}
+        QComboBox QAbstractItemView::item:selected, QComboBox QListView::item:selected {{
+            background-color: {colors['dropdown_sel_bg']}; color: {colors['dropdown_sel_fg']}; font-weight: 600;
+        }}
+        QCalendarWidget {{ background-color: {colors['calendar_bg']}; color: {colors['calendar_fg']}; border: 1.5px solid {colors['accent']}; border-radius: 12px; }}
+        QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {colors['calendar_header_bg']}; min-height: 44px; border-top-left-radius: 10px; border-top-right-radius: 10px; }}
+        QCalendarWidget QToolButton {{ background: transparent; color: #FFFFFF; border: 0;
+            border-radius: 7px; padding: 6px 10px; font-weight: 700; font-size: 10pt; }}
+        QCalendarWidget QToolButton:hover {{ background: {colors['accent']}; color: #FFFFFF; }}
+        QCalendarWidget QSpinBox {{ background: {colors['calendar_header_bg']}; color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px; padding: 4px 8px; font-weight: 700; }}
+        QCalendarWidget QAbstractItemView {{ background: {colors['calendar_bg']}; alternate-background-color: {colors['calendar_alt_bg']};
+            color: {colors['calendar_fg']}; selection-background-color: {colors['calendar_sel_bg']}; selection-color: {colors['calendar_sel_fg']};
+            outline: 0; gridline-color: {colors['border_subtle']}; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; padding: 6px; }}
+        QCalendarWidget QAbstractItemView:enabled {{ color: {colors['calendar_fg']}; }}
+        QCalendarWidget QAbstractItemView:disabled {{ color: {colors['muted_text']}; }}
+        QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
+        QDateEdit, QTimeEdit {{ min-height: 22px; }}
+        QLineEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {{
+            min-height: 24px; max-height: 36px; padding: 4px 9px; border-radius: 8px;
+            background-color: {colors['input_bg']}; color: {colors['input_fg']}; border: 1px solid {colors['input_border']};
+        }}
+        QComboBox, QDateEdit {{
+            min-height: 26px; max-height: 36px; padding: 4px 32px 4px 9px; border-radius: 8px;
+            background-color: {colors['input_bg']}; color: {colors['input_fg']}; border: 1px solid {colors['input_border']};
+        }}
+        QComboBox::drop-down, QDateEdit::drop-down {{
+            subcontrol-origin: padding; subcontrol-position: top right;
+            width: 28px; border-left: 1px solid {colors['dropdown_border']};
+            border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+            background-color: {colors['dropdown_bg']};
+        }}
+        QComboBox::drop-down:hover, QDateEdit::drop-down:hover {{
+            background-color: {colors['dropdown_hover']};
+        }}
+        QComboBox::down-arrow, QDateEdit::down-arrow {{
+            image: url("{active_arrow}");
+            width: 12px; height: 12px;
+        }}
+        QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {{
+            image: url("{active_arrow}");
+        }}
+        QTextEdit, QPlainTextEdit {{ padding: 6px 10px; border-radius: 8px; }}
+        QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
+        QDoubleSpinBox:disabled, QDateEdit:disabled, QTimeEdit:disabled {{
+            color: {colors['muted_text']}; background-color: {colors['dropdown_hover']};
+        }}
+        QPushButton {{ min-height: 34px; padding: 7px 14px; border-radius: 10px; font-weight: 600; }}
+        QTableWidget {{ gridline-color: {colors['border']}; }}
+        QHeaderView::section {{ padding: 9px 8px; }}
+        QLabel {{ min-width: 0; }}
+
+        /* Modern Custom Scrollbars */
+        QScrollBar:vertical {{
+            background: transparent; width: 10px; margin: 3px 2px 3px 2px;
+        }}
+        QScrollBar::handle:vertical {{
+            min-height: 28px; background: {colors['border']}; border-radius: 5px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: {colors['accent']};
+        }}
+        QScrollBar:horizontal {{
+            background: transparent; height: 10px; margin: 2px 3px 2px 3px;
+        }}
+        QScrollBar::handle:horizontal {{
+            min-width: 28px; background: {colors['border']}; border-radius: 5px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background: {colors['accent']};
+        }}
+        QScrollBar::add-line, QScrollBar::sub-line {{
+            width: 0; height: 0;
+        }}
+
+        /* Layout safety: controls must not clip their captions at Windows DPI scaling. */
+        QPushButton, QToolButton {{
+            min-height: 34px; padding: 7px 10px; margin: 2px;
+            text-align: center; border-radius: 8px;
+        }}
+        QGroupBox {{ margin-top: 14px; padding: 12px 10px 10px 10px; }}
+        QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
+        QTableWidget {{ gridline-color: {colors['border']}; }}
+        QTableWidget::item {{ padding: 7px 9px; }}
+        QHeaderView::section {{ padding: 8px 9px; min-height: 24px; }}
+        QScrollArea#homeScroll, QScrollArea#pageScroll {{
+            border: 0; background: transparent;
+        }}
+        """
+        self.setStyleSheet(polish_css)
         for widget in self.findChildren(QLabel):
             if widget.objectName() not in ("titleLabel", "headerClock"):
                 widget.setMinimumWidth(0)
@@ -3692,11 +3832,9 @@ class MainWindow(QMainWindow):
             if view is not None:
                 view.setMinimumWidth(max(widget.width(), widget.minimumWidth(), 180))
                 view.setUniformItemSizes(False)
-                # Explicit popup styling avoids low-contrast/solid-looking options.
-                colors = self._ui_chrome_palette(self.current_theme())
                 view.setStyleSheet(f"""
-                    QListView {{ background: {colors['surface']}; color: {colors['text']}; border: 1px solid {colors['border']}; }}
-                    QListView::item {{ background: {colors['surface']}; color: {colors['text']}; padding: 7px 10px; min-height: 24px; }}
+                    QListView {{ background: {colors['surface']}; color: {colors['text']}; border: 1px solid {colors['border']}; outline: 0; padding: 4px; border-radius: 8px; }}
+                    QListView::item {{ background: {colors['surface']}; color: {colors['text']}; padding: 7px 10px; min-height: 24px; border-radius: 4px; }}
                     QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}
                 """)
         for widget in self.findChildren(QDateEdit):
@@ -3705,7 +3843,19 @@ class MainWindow(QMainWindow):
             if calendar is not None:
                 calendar.setGridVisible(True)
                 calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
-                calendar.setMinimumSize(300, 240)
+                calendar.setMinimumSize(310, 250)
+                calendar.setStyleSheet(f"""
+                    QCalendarWidget {{ background-color: {colors['calendar_bg']}; color: {colors['calendar_fg']}; border: 1.5px solid {colors['accent']}; border-radius: 12px; }}
+                    QCalendarWidget QWidget#qt_calendar_navigationbar {{ background: {colors['calendar_header_bg']}; min-height: 44px; border-top-left-radius: 10px; border-top-right-radius: 10px; }}
+                    QCalendarWidget QToolButton {{ background: transparent; color: #FFFFFF; border: 0; border-radius: 7px; padding: 6px 10px; font-weight: 700; font-size: 10pt; }}
+                    QCalendarWidget QToolButton:hover {{ background: {colors['accent']}; color: #FFFFFF; }}
+                    QCalendarWidget QSpinBox {{ background: {colors['calendar_header_bg']}; color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px; padding: 4px 8px; font-weight: 700; }}
+                    QCalendarWidget QAbstractItemView {{ background: {colors['calendar_bg']}; alternate-background-color: {colors['calendar_alt_bg']};
+                        color: {colors['calendar_fg']}; selection-background-color: {colors['calendar_sel_bg']}; selection-color: {colors['calendar_sel_fg']};
+                        outline: 0; gridline-color: {colors['border_subtle']}; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; padding: 6px; }}
+                    QCalendarWidget QAbstractItemView:enabled {{ color: {colors['calendar_fg']}; }}
+                    QCalendarWidget QAbstractItemView:disabled {{ color: {colors['muted_text']}; }}
+                """)
         self._refresh_theme_chrome(self.current_theme())
         self.polish_tables()
 
@@ -3922,6 +4072,16 @@ class MainWindow(QMainWindow):
         self.apply_interaction_animations()
         if hasattr(self, "productivity_chart"):
             self.productivity_chart.update()
+        if hasattr(self, "chat_tab") and hasattr(self.chat_tab, "apply_theme"):
+            try:
+                self.chat_tab.apply_theme(theme_name)
+            except Exception:
+                pass
+        if hasattr(self, "business_tab") and hasattr(self.business_tab, "apply_theme"):
+            try:
+                self.business_tab.apply_theme(theme_name)
+            except Exception:
+                pass
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = "QPushButton { background: transparent; color: #CBD5E1; border: 0; border-radius: 4px; font-size: 11pt; font-weight: 700; min-width: 0; max-width: 32px; padding: 0; margin: 0; } QPushButton:hover { background: rgba(255, 255, 255, 0.16); color: #FFFFFF; }"

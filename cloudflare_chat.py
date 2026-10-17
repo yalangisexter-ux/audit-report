@@ -478,6 +478,161 @@ class CloudflareChatTab(QWidget):
         chat_layout.addWidget(right_frame, 1)
         root.addWidget(self.chat_panel, 1)
         self.chat_panel.hide()
+        self.apply_theme()
+
+    def apply_theme(self, theme_name=None):
+        if not theme_name and hasattr(self, "db") and hasattr(self.db, "get_setting"):
+            try:
+                theme_name = self.db.get_setting("ui_theme", "day")
+            except Exception:
+                theme_name = "day"
+        theme = (theme_name or "day").lower()
+        if theme in ("night", "dark"):
+            card_bg = "rgba(15, 23, 42, 0.95)"
+            card_border = "#334155"
+            text_color = "#F8FAFC"
+            muted_color = "#94A3B8"
+            input_bg = "#0B1120"
+            input_border = "#334155"
+            list_bg = "rgba(11, 17, 32, 0.95)"
+            list_border = "#1E293B"
+            list_item_sel_bg = "#4C1D95"
+            list_item_sel_fg = "#FFFFFF"
+            history_bg = "rgba(11, 17, 32, 0.95)"
+            history_border = "#334155"
+            role_label_color = "#C4B5FD"
+            role_badge_bg = "#312E81"
+            role_badge_fg = "#DDD6FE"
+            btn_bg = "#7C3AED"
+            btn_hover = "#6D28D9"
+            btn_fg = "#FFFFFF"
+            btn_sec_bg = "#1E293B"
+            btn_sec_fg = "#E2E8F0"
+            btn_sec_border = "#334155"
+        elif theme == "ocean":
+            card_bg = "rgba(240, 249, 255, 0.95)"
+            card_border = "#BAE6FD"
+            text_color = "#0C4A6E"
+            muted_color = "#0369A1"
+            input_bg = "#FFFFFF"
+            input_border = "#BAE6FD"
+            list_bg = "rgba(224, 242, 254, 0.95)"
+            list_border = "#BAE6FD"
+            list_item_sel_bg = "#0284C7"
+            list_item_sel_fg = "#FFFFFF"
+            history_bg = "#FFFFFF"
+            history_border = "#BAE6FD"
+            role_label_color = "#0369A1"
+            role_badge_bg = "#E0F2FE"
+            role_badge_fg = "#0369A1"
+            btn_bg = "#0284C7"
+            btn_hover = "#0369A1"
+            btn_fg = "#FFFFFF"
+            btn_sec_bg = "#E0F2FE"
+            btn_sec_fg = "#0C4A6E"
+            btn_sec_border = "#BAE6FD"
+        elif theme == "sunset":
+            card_bg = "rgba(255, 247, 237, 0.95)"
+            card_border = "#FED7AA"
+            text_color = "#7C2D12"
+            muted_color = "#C2410C"
+            input_bg = "#FFFFFF"
+            input_border = "#FED7AA"
+            list_bg = "rgba(255, 237, 213, 0.95)"
+            list_border = "#FED7AA"
+            list_item_sel_bg = "#EA580C"
+            list_item_sel_fg = "#FFFFFF"
+            history_bg = "#FFFFFF"
+            history_border = "#FED7AA"
+            role_label_color = "#9A3412"
+            role_badge_bg = "#FFEDD5"
+            role_badge_fg = "#9A3412"
+            btn_bg = "#EA580C"
+            btn_hover = "#C2410C"
+            btn_fg = "#FFFFFF"
+            btn_sec_bg = "#FFEDD5"
+            btn_sec_fg = "#7C2D12"
+            btn_sec_border = "#FED7AA"
+        else:  # Day
+            card_bg = "rgba(255, 255, 255, 0.96)"
+            card_border = "#CBD5E1"
+            text_color = "#0F172A"
+            muted_color = "#64748B"
+            input_bg = "#FFFFFF"
+            input_border = "#CBD5E1"
+            list_bg = "rgba(248, 250, 252, 0.95)"
+            list_border = "#E2E8F0"
+            list_item_sel_bg = "#DDD6FE"
+            list_item_sel_fg = "#312E81"
+            history_bg = "#FFFFFF"
+            history_border = "#E2E8F0"
+            role_label_color = "#312E81"
+            role_badge_bg = "#EDE9FE"
+            role_badge_fg = "#4C1D95"
+            btn_bg = "#6D28D9"
+            btn_hover = "#5B21B6"
+            btn_fg = "#FFFFFF"
+            btn_sec_bg = "#F1F5F9"
+            btn_sec_fg = "#334155"
+            btn_sec_border = "#CBD5E1"
+
+        if hasattr(self, "login_panel"):
+            self.login_panel.setStyleSheet(f"#chatLoginPanel {{ background: {card_bg}; border: 1.5px solid {card_border}; border-radius: 16px; }}")
+        if hasattr(self, "chat_panel"):
+            self.chat_panel.setStyleSheet(f"#chatMainPanel {{ background: {card_bg}; border: 1.5px solid {card_border}; border-radius: 16px; }}")
+        if hasattr(self, "conversation_list"):
+            self.conversation_list.setStyleSheet(f"""
+                QListWidget {{ background: {list_bg}; color: {text_color}; border: 1.5px solid {list_border}; border-radius: 10px; padding: 6px; }}
+                QListWidget::item {{ padding: 9px; border-radius: 7px; color: {text_color}; }}
+                QListWidget::item:selected {{ background: {list_item_sel_bg}; color: {list_item_sel_fg}; font-weight: 700; }}
+            """)
+        if hasattr(self, "history"):
+            self.history.setStyleSheet(f"""
+                QTextEdit {{ background: {history_bg}; color: {text_color}; border: 1.5px solid {history_border}; border-radius: 10px; padding: 12px; selection-background-color: transparent; }}
+                QTextEdit:focus {{ border-color: {card_border}; outline: none; }}
+            """)
+        if hasattr(self, "message_edit"):
+            self.message_edit.setStyleSheet(f"""
+                QLineEdit {{ background: {input_bg}; color: {text_color}; border: 1.5px solid {input_border}; border-radius: 9px; padding: 6px 12px; }}
+                QLineEdit:focus {{ border-color: {btn_bg}; }}
+            """)
+        if hasattr(self, "user_name_edit"):
+            self.user_name_edit.setStyleSheet(f"""
+                QLineEdit {{ background: {input_bg}; color: {text_color}; border: 1.5px solid {input_border}; border-radius: 9px; padding: 6px 12px; }}
+                QLineEdit:focus {{ border-color: {btn_bg}; }}
+            """)
+        if hasattr(self, "password_edit"):
+            self.password_edit.setStyleSheet(f"""
+                QLineEdit {{ background: {input_bg}; color: {text_color}; border: 1.5px solid {input_border}; border-radius: 9px; padding: 6px 12px; }}
+                QLineEdit:focus {{ border-color: {btn_bg}; }}
+            """)
+        if hasattr(self, "send_button"):
+            self.send_button.setStyleSheet(f"""
+                QPushButton {{ background: {btn_bg}; color: {btn_fg}; border: 0; border-radius: 9px; padding: 8px 16px; font-weight: 700; }}
+                QPushButton:hover {{ background: {btn_hover}; }}
+            """)
+        if hasattr(self, "login_button"):
+            self.login_button.setStyleSheet(f"""
+                QPushButton {{ background: {btn_bg}; color: {btn_fg}; border: 0; border-radius: 9px; padding: 8px 20px; font-weight: 700; }}
+                QPushButton:hover {{ background: {btn_hover}; }}
+            """)
+        if hasattr(self, "logout_button"):
+            self.logout_button.setStyleSheet(f"""
+                QPushButton {{ background: {btn_sec_bg}; color: {btn_sec_fg}; border: 1px solid {btn_sec_border}; border-radius: 8px; padding: 7px; font-weight: 600; }}
+                QPushButton:hover {{ background: {input_border}; }}
+            """)
+        if hasattr(self, "conv_list_heading"):
+            self.conv_list_heading.setStyleSheet(f"font-weight: 700; color: {text_color}; font-size: 13px;")
+        if hasattr(self, "conversation_heading"):
+            self.conversation_heading.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {text_color};")
+        if hasattr(self, "status_label"):
+            self.status_label.setStyleSheet(f"color: {muted_color}; font-size: 12px;")
+        if hasattr(self, "role_info_label"):
+            self.role_info_label.setStyleSheet(f"color: {muted_color}; font-size: 12px;")
+        if hasattr(self, "role_badge"):
+            self.role_badge.setStyleSheet(f"background: {role_badge_bg}; color: {role_badge_fg}; font-size: 12px; font-weight: 700; border-radius: 8px; padding: 4px 10px;")
+        if hasattr(self, "messages") and self.messages:
+            self._render_messages()
 
     def _on_role_changed(self, index):
         self.login_error.clear()
