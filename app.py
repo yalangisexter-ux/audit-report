@@ -2992,16 +2992,20 @@ class MainWindow(QMainWindow):
         screen = QApplication.primaryScreen()
         available = screen.availableGeometry() if screen else None
         if available:
-            self.setMinimumSize(min(1080, available.width()), min(700, available.height()))
-            norm_w = min(1380, max(900, available.width() - 40))
-            norm_h = min(860, max(600, available.height() - 40))
-            norm_x = available.x() + (available.width() - norm_w) // 2
-            norm_y = available.y() + (available.height() - norm_h) // 2
+            avail_w = available.width()
+            avail_h = available.height()
+            min_w = min(800, max(480, avail_w - 40))
+            min_h = min(480, max(360, avail_h - 70))
+            self.setMinimumSize(min_w, min_h)
+            norm_w = min(1260, max(min_w, avail_w - 40))
+            norm_h = min(720, max(min_h, avail_h - 60))
+            norm_x = available.x() + max(0, (avail_w - norm_w) // 2)
+            norm_y = available.y() + max(0, (avail_h - norm_h) // 2)
             self.resize(norm_w, norm_h)
             self.move(norm_x, norm_y)
             self._normal_geometry = QRect(norm_x, norm_y, norm_w, norm_h)
         else:
-            self.resize(1380, 860); self.setMinimumSize(1080, 700)
+            self.resize(1100, 660); self.setMinimumSize(780, 460)
         self._drag_pos = None
 
         # Custom title bar (hidden in native window mode so the top is clean and not empty)
@@ -3385,10 +3389,10 @@ class MainWindow(QMainWindow):
                 "accent": "#4F46E5",
                 "accent_hover": "#4338CA",
                 "accent_glow": "#6366F1",
-                "dropdown_bg": "#FFFFFF",
+                "dropdown_bg": "#EEF2FF",
                 "dropdown_fg": "#0F172A",
-                "dropdown_border": "#CBD5E1",
-                "dropdown_hover": "#F1F5F9",
+                "dropdown_border": "#94A3B8",
+                "dropdown_hover": "#E0E7FF",
                 "dropdown_sel_bg": "#4F46E5",
                 "dropdown_sel_fg": "#FFFFFF",
                 "calendar_header_bg": "#15233F",
@@ -3403,9 +3407,9 @@ class MainWindow(QMainWindow):
                 "menu_border": "#CBD5E1",
                 "menu_sel_bg": "#EEF2FF",
                 "menu_sel_fg": "#312E81",
-                "input_bg": "#FFFFFF",
+                "input_bg": "#F8FAFC",
                 "input_fg": "#0F172A",
-                "input_border": "#CBD5E1",
+                "input_border": "#94A3B8",
                 "input_focus": "#4F46E5",
                 "table_bg": "#FFFFFF",
                 "table_alt_bg": "#F8FAFC",
@@ -3440,10 +3444,10 @@ class MainWindow(QMainWindow):
                 "accent": "#00D2FF",
                 "accent_hover": "#38BDF8",
                 "accent_glow": "#00E5FF",
-                "dropdown_bg": "#0D1322",
+                "dropdown_bg": "#1E293B",
                 "dropdown_fg": "#F8FAFC",
-                "dropdown_border": "rgba(255, 255, 255, 0.12)",
-                "dropdown_hover": "#162035",
+                "dropdown_border": "#475569",
+                "dropdown_hover": "#334155",
                 "dropdown_sel_bg": "#0284C7",
                 "dropdown_sel_fg": "#FFFFFF",
                 "calendar_header_bg": "#121828",
@@ -3458,9 +3462,9 @@ class MainWindow(QMainWindow):
                 "menu_border": "rgba(255, 255, 255, 0.12)",
                 "menu_sel_bg": "#1E293B",
                 "menu_sel_fg": "#FFFFFF",
-                "input_bg": "#0D1322",
+                "input_bg": "#0F172A",
                 "input_fg": "#F8FAFC",
-                "input_border": "rgba(255, 255, 255, 0.10)",
+                "input_border": "#475569",
                 "input_focus": "#00D2FF",
                 "table_bg": "#0A0E1A",
                 "table_alt_bg": "#0D1324",
@@ -3719,6 +3723,7 @@ class MainWindow(QMainWindow):
                     QListView::item:selected {{ background-color: {colors['dropdown_sel_bg']}; color: {colors['dropdown_sel_fg']}; font-weight: 600; }}
                     QListView::item:hover {{ background-color: {colors['dropdown_hover']}; color: {colors['dropdown_fg']}; }}
                 """)
+        self._polish_all_input_controls(theme_name)
 
     def _refresh_dashboard_action_styles(self, theme_name=None):
         colors = self._ui_chrome_palette(theme_name or self.current_theme())
@@ -3840,31 +3845,55 @@ class MainWindow(QMainWindow):
             outline: 0; gridline-color: {colors['border_subtle']}; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; padding: 6px; }}
         QCalendarWidget QAbstractItemView:enabled {{ color: {colors['calendar_fg']}; }}
         QCalendarWidget QAbstractItemView:disabled {{ color: {colors['muted_text']}; }}
-        QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox,
-        QDateEdit, QTimeEdit {{ min-height: 22px; }}
         QLineEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {{
-            min-height: 24px; max-height: 36px; padding: 4px 9px; border-radius: 8px;
-            background-color: {colors['input_bg']}; color: {colors['input_fg']}; border: 1px solid {colors['input_border']};
+            min-height: 32px; max-height: 38px; padding: 5px 12px; border-radius: 8px;
+            background-color: {"#0F172A" if is_dark_theme else "#F8FAFC"};
+            color: {"#F8FAFC" if is_dark_theme else "#0F172A"};
+            border: 1.5px solid {"#475569" if is_dark_theme else "#94A3B8"};
+            font-size: 9.5pt; font-weight: 550;
         }}
-        QComboBox, QDateEdit {{
-            min-height: 26px; max-height: 36px; padding: 4px 32px 4px 9px; border-radius: 8px;
-            background-color: {colors['input_bg']}; color: {colors['input_fg']}; border: 1px solid {colors['input_border']};
+        QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QTimeEdit:hover {{
+            border-color: {"#38BDF8" if is_dark_theme else "#4F46E5"};
+            background-color: {"#162035" if is_dark_theme else "#FFFFFF"};
         }}
-        QComboBox::drop-down, QDateEdit::drop-down {{
+        QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTimeEdit:focus {{
+            border: 2px solid {"#00E5FF" if is_dark_theme else "#4F46E5"};
+            background-color: {"#111827" if is_dark_theme else "#FFFFFF"};
+        }}
+        QComboBox, QComboBox:!editable, QComboBox:editable, QDateEdit {{
+            min-height: 32px; max-height: 38px; padding: 5px 38px 5px 12px; border-radius: 8px;
+            background-color: {"#0F172A" if is_dark_theme else "#F8FAFC"};
+            color: {"#F8FAFC" if is_dark_theme else "#0F172A"};
+            border: 1.5px solid {"#475569" if is_dark_theme else "#94A3B8"};
+            font-size: 9.5pt; font-weight: 600;
+        }}
+        QComboBox:hover, QComboBox:!editable:hover, QDateEdit:hover {{
+            border-color: {"#38BDF8" if is_dark_theme else "#4F46E5"};
+            background-color: {"#162035" if is_dark_theme else "#FFFFFF"};
+        }}
+        QComboBox:focus, QComboBox:!editable:focus, QDateEdit:focus {{
+            border: 2px solid {"#00E5FF" if is_dark_theme else "#4F46E5"};
+            background-color: {"#111827" if is_dark_theme else "#FFFFFF"};
+        }}
+        QComboBox::drop-down, QComboBox:!editable::drop-down, QDateEdit::drop-down {{
             subcontrol-origin: padding; subcontrol-position: top right;
-            width: 28px; border-left: 1px solid {colors['dropdown_border']};
+            width: 32px; border-left: 1.5px solid {"#475569" if is_dark_theme else "#94A3B8"};
             border-top-right-radius: 7px; border-bottom-right-radius: 7px;
-            background-color: {colors['dropdown_bg']};
+            background-color: {"#1E293B" if is_dark_theme else "#EEF2FF"};
         }}
-        QComboBox::drop-down:hover, QDateEdit::drop-down:hover {{
-            background-color: {colors['dropdown_hover']};
+        QComboBox::drop-down:hover, QComboBox:!editable::drop-down:hover, QDateEdit::drop-down:hover {{
+            background-color: {"#334155" if is_dark_theme else "#E0E7FF"};
         }}
         QComboBox::down-arrow, QDateEdit::down-arrow {{
             image: url("{active_arrow}");
-            width: 12px; height: 12px;
+            width: 14px; height: 14px;
         }}
         QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {{
             image: url("{active_arrow}");
+        }}
+        QFormLayout QLabel {{
+            font-size: 9.5pt; font-weight: 700;
+            color: {"#F8FAFC" if is_dark_theme else "#1E293B"};
         }}
         QTextEdit, QPlainTextEdit {{ padding: 6px 10px; border-radius: 8px; }}
         QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QSpinBox:disabled,
@@ -4013,15 +4042,16 @@ class MainWindow(QMainWindow):
         ensure_combobox_wheel_filter()
         for widget in self.findChildren(QComboBox):
             widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            widget.setMinimumWidth(0)
+            widget.setMinimumWidth(max(140, widget.minimumWidth()))
             view = widget.view()
             if view is not None:
                 view.setMinimumWidth(max(widget.width(), widget.minimumWidth(), 180))
                 view.setUniformItemSizes(False)
                 view.setStyleSheet(f"""
-                    QListView {{ background: {colors['surface']}; color: {colors['text']}; border: 1px solid {colors['border']}; outline: 0; padding: 4px; border-radius: 8px; }}
-                    QListView::item {{ background: {colors['surface']}; color: {colors['text']}; padding: 7px 10px; min-height: 24px; border-radius: 4px; }}
-                    QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}
+                    QListView {{ background: {colors['dropdown_bg']}; color: {colors['dropdown_fg']}; border: 1.5px solid {colors['dropdown_border']}; outline: 0; padding: 6px; border-radius: 10px; }}
+                    QListView::item {{ background: {colors['dropdown_bg']}; color: {colors['dropdown_fg']}; padding: 8px 12px; min-height: 26px; border-radius: 6px; }}
+                    QListView::item:selected {{ background: {colors['dropdown_sel_bg']}; color: {colors['dropdown_sel_fg']}; font-weight: 600; }}
+                    QListView::item:hover {{ background: {colors['dropdown_hover']}; color: {colors['dropdown_fg']}; }}
                 """)
         for widget in self.findChildren(QDateEdit):
             widget.setCalendarPopup(True)
@@ -4399,27 +4429,57 @@ class MainWindow(QMainWindow):
                         f"QPushButton#{b_obj}:hover {{ background: #DC2626; color: #FFFFFF; border-color: #B91C1C; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #991B1B; }}"
                     )
-            # Secondary general actions (Refresh, Edit, Select All, Proof, View, Export, Note, Edit Times, Settings Actions, etc.)
+            # Secondary general actions (Refresh, Edit, Select All, Proof, View, Export, Settings Actions, etc.)
             elif b_obj in (
                 "taskEditBtn", "taskBulkEditBtn", "taskSelectAllBtn", "taskProofBtn", "taskRefreshBtn",
                 "empEditBtn", "empToggleBtn", "empRefreshBtn", "trackerRefreshBtn",
                 "archiveViewBtn", "archiveExportBtn", "archiveRefreshBtn",
-                "attSelectAllBtn", "attEditTimesBtn", "attNoteBtn",
+                "attSelectAllBtn",
                 "settingsActionBtn", "settingsSyncConfigBtn", "settingsSyncLinkBtn"
             ):
                 if is_dark_theme:
                     btn.setStyleSheet(
-                        f"QPushButton#{b_obj} {{ background: rgba(255, 255, 255, 0.07); color: #F8FAFC; border: 1.5px solid rgba(255, 255, 255, 0.18); "
+                        f"QPushButton#{b_obj} {{ background: rgba(255, 255, 255, 0.08); color: #F8FAFC; border: 1.5px solid #475569; "
                         f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; }} "
-                        f"QPushButton#{b_obj}:hover {{ background: rgba(255, 255, 255, 0.14); color: #FFFFFF; border-color: #818CF8; }} "
-                        f"QPushButton#{b_obj}:pressed {{ background: rgba(255, 255, 255, 0.20); }}"
+                        f"QPushButton#{b_obj}:hover {{ background: rgba(255, 255, 255, 0.16); color: #FFFFFF; border-color: #818CF8; }} "
+                        f"QPushButton#{b_obj}:pressed {{ background: rgba(255, 255, 255, 0.22); }}"
                     )
                 else:
                     btn.setStyleSheet(
-                        f"QPushButton#{b_obj} {{ background: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; "
+                        f"QPushButton#{b_obj} {{ background: #F8FAFC; color: #0F172A; border: 1.5px solid #94A3B8; "
                         f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; }} "
                         f"QPushButton#{b_obj}:hover {{ background: #F1F5F9; color: #4F46E5; border-color: #6366F1; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #E2E8F0; }}"
+                    )
+            elif b_obj == "attEditTimesBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attEditTimesBtn { background: rgba(99, 102, 241, 0.16); color: #A5B4FC; border: 1.5px solid rgba(129, 140, 248, 0.40); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attEditTimesBtn:hover { background: #4F46E5; color: #FFFFFF; border-color: #818CF8; } "
+                        "QPushButton#attEditTimesBtn:pressed { background: #3730A3; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attEditTimesBtn { background: #EEF2FF; color: #4338CA; border: 1.5px solid #A5B4FC; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attEditTimesBtn:hover { background: #4F46E5; color: #FFFFFF; border-color: #4338CA; } "
+                        "QPushButton#attEditTimesBtn:pressed { background: #3730A3; }"
+                    )
+            elif b_obj == "attNoteBtn":
+                if is_dark_theme:
+                    btn.setStyleSheet(
+                        "QPushButton#attNoteBtn { background: rgba(148, 163, 184, 0.16); color: #E2E8F0; border: 1.5px solid rgba(148, 163, 184, 0.40); "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attNoteBtn:hover { background: #475569; color: #FFFFFF; border-color: #94A3B8; } "
+                        "QPushButton#attNoteBtn:pressed { background: #334155; }"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton#attNoteBtn { background: #F8FAFC; color: #1E293B; border: 1.5px solid #94A3B8; "
+                        "border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; } "
+                        "QPushButton#attNoteBtn:hover { background: #E2E8F0; color: #0F172A; border-color: #64748B; } "
+                        "QPushButton#attNoteBtn:pressed { background: #CBD5E1; }"
                     )
             # Attendance specific colored action buttons
             elif b_obj == "attBulkEditBtn":
@@ -4616,6 +4676,7 @@ class MainWindow(QMainWindow):
         # QWidget#kpiCard, QWidget#dashboardPanel { background-color: #0F172A; color: #F8FAFC; }
         # QWidget#guideItem { background: #FFFFFF; border: 1px solid #CBD5E1; border-left: 4px solid #7C5CFC; }
         # QWidget#guideItem { background: #0F172A; border: 1px solid #334155; border-left: 4px solid #A78BFA; }
+        # QListView::item:selected {{ background: {colors['accent']}; color: #FFFFFF; }}
 
         for group in self.findChildren(QGroupBox):
             if group.objectName() in ("kpiCard", "dashboardPanel"):
@@ -4648,6 +4709,162 @@ class MainWindow(QMainWindow):
                 }}
             """)
         self.polish_tables()
+        self._polish_all_input_controls(theme_name)
+
+    def _polish_all_input_controls(self, theme_name=None):
+        """Ensure all dropdowns, date edits, spin boxes, and line edits retain crisp tactile borders and containers."""
+        theme_name = (theme_name or self.current_theme()).lower()
+        is_dark_theme = theme_name in ("night", "dark")
+        slate_arrow = resource_path("assets/chevron_down_slate.png").replace("\\", "/")
+        white_arrow = resource_path("assets/chevron_down_white.png").replace("\\", "/")
+        active_arrow = white_arrow if is_dark_theme else slate_arrow
+
+        if is_dark_theme:
+            input_bg = "#0F172A"
+            input_fg = "#F8FAFC"
+            input_border = "#475569"
+            hover_border = "#38BDF8"
+            hover_bg = "#162035"
+            focus_border = "#00E5FF"
+            focus_bg = "#111827"
+            dropdown_btn_bg = "#1E293B"
+            dropdown_btn_hover = "#334155"
+        elif theme_name == "ocean":
+            input_bg = "#F0F9FF"
+            input_fg = "#0F172A"
+            input_border = "#0284C7"
+            hover_border = "#0369A1"
+            hover_bg = "#FFFFFF"
+            focus_border = "#0284C7"
+            focus_bg = "#FFFFFF"
+            dropdown_btn_bg = "#E0F2FE"
+            dropdown_btn_hover = "#BAE6FD"
+        elif theme_name == "sunset":
+            input_bg = "#FFF7ED"
+            input_fg = "#0F172A"
+            input_border = "#EA580C"
+            hover_border = "#C2410C"
+            hover_bg = "#FFFFFF"
+            focus_border = "#EA580C"
+            focus_bg = "#FFFFFF"
+            dropdown_btn_bg = "#FFEDD5"
+            dropdown_btn_hover = "#FED7AA"
+        else:
+            input_bg = "#F8FAFC"
+            input_fg = "#0F172A"
+            input_border = "#94A3B8"
+            hover_border = "#4F46E5"
+            hover_bg = "#FFFFFF"
+            focus_border = "#4F46E5"
+            focus_bg = "#FFFFFF"
+            dropdown_btn_bg = "#EEF2FF"
+            dropdown_btn_hover = "#E0E7FF"
+
+        combo_css = f"""
+            QComboBox, QComboBox:!editable, QComboBox:editable {{
+                min-height: 32px; max-height: 38px;
+                padding: 4px 28px 4px 11px;
+                border-radius: 8px;
+                background-color: {input_bg};
+                color: {input_fg};
+                border: 1.5px solid {input_border};
+                font-size: 9.5pt;
+                font-weight: 600;
+            }}
+            QComboBox:hover, QComboBox:!editable:hover {{
+                border-color: {hover_border};
+                background-color: {hover_bg};
+            }}
+            QComboBox:focus, QComboBox:!editable:focus {{
+                border: 2px solid {focus_border};
+                background-color: {focus_bg};
+            }}
+            QComboBox::drop-down, QComboBox:!editable::drop-down {{
+                subcontrol-origin: padding; subcontrol-position: top right;
+                width: 26px;
+                border-left: 1.5px solid {input_border};
+                border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+                background-color: {dropdown_btn_bg};
+            }}
+            QComboBox::drop-down:hover, QComboBox:!editable::drop-down:hover {{
+                background-color: {dropdown_btn_hover};
+            }}
+            QComboBox::down-arrow {{
+                image: url("{active_arrow}");
+                width: 14px; height: 14px;
+            }}
+        """
+
+        date_css = f"""
+            QDateEdit {{
+                min-height: 32px; max-height: 38px;
+                padding: 4px 28px 4px 11px;
+                border-radius: 8px;
+                background-color: {input_bg};
+                color: {input_fg};
+                border: 1.5px solid {input_border};
+                font-size: 9.5pt;
+                font-weight: 600;
+            }}
+            QDateEdit:hover {{
+                border-color: {hover_border};
+                background-color: {hover_bg};
+            }}
+            QDateEdit:focus {{
+                border: 2px solid {focus_border};
+                background-color: {focus_bg};
+            }}
+            QDateEdit::drop-down {{
+                subcontrol-origin: padding; subcontrol-position: top right;
+                width: 26px;
+                border-left: 1.5px solid {input_border};
+                border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+                background-color: {dropdown_btn_bg};
+            }}
+            QDateEdit::drop-down:hover {{
+                background-color: {dropdown_btn_hover};
+            }}
+            QDateEdit::down-arrow {{
+                image: url("{active_arrow}");
+                width: 14px; height: 14px;
+            }}
+        """
+
+        line_edit_css = f"""
+            QLineEdit {{
+                min-height: 32px; max-height: 38px;
+                padding: 5px 12px;
+                border-radius: 8px;
+                background-color: {input_bg};
+                color: {input_fg};
+                border: 1.5px solid {input_border};
+                font-size: 9.5pt;
+                font-weight: 550;
+            }}
+            QLineEdit:hover {{
+                border-color: {hover_border};
+                background-color: {hover_bg};
+            }}
+            QLineEdit:focus {{
+                border: 2px solid {focus_border};
+                background-color: {focus_bg};
+            }}
+        """
+
+        for combo in self.findChildren(QComboBox):
+            combo.setStyleSheet(combo_css)
+            combo.setMinimumWidth(max(170, combo.minimumWidth()))
+
+        for date_edit in self.findChildren(QDateEdit):
+            date_edit.setStyleSheet(date_css)
+            date_edit.setMinimumWidth(max(150, date_edit.minimumWidth()))
+
+        for le in self.findChildren(QLineEdit):
+            parent_w = le.parent()
+            parent_cls = parent_w.metaObject().className() if parent_w else ""
+            if "Table" in parent_cls or "Cell" in parent_cls:
+                continue
+            le.setStyleSheet(line_edit_css)
 
     def toggle_theme(self):
         current = self.current_theme()
@@ -5615,25 +5832,25 @@ class MainWindow(QMainWindow):
         row1.setSpacing(12)
 
         date_label = QLabel("Date:")
-        date_label.setStyleSheet("font-weight: 600; font-size: 9pt; color: #94A3B8;")
+        date_label.setStyleSheet("font-weight: 700; font-size: 9pt;")
         row1.addWidget(date_label)
         self.att_date = QDateEdit()
         configure_date_edit(self.att_date)
         self.att_date.setDisplayFormat("yyyy-MM-dd")
         self.att_date.setDate(QDate.currentDate())
-        self.att_date.setMinimumWidth(130)
+        self.att_date.setMinimumWidth(140)
         self.att_date.setMinimumHeight(34)
         self.att_date.dateChanged.connect(self.refresh_attendance)
         row1.addWidget(self.att_date)
 
         filter_label = QLabel("Filter employee:")
-        filter_label.setStyleSheet("font-weight: 600; font-size: 9pt; color: #94A3B8;")
+        filter_label.setStyleSheet("font-weight: 700; font-size: 9pt;")
         row1.addWidget(filter_label)
         self.att_employee_filter = QComboBox()
         self.att_employee_filter.addItem("All employees", None)
         for e in self.db.employees(False):
             self.att_employee_filter.addItem(e["name"], e["id"])
-        self.att_employee_filter.setMinimumWidth(160)
+        self.att_employee_filter.setMinimumWidth(185)
         self.att_employee_filter.setMaximumWidth(260)
         self.att_employee_filter.setMinimumHeight(34)
         self.att_employee_filter.currentIndexChanged.connect(self.refresh_attendance)
@@ -5887,9 +6104,10 @@ class MainWindow(QMainWindow):
 
         for ctrl in (self.report_type, self.report_date, self.report_scope, self.report_employee,
                      self.report_exclude_employee, self.report_format, self.archived_report):
-            ctrl.setMaximumWidth(420)
-            ctrl.setMinimumWidth(280)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+            ctrl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            ctrl.setFixedWidth(440)
+            ctrl.setMinimumHeight(34)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
 
         form.addRow("Report type", self.report_type)
         form.addRow("Report date", self.report_date)
@@ -6102,13 +6320,11 @@ class MainWindow(QMainWindow):
         storage_form.setHorizontalSpacing(14)
         storage_form.setVerticalSpacing(8)
         for label, path in [("Database", DB_PATH), ("Backups", BACKUP_DIR), ("Reports", EXPORT_DIR)]:
-            path_label = QLabel(str(path))
-            path_label.setWordWrap(True)
-            path_label.setToolTip(str(path))
-            path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-            path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            path_label.setProperty("mutedText", True)
-            storage_form.addRow(label, path_label)
+            path_edit = QLineEdit(str(path))
+            path_edit.setReadOnly(True)
+            path_edit.setToolTip(str(path))
+            path_edit.setCursorPosition(0)
+            storage_form.addRow(label, path_edit)
         l.addWidget(storage_box)
 
         sync_box = QGroupBox("Encrypted cloud database sync")
@@ -9062,33 +9278,33 @@ QPushButton:default:hover, QPushButton[primary="true"]:hover { background: qline
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-    background-color: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; border-radius: 9px;
-    padding: 6px 12px; min-height: 24px; selection-background-color: #EEF2FF; selection-color: #312E81;
+    background-color: #F8FAFC; color: #0F172A; border: 1.5px solid #94A3B8; border-radius: 8px;
+    padding: 6px 12px; min-height: 28px; selection-background-color: #EEF2FF; selection-color: #312E81;
 }
-QComboBox, QDateEdit {
-    combobox-popup: 0; background-color: #FFFFFF; color: #0F172A; border: 1.5px solid #CBD5E1; border-radius: 9px;
-    padding: 6px 34px 6px 12px; min-height: 26px; selection-background-color: #EEF2FF; selection-color: #312E81;
+QComboBox, QComboBox:!editable, QComboBox:editable, QDateEdit {
+    combobox-popup: 0; background-color: #F8FAFC; color: #0F172A; border: 1.5px solid #94A3B8; border-radius: 8px;
+    padding: 6px 38px 6px 12px; min-height: 30px; selection-background-color: #EEF2FF; selection-color: #312E81;
+    font-weight: 600; font-size: 9.5pt;
 }
-QComboBox:hover, QDateEdit:hover { border-color: #4F46E5; }
-QComboBox:focus, QDateEdit:focus { border: 2px solid #4F46E5; }
-QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #FFFFFF; color: #0F172A; }
-QComboBox QLineEdit { background-color: #FFFFFF; color: #0F172A; border: 0; padding: 0; }
-QDateEdit { min-width: 142px; padding-right: 32px; }
+QComboBox:hover, QComboBox:!editable:hover, QDateEdit:hover { border-color: #4F46E5; background-color: #FFFFFF; }
+QComboBox:focus, QComboBox:!editable:focus, QDateEdit:focus { border: 2px solid #4F46E5; background-color: #FFFFFF; }
+QComboBox QLineEdit { background-color: #F8FAFC; color: #0F172A; border: 0; padding: 0; }
+QDateEdit { min-width: 142px; padding-right: 36px; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {
     border: 2px solid #4F46E5; background-color: #FFFFFF; color: #0F172A;
 }
-QComboBox::drop-down, QDateEdit::drop-down {
+QComboBox::drop-down, QComboBox:!editable::drop-down, QDateEdit::drop-down {
     subcontrol-origin: padding; subcontrol-position: top right;
-    width: 28px; border-left: 1px solid #CBD5E1;
-    border-top-right-radius: 8px; border-bottom-right-radius: 8px;
-    background-color: #F8FAFC;
+    width: 32px; border-left: 1.5px solid #94A3B8;
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
+    background-color: #EEF2FF;
 }
-QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
-    background-color: #F1F5F9;
+QComboBox::drop-down:hover, QComboBox:!editable::drop-down:hover, QDateEdit::drop-down:hover {
+    background-color: #E0E7FF;
 }
 QComboBox::down-arrow, QDateEdit::down-arrow {
     image: url("__CHEVRON_SLATE__");
-    width: 12px; height: 12px;
+    width: 14px; height: 14px;
 }
 QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
     image: url("__CHEVRON_SLATE__");
@@ -9136,8 +9352,8 @@ QLabel[statusSummary="true"] { background: #EEF2FF; border: 1.5px solid #C7D2FE;
 QLabel[warningBanner="true"] { background: #FFFBEB; border: 1.5px solid #FDE68A; border-radius: 12px; color: #92400E; font-weight: 600; padding: 9px 12px; }
 QProgressBar { border: 1px solid #CBD5E1; border-radius: 8px; text-align: center; color: #0F172A; background: #F1F5F9; min-height: 16px; font-weight: 700; font-size: 8pt; }
 QProgressBar::chunk { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #4F46E5, stop:1 #06B6D4); border-radius: 7px; }
-QCheckBox { spacing: 10px; padding: 4px; color: #0F172A; background: transparent; font-weight: 500; }
-QCheckBox::indicator { width: 20px; height: 20px; border: 2px solid #CBD5E1; border-radius: 6px; background: #F8FAFC; }
+QCheckBox { spacing: 10px; padding: 4px; color: #0F172A; background: transparent; font-weight: 600; }
+QCheckBox::indicator { width: 20px; height: 20px; border: 2px solid #94A3B8; border-radius: 6px; background: #F8FAFC; }
 QCheckBox::indicator:hover { border-color: #4F46E5; background: #EEF2FF; }
 QCheckBox::indicator:checked { background: #4F46E5; border-color: #4F46E5; }
 QCheckBox::indicator:checked:hover { background: #4338CA; border-color: #4338CA; }
@@ -9149,7 +9365,7 @@ QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: #CBD5E1
 QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #4F46E5; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QDialog { background: #F8FAFC; color: #0F172A; }
-QFormLayout QLabel { color: #0F172A; background: transparent; font-weight: 600; }
+QFormLayout QLabel { color: #1E293B; background: transparent; font-weight: 700; font-size: 9.5pt; }
 QToolTip, QLabel#accessibleHoverMessage { background-color: #0F172A; color: #FFFFFF; border: 2px solid #6366F1; padding: 8px 12px; border-radius: 8px; font-size: 10pt; font-weight: 600; }
 QCalendarWidget { background-color: #FFFFFF; color: #0F172A; border: 2px solid #6366F1; border-radius: 12px; }
 QCalendarWidget QWidget#qt_calendar_navigationbar { background: #0F172A; min-height: 42px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
@@ -9161,7 +9377,7 @@ QCalendarWidget QAbstractItemView { background: #FFFFFF; alternate-background-co
 QWidget#appPageSurface { background: #FFFFFF; color: #0F172A; }
 QWidget#homeContent, QWidget#pageContent { background-color: #F8FAFC; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 16px; }
 QGroupBox { background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; border-radius: 12px; }
-QGroupBox::title { color: #1E293B; background-color: #FFFFFF; }
+QGroupBox::title { color: #1E293B; background-color: #FFFFFF; font-weight: 700; }
 QWidget#kpiCard, QWidget#dashboardPanel { background-color: #FFFFFF; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 14px; }
 QGroupBox#kpiCard { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #FFFFFF, stop:1 #F8FAFC); border: 1px solid #CBD5E1; border-radius: 16px; }
 QGroupBox#kpiCard:hover { border-color: #A78BFA; }
@@ -9178,16 +9394,16 @@ QWidget#settingsContent { background-color: #F8FAFC; color: #0F172A; }
 QWidget#settingsContent QGroupBox { background-color: #FFFFFF; color: #0F172A; }
 QWidget#settingsContent QLabel { color: #1E293B; }
 QWidget#settingsContent QPushButton { background-color: #E2E8F0; color: #0F172A; }
-QWidget#settingsContent QComboBox { background-color: #FFFFFF; color: #0F172A; }
+QWidget#settingsContent QComboBox { background-color: #F8FAFC; color: #0F172A; border: 1.5px solid #94A3B8; }
 QLabel { color: #1E293B; }
 QLabel[pageTitle="true"], QLabel[sectionHeading="true"], QLabel[guideTitle="true"] { color: #0F172A; }
 QLabel[pageSubtitle="true"], QLabel[mutedText="true"], QLabel[sessionLabel="true"] { color: #475569; }
 QWidget#sessionStrip { background: #E2E8F0; border: 1px solid #94A3B8; }
 QWidget#guideItem { background: #F1F5F9; border: 1px solid #94A3B8; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit, QComboBox, QDateEdit {
-    background-color: #FFFFFF; color: #0F172A; border: 1px solid #94A3B8; }
+    background-color: #F8FAFC; color: #0F172A; border: 1.5px solid #94A3B8; }
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus,
-QTimeEdit:focus, QComboBox:focus, QDateEdit:focus { border: 1px solid #6D28D9; }
+QTimeEdit:focus, QComboBox:focus, QDateEdit:focus { border: 2px solid #4F46E5; background-color: #FFFFFF; }
 QHeaderView::section { background: #DCE6F1; color: #0F172A; border-bottom: 2px solid #94A3B8; }
 QTableWidget { background: #FFFFFF; alternate-background-color: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; gridline-color: #CBD5E1; }
 QTableWidget::item { color: #0F172A; border-bottom: 1px solid #E2E8F0; }
@@ -9251,33 +9467,33 @@ QPushButton:default:hover, QPushButton[primary="true"]:hover { background: qline
 QToolButton::menu-button { border: none; width: 22px; }
 QToolButton::menu-indicator { image: none; }
 QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {
-    background-color: #0B1120; color: #F8FAFC; border: 1.5px solid #334155; border-radius: 9px;
-    padding: 6px 12px; min-height: 24px; selection-background-color: #4F46E5; selection-color: #FFFFFF;
+    background-color: #0F172A; color: #F8FAFC; border: 1.5px solid #475569; border-radius: 8px;
+    padding: 6px 12px; min-height: 28px; selection-background-color: #4F46E5; selection-color: #FFFFFF;
 }
-QComboBox, QDateEdit {
-    combobox-popup: 0; background-color: #0B1120; color: #F8FAFC; border: 1.5px solid #475569; border-radius: 9px;
-    padding: 6px 34px 6px 12px; min-height: 26px; selection-background-color: #4F46E5; selection-color: #FFFFFF;
+QComboBox, QComboBox:!editable, QComboBox:editable, QDateEdit {
+    combobox-popup: 0; background-color: #0F172A; color: #F8FAFC; border: 1.5px solid #475569; border-radius: 8px;
+    padding: 6px 38px 6px 12px; min-height: 30px; selection-background-color: #4F46E5; selection-color: #FFFFFF;
+    font-weight: 600; font-size: 9.5pt;
 }
-QComboBox:hover, QDateEdit:hover { border-color: #00E5FF; }
-QComboBox:focus, QDateEdit:focus { border: 2px solid #38BDF8; }
-QComboBox:editable, QComboBox:!editable, QComboBox::drop-down:editable { background-color: #0B1120; color: #F8FAFC; }
-QComboBox QLineEdit { background-color: #0B1120; color: #F8FAFC; border: 0; padding: 0; }
-QDateEdit { min-width: 142px; padding-right: 32px; }
+QComboBox:hover, QComboBox:!editable:hover, QDateEdit:hover { border-color: #38BDF8; background-color: #162035; }
+QComboBox:focus, QComboBox:!editable:focus, QDateEdit:focus { border: 2px solid #00E5FF; background-color: #111827; }
+QComboBox QLineEdit { background-color: #0F172A; color: #F8FAFC; border: 0; padding: 0; }
+QDateEdit { min-width: 142px; padding-right: 36px; }
 QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus, QTimeEdit:focus {
-    border: 2px solid #38BDF8; background-color: #0B1120; color: #F8FAFC;
+    border: 2px solid #00E5FF; background-color: #111827; color: #F8FAFC;
 }
-QComboBox::drop-down, QDateEdit::drop-down {
+QComboBox::drop-down, QComboBox:!editable::drop-down, QDateEdit::drop-down {
     subcontrol-origin: padding; subcontrol-position: top right;
-    width: 28px; border-left: 1px solid #334155;
-    border-top-right-radius: 8px; border-bottom-right-radius: 8px;
+    width: 32px; border-left: 1.5px solid #475569;
+    border-top-right-radius: 7px; border-bottom-right-radius: 7px;
     background-color: #1E293B;
 }
-QComboBox::drop-down:hover, QDateEdit::drop-down:hover {
+QComboBox::drop-down:hover, QComboBox:!editable::drop-down:hover, QDateEdit::drop-down:hover {
     background-color: #334155;
 }
 QComboBox::down-arrow, QDateEdit::down-arrow {
     image: url("__CHEVRON_WHITE__");
-    width: 12px; height: 12px;
+    width: 14px; height: 14px;
 }
 QComboBox::down-arrow:hover, QDateEdit::down-arrow:hover {
     image: url("__CHEVRON_WHITE__");
@@ -9466,7 +9682,7 @@ def main():
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
         info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
-    win=MainWindow(db, active_user); win.apply_theme(); win.showMaximized()
+    win=MainWindow(db, active_user); win.apply_theme(); win.show()
     if resume_user is not None and resume_tab < win.tabs.count():
         win.tabs.setCurrentIndex(resume_tab)
     return app.exec()
