@@ -1,7 +1,7 @@
 /**
  * Raw Strength Calisthenics - Employee Audit Manager Mobile App
  * Synchronized with Desktop Database via Cloudflare Encrypted Sync
- * Version 1.3.13
+ * Version 1.3.14
  */
 
 const SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev";
@@ -734,7 +734,7 @@ async function pushToCloud(silent = false) {
     if (feedback && !silent) feedback.textContent = "Encrypting business data snapshot...";
 
     const payloadObj = {
-      version: "1.3.13",
+      version: "1.3.14",
       employees: state.employees,
       attendance: state.attendance,
       tasks: state.tasks,
@@ -764,6 +764,58 @@ async function pushToCloud(silent = false) {
     if (feedback) feedback.textContent = `❌ Sync error: ${err.message}`;
     if (!silent) showToast(`Sync error: ${err.message}`, 4000);
   }
+}
+
+// Decompress zlib deflate stream matching Python database_sync
+async function decompressZlib(bytes) {
+  if (typeof DecompressionStream !== "undefined") {
+    try {
+      const ds = new DecompressionStream("deflate");
+      const writer = ds.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      const reader = ds.readable.getReader();
+      const chunks = [];
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      let total = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+      let res = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        res.set(c, offset);
+        offset += c.byteLength;
+      }
+      return res;
+    } catch (e) {
+      try {
+        const dsRaw = new DecompressionStream("deflate-raw");
+        const writer = dsRaw.writable.getWriter();
+        writer.write(bytes.slice(2, -4));
+        writer.close();
+        const reader = dsRaw.readable.getReader();
+        const chunks = [];
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        let total = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+        let res = new Uint8Array(total);
+        let offset = 0;
+        for (const c of chunks) {
+          res.set(c, offset);
+          offset += c.byteLength;
+        }
+        return res;
+      } catch (e2) {
+        return bytes;
+      }
+    }
+  }
+  return bytes;
 }
 
 // Pull from Cloud with conflict-free union merge
@@ -819,18 +871,41 @@ async function pullFromCloud(silent = false) {
     aad.set(header, 0);
     aad.set(SNAPSHOT_AAD, header.length);
 
-    const decrypted = await crypto.subtle.decrypt(
+    const decryptedBuffer = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: iv, additionalData: aad, tagLength: 128 },
       aesKey,
       ciphertext
     );
 
-    const jsonStr = new TextDecoder().decode(decrypted);
-    let pulledData;
-    try {
-      pulledData = JSON.parse(jsonStr);
-    } catch (e) {
-      // Snapshot might be raw SQLite binary from desktop - worker successfully transferred it
+    const decompressed = await decompressZlib(new Uint8Array(decryptedBuffer));
+
+    let pulledData = null;
+    const markerStr = "\n__RSC_JSON__\n";
+    const marker = new TextEncoder().encode(markerStr);
+    let markerIdx = -1;
+    for (let i = 0; i <= decompressed.length - marker.length; i++) {
+      let match = true;
+      for (let j = 0; j < marker.length; j++) {
+        if (decompressed[i + j] !== marker[j]) { match = false; break; }
+      }
+      if (match) { markerIdx = i; break; }
+    }
+
+    if (markerIdx !== -1) {
+      const jsonBytes = decompressed.slice(markerIdx + marker.length);
+      try {
+        pulledData = JSON.parse(new TextDecoder().decode(jsonBytes));
+      } catch (e) {}
+    }
+
+    if (!pulledData) {
+      try {
+        const text = new TextDecoder().decode(decompressed);
+        pulledData = JSON.parse(text);
+      } catch (e) {}
+    }
+
+    if (!pulledData) {
       if (feedback) feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
       return;
     }

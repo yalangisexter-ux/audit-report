@@ -165,10 +165,14 @@ def decrypt_snapshot_bytes(encrypted_bytes: bytes, token: str) -> bytes:
     last_exc = None
     for cand in candidates:
         try:
-            compressed = AESGCM(_derive_snapshot_key(cand, salt)).decrypt(
+            raw_payload = AESGCM(_derive_snapshot_key(cand, salt)).decrypt(
                 nonce, encrypted_bytes[header_size:], header + _SNAPSHOT_AAD
             )
-            return zlib.decompress(compressed)
+            try:
+                return zlib.decompress(raw_payload)
+            except zlib.error:
+                # Payload was stored uncompressed (e.g. mobile/web JSON payload)
+                return raw_payload
         except Exception as exc:
             last_exc = exc
 
@@ -202,10 +206,36 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
         integrity = destination.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise RuntimeError("The database snapshot failed SQLite integrity validation.")
+
+        manifest = {}
+        try:
+            destination.row_factory = sqlite3.Row
+            if "employees" in tables:
+                manifest["employees"] = [dict(r) for r in destination.execute("SELECT * FROM employees").fetchall()]
+            if "attendance" in tables:
+                manifest["attendance"] = {
+                    f"{r['employee_id']}_{r['work_date']}": dict(r)
+                    for r in destination.execute("SELECT * FROM attendance").fetchall()
+                }
+            if "tasks" in tables:
+                manifest["tasks"] = [dict(r) for r in destination.execute("SELECT * FROM tasks").fetchall()]
+            if "holidays" in tables:
+                manifest["holidays"] = {r["holiday_date"]: r["holiday_name"] for r in destination.execute("SELECT holiday_date, holiday_name FROM holidays").fetchall()}
+            manifest["timestamp"] = datetime.now().isoformat()
+            manifest["version"] = "1.3.14"
+        except Exception as e:
+            logging.getLogger("db_sync").debug(f"Manifest generation note: {e}")
+
         destination.execute("VACUUM")
         destination.close()
         destination = None
         data = Path(snapshot_path).read_bytes()
+        if manifest:
+            try:
+                json_bytes = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+                data = data + b"\n__RSC_JSON__\n" + json_bytes
+            except Exception:
+                pass
         return encrypt_snapshot_bytes(data, token)
     finally:
         if destination is not None:

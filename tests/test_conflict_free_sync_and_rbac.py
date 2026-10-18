@@ -335,3 +335,132 @@ def test_rbac_main_window_property():
     assert DummyWindow({"role": "Employee", "username": "emp1"}).is_admin_or_dev is False
     assert DummyWindow(None).is_admin_or_dev is False
 
+
+def test_merge_remote_json_snapshot_integrates_mobile_data(tmp_path):
+    local_db_path = tmp_path / "local_for_json.db"
+    conn = sqlite3.connect(local_db_path)
+    conn.row_factory = sqlite3.Row
+    setup_test_schema(conn)
+
+    # Local has Alice (EMP001) with morning check-in
+    cur = conn.execute(
+        "INSERT INTO employees (name, employee_code, department, designation, phone, email, joining_date, active, created_at) "
+        "VALUES ('Alice Smith', 'EMP001', 'Engineering', 'Lead', '555-01', 'alice@test.com', '2026-01-01', 1, '2026-01-01')"
+    )
+    alice_id = cur.lastrowid
+    conn.execute(
+        "INSERT INTO attendance (employee_id, work_date, check_in, check_out, attendance_status, attendance_note, updated_at) "
+        "VALUES (?, '2026-10-18', '08:45', '', 'Present', 'Arrived early', '2026-10-18 08:45:00')",
+        (alice_id,)
+    )
+    conn.execute(
+        "INSERT INTO tasks (employee_id, task_date, title, details, status, progress, manager_note, created_at, updated_at) "
+        "VALUES (?, '2026-10-18', 'Daily Standup', 'Sync with team', 'In Progress', 40, 'Underway', '2026-10-18', '2026-10-18')",
+        (alice_id,)
+    )
+    conn.commit()
+
+    # Mobile payload: Alice checked out at 17:30 + new employee Bob + new task
+    mobile_json = {
+        "version": "1.3.14",
+        "employees": [
+            {"id": 99, "name": "Alice Smith", "employee_code": "EMP001", "department": "Engineering"},
+            {"id": 100, "name": "Bob Stone", "employee_code": "EMP002", "department": "Support", "phone": "555-02"}
+        ],
+        "attendance": {
+            "99_2026-10-18": {
+                "employee_id": 99,
+                "work_date": "2026-10-18",
+                "check_in": "",
+                "check_out": "17:30",
+                "attendance_status": "Present",
+                "attendance_note": "Left on time"
+            }
+        },
+        "tasks": [
+            {
+                "employee_id": 99,
+                "task_date": "2026-10-18",
+                "title": "Daily Standup",
+                "status": "Completed",
+                "progress": 100,
+                "manager_note": "All items discussed"
+            },
+            {
+                "employee_id": 100,
+                "task_date": "2026-10-18",
+                "title": "Onboarding",
+                "status": "In Progress",
+                "progress": 50
+            }
+        ],
+        "holidays": {"2026-11-01": "Company Anniversary"}
+    }
+
+    # Save to a JSON file and merge
+    json_file = tmp_path / "mobile_sync.json"
+    json_file.write_text(__import__("json").dumps(mobile_json), encoding="utf-8")
+
+    stats = app.merge_remote_database_snapshot(conn, json_file)
+    assert stats["employees"] >= 1
+    assert stats["attendance"] >= 1
+    assert stats["tasks"] >= 1
+
+    # Verify Alice's attendance merged both morning check-in and evening check-out
+    att = conn.execute("SELECT check_in, check_out, attendance_note FROM attendance WHERE employee_id=? AND work_date='2026-10-18'", (alice_id,)).fetchone()
+    assert att["check_in"] == "08:45"
+    assert att["check_out"] == "17:30"
+    assert "Arrived early" in att["attendance_note"]
+    assert "Left on time" in att["attendance_note"]
+
+    # Verify Alice's task progress advanced to 100% Completed
+    task = conn.execute("SELECT status, progress, manager_note FROM tasks WHERE employee_id=? AND title='Daily Standup'", (alice_id,)).fetchone()
+    assert task["status"] == "Completed"
+    assert task["progress"] == 100
+    assert "All items discussed" in task["manager_note"]
+
+    # Verify Bob was created and his task was mapped to Bob's new local ID
+    bob = conn.execute("SELECT id, name FROM employees WHERE employee_code='EMP002'").fetchone()
+    assert bob is not None
+    bob_task = conn.execute("SELECT title, progress FROM tasks WHERE employee_id=?", (bob["id"],)).fetchone()
+    assert bob_task is not None
+    assert bob_task["title"] == "Onboarding"
+
+    # Verify holiday merged
+    hol = conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date='2026-11-01'").fetchone()
+    assert hol["holiday_name"] == "Company Anniversary"
+
+    conn.close()
+
+
+def test_hybrid_snapshot_contains_sqlite_and_json_manifest(tmp_path):
+    db_path = tmp_path / "hybrid_test.db"
+    conn = sqlite3.connect(db_path)
+    setup_test_schema(conn)
+    conn.execute("INSERT INTO employees (name, employee_code, created_at) VALUES ('Charlie', 'EMP003', '2026-10-18')")
+    conn.commit()
+    conn.close()
+
+    token = "test_token_123"
+    encrypted = database_sync.create_encrypted_database_snapshot(db_path, token)
+    decrypted = database_sync.decrypt_snapshot_bytes(encrypted, token)
+
+    # 1. Verify it can be opened by sqlite3 directly
+    snap_db_path = tmp_path / "hybrid_decrypted.db"
+    snap_db_path.write_bytes(decrypted)
+    snap_conn = sqlite3.connect(snap_db_path)
+    assert snap_conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    emp = snap_conn.execute("SELECT name FROM employees").fetchone()
+    assert emp[0] == "Charlie"
+    snap_conn.close()
+
+    # 2. Verify it contains the embedded JSON manifest marker
+    marker = b"\n__RSC_JSON__\n"
+    idx = decrypted.rfind(marker)
+    assert idx != -1
+    json_str = decrypted[idx + len(marker):].decode("utf-8")
+    parsed = __import__("json").loads(json_str)
+    assert parsed["version"] == "1.3.14"
+    assert any(e["name"] == "Charlie" for e in parsed["employees"])
+
+

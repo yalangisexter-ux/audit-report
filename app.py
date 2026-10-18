@@ -1452,6 +1452,208 @@ def is_privileged_user(user_or_role) -> bool:
     return username in ("admin", "developer", "dev")
 
 
+def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes | str | dict) -> dict:
+    """
+    Non-destructively merge JSON business data (e.g. from mobile or web client) into local SQLite database.
+    Preserves all records, unifies attendance check-ins/outs, and monotonically advances task progress.
+    """
+    stats = {"users": 0, "employees": 0, "attendance": 0, "tasks": 0}
+    if isinstance(json_data, (bytes, bytearray)):
+        marker = b"\n__RSC_JSON__\n"
+        idx = json_data.rfind(marker)
+        if idx != -1:
+            json_text = json_data[idx + len(marker):].decode("utf-8", errors="replace")
+        else:
+            json_text = json_data.decode("utf-8", errors="replace")
+        try:
+            data = json.loads(json_text)
+        except Exception:
+            return stats
+    elif isinstance(json_data, str):
+        try:
+            data = json.loads(json_data)
+        except Exception:
+            return stats
+    elif isinstance(json_data, dict):
+        data = json_data
+    else:
+        return stats
+
+    if not isinstance(data, dict):
+        return stats
+
+    local_conn.execute("PRAGMA foreign_keys=OFF")
+    local_conn.execute("BEGIN IMMEDIATE")
+    try:
+        # 1. Merge employees & map remote IDs
+        remote_to_local_emp_id = {}
+        local_emps = [dict(r) for r in local_conn.execute("SELECT * FROM employees").fetchall()]
+        local_by_code = {
+            str(r.get("employee_code") or "").strip().lower(): r
+            for r in local_emps if str(r.get("employee_code") or "").strip()
+        }
+        local_by_name = {
+            str(r.get("name") or "").strip().lower(): r
+            for r in local_emps if str(r.get("name") or "").strip()
+        }
+
+        remote_emps = data.get("employees") or []
+        if isinstance(remote_emps, list):
+            for re_dict in remote_emps:
+                if not isinstance(re_dict, dict):
+                    continue
+                code = str(re_dict.get("employee_code") or "").strip().lower()
+                name = str(re_dict.get("name") or "").strip().lower()
+                r_id = re_dict.get("id")
+
+                match = local_by_code.get(code) if code else None
+                if not match and name:
+                    match = local_by_name.get(name)
+
+                if match:
+                    if r_id is not None:
+                        remote_to_local_emp_id[r_id] = match["id"]
+                    local_conn.execute(
+                        """UPDATE employees SET
+                           department = CASE WHEN department='' THEN ? ELSE department END,
+                           designation = CASE WHEN designation='' THEN ? ELSE designation END,
+                           phone = CASE WHEN phone='' THEN ? ELSE phone END,
+                           email = CASE WHEN email='' THEN ? ELSE email END
+                           WHERE id=?""",
+                        (re_dict.get("department", ""), re_dict.get("designation", ""),
+                         re_dict.get("phone", ""), re_dict.get("email", ""), match["id"])
+                    )
+                else:
+                    cur = local_conn.execute(
+                        """INSERT INTO employees(employee_code, name, department, designation, phone, email, joining_date, active, notes, created_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                        (re_dict.get("employee_code") or None, re_dict.get("name", "New Employee"),
+                         re_dict.get("department", ""), re_dict.get("designation", ""),
+                         re_dict.get("phone", ""), re_dict.get("email", ""),
+                         re_dict.get("joining_date", ""), int(re_dict.get("active", 1)),
+                         re_dict.get("notes", ""), re_dict.get("created_at", now_text()))
+                    )
+                    new_id = cur.lastrowid
+                    if r_id is not None:
+                        remote_to_local_emp_id[r_id] = new_id
+                    if code:
+                        local_by_code[code] = {"id": new_id, "name": re_dict.get("name", "")}
+                    if name:
+                        local_by_name[name] = {"id": new_id, "name": re_dict.get("name", "")}
+                    stats["employees"] += 1
+
+        # 2. Merge attendance
+        remote_att = data.get("attendance") or {}
+        att_items = remote_att.values() if isinstance(remote_att, dict) else remote_att
+        if isinstance(att_items, (list, tuple)) or hasattr(att_items, "__iter__"):
+            for ra in att_items:
+                if not isinstance(ra, dict):
+                    continue
+                orig_eid = ra.get("employee_id")
+                target_eid = remote_to_local_emp_id.get(orig_eid, orig_eid)
+                wdate = str(ra.get("work_date") or "").strip()
+                if not target_eid or not wdate:
+                    continue
+                la = local_conn.execute(
+                    "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+                    (target_eid, wdate)
+                ).fetchone()
+                if not la:
+                    local_conn.execute(
+                        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, break_minutes, attendance_status, attendance_note, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?)""",
+                        (target_eid, wdate, str(ra.get("check_in") or ""), str(ra.get("check_out") or ""),
+                         int(ra.get("break_minutes") or 0), str(ra.get("attendance_status") or "Unmarked"),
+                         str(ra.get("attendance_note") or ""), str(ra.get("updated_at") or now_text()))
+                    )
+                    stats["attendance"] += 1
+                else:
+                    merged_in = la["check_in"] or str(ra.get("check_in") or "")
+                    merged_out = la["check_out"] or str(ra.get("check_out") or "")
+                    status = la["attendance_status"]
+                    r_status = str(ra.get("attendance_status") or "")
+                    if status in ("", "Unmarked") and r_status not in ("", "Unmarked"):
+                        status = r_status
+                    elif r_status == "Present":
+                        status = "Present"
+                    l_note = la["attendance_note"] or ""
+                    r_note = str(ra.get("attendance_note") or "")
+                    merged_note = l_note
+                    if r_note and r_note not in l_note:
+                        merged_note = f"{l_note} | {r_note}".strip(" |")
+                    local_conn.execute(
+                        """UPDATE attendance SET check_in=?, check_out=?, attendance_status=?, attendance_note=?, updated_at=?
+                           WHERE id=?""",
+                        (merged_in, merged_out, status, merged_note, now_text(), la["id"])
+                    )
+                    stats["attendance"] += 1
+
+        # 3. Merge tasks
+        remote_tasks = data.get("tasks") or []
+        if isinstance(remote_tasks, list):
+            for rt in remote_tasks:
+                if not isinstance(rt, dict):
+                    continue
+                orig_eid = rt.get("employee_id")
+                target_eid = remote_to_local_emp_id.get(orig_eid, orig_eid)
+                title = str(rt.get("title") or "").strip()
+                tdate = str(rt.get("task_date") or "").strip()
+                if not target_eid or not title:
+                    continue
+                lt = local_conn.execute(
+                    "SELECT * FROM tasks WHERE employee_id=? AND task_date=? AND title=? COLLATE NOCASE",
+                    (target_eid, tdate, title)
+                ).fetchone()
+                if not lt:
+                    local_conn.execute(
+                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (target_eid, tdate, title, str(rt.get("details") or ""), str(rt.get("due_time") or ""),
+                         str(rt.get("priority") or "Normal"), str(rt.get("status") or "Not started"),
+                         int(rt.get("progress") or 0), str(rt.get("proof_url") or ""), str(rt.get("proof_note") or ""),
+                         str(rt.get("submitted_at") or ""), str(rt.get("manager_note") or ""),
+                         int(rt.get("expose_link") or 0), str(rt.get("created_at") or now_text()), str(rt.get("updated_at") or now_text()))
+                    )
+                    stats["tasks"] += 1
+                else:
+                    new_prog = max(int(lt["progress"] or 0), int(rt.get("progress") or 0))
+                    new_stat = "Completed" if (lt["status"] == "Completed" or rt.get("status") == "Completed") else rt.get("status", lt["status"])
+                    new_url = rt.get("proof_url") or lt["proof_url"] or ""
+                    new_note = lt["manager_note"] or ""
+                    r_note = str(rt.get("manager_note") or "")
+                    if r_note and r_note not in new_note:
+                        new_note = f"{new_note} | {r_note}".strip(" |")
+                    local_conn.execute(
+                        """UPDATE tasks SET progress=?, status=?, proof_url=?, manager_note=?, updated_at=? WHERE id=?""",
+                        (new_prog, new_stat, new_url, new_note, now_text(), lt["id"])
+                    )
+                    stats["tasks"] += 1
+
+        # 4. Merge holidays
+        remote_hols = data.get("holidays") or {}
+        if isinstance(remote_hols, dict):
+            for hdate, hname in remote_hols.items():
+                local_conn.execute(
+                    "INSERT OR IGNORE INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?)",
+                    (str(hdate), str(hname), now_text())
+                )
+        elif isinstance(remote_hols, list):
+            for rh in remote_hols:
+                if isinstance(rh, dict) and rh.get("holiday_date"):
+                    local_conn.execute(
+                        "INSERT OR IGNORE INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?)",
+                        (str(rh["holiday_date"]), str(rh.get("holiday_name", "")), now_text())
+                    )
+
+        local_conn.commit()
+    except Exception as exc:
+        local_conn.rollback()
+        raise exc
+    finally:
+        local_conn.execute("PRAGMA foreign_keys=ON")
+    return stats
+
+
 def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path: Path | str) -> dict:
     """
     Intelligently merge a downloaded remote database snapshot into local_conn.
@@ -1467,6 +1669,16 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
     - settings: only shared business calendar / config merged; local credentials/themes preserved.
     - audit_log: non-duplicates appended.
     """
+    raw_head = b""
+    try:
+        with open(str(snapshot_path), "rb") as f:
+            raw_head = f.read(16)
+    except Exception:
+        pass
+    if not raw_head.startswith(b"SQLite format 3\x00"):
+        raw_full = Path(snapshot_path).read_bytes()
+        return merge_remote_json_snapshot(local_conn, raw_full)
+
     remote = sqlite3.connect(str(snapshot_path), timeout=25)
     remote.row_factory = sqlite3.Row
     stats = {"users": 0, "employees": 0, "attendance": 0, "tasks": 0}
@@ -6151,6 +6363,12 @@ class MainWindow(QMainWindow):
             b.setToolTip(tip)
             b.setMinimumHeight(36)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            if obj_name in ("empAddBtn", "empEditBtn", "empToggleBtn") and not self.is_hr_admin_or_dev:
+                b.setEnabled(False)
+                b.setToolTip("Staff and employee accounts have limited access and cannot modify employee records.")
+            elif obj_name == "empDeleteBtn" and not self.is_admin_or_dev:
+                b.setEnabled(False)
+                b.setToolTip("Only an Admin or Developer can delete employee records.")
             actions_row.addWidget(b)
         actions_row.addStretch(1)
         toolbar_layout.addLayout(actions_row)
@@ -6251,6 +6469,9 @@ class MainWindow(QMainWindow):
             b.setToolTip(tip)
             b.setMinimumHeight(36)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            if obj_name == "taskDeleteBtn" and not self.is_admin_or_dev:
+                b.setEnabled(False)
+                b.setToolTip("Only an Admin or Developer can delete tasks.")
             actions_row.addWidget(b)
         actions_row.addStretch(1)
         task_toolbar_card_layout.addLayout(actions_row)
@@ -6828,6 +7049,9 @@ class MainWindow(QMainWindow):
             b.setMinimumHeight(36)
             b.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
+            if obj_name == "archiveDeleteBtn" and not self.is_admin_or_dev:
+                b.setEnabled(False)
+                b.setToolTip("Only an Admin or Developer can delete archived documents.")
             archive_toolbar_layout.addWidget(b)
         archive_toolbar_layout.addStretch(1)
         l.addWidget(archive_toolbar_card)
@@ -7150,6 +7374,10 @@ class MainWindow(QMainWindow):
     @property
     def is_admin_or_dev(self):
         return is_privileged_user(self.current_user)
+
+    @property
+    def is_hr_admin_or_dev(self):
+        return self.is_admin_or_dev or str(getattr(self, "user_role", "")).strip().lower() == "hr"
 
     def _init_auto_sync(self):
         self._auto_sync_running = False
@@ -7823,6 +8051,8 @@ class MainWindow(QMainWindow):
             self.report_exclude_employee.blockSignals(False)
 
     def add_employee(self):
+        if not self.is_hr_admin_or_dev:
+            return error(self, "Only HR, Admin, or Developer accounts have permission to add employees.")
         d=EmployeeDialog(self)
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
@@ -7836,6 +8066,8 @@ class MainWindow(QMainWindow):
         except sqlite3.Error as ex: error(self, f"Could not save employee: {ex}")
 
     def edit_employee(self):
+        if not self.is_hr_admin_or_dev:
+            return error(self, "Only HR, Admin, or Developer accounts have permission to edit employee records.")
         eid=self.selected_id(self.emp_table)
         if not eid: return error(self,"Select an employee first.")
         row=self.db.employee(eid); d=EmployeeDialog(self,row)
@@ -7850,6 +8082,8 @@ class MainWindow(QMainWindow):
         except sqlite3.Error as ex: error(self, f"Could not update employee: {ex}")
 
     def toggle_employee(self):
+        if not self.is_hr_admin_or_dev:
+            return error(self, "Only HR, Admin, or Developer accounts have permission to activate or deactivate employees.")
         eid=self.selected_id(self.emp_table)
         if not eid: return error(self,"Select an employee first.")
         e=self.db.employee(eid); active=0 if e["active"] else 1
@@ -7977,6 +8211,8 @@ class MainWindow(QMainWindow):
         info(self, f"Updated {len(task_ids)} selected task(s).")
 
     def delete_task(self, table=None):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer account has permission to delete tasks.")
         table=table or self.task_table
         tid=self.selected_id(table)
         if not tid: return error(self,"Select a task first.")
@@ -9752,6 +9988,8 @@ class MainWindow(QMainWindow):
         except Exception as ex: error(self,f"Could not export PDF:\n{ex}")
 
     def delete_archived_pdf(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer account has permission to delete archived documents.")
         doc_id=self.selected_archive_id()
         if not doc_id: return error(self,"Select a PDF record first.")
         row=self.archive_content(doc_id)
