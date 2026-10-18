@@ -3881,43 +3881,33 @@ class MainWindow(QMainWindow):
         clock_frame_layout.addWidget(self.header_clock_analog, 1)
         clock_frame_layout.addWidget(self.clock_mode_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Persistent database actions shifted to the top brand header panel
-        self.shared_sync_push_button = QPushButton("Push Data")
-        self.shared_sync_push_button.setObjectName("headerSyncPushBtn")
-        self.shared_sync_pull_button = QPushButton("Pull Latest Data")
-        self.shared_sync_pull_button.setObjectName("headerSyncPullBtn")
-        self.shared_sync_push_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.shared_sync_push_button.setMinimumHeight(36)
-        self.shared_sync_push_button.setStyleSheet(
-            "QPushButton#headerSyncPushBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(14, 165, 233, 0.28), stop:1 rgba(2, 132, 199, 0.38)); "
-            "color: #F0F9FF; border: 1.5px solid rgba(56, 189, 248, 0.55); border-radius: 9px; "
-            "padding: 6px 15px; font-weight: 700; font-size: 9.5pt; letter-spacing: 0.3px; } "
-            "QPushButton#headerSyncPushBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0284C7, stop:1 #0369A1); border-color: #38BDF8; color: #FFFFFF; } "
-            "QPushButton#headerSyncPushBtn:pressed { background: #0369A1; } "
-            "QPushButton#headerSyncPushBtn:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
+        # Continuous automatic synchronization badge in the top brand header panel
+        self.header_sync_badge = QPushButton("🟢 Auto-Synced")
+        self.header_sync_badge.setObjectName("headerSyncBadge")
+        self.header_sync_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.header_sync_badge.setMinimumHeight(36)
+        self.header_sync_badge.setStyleSheet(
+            "QPushButton#headerSyncBadge { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(16, 185, 129, 0.20), stop:1 rgba(5, 150, 105, 0.30)); "
+            "color: #ECFDF5; border: 1.5px solid rgba(52, 211, 153, 0.55); border-radius: 9px; "
+            "padding: 6px 16px; font-weight: 700; font-size: 9.5pt; letter-spacing: 0.3px; } "
+            "QPushButton#headerSyncBadge:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #10B981, stop:1 #059669); border-color: #6EE7B7; color: #FFFFFF; } "
+            "QPushButton#headerSyncBadge:pressed { background: #047857; } "
+            "QPushButton#headerSyncBadge:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
         )
-        self.shared_sync_pull_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.shared_sync_pull_button.setMinimumHeight(36)
-        self.shared_sync_pull_button.setStyleSheet(
-            "QPushButton#headerSyncPullBtn { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(99, 102, 241, 0.28), stop:1 rgba(79, 70, 229, 0.38)); "
-            "color: #EEF2FF; border: 1.5px solid rgba(129, 140, 248, 0.55); border-radius: 9px; "
-            "padding: 6px 15px; font-weight: 700; font-size: 9.5pt; letter-spacing: 0.3px; } "
-            "QPushButton#headerSyncPullBtn:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #6366F1, stop:1 #4F46E5); border-color: #A5B4FC; color: #FFFFFF; } "
-            "QPushButton#headerSyncPullBtn:pressed { background: #4338CA; } "
-            "QPushButton#headerSyncPullBtn:disabled { background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12); }"
-        )
-        self.shared_sync_push_button.setToolTip("Push the current encrypted business-data snapshot.")
-        self.shared_sync_pull_button.setToolTip("Pull the latest snapshot after developer-password authorization.")
-        self.shared_sync_push_button.clicked.connect(self.sync_github_database_now)
-        self.shared_sync_pull_button.clicked.connect(self.pull_latest_github_database)
+        self.header_sync_badge.setToolTip("Continuous Cloud Sync is Active. Data is continuously encrypted and synchronized automatically in the background. Click to check for updates now.")
+        self.header_sync_badge.clicked.connect(lambda: self.schedule_auto_sync(immediate=True))
+
+        # Compatibility aliases for existing references/tests
+        self.shared_sync_push_button = self.header_sync_badge
+        self.shared_sync_pull_button = QPushButton()
+        self.shared_sync_pull_button.hide()
 
         # Retain dummy status widget for safe background setText updates without displaying status message in UI
         self.shared_sync_status = QLabel()
         self.shared_sync_status.hide()
         self.shared_sync_bar = None
 
-        brand_layout.addWidget(self.shared_sync_push_button, 0, Qt.AlignmentFlag.AlignVCenter)
-        brand_layout.addWidget(self.shared_sync_pull_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        brand_layout.addWidget(self.header_sync_badge, 0, Qt.AlignmentFlag.AlignVCenter)
         brand_layout.addSpacing(6)
         brand_layout.addWidget(self.header_clock_frame, 0, Qt.AlignmentFlag.AlignVCenter)
         self.header_clock.show()
@@ -7108,12 +7098,12 @@ class MainWindow(QMainWindow):
             storage_form.addRow(label, path_edit)
         l.addWidget(storage_box)
 
-        sync_box = QGroupBox("Encrypted cloud database sync")
+        sync_box = QGroupBox("Continuous Cloud Database Synchronization")
         sync_layout = QVBoxLayout(sync_box)
         sync_note = QLabel(
-            "Database changes stay on this computer until you select Push Data. That action "
-            "sends an encrypted business-data snapshot through the secure sync service. Login and recovery credentials and local "
-            "settings are excluded. Pull Latest Data requires the emergency developer password."
+            "All employee records, attendance entries, tasks, and accounts are automatically synchronized "
+            "continuously in the background with centralized cloud storage. Updates from multiple staff "
+            "members are merged in a structured, conflict-free hierarchy without overwriting or duplicate entries."
         )
         sync_note.setWordWrap(True)
         sync_note.setMinimumWidth(0)
@@ -7135,17 +7125,15 @@ class MainWindow(QMainWindow):
         sync_layout.addLayout(install_row)
 
         sync_actions = QHBoxLayout()
-        self.github_sync_now_button = QPushButton("Push Data")
+        self.github_sync_now_button = QPushButton("🔄 Sync Now (Check Updates)")
         self.github_sync_now_button.setObjectName("settingsSyncPushBtn")
         self.github_sync_now_button.setToolTip(
-            "Upload this installation’s encrypted database snapshot. Local edits are not uploaded until you click this button."
+            "Perform an immediate verification and background sync with the centralized cloud database."
         )
         self.github_sync_now_button.clicked.connect(self.sync_github_database_now)
-        self.github_sync_pull_button = QPushButton("Pull Latest Data")
+        self.github_sync_pull_button = QPushButton("⬇ Emergency Cloud Restore")
         self.github_sync_pull_button.setObjectName("settingsSyncPullBtn")
-        self.github_sync_pull_button.setToolTip(
-            "Developer-only: validate and pull the latest committed snapshot for this installation. A backup is created first."
-        )
+        self.github_sync_pull_button.hide()
         self.github_sync_pull_button.clicked.connect(self.pull_latest_github_database)
         self.github_sync_config_button = QPushButton("⚙️ Configure Cloud Sync")
         self.github_sync_config_button.setObjectName("settingsSyncConfigBtn")
@@ -7154,7 +7142,6 @@ class MainWindow(QMainWindow):
         )
         self.github_sync_config_button.clicked.connect(self.configure_github_sync_url)
         sync_actions.addWidget(self.github_sync_now_button)
-        sync_actions.addWidget(self.github_sync_pull_button)
         sync_actions.addWidget(self.github_sync_config_button)
         sync_actions.addStretch(1)
         sync_layout.addLayout(sync_actions)
@@ -7313,21 +7300,41 @@ class MainWindow(QMainWindow):
         sync = getattr(self.db, "github_sync", None)
         if label is None or sync is None:
             return
-        credential_state = "Auto-Sync is live & continuous." if sync.is_configured else "Secure sync is not configured in this build."
-        label.setText(credential_state + " " + sync.status)
-        push_enabled = sync.is_configured and not sync.is_busy and self.is_admin_or_dev
+        is_running = getattr(self, "_auto_sync_running", False) or sync.is_busy
+        if not sync.is_configured:
+            credential_state = "⚠️ Cloud sync is not configured."
+        elif is_running:
+            credential_state = "🔄 Synchronizing changes with cloud..."
+        else:
+            credential_state = "🟢 Connected & Continuously Synced."
+        status_detail = sync.status if (sync.status and sync.status != "Idle") else "All records up to date."
+        label.setText(f"{credential_state} ({status_detail})")
+
+        header_badge = getattr(self, "header_sync_badge", None)
+        if header_badge is not None:
+            if not sync.is_configured:
+                header_badge.setText("⚪ Sync Config")
+                header_badge.setToolTip("Cloud sync not configured. Click to configure.")
+            elif is_running:
+                header_badge.setText("🔄 Syncing...")
+                header_badge.setToolTip("Synchronizing changes with centralized cloud storage...")
+            else:
+                header_badge.setText("🟢 Auto-Synced")
+                header_badge.setToolTip("Continuous Cloud Sync is Active. Data is continuously encrypted and synchronized automatically in the background. Click to check for updates now.")
+
+        sync_btn_enabled = sync.is_configured and not is_running
         push_button = getattr(self, "github_sync_now_button", None)
         if push_button is not None:
-            push_button.setEnabled(push_enabled)
+            push_button.setEnabled(sync_btn_enabled)
         shared_status = getattr(self, "shared_sync_status", None)
         if shared_status is not None:
             shared_status.setText(label.text())
         shared_push = getattr(self, "shared_sync_push_button", None)
-        if shared_push is not None:
-            shared_push.setEnabled(push_enabled)
+        if shared_push is not None and shared_push is not header_badge:
+            shared_push.setEnabled(sync_btn_enabled)
         shared_pull = getattr(self, "shared_sync_pull_button", None)
         if shared_pull is not None:
-            shared_pull.setEnabled(sync.is_configured and self.is_admin_or_dev and not sync.is_busy)
+            shared_pull.setEnabled(sync_btn_enabled)
 
     def configure_github_sync_url(self):
         current = self.db.get_setting("db_sync_worker_url", "") or getattr(self.db.github_sync, "worker_url", "")
@@ -7369,7 +7376,7 @@ class MainWindow(QMainWindow):
         self.db._initialize_github_sync()
         if hasattr(self, "github_sync_install_label"):
             self.github_sync_install_label.setText(f"Installation ID: {clean_id}")
-        info(self, f"Installation ID successfully updated to:\n{clean_id}\n\nYou can now click 'Pull Latest Data' to download the latest cloud snapshot from this ID.")
+        info(self, f"Installation ID successfully updated to:\n{clean_id}\n\nContinuous synchronization will now automatically sync with this ID in the background.")
 
     @property
     def is_admin_or_dev(self):

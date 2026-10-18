@@ -362,7 +362,7 @@ def test_merge_remote_json_snapshot_integrates_mobile_data(tmp_path):
 
     # Mobile payload: Alice checked out at 17:30 + new employee Bob + new task
     mobile_json = {
-        "version": "1.3.14",
+        "version": "1.3.15",
         "employees": [
             {"id": 99, "name": "Alice Smith", "employee_code": "EMP001", "department": "Engineering"},
             {"id": 100, "name": "Bob Stone", "employee_code": "EMP002", "department": "Support", "phone": "555-02"}
@@ -460,7 +460,34 @@ def test_hybrid_snapshot_contains_sqlite_and_json_manifest(tmp_path):
     assert idx != -1
     json_str = decrypted[idx + len(marker):].decode("utf-8")
     parsed = __import__("json").loads(json_str)
-    assert parsed["version"] == "1.3.14"
+    assert parsed["version"] == "1.3.15"
     assert any(e["name"] == "Charlie" for e in parsed["employees"])
+
+
+def test_continuous_sync_ui_elements(tmp_path, monkeypatch):
+    """Verify that manual Push/Pull controls are removed and continuous auto-sync UI is active."""
+    _qt_app = app.QApplication.instance() or app.QApplication([])
+    test_db = tmp_path / "ui_test.db"
+    monkeypatch.setattr(app, "DB_PATH", str(test_db))
+    db = app.Database()
+    win = app.MainWindow(db, {"username": "Admin", "role": "Admin", "display_name": "Administrator"})
+
+    # 1. Header has header_sync_badge with auto-sync indicator
+    assert hasattr(win, "header_sync_badge")
+    assert "Auto-Synced" in win.header_sync_badge.text() or "Sync" in win.header_sync_badge.text()
+    assert win.header_sync_badge.isHidden() is False
+
+    # 2. Backward compatibility aliases
+    assert win.shared_sync_push_button is win.header_sync_badge
+    assert hasattr(win, "shared_sync_pull_button")
+    assert win.shared_sync_pull_button.isHidden() is True
+
+    # 3. Settings tab sync controls
+    assert hasattr(win, "github_sync_now_button")
+    assert "Sync Now" in win.github_sync_now_button.text()
+    assert hasattr(win, "github_sync_pull_button")
+    assert win.github_sync_pull_button.isHidden() is True
+
+    win.close()
 
 

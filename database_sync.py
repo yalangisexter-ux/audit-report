@@ -22,6 +22,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+try:
+    from build_info import APP_VERSION
+except Exception:
+    APP_VERSION = "1.3.15"
+
 
 _SNAPSHOT_MAGIC = b"RSCDB1"
 _SNAPSHOT_AAD = b"RawStrengthEmployeeAuditManager:encrypted-customer-database:v1"
@@ -222,7 +227,7 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
             if "holidays" in tables:
                 manifest["holidays"] = {r["holiday_date"]: r["holiday_name"] for r in destination.execute("SELECT holiday_date, holiday_name FROM holidays").fetchall()}
             manifest["timestamp"] = datetime.now().isoformat()
-            manifest["version"] = "1.3.14"
+            manifest["version"] = APP_VERSION
         except Exception as e:
             logging.getLogger("db_sync").debug(f"Manifest generation note: {e}")
 

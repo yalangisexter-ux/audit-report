@@ -1,7 +1,7 @@
 /**
  * Raw Strength Calisthenics - Employee Audit Manager Mobile App
  * Synchronized with Desktop Database via Cloudflare Encrypted Sync
- * Version 1.3.14
+ * Version 1.3.15
  */
 
 const SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev";
@@ -734,7 +734,7 @@ async function pushToCloud(silent = false) {
     if (feedback && !silent) feedback.textContent = "Encrypting business data snapshot...";
 
     const payloadObj = {
-      version: "1.3.14",
+      version: "1.3.15",
       employees: state.employees,
       attendance: state.attendance,
       tasks: state.tasks,
@@ -973,9 +973,16 @@ async function pullFromCloud(silent = false) {
   }
 }
 
+document.getElementById("btnSyncCheck")?.addEventListener("click", () => {
+  pullFromCloud(false);
+  showToast("Checking cloud synchronization...");
+});
+document.getElementById("quickSyncBtn")?.addEventListener("click", () => {
+  pullFromCloud(false);
+  showToast("Checking cloud synchronization...");
+});
 document.getElementById("btnPushData")?.addEventListener("click", () => pushToCloud(false));
 document.getElementById("btnPullData")?.addEventListener("click", () => pullFromCloud(false));
-document.getElementById("quickSyncBtn")?.addEventListener("click", () => pushToCloud(false));
 
 document.getElementById("genNewInstallIdBtn")?.addEventListener("click", () => {
   state.installId = generateHex(32);
