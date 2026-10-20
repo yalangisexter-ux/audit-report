@@ -653,3 +653,60 @@ def test_task_manager_toolbar_has_no_separate_custom_task_button(tmp_path, monke
     assert not any("Add Custom Task" in t for t in btn_texts)
     assert any("Add Task" in t for t in btn_texts)
     win.close()
+
+
+def test_task_dialog_resizable_scroll_area_and_custom_options(tmp_path, monkeypatch):
+    """Verify that TaskDialog has QScrollArea, is resizable, clamps height above taskbar, and adds custom rows smoothly."""
+    _qt_app = app.QApplication.instance() or app.QApplication([])
+    db_path = tmp_path / "resizable_dialog_test.db"
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    db = app.Database()
+    db.conn.execute("INSERT INTO employees (name, employee_code, department, created_at) VALUES ('Alice Specialist', 'EMP088', 'Engineering', '2026-10-20')")
+    db.conn.commit()
+    emp = db.conn.execute("SELECT * FROM employees WHERE employee_code='EMP088'").fetchone()
+
+    dlg = app.TaskDialog(db, employee_id=emp["id"])
+    
+    # Check window flags and size grip
+    flags = dlg.windowFlags()
+    assert bool(flags & app.Qt.WindowType.WindowMinMaxButtonsHint) is True
+    assert dlg.isSizeGripEnabled() is True
+    
+    # Check 3-tier structure: QScrollArea exists
+    assert hasattr(dlg, "scroll_area")
+    assert isinstance(dlg.scroll_area, app.QScrollArea)
+    assert dlg.scroll_area.widgetResizable() is True
+    
+    # Check screen geometry clamping
+    screen = app.QApplication.primaryScreen()
+    if screen:
+        avail = screen.availableGeometry()
+        assert dlg.height() <= avail.height()
+    
+    # Check custom fields addition
+    assert hasattr(dlg, "custom_box")
+    assert hasattr(dlg, "custom_rows")
+    init_rows = len(dlg.custom_rows)
+    assert init_rows == 0
+    assert "0 field" in dlg.custom_count_badge.text()
+    
+    # Add preset custom row
+    k_in, v_in, row_w = dlg.add_key_value_row("Tracked By", "Super Auditor")
+    assert len(dlg.custom_rows) == 1
+    assert "1 field" in dlg.custom_count_badge.text()
+    assert k_in.text() == "Tracked By"
+    assert v_in.text() == "Super Auditor"
+    
+    # Add empty custom row
+    k_in2, v_in2, row_w2 = dlg.add_key_value_row()
+    assert len(dlg.custom_rows) == 2
+    assert "2 fields" in dlg.custom_count_badge.text()
+    k_in2.setText("Client")
+    v_in2.setText("Acme Global")
+    
+    vals = dlg.values()
+    parsed = app.parse_custom_values(vals[17])
+    assert ("Tracked By", "Super Auditor") in parsed
+    assert ("Client", "Acme Global") in parsed
+
+    dlg.close()

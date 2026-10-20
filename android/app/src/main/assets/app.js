@@ -439,7 +439,8 @@ function addMobileKeyValueRow(k = "", v = "") {
     <button type="button" class="btn btn-sm kv-del-btn" style="color: #EF4444; background: rgba(239,68,68,0.1); border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">✕</button>
   `;
   row.querySelector(".kv-del-btn").addEventListener("click", () => row.remove());
-  container.appendChild(row);
+  container.appendChild(row);
+  setTimeout(() => row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30);
   return row;
 }
 

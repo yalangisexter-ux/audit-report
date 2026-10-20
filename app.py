@@ -2557,34 +2557,173 @@ class TaskDialog(QDialog):
         self.is_custom = True
 
         self.setWindowTitle("Edit Task Details" if row else "Create New Task")
-        self.setMinimumWidth(600)
+        # Ensure window is freely resizable and has min/max/close controls
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
+        self.setSizeGripEnabled(True)
 
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 18, 20, 18)
-        main_layout.setSpacing(14)
+        # Responsive screen geometry calculation: prevents dialog from ever hiding behind Windows taskbar
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else QRect(0, 0, 1024, 768)
+        dlg_w = min(740, max(520, avail.width() - 40))
+        dlg_h = min(730, max(460, avail.height() - 80))
+        self.resize(dlg_w, dlg_h)
+        self.setMinimumSize(480, 380)
+        self.move(avail.x() + max(10, (avail.width() - dlg_w) // 2), avail.y() + max(10, (avail.height() - dlg_h) // 2))
 
-        # Advanced Header Banner
+        # Advanced dark theme styling for TaskDialog
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #0B0F19;
+                color: #F8FAFC;
+            }
+            QLabel {
+                color: #E2E8F0;
+            }
+            QLineEdit, QComboBox, QDateEdit, QSpinBox, QTextEdit {
+                background: rgba(15, 23, 42, 0.75);
+                border: 1px solid rgba(148, 163, 184, 0.25);
+                border-radius: 8px;
+                color: #F8FAFC;
+                padding: 7px 11px;
+                font-size: 9pt;
+                selection-background-color: #6366F1;
+            }
+            QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QSpinBox:focus, QTextEdit:focus {
+                border: 1.5px solid #818CF8;
+                background: rgba(15, 23, 42, 0.95);
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 24px;
+            }
+            QComboBox QAbstractItemView {
+                background: #0F172A;
+                border: 1px solid #334155;
+                selection-background-color: #4F46E5;
+                color: #F8FAFC;
+                outline: none;
+                padding: 4px;
+            }
+            QCheckBox {
+                color: #CBD5E1;
+                font-size: 8.5pt;
+                spacing: 7px;
+            }
+            QCheckBox::indicator {
+                width: 17px;
+                height: 17px;
+                border-radius: 4px;
+                border: 1px solid rgba(148, 163, 184, 0.4);
+                background: rgba(15, 23, 42, 0.6);
+            }
+            QCheckBox::indicator:checked {
+                background: #6366F1;
+                border-color: #818CF8;
+            }
+        """)
+
+        # 3-Tier Root Layout: Fixed Header (Top), Scroll Area (Middle), Fixed Footer (Bottom)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # ----------------------------------------------------
+        # TIER 1: FIXED TOP HEADER BANNER (Sticky)
+        # ----------------------------------------------------
         header_frame = QFrame()
         header_frame.setObjectName("taskDialogHeader")
         header_frame.setStyleSheet(
-            "QFrame#taskDialogHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E1B4B, stop:0.5 #1E293B, stop:1 #0F172A); "
-            "border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 12px; padding: 12px 16px; }"
+            "QFrame#taskDialogHeader { "
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E1B4B, stop:0.45 #0F172A, stop:1 #1E293B); "
+            "border-bottom: 1.5px solid rgba(129, 140, 248, 0.35); padding: 12px 20px; }"
         )
-        h_layout = QVBoxLayout(header_frame)
-        h_layout.setContentsMargins(4, 4, 4, 4)
-        h_layout.setSpacing(4)
+        h_box = QHBoxLayout(header_frame)
+        h_box.setContentsMargins(16, 10, 16, 10)
+        h_box.setSpacing(14)
+
+        h_icon = QLabel("⚡" if row else "✨")
+        h_icon.setStyleSheet("font-size: 20pt; padding: 4px 8px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 10px;")
+        h_box.addWidget(h_icon, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        h_col = QVBoxLayout()
+        h_col.setSpacing(2)
         self.h_title = QLabel("Edit Task Details" if row else "Create New Task")
-        self.h_title.setStyleSheet("font-size: 12pt; font-weight: 800; color: #F8FAFC; letter-spacing: 0.3px;")
-        h_layout.addWidget(self.h_title)
+        self.h_title.setStyleSheet("font-size: 13pt; font-weight: 800; color: #FFFFFF; letter-spacing: 0.3px;")
+        h_col.addWidget(self.h_title)
 
         self.h_sub = QLabel("Configure assigned task parameters, metrics, evidence, and custom key-value tracking options.")
         self.h_sub.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
-        h_layout.addWidget(self.h_sub)
-        main_layout.addWidget(header_frame)
+        h_col.addWidget(self.h_sub)
+        h_box.addLayout(h_col, 1)
 
-        self.layout = QFormLayout()
-        self.layout.setSpacing(10)
-        self.layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        task_id_badge = QLabel(f"Task #{row['id']}" if row else "New Assignment")
+        task_id_badge.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #A5B4FC; background: rgba(99, 102, 241, 0.18); border: 1px solid rgba(129, 140, 248, 0.4); border-radius: 8px; padding: 5px 12px;")
+        h_box.addWidget(task_id_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        root_layout.addWidget(header_frame, 0)
+
+        # ----------------------------------------------------
+        # TIER 2: MIDDLE SCROLL AREA (Fluid Content)
+        # ----------------------------------------------------
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: rgba(15, 23, 42, 0.7);
+                width: 10px;
+                margin: 0px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(129, 140, 248, 0.35);
+                min-height: 35px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: rgba(129, 140, 248, 0.65);
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+
+        scroll_content = QWidget()
+        scroll_content.setObjectName("taskScrollContent")
+        scroll_content.setStyleSheet("QWidget#taskScrollContent { background: transparent; }")
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setContentsMargins(18, 14, 18, 14)
+        scroll_layout.setSpacing(14)
+
+        # Card Helper Function
+        def _make_section_card(card_id, title_text, icon_str):
+            c_frame = QFrame()
+            c_frame.setObjectName(card_id)
+            c_frame.setStyleSheet(
+                f"QFrame#{card_id} {{ background: rgba(30, 41, 59, 0.45); border: 1.5px solid rgba(148, 163, 184, 0.16); "
+                f"border-radius: 12px; padding: 12px 14px; }} "
+                f"QFrame#{card_id}:hover {{ border-color: rgba(129, 140, 248, 0.35); background: rgba(30, 41, 59, 0.65); }}"
+            )
+            c_vbox = QVBoxLayout(c_frame)
+            c_vbox.setContentsMargins(8, 6, 8, 8)
+            c_vbox.setSpacing(10)
+
+            hdr = QLabel(f"{icon_str}  {title_text}")
+            hdr.setStyleSheet("font-size: 9.5pt; font-weight: 700; color: #E0E7FF; letter-spacing: 0.3px;")
+            c_vbox.addWidget(hdr)
+
+            f_lay = QFormLayout()
+            f_lay.setSpacing(10)
+            f_lay.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            c_vbox.addLayout(f_lay)
+            return c_frame, f_lay
+
+        # CARD 1: Assignment & Ownership Details
+        card_assign, self.layout = _make_section_card("taskCardAssign", "Assignment & Ownership Details", "👤")
 
         # 1. Date
         self.date = QDateEdit()
@@ -2668,6 +2807,10 @@ class TaskDialog(QDialog):
         self.title.setPlaceholderText("Enter assigned task title / description...")
         self.title.setStyleSheet("QLineEdit { padding: 7px 10px; border-radius: 6px; font-weight: 500; }")
         self.layout.addRow("Assigned Task *", self.title)
+        scroll_layout.addWidget(card_assign)
+
+        # CARD 2: Target, Progress & Status Metrics
+        card_metrics, f_metrics = _make_section_card("taskCardMetrics", "Target, Progress & Status Metrics", "🎯")
 
         # 5. Target Qty & 6. Actual Qty
         qty_widget = QWidget()
@@ -2699,7 +2842,7 @@ class TaskDialog(QDialog):
 
         qty_layout.addWidget(self.target_qty, 1)
         qty_layout.addWidget(self.actual_qty, 1)
-        self.layout.addRow("Target / Actual Qty", qty_widget)
+        f_metrics.addRow("Target / Actual Qty", qty_widget)
 
         # 7. Completion % with Dynamic Live Status Pill
         prog_wrap = QWidget()
@@ -2720,8 +2863,7 @@ class TaskDialog(QDialog):
         self.progress_pill = QLabel("0% Not started")
         self.progress_pill.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #94A3B8; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; padding: 4px 10px;")
         prog_layout.addWidget(self.progress_pill, 1)
-
-        self.layout.addRow("Completion %", prog_wrap)
+        f_metrics.addRow("Completion %", prog_wrap)
 
         def _update_progress_pill(pct):
             if pct >= 100:
@@ -2778,6 +2920,7 @@ class TaskDialog(QDialog):
         self.status = QComboBox()
         for label, value in self.STATUSES:
             self.status.addItem(label, value)
+
         if row and "status" in row.keys() and row["status"]:
             status_index = self.status.findData(row["status"])
             if status_index < 0:
@@ -2788,7 +2931,7 @@ class TaskDialog(QDialog):
 
         pri_stat_layout.addWidget(self.priority, 1)
         pri_stat_layout.addWidget(self.status, 1)
-        self.layout.addRow("Priority / Status", pri_stat_widget)
+        f_metrics.addRow("Priority / Status", pri_stat_widget)
 
         def _on_status_changed(idx):
             if self.status.currentData() == "Completed":
@@ -2801,6 +2944,10 @@ class TaskDialog(QDialog):
                 if comp_idx >= 0 and self.status.currentData() in ("Not started", "In progress", "Partially completed"):
                     self.status.setCurrentIndex(comp_idx)
         self.progress.valueChanged.connect(_on_progress_changed)
+        scroll_layout.addWidget(card_metrics)
+
+        # CARD 3: Verification & Evidence
+        card_proof, f_proof = _make_section_card("taskCardProof", "Verification & Follow-up Details", "🔗")
 
         # 10. Proof / Link (and expose_link)
         self.proof = QTextEdit(row["proof_url"] if row else "")
@@ -2815,7 +2962,7 @@ class TaskDialog(QDialog):
         proof_box_layout.setSpacing(4)
         proof_box_layout.addWidget(self.proof)
         proof_box_layout.addWidget(self.expose_link)
-        self.layout.addRow("Proof / Link", proof_box)
+        f_proof.addRow("Proof / Link", proof_box)
 
         # 11. Next Action
         init_next_action = ""
@@ -2828,20 +2975,20 @@ class TaskDialog(QDialog):
         self.next_action = QLineEdit(init_next_action)
         self.next_action.setPlaceholderText("Enter next action or follow-up note...")
         self.next_action.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
-        self.layout.addRow("Next Action", self.next_action)
+        f_proof.addRow("Next Action", self.next_action)
+        scroll_layout.addWidget(card_proof)
 
-        # 12. Custom Task Option & Key-Value Attributes Card
-        self.custom_box = QFrame()
-        # 12. Custom Key-Value Tracking Fields Card
+        # CARD 4: Custom Key-Value Tracking Fields
         self.custom_box = QFrame()
         self.custom_box.setObjectName("taskCustomBox")
         self.custom_box.setStyleSheet(
-            "QFrame#taskCustomBox { background: rgba(30, 41, 59, 0.45); border: 1.5px solid rgba(129, 140, 248, 0.35); "
-            "border-radius: 10px; padding: 12px; margin-top: 4px; }"
+            "QFrame#taskCustomBox { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(30, 41, 59, 0.65), stop:1 rgba(15, 23, 42, 0.75)); "
+            "border: 1.5px solid rgba(129, 140, 248, 0.35); border-radius: 12px; padding: 12px 14px; } "
+            "QFrame#taskCustomBox:hover { border-color: rgba(129, 140, 248, 0.6); }"
         )
         custom_vbox = QVBoxLayout(self.custom_box)
-        custom_vbox.setContentsMargins(10, 10, 10, 10)
-        custom_vbox.setSpacing(8)
+        custom_vbox.setContentsMargins(8, 8, 8, 8)
+        custom_vbox.setSpacing(10)
 
         custom_header = QHBoxLayout()
         custom_title_col = QVBoxLayout()
@@ -2849,8 +2996,9 @@ class TaskDialog(QDialog):
 
         custom_title_row = QHBoxLayout()
         custom_icon = QLabel("🏷️")
+        custom_icon.setStyleSheet("font-size: 11pt;")
         custom_lbl = QLabel("Custom Tracking Fields (Key - Value)")
-        custom_lbl.setStyleSheet("font-weight: 700; font-size: 9.5pt; color: #E0E7FF;")
+        custom_lbl.setStyleSheet("font-weight: 700; font-size: 10pt; color: #E0E7FF;")
         custom_title_row.addWidget(custom_icon)
         custom_title_row.addWidget(custom_lbl)
         custom_title_row.addStretch(1)
@@ -2861,12 +3009,17 @@ class TaskDialog(QDialog):
         custom_title_col.addWidget(custom_hint)
         custom_header.addLayout(custom_title_col, 1)
 
+        self.custom_count_badge = QLabel("0 fields")
+        self.custom_count_badge.setStyleSheet("font-size: 8pt; font-weight: 700; color: #818CF8; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(129, 140, 248, 0.3); border-radius: 6px; padding: 4px 8px;")
+        custom_header.addWidget(self.custom_count_badge, 0, Qt.AlignmentFlag.AlignVCenter)
+
         self.add_custom_btn = QPushButton("➕ Add Field")
         self.add_custom_btn.setObjectName("addCustomKeyValueBtn")
         self.add_custom_btn.setStyleSheet(
-            "QPushButton { font-size: 8.5pt; font-weight: 700; padding: 5px 12px; border-radius: 6px; "
-            "background: rgba(99, 102, 241, 0.25); color: #C7D2FE; border: 1px solid rgba(129, 140, 248, 0.5); } "
-            "QPushButton:hover { background: rgba(99, 102, 241, 0.45); color: #FFFFFF; border-color: #818CF8; }"
+            "QPushButton#addCustomKeyValueBtn { font-size: 8.5pt; font-weight: 700; padding: 6px 14px; border-radius: 7px; "
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(99, 102, 241, 0.35), stop:1 rgba(129, 140, 248, 0.35)); "
+            "color: #FFFFFF; border: 1px solid rgba(129, 140, 248, 0.6); } "
+            "QPushButton#addCustomKeyValueBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); border-color: #A5B4FC; }"
         )
         self.add_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         custom_header.addWidget(self.add_custom_btn, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -2881,14 +3034,14 @@ class TaskDialog(QDialog):
         chips_lbl.setStyleSheet("font-size: 8pt; color: #94A3B8; font-weight: 600;")
         chips_layout.addWidget(chips_lbl)
 
-        quick_presets = ["Tracked By", "Client", "Location", "Batch", "Priority Code", "Machine", "Tag"]
+        quick_presets = ["Tracked By", "Client", "Location", "Batch", "Priority Code", "Machine", "Tag", "Reviewer"]
         for qk in quick_presets:
             chip = QPushButton(f"+ {qk}")
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.setStyleSheet(
-                "QPushButton { font-size: 8pt; color: #A5B4FC; background: rgba(99, 102, 241, 0.12); "
-                "border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 4px; padding: 2px 8px; } "
-                "QPushButton:hover { background: rgba(99, 102, 241, 0.35); color: #FFFFFF; border-color: #818CF8; }"
+                "QPushButton { font-size: 8pt; font-weight: 600; color: #C7D2FE; background: rgba(99, 102, 241, 0.16); "
+                "border: 1px solid rgba(129, 140, 248, 0.32); border-radius: 6px; padding: 3px 9px; } "
+                "QPushButton:hover { background: rgba(99, 102, 241, 0.40); color: #FFFFFF; border-color: #818CF8; }"
             )
             def _make_add_chip(key_name=qk):
                 return lambda: self.add_key_value_row(key_name, "")
@@ -2905,26 +3058,44 @@ class TaskDialog(QDialog):
 
         self.custom_rows = []  # list of (key_input, value_input, row_widget)
 
+        def _update_custom_badge():
+            n = len(self.custom_rows)
+            txt = f"{n} field" + ("s" if n != 1 else "")
+            self.custom_count_badge.setText(txt)
+
         def add_key_value_row(k_text="", v_text=""):
-            row_w = QWidget()
+            row_w = QFrame()
+            row_w.setObjectName("customRowItem")
+            row_w.setStyleSheet(
+                "QFrame#customRowItem { background: rgba(15, 23, 42, 0.70); border: 1px solid rgba(148, 163, 184, 0.22); "
+                "border-radius: 8px; padding: 4px; } "
+                "QFrame#customRowItem:hover { border-color: rgba(129, 140, 248, 0.45); background: rgba(15, 23, 42, 0.90); }"
+            )
             row_h = QHBoxLayout(row_w)
-            row_h.setContentsMargins(0, 0, 0, 0)
-            row_h.setSpacing(6)
+            row_h.setContentsMargins(6, 4, 6, 4)
+            row_h.setSpacing(8)
+
+            tag_icon = QLabel("🏷️")
+            tag_icon.setStyleSheet("font-size: 10pt; color: #818CF8;")
+            row_h.addWidget(tag_icon)
 
             k_in = QLineEdit(k_text)
             k_in.setPlaceholderText("Field Name (e.g. Tracked By)")
-            k_in.setStyleSheet("QLineEdit { padding: 6px 9px; border-radius: 5px; font-weight: 500; }")
+            k_in.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; font-weight: 600; color: #A5B4FC; }")
+
+            colon_lbl = QLabel(":")
+            colon_lbl.setStyleSheet("font-size: 11pt; font-weight: 800; color: #94A3B8;")
 
             v_in = QLineEdit(v_text)
             v_in.setPlaceholderText("Value (e.g. Name)")
-            v_in.setStyleSheet("QLineEdit { padding: 6px 9px; border-radius: 5px; }")
+            v_in.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; color: #FFFFFF; }")
 
             del_btn = QPushButton("✕")
             del_btn.setFixedSize(26, 26)
             del_btn.setToolTip("Remove this field")
             del_btn.setStyleSheet(
-                "QPushButton { color: #EF4444; font-weight: bold; border-radius: 4px; background: rgba(239,68,68,0.12); border: none; } "
-                "QPushButton:hover { background: rgba(239,68,68,0.30); color: #FFFFFF; }"
+                "QPushButton { color: #EF4444; font-weight: bold; border-radius: 5px; background: rgba(239,68,68,0.14); border: 1px solid rgba(239,68,68,0.25); } "
+                "QPushButton:hover { background: rgba(239,68,68,0.35); color: #FFFFFF; border-color: #EF4444; }"
             )
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -2934,14 +3105,21 @@ class TaskDialog(QDialog):
                         self.custom_rows.remove(item)
                         break
                 row_w.deleteLater()
+                _update_custom_badge()
 
             del_btn.clicked.connect(_remove)
-            row_h.addWidget(k_in, 1)
-            row_h.addWidget(v_in, 1)
-            row_h.addWidget(del_btn)
+            row_h.addWidget(k_in, 2)
+            row_h.addWidget(colon_lbl, 0)
+            row_h.addWidget(v_in, 3)
+            row_h.addWidget(del_btn, 0)
 
             self.custom_rows_layout.addWidget(row_w)
             self.custom_rows.append((k_in, v_in, row_w))
+            _update_custom_badge()
+
+            # Ensure newly added row is instantly scrolled into user view
+            QTimer.singleShot(40, lambda: self.scroll_area.ensureWidgetVisible(row_w, 20, 20))
+
             if k_text:
                 v_in.setFocus()
             else:
@@ -2954,8 +3132,54 @@ class TaskDialog(QDialog):
         for ek, ev in existing_custom:
             add_key_value_row(ek, ev)
 
-        self.layout.addRow("Custom Options", self.custom_box)
-        main_layout.addLayout(self.layout)
+        scroll_layout.addWidget(self.custom_box)
+        self.scroll_area.setWidget(scroll_content)
+        root_layout.addWidget(self.scroll_area, 1)
+
+        # ----------------------------------------------------
+        # TIER 3: FIXED BOTTOM FOOTER BAR (Sticky, Always Visible Above Taskbar)
+        # ----------------------------------------------------
+        footer_frame = QFrame()
+        footer_frame.setObjectName("taskDialogFooter")
+        footer_frame.setStyleSheet(
+            "QFrame#taskDialogFooter { "
+            "background: #0B0F19; border-top: 1.5px solid rgba(148, 163, 184, 0.16); padding: 12px 20px; }"
+        )
+        f_layout = QHBoxLayout(footer_frame)
+        f_layout.setContentsMargins(20, 10, 20, 10)
+        f_layout.setSpacing(12)
+
+        f_hint = QLabel("💡 Changes automatically save and sync across all connected views.")
+        f_hint.setStyleSheet("font-size: 8pt; color: #64748B;")
+        f_layout.addWidget(f_hint)
+        f_layout.addStretch(1)
+
+        cancel_btn = QPushButton("✕ Cancel")
+        cancel_btn.setMinimumHeight(38)
+        cancel_btn.setMinimumWidth(100)
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setStyleSheet(
+            "QPushButton { background: rgba(255, 255, 255, 0.05); color: #94A3B8; "
+            "border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; font-weight: 600; padding: 6px 16px; } "
+            "QPushButton:hover { background: rgba(255, 255, 255, 0.10); color: #F1F5F9; border-color: rgba(255, 255, 255, 0.25); }"
+        )
+        cancel_btn.clicked.connect(self.reject)
+        f_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("💾 Save Task" if not row else "💾 Update Task")
+        save_btn.setObjectName("taskSaveBtn")
+        save_btn.setMinimumHeight(38)
+        save_btn.setMinimumWidth(150)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(
+            "QPushButton#taskSaveBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); "
+            "color: #FFFFFF; border: 1px solid rgba(165, 180, 252, 0.45); border-radius: 8px; font-weight: 700; padding: 6px 20px; font-size: 9.5pt; } "
+            "QPushButton#taskSaveBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #4F46E5); border-color: #818CF8; } "
+            "QPushButton#taskSaveBtn:pressed { background: #3730A3; }"
+        )
+        save_btn.clicked.connect(self.accept)
+        f_layout.addWidget(save_btn)
+        root_layout.addWidget(footer_frame, 0)
 
         # Compatibility aliases
         self.is_custom = True
@@ -3022,39 +3246,6 @@ class TaskDialog(QDialog):
                 self.target_status_input.setText(ti.get("target_status", ""))
         self.employee.currentIndexChanged.connect(_on_emp_or_date_target_sync)
         self.date.dateChanged.connect(_on_emp_or_date_target_sync)
-
-        # Dialog Buttons with Modern Styling
-        btn_layout = QHBoxLayout()
-        btn_layout.setContentsMargins(0, 8, 0, 0)
-        btn_layout.setSpacing(10)
-        btn_layout.addStretch(1)
-
-        cancel_btn = QPushButton("✕ Cancel")
-        cancel_btn.setMinimumHeight(38)
-        cancel_btn.setMinimumWidth(100)
-        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cancel_btn.setStyleSheet(
-            "QPushButton { background: rgba(255, 255, 255, 0.05); color: #94A3B8; "
-            "border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; font-weight: 600; padding: 6px 16px; } "
-            "QPushButton:hover { background: rgba(255, 255, 255, 0.10); color: #F1F5F9; }"
-        )
-        cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(cancel_btn)
-
-        save_btn = QPushButton("💾 Save Assignment")
-        save_btn.setObjectName("taskSaveBtn")
-        save_btn.setMinimumHeight(38)
-        save_btn.setMinimumWidth(150)
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setStyleSheet(
-            "QPushButton#taskSaveBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); "
-            "color: #FFFFFF; border: 1px solid rgba(129, 140, 248, 0.5); border-radius: 8px; font-weight: 700; padding: 6px 20px; font-size: 9.5pt; } "
-            "QPushButton#taskSaveBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #4F46E5); border-color: #818CF8; } "
-            "QPushButton#taskSaveBtn:pressed { background: #3730A3; }"
-        )
-        save_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(save_btn)
-        main_layout.addLayout(btn_layout)
 
     def accept(self):
         eid = self.employee.currentData()
@@ -7043,9 +7234,25 @@ class MainWindow(QMainWindow):
             b.setToolTip(tip)
             b.setMinimumHeight(36)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            if obj_name == "taskDeleteBtn" and not self.is_admin_or_dev:
-                b.setEnabled(False)
-                b.setToolTip("Only an Admin or Developer can delete tasks.")
+            if obj_name == "taskAddBtn":
+                b.setStyleSheet(
+                    "QPushButton#taskAddBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); "
+                    "color: #FFFFFF; border: 1px solid rgba(165, 180, 252, 0.45); border-radius: 8px; font-weight: 700; padding: 6px 16px; } "
+                    "QPushButton#taskAddBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #4F46E5); border-color: #818CF8; }"
+                )
+            elif obj_name == "taskDeleteBtn":
+                if not self.is_admin_or_dev:
+                    b.setEnabled(False)
+                    b.setToolTip("Only an Admin or Developer can delete tasks.")
+                b.setStyleSheet(
+                    "QPushButton#taskDeleteBtn { background: rgba(239, 68, 68, 0.12); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; font-weight: 600; padding: 6px 14px; } "
+                    "QPushButton#taskDeleteBtn:hover { background: rgba(239, 68, 68, 0.25); color: #FFFFFF; border-color: #EF4444; }"
+                )
+            else:
+                b.setStyleSheet(
+                    "QPushButton { background: rgba(255, 255, 255, 0.05); color: #CBD5E1; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; font-weight: 600; padding: 6px 14px; } "
+                    "QPushButton:hover { background: rgba(255, 255, 255, 0.10); color: #FFFFFF; border-color: rgba(255, 255, 255, 0.25); }"
+                )
             actions_row.addWidget(b)
         actions_row.addStretch(1)
         task_toolbar_card_layout.addLayout(actions_row)
@@ -7140,6 +7347,28 @@ class MainWindow(QMainWindow):
         self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.task_table.itemSelectionChanged.connect(self._on_task_table_selection_changed)
+        self.task_table.setAlternatingRowColors(True)
+        self.task_table.setStyleSheet("""
+            QTableWidget {
+                background-color: rgba(15, 23, 42, 0.65);
+                alternate-background-color: rgba(30, 41, 59, 0.45);
+                gridline-color: rgba(148, 163, 184, 0.12);
+                border: 1px solid rgba(148, 163, 184, 0.15);
+                border-radius: 8px;
+                color: #F8FAFC;
+                selection-background-color: rgba(99, 102, 241, 0.35);
+                selection-color: #FFFFFF;
+            }
+            QHeaderView::section {
+                background-color: #0F172A;
+                color: #94A3B8;
+                font-weight: 700;
+                font-size: 8.5pt;
+                padding: 8px 6px;
+                border: none;
+                border-bottom: 2px solid rgba(129, 140, 248, 0.4);
+            }
+        """)
         self.task_table.itemDoubleClicked.connect(lambda _item: self.edit_task())
         task_roster_layout.addWidget(self.task_table)
         l.addWidget(task_roster_card)
@@ -8815,13 +9044,50 @@ class MainWindow(QMainWindow):
             return error(self, "Select one or more tasks first. Use Select All to edit every task shown for the current date/filter.")
         dialog = QDialog(self)
         dialog.setWindowTitle("Bulk edit selected tasks")
-        dialog.setMinimumWidth(560)
-        form = QFormLayout(dialog)
-        form.addRow(QLabel(f"Apply selected fields to {len(task_ids)} task(s). Leave a field unchecked to preserve its current value."))
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
+        dialog.setSizeGripEnabled(True)
+        dialog.setStyleSheet("QDialog { background-color: #0B0F19; color: #F8FAFC; }")
+
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen else QRect(0, 0, 1024, 768)
+        bdlg_w = min(620, max(480, avail.width() - 40))
+        bdlg_h = min(680, max(420, avail.height() - 80))
+        dialog.resize(bdlg_w, bdlg_h)
+        dialog.setMinimumSize(440, 360)
+        dialog.move(avail.x() + max(10, (avail.width() - bdlg_w) // 2), avail.y() + max(10, (avail.height() - bdlg_h) // 2))
+
+        d_root = QVBoxLayout(dialog)
+        d_root.setContentsMargins(0, 0, 0, 0)
+        d_root.setSpacing(0)
+
+        b_hdr = QFrame()
+        b_hdr.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E1B4B, stop:0.5 #1E293B, stop:1 #0F172A); border-bottom: 1px solid rgba(129, 140, 248, 0.35); padding: 12px 18px;")
+        b_hdr_l = QVBoxLayout(b_hdr)
+        b_hdr_l.setContentsMargins(4, 4, 4, 4)
+        b_title = QLabel("📝 Bulk Edit Selected Tasks")
+        b_title.setStyleSheet("font-size: 11pt; font-weight: 800; color: #FFFFFF;")
+        b_sub = QLabel(f"Apply selected fields to {len(task_ids)} task(s). Leave a field unchecked to preserve its current value.")
+        b_sub.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
+        b_hdr_l.addWidget(b_title)
+        b_hdr_l.addWidget(b_sub)
+        d_root.addWidget(b_hdr, 0)
+
+        b_scroll = QScrollArea()
+        b_scroll.setWidgetResizable(True)
+        b_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        b_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        b_scroll_content = QWidget()
+        form = QFormLayout(b_scroll_content)
+        form.setContentsMargins(18, 14, 18, 14)
+        form.setSpacing(10)
+        b_scroll.setWidget(b_scroll_content)
+        d_root.addWidget(b_scroll, 1)
+
         fields = {}
         def field_row(label, widget):
             check = QCheckBox("Apply")
-            wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.addWidget(check); row.addWidget(widget,1)
+            check.setStyleSheet("color: #818CF8; font-weight: 600;")
+            wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.setSpacing(8); row.addWidget(check); row.addWidget(widget,1)
             form.addRow(label, wrap); fields[label] = (check, widget)
         title = QLineEdit(); field_row("Assigned Task", title)
         dept = QLineEdit(); field_row("Department", dept)
@@ -8837,8 +9103,16 @@ class MainWindow(QMainWindow):
         field_row("Custom Values", custom_values_in)
         next_action = QLineEdit(); field_row("Next Action", next_action)
         expose_link = QCheckBox("Expose full proof URL in reports"); field_row("Expose links", expose_link)
+
+        b_footer = QFrame()
+        b_footer.setStyleSheet("background: #0B0F19; border-top: 1px solid rgba(148, 163, 184, 0.16); padding: 10px 18px;")
+        b_footer_l = QHBoxLayout(b_footer)
+        b_footer_l.setContentsMargins(12, 6, 12, 6)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        b_footer_l.addStretch(1)
+        b_footer_l.addWidget(buttons)
+        d_root.addWidget(b_footer, 0)
         if dialog.exec() != QDialog.Accepted: return
         updates = {}
         if fields["Assigned Task"][0].isChecked():
