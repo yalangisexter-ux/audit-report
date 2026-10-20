@@ -32,7 +32,7 @@ def setup_test_schema(conn: sqlite3.Connection):
         );
         CREATE TABLE IF NOT EXISTS tasks(
           id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
-          task_date TEXT NOT NULL, title TEXT NOT NULL, details TEXT DEFAULT '',
+          task_date TEXT NOT NULL, title TEXT NOT NULL, department TEXT DEFAULT '', details TEXT DEFAULT '',
           due_time TEXT DEFAULT '', priority TEXT DEFAULT 'Normal',
           status TEXT DEFAULT 'Not started', progress INTEGER DEFAULT 0,
           proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
@@ -478,7 +478,7 @@ def test_continuous_sync_ui_elements(tmp_path, monkeypatch):
     # 1. Header has header_sync_badge with auto-sync indicator
     assert hasattr(win, "header_sync_badge")
     assert "Auto-Synced" in win.header_sync_badge.text() or "Sync" in win.header_sync_badge.text()
-    assert win.header_sync_badge.isHidden() is False
+    assert win.header_sync_badge.isHidden() is True  # Hidden per silent auto-sync design
 
     # 2. Backward compatibility aliases
     assert win.shared_sync_push_button is win.header_sync_badge
@@ -558,3 +558,88 @@ def test_custom_values_task_persistence_and_merge(tmp_path):
 
 
 
+
+
+def test_task_dialog_custom_option_and_editable_department(tmp_path, monkeypatch):
+    """Verify in-dialog custom task options and editable department with no hardcoded fallback."""
+    _qt_app = app.QApplication.instance() or app.QApplication([])
+    db_path = tmp_path / "dialog_test.db"
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    db = app.Database()
+    
+    # Insert an employee without department
+    db.conn.execute(
+        "INSERT INTO employees (name, employee_code, department, created_at) VALUES ('John Specialist', 'EMP099', '', '2026-10-20')"
+    )
+    db.conn.commit()
+    emp = db.conn.execute("SELECT * FROM employees WHERE employee_code='EMP099'").fetchone()
+
+    # 1. Open TaskDialog in standard mode
+    dlg = app.TaskDialog(db, employee_id=emp["id"], is_custom=False)
+    # Check department is editable QComboBox and not hardcoded to General
+    assert isinstance(dlg.department, app.QComboBox)
+    assert dlg.department.isEditable() is True
+    assert dlg.department.currentText() != "General"
+
+    # User enters a custom department
+    dlg.department.setEditText("Special Operations")
+    dlg.title.setText("Classified Audit")
+
+    # 2. Toggle to Custom Task mode inside the dialog
+    dlg.toggle_task_mode(True)
+    assert dlg.is_custom is True
+    assert "CUSTOM TASK" in dlg.type_indicator_pill.text()
+    assert dlg.custom_card.isHidden() is False
+
+    # 3. Add custom key-value pairs
+    dlg.add_key_value_row("Target Code", "Echo-7")
+    dlg.add_key_value_row("Machine", "X-Ray Scanner")
+    
+    vals = dlg.values()
+    assert len(vals) == 18
+    assert vals[2] == "Classified Audit"
+    assert vals[3] == "Special Operations"
+    parsed_kv = app.parse_custom_values(vals[17])
+    assert ("Target Code", "Echo-7") in parsed_kv
+    assert ("Machine", "X-Ray Scanner") in parsed_kv
+
+    # 4. Save and verify database persistence
+    db.conn.execute(
+        """INSERT INTO tasks(employee_id, task_date, title, department, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (*vals, app.now_text(), app.now_text())
+    )
+    db.conn.commit()
+
+    saved_tasks = db.tasks()
+    matching = [t for t in saved_tasks if t["title"] == "Classified Audit"]
+    assert len(matching) == 1
+    assert matching[0]["department"] == "Special Operations"
+    
+    # 5. Open TaskDialog in edit mode on the saved task
+    # It must automatically detect custom values and open in Custom Task mode
+    edit_dlg = app.TaskDialog(db, row=matching[0])
+    assert edit_dlg.is_custom is True
+    assert "CUSTOM TASK" in edit_dlg.type_indicator_pill.text()
+    assert edit_dlg.department.currentText() == "Special Operations"
+    
+    dlg.close()
+    edit_dlg.close()
+
+
+def test_task_manager_bento_kpi_cards(tmp_path, monkeypatch):
+    """Verify that Bento KPI Metric Cards in Task Manager accurately update counts."""
+    _qt_app = app.QApplication.instance() or app.QApplication([])
+    db_path = tmp_path / "kpi_test.db"
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    db = app.Database()
+    win = app.MainWindow(db, {"username": "Admin", "role": "Admin", "display_name": "Administrator"})
+    
+    assert hasattr(win, "kpi_total_tasks")
+    assert hasattr(win, "kpi_completed_tasks")
+    assert hasattr(win, "kpi_in_progress_tasks")
+    assert hasattr(win, "kpi_custom_tasks")
+    
+    win.refresh_tasks()
+    assert win.kpi_total_tasks.text() == "0"
+    win.close()

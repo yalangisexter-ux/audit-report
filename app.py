@@ -1308,6 +1308,7 @@ class Database:
             ("employee_id", "INTEGER"),
             ("task_date", "TEXT NOT NULL DEFAULT ''"),
             ("title", "TEXT NOT NULL DEFAULT ''"),
+            ("department", "TEXT DEFAULT ''"),
             ("details", "TEXT DEFAULT ''"),
             ("due_time", "TEXT DEFAULT ''"),
             ("priority", "TEXT DEFAULT 'Normal'"),
@@ -1427,7 +1428,9 @@ class Database:
         return self.conn.execute("SELECT * FROM employees WHERE id=?", (emp_id,)).fetchone()
 
     def tasks(self, task_date=None, employee_id=None):
-        q = """SELECT t.*, e.name AS employee_name, e.employee_code, e.department FROM tasks t
+        q = """SELECT t.*, e.name AS employee_name, e.employee_code,
+                      COALESCE(NULLIF(t.department, ''), e.department, '') AS department
+               FROM tasks t
                JOIN employees e ON e.id=t.employee_id WHERE 1=1"""
         args = []
         if task_date: q += " AND t.task_date=?"; args.append(task_date)
@@ -1520,7 +1523,7 @@ def _ensure_local_task_columns(conn: sqlite3.Connection):
     """Ensure newer task columns exist in any local connection before inserting/updating."""
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
-        for col_name in ("target_qty", "actual_qty", "next_action", "custom_values"):
+        for col_name in ("target_qty", "actual_qty", "next_action", "custom_values", "department"):
             if col_name not in cols:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col_name} TEXT DEFAULT ''")
     except Exception:
@@ -1682,10 +1685,11 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                 ).fetchone()
                 if not lt:
                     c_vals = str(rt.get("custom_values") or "")
+                    t_dept = str(rt.get("department") or "")
                     local_conn.execute(
-                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (target_eid, tdate, title, str(rt.get("details") or ""), str(rt.get("due_time") or ""),
+                        """INSERT INTO tasks(employee_id, task_date, title, department, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (target_eid, tdate, title, t_dept, str(rt.get("details") or ""), str(rt.get("due_time") or ""),
                          str(rt.get("priority") or "Normal"), str(rt.get("status") or "Not started"),
                          int(rt.get("progress") or 0), str(rt.get("proof_url") or ""), str(rt.get("proof_note") or ""),
                          str(rt.get("submitted_at") or ""), str(rt.get("manager_note") or ""),
@@ -1706,9 +1710,10 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     a_qty = str(rt.get("actual_qty") or (lt["actual_qty"] if "actual_qty" in lt.keys() else "") or "")
                     nxt_act = str(rt.get("next_action") or (lt["next_action"] if "next_action" in lt.keys() else "") or new_note)
                     c_vals = str(rt.get("custom_values") or (lt["custom_values"] if "custom_values" in lt.keys() else "") or "")
+                    t_dept = str(rt.get("department") or (lt["department"] if "department" in lt.keys() else "") or "")
                     local_conn.execute(
-                        """UPDATE tasks SET progress=?, status=?, proof_url=?, manager_note=?, target_qty=?, actual_qty=?, next_action=?, custom_values=?, updated_at=? WHERE id=?""",
-                        (new_prog, new_stat, new_url, new_note, t_qty, a_qty, nxt_act, c_vals, now_text(), lt["id"])
+                        """UPDATE tasks SET department=?, progress=?, status=?, proof_url=?, manager_note=?, target_qty=?, actual_qty=?, next_action=?, custom_values=?, updated_at=? WHERE id=?""",
+                        (t_dept, new_prog, new_stat, new_url, new_note, t_qty, a_qty, nxt_act, c_vals, now_text(), lt["id"])
                     )
                     stats["tasks"] += 1
 
@@ -1924,11 +1929,12 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                 ).fetchone()
                 if lt_row is None:
                     c_vals = str(rt_dict.get("custom_values") or "")
+                    t_dept = str(rt_dict.get("department") or "")
                     local_conn.execute(
-                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status,
+                        """INSERT INTO tasks(employee_id, task_date, title, department, details, due_time, priority, status,
                            progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (lid, tdate, ttitle, rt_dict.get("details", ""), rt_dict.get("due_time", ""),
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (lid, tdate, ttitle, t_dept, rt_dict.get("details", ""), rt_dict.get("due_time", ""),
                          rt_dict.get("priority", "Normal"), rt_dict.get("status", "Not started"),
                          int(rt_dict.get("progress", 0)), rt_dict.get("proof_url", ""), rt_dict.get("proof_note", ""),
                          rt_dict.get("submitted_at", ""), rt_dict.get("manager_note", ""),
@@ -1958,10 +1964,11 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     a_qty = str(rt_dict.get("actual_qty") or lt.get("actual_qty") or "")
                     nxt_act = str(rt_dict.get("next_action") or lt.get("next_action") or m_note)
                     c_vals = str(rt_dict.get("custom_values") or lt.get("custom_values") or "")
+                    t_dept = str(rt_dict.get("department") or lt.get("department") or "")
                     local_conn.execute(
-                        """UPDATE tasks SET progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, target_qty=?, actual_qty=?, next_action=?, custom_values=?, updated_at=?
+                        """UPDATE tasks SET department=?, progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, target_qty=?, actual_qty=?, next_action=?, custom_values=?, updated_at=?
                            WHERE id=?""",
-                        (new_progress, new_status, p_url, p_note, m_note, exp_link, t_qty, a_qty, nxt_act, c_vals, upd, lt["id"])
+                        (t_dept, new_progress, new_status, p_url, p_note, m_note, exp_link, t_qty, a_qty, nxt_act, c_vals, upd, lt["id"])
                     )
 
         # 5. Merge employee_targets
@@ -2542,34 +2549,71 @@ class TaskDialog(QDialog):
         ("Cancelled", "Cancelled"),
         ("Not selected", None),
     ]
-    def __init__(self, db, parent=None, row=None, employee_id=None, task_date=None):
+    def __init__(self, db, parent=None, row=None, employee_id=None, task_date=None, is_custom=False):
         super().__init__(parent)
-        self.setWindowTitle("Task details")
-        self.setMinimumWidth(560)
         self.db = db
         self.row = row
+        existing_custom = parse_custom_values(row["custom_values"] if row and "custom_values" in row.keys() else "")
+        self.is_custom = bool(is_custom) or bool(existing_custom)
+
+        self.setWindowTitle("Edit Custom Task" if (row and self.is_custom) else ("Edit Task Details" if row else ("Create Custom Task" if self.is_custom else "Create New Task")))
+        self.setMinimumWidth(600)
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(18, 16, 18, 16)
-        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(20, 18, 20, 18)
+        main_layout.setSpacing(14)
 
         # Advanced Header Banner
         header_frame = QFrame()
         header_frame.setObjectName("taskDialogHeader")
         header_frame.setStyleSheet(
-            "QFrame#taskDialogHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(30, 41, 59, 0.75), stop:1 rgba(15, 23, 42, 0.90)); "
-            "border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 14px; }"
+            "QFrame#taskDialogHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E1B4B, stop:0.5 #1E293B, stop:1 #0F172A); "
+            "border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 12px; padding: 12px 16px; }"
         )
         h_layout = QVBoxLayout(header_frame)
         h_layout.setContentsMargins(4, 4, 4, 4)
-        h_layout.setSpacing(2)
-        h_title = QLabel("Edit Task Details" if row else "Create New Task")
-        h_title.setStyleSheet("font-size: 11pt; font-weight: 700; color: #F8FAFC;")
-        h_sub = QLabel("Configure assigned task, target vs actual metrics, proof, and next action.")
-        h_sub.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
-        h_layout.addWidget(h_title)
-        h_layout.addWidget(h_sub)
+        h_layout.setSpacing(4)
+        h_title_row = QHBoxLayout()
+        self.h_title = QLabel("Edit Custom Task" if (row and self.is_custom) else ("Edit Task Details" if row else ("Create Custom Task" if self.is_custom else "Create New Task")))
+        self.h_title.setStyleSheet("font-size: 12pt; font-weight: 800; color: #F8FAFC; letter-spacing: 0.3px;")
+        h_title_row.addWidget(self.h_title)
+        h_title_row.addStretch(1)
+
+        self.type_indicator_pill = QLabel("✨ CUSTOM TASK" if self.is_custom else "📋 STANDARD TASK")
+        self.type_indicator_pill.setStyleSheet(
+            "font-size: 8pt; font-weight: 700; padding: 3px 8px; border-radius: 5px; " +
+            ("background: rgba(192, 132, 252, 0.2); color: #C084FC; border: 1px solid rgba(192, 132, 252, 0.4);" if self.is_custom else "background: rgba(99, 102, 241, 0.2); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.4);")
+        )
+        h_title_row.addWidget(self.type_indicator_pill)
+        h_layout.addLayout(h_title_row)
+
+        self.h_sub = QLabel("Configure task metrics, assigned parameters, evidence, and custom key-value attributes.")
+        self.h_sub.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
+        h_layout.addWidget(self.h_sub)
         main_layout.addWidget(header_frame)
+
+        # Mode Switcher Segmented Bar (Available in both Create Task & Edit Task)
+        mode_bar = QFrame()
+        mode_bar.setObjectName("taskModeBar")
+        mode_bar.setStyleSheet(
+            "QFrame#taskModeBar { background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); "
+            "border-radius: 8px; padding: 4px; }"
+        )
+        mode_layout = QHBoxLayout(mode_bar)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(6)
+
+        self.mode_standard_btn = QPushButton("📋 Standard Task")
+        self.mode_standard_btn.setCheckable(True)
+        self.mode_standard_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self.mode_custom_btn = QPushButton("✨ Custom Task Option (Key-Value)")
+        self.mode_custom_btn.setCheckable(True)
+        self.mode_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        mode_layout.addWidget(self.mode_standard_btn, 1)
+        mode_layout.addWidget(self.mode_custom_btn, 1)
+        main_layout.addWidget(mode_bar)
 
         self.layout = QFormLayout()
         self.layout.setSpacing(10)
@@ -2594,7 +2638,7 @@ class TaskDialog(QDialog):
             self.employee.addItem(f'{e["name"]} ({e["employee_code"] or e["id"]})', e["id"])
             dept_val = ""
             try:
-                dept_val = str(e["department"] or "")
+                dept_val = str(e["department"] or "").strip()
             except Exception:
                 pass
             self.emp_dept_map[e["id"]] = dept_val
@@ -2608,26 +2652,54 @@ class TaskDialog(QDialog):
 
         self.layout.addRow("Employee *", self.employee)
 
-        self.department = QLineEdit()
-        self.department.setReadOnly(True)
-        self.department.setPlaceholderText("No department assigned")
-        self.department.setStyleSheet(
-            "QLineEdit { background: rgba(255, 255, 255, 0.04); color: #94A3B8; "
-            "border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 6px 10px; font-weight: 500; }"
-        )
-        self.layout.addRow("Department", self.department)
+        # Department (fully editable combobox, no hardcoded 'General')
+        self.department = QComboBox()
+        self.department.setEditable(True)
+        self.department.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        if self.department.lineEdit():
+            self.department.lineEdit().setPlaceholderText("Select or enter department...")
 
-        def _update_dept():
+        emp_depts = []
+        for e in db.employees(True):
+            try:
+                d_str = str(e["department"] or "").strip()
+                if d_str: emp_depts.append(d_str)
+            except Exception:
+                pass
+        preset_depts = [
+            "Operations", "Sales", "Marketing", "Customer Support", "Engineering",
+            "Finance", "HR", "Management", "Training / Calisthenics", "Quality Assurance"
+        ]
+        all_depts = sorted(list(dict.fromkeys([d for d in emp_depts + preset_depts if d])))
+        for d in all_depts:
+            self.department.addItem(d)
+
+        initial_dept = ""
+        if row and "department" in row.keys() and row["department"]:
+            initial_dept = str(row["department"]).strip()
+        elif employee_id is not None:
+            initial_dept = self.emp_dept_map.get(employee_id, "")
+        elif row and "employee_id" in row.keys() and row["employee_id"]:
+            initial_dept = self.emp_dept_map.get(row["employee_id"], "")
+        else:
+            first_eid = self.employee.currentData()
+            initial_dept = self.emp_dept_map.get(first_eid, "")
+        self.department.setEditText(initial_dept)
+
+        def _on_emp_changed_sync_dept():
             eid = self.employee.currentData()
-            self.department.setText(self.emp_dept_map.get(eid, "") or "General")
+            cur = self.department.currentText().strip()
+            new_emp_dept = self.emp_dept_map.get(eid, "")
+            if not cur or cur in all_depts:
+                self.department.setEditText(new_emp_dept)
 
-        self.employee.currentIndexChanged.connect(_update_dept)
-        _update_dept()
+        self.employee.currentIndexChanged.connect(_on_emp_changed_sync_dept)
+        self.layout.addRow("Department", self.department)
 
         # 4. Assigned Task
         self.title = QLineEdit(row["title"] if row else "")
-        self.title.setPlaceholderText("Enter assigned task description or title...")
-        self.title.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
+        self.title.setPlaceholderText("Enter assigned task title / description...")
+        self.title.setStyleSheet("QLineEdit { padding: 7px 10px; border-radius: 6px; font-weight: 500; }")
         self.layout.addRow("Assigned Task *", self.title)
 
         # 5. Target Qty & 6. Actual Qty
@@ -2662,16 +2734,44 @@ class TaskDialog(QDialog):
         qty_layout.addWidget(self.actual_qty, 1)
         self.layout.addRow("Target / Actual Qty", qty_widget)
 
-        # 7. Completion %
+        # 7. Completion % with Dynamic Live Status Pill
+        prog_wrap = QWidget()
+        prog_layout = QHBoxLayout(prog_wrap)
+        prog_layout.setContentsMargins(0, 0, 0, 0)
+        prog_layout.setSpacing(10)
+
         self.progress = QSpinBox()
         self.progress.setRange(0, 100)
         self.progress.setSuffix("%")
-        self.progress.setStyleSheet("QSpinBox { padding: 6px 10px; border-radius: 6px; }")
+        self.progress.setStyleSheet("QSpinBox { padding: 6px 10px; border-radius: 6px; min-width: 80px; }")
         if row and "progress" in row.keys() and row["progress"] is not None:
             self.progress.setValue(int(row["progress"]))
         else:
             self.progress.setValue(0)
-        self.layout.addRow("Completion %", self.progress)
+        prog_layout.addWidget(self.progress, 0)
+
+        self.progress_pill = QLabel("0% Not started")
+        self.progress_pill.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #94A3B8; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; padding: 4px 10px;")
+        prog_layout.addWidget(self.progress_pill, 1)
+
+        self.layout.addRow("Completion %", prog_wrap)
+
+        def _update_progress_pill(pct):
+            if pct >= 100:
+                self.progress_pill.setText("100% Completed 🎉")
+                self.progress_pill.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 6px; padding: 4px 10px;")
+            elif pct >= 50:
+                self.progress_pill.setText(f"{pct}% In Progress ⚡")
+                self.progress_pill.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #818CF8; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); border-radius: 6px; padding: 4px 10px;")
+            elif pct > 0:
+                self.progress_pill.setText(f"{pct}% Started 🚀")
+                self.progress_pill.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #38BDF8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 6px; padding: 4px 10px;")
+            else:
+                self.progress_pill.setText("0% Not started")
+                self.progress_pill.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #94A3B8; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; padding: 4px 10px;")
+
+        self.progress.valueChanged.connect(_update_progress_pill)
+        _update_progress_pill(self.progress.value())
 
         # Auto-compute Completion % when Target Qty or Actual Qty changes
         def _recalc_completion():
@@ -2697,14 +2797,17 @@ class TaskDialog(QDialog):
         self.target_qty.textChanged.connect(_recalc_completion)
         self.actual_qty.textChanged.connect(_recalc_completion)
 
-        # 8. Priority
+        # 8. Priority & 9. Status Row
+        pri_stat_widget = QWidget()
+        pri_stat_layout = QHBoxLayout(pri_stat_widget)
+        pri_stat_layout.setContentsMargins(0, 0, 0, 0)
+        pri_stat_layout.setSpacing(8)
+
         self.priority = QComboBox()
         self.priority.addItems(["Low", "Normal", "High", "Urgent"])
         if row and "priority" in row.keys() and row["priority"]:
             self.priority.setCurrentText(row["priority"])
-        self.layout.addRow("Priority", self.priority)
 
-        # 9. Status
         self.status = QComboBox()
         for label, value in self.STATUSES:
             self.status.addItem(label, value)
@@ -2715,7 +2818,10 @@ class TaskDialog(QDialog):
                 self.status.addItem(label, row["status"])
                 status_index = self.status.count() - 1
             self.status.setCurrentIndex(status_index)
-        self.layout.addRow("Status", self.status)
+
+        pri_stat_layout.addWidget(self.priority, 1)
+        pri_stat_layout.addWidget(self.status, 1)
+        self.layout.addRow("Priority / Status", pri_stat_widget)
 
         def _on_status_changed(idx):
             if self.status.currentData() == "Completed":
@@ -2731,8 +2837,8 @@ class TaskDialog(QDialog):
 
         # 10. Proof / Link (and expose_link)
         self.proof = QTextEdit(row["proof_url"] if row else "")
-        self.proof.setPlaceholderText("Optional URL or local file path. Use one proof link per line.")
-        self.proof.setMaximumHeight(70)
+        self.proof.setPlaceholderText("Optional evidence URL or local file path. One link per line.")
+        self.proof.setMaximumHeight(65)
         self.expose_link = QCheckBox("Expose full evidence URL in reports")
         self.expose_link.setChecked(bool(row["expose_link"]) if row and "expose_link" in row.keys() else False)
 
@@ -2753,37 +2859,68 @@ class TaskDialog(QDialog):
                 init_next_action = str(row["manager_note"])
 
         self.next_action = QLineEdit(init_next_action)
-        self.next_action.setPlaceholderText("Enter next action or remarks...")
+        self.next_action.setPlaceholderText("Enter next action or follow-up note...")
         self.next_action.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
         self.layout.addRow("Next Action", self.next_action)
 
-        # 12. Custom Values (Key-Value Attributes)
-        custom_box = QFrame()
-        custom_box.setObjectName("taskCustomBox")
-        custom_box.setStyleSheet(
-            "QFrame#taskCustomBox { background: rgba(255, 255, 255, 0.03); "
-            "border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 10px; margin-top: 4px; }"
-        )
-        custom_vbox = QVBoxLayout(custom_box)
-        custom_vbox.setContentsMargins(6, 6, 6, 6)
-        custom_vbox.setSpacing(6)
+        # 12. Custom Task Option & Key-Value Attributes Card
+        self.custom_box = QFrame()
+        self.custom_box.setObjectName("taskCustomBox")
+        custom_vbox = QVBoxLayout(self.custom_box)
+        custom_vbox.setContentsMargins(10, 10, 10, 10)
+        custom_vbox.setSpacing(8)
 
         custom_header = QHBoxLayout()
-        custom_lbl = QLabel("🏷️ Key-Value Attributes")
-        custom_lbl.setStyleSheet("font-weight: 600; font-size: 9pt; color: #CBD5E1;")
-        custom_header.addWidget(custom_lbl)
+        custom_title_wrap = QHBoxLayout()
+        custom_title_wrap.setSpacing(6)
+        custom_icon = QLabel("✨")
+        custom_lbl = QLabel("Custom Task Option (Key-Value)")
+        custom_lbl.setStyleSheet("font-weight: 700; font-size: 9.5pt; color: #E0E7FF;")
+        custom_title_wrap.addWidget(custom_icon)
+        custom_title_wrap.addWidget(custom_lbl)
+        custom_header.addLayout(custom_title_wrap)
+
         custom_header.addStretch(1)
+
+        self.custom_task_toggle = QCheckBox("Enable Custom Mode")
+        self.custom_task_toggle.setStyleSheet("font-weight: 600; font-size: 8.5pt; color: #CBD5E1;")
+        custom_header.addWidget(self.custom_task_toggle)
 
         self.add_custom_btn = QPushButton("➕ Add Key-Value")
         self.add_custom_btn.setObjectName("addCustomKeyValueBtn")
         self.add_custom_btn.setStyleSheet(
-            "QPushButton { font-size: 8.5pt; font-weight: 600; padding: 3px 8px; border-radius: 4px; "
-            "background: rgba(99, 102, 241, 0.2); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.4); } "
-            "QPushButton:hover { background: rgba(99, 102, 241, 0.35); }"
+            "QPushButton { font-size: 8.5pt; font-weight: 700; padding: 4px 10px; border-radius: 5px; "
+            "background: rgba(99, 102, 241, 0.25); color: #A5B4FC; border: 1px solid rgba(99, 102, 241, 0.5); } "
+            "QPushButton:hover { background: rgba(99, 102, 241, 0.45); color: #FFFFFF; }"
         )
         self.add_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         custom_header.addWidget(self.add_custom_btn)
         custom_vbox.addLayout(custom_header)
+
+        # Quick preset chips
+        chips_bar = QWidget()
+        chips_layout = QHBoxLayout(chips_bar)
+        chips_layout.setContentsMargins(0, 0, 0, 0)
+        chips_layout.setSpacing(6)
+        chips_lbl = QLabel("Quick Keys:")
+        chips_lbl.setStyleSheet("font-size: 8pt; color: #94A3B8; font-weight: 600;")
+        chips_layout.addWidget(chips_lbl)
+
+        quick_presets = ["Client", "Location", "Batch", "Priority Code", "Tag", "Machine"]
+        for qk in quick_presets:
+            chip = QPushButton(f"+ {qk}")
+            chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.setStyleSheet(
+                "QPushButton { font-size: 8pt; color: #818CF8; background: rgba(99, 102, 241, 0.1); "
+                "border: 1px solid rgba(99, 102, 241, 0.22); border-radius: 4px; padding: 2px 7px; } "
+                "QPushButton:hover { background: rgba(99, 102, 241, 0.3); color: #FFFFFF; border-color: #A5B4FC; }"
+            )
+            def _make_add_chip(key_name=qk):
+                return lambda: (self.set_custom_mode(True), self.add_key_value_row(key_name, ""))
+            chip.clicked.connect(_make_add_chip(qk))
+            chips_layout.addWidget(chip)
+        chips_layout.addStretch(1)
+        custom_vbox.addWidget(chips_bar)
 
         self.custom_rows_container = QWidget()
         self.custom_rows_layout = QVBoxLayout(self.custom_rows_container)
@@ -2801,18 +2938,18 @@ class TaskDialog(QDialog):
 
             k_in = QLineEdit(k_text)
             k_in.setPlaceholderText("Key (e.g. Client, Machine, Tag)")
-            k_in.setStyleSheet("QLineEdit { padding: 5px 8px; border-radius: 5px; }")
+            k_in.setStyleSheet("QLineEdit { padding: 6px 9px; border-radius: 5px; font-weight: 500; }")
 
             v_in = QLineEdit(v_text)
             v_in.setPlaceholderText("Value (e.g. Acme, Line 3, #101)")
-            v_in.setStyleSheet("QLineEdit { padding: 5px 8px; border-radius: 5px; }")
+            v_in.setStyleSheet("QLineEdit { padding: 6px 9px; border-radius: 5px; }")
 
             del_btn = QPushButton("✕")
             del_btn.setFixedSize(26, 26)
             del_btn.setToolTip("Remove this custom value")
             del_btn.setStyleSheet(
-                "QPushButton { color: #EF4444; font-weight: bold; border-radius: 4px; background: rgba(239,68,68,0.1); border: none; } "
-                "QPushButton:hover { background: rgba(239,68,68,0.25); }"
+                "QPushButton { color: #EF4444; font-weight: bold; border-radius: 4px; background: rgba(239,68,68,0.12); border: none; } "
+                "QPushButton:hover { background: rgba(239,68,68,0.30); color: #FFFFFF; }"
             )
             del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -2833,16 +2970,65 @@ class TaskDialog(QDialog):
             k_in.setFocus()
             return (k_in, v_in, row_w)
 
-        self.add_custom_btn.clicked.connect(lambda: add_key_value_row())
+        self.add_custom_btn.clicked.connect(lambda: (self.set_custom_mode(True), add_key_value_row()))
         self.add_key_value_row = add_key_value_row
 
-        existing_custom = parse_custom_values(row["custom_values"] if row and "custom_values" in row.keys() else "")
         for ek, ev in existing_custom:
             add_key_value_row(ek, ev)
 
-        self.layout.addRow("Custom Values", custom_box)
-
+        self.layout.addRow("Custom Values", self.custom_box)
         main_layout.addLayout(self.layout)
+
+        # Mode switcher logic
+        def set_custom_mode(active):
+            self.is_custom = active
+            active_btn_style = (
+                "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); "
+                "color: #FFFFFF; font-weight: 700; font-size: 9pt; border-radius: 6px; padding: 6px 14px; border: 1px solid rgba(129,140,248,0.6); }"
+            )
+            inactive_btn_style = (
+                "QPushButton { background: transparent; color: #94A3B8; font-weight: 600; font-size: 9pt; "
+                "border-radius: 6px; padding: 6px 14px; border: none; } "
+                "QPushButton:hover { background: rgba(255, 255, 255, 0.06); color: #F1F5F9; }"
+            )
+            if active:
+                self.mode_custom_btn.setStyleSheet(active_btn_style)
+                self.mode_standard_btn.setStyleSheet(inactive_btn_style)
+                if not self.custom_task_toggle.isChecked():
+                    self.custom_task_toggle.blockSignals(True)
+                    self.custom_task_toggle.setChecked(True)
+                    self.custom_task_toggle.blockSignals(False)
+                self.type_indicator_pill.setText("✨ CUSTOM TASK")
+                self.type_indicator_pill.setStyleSheet("font-size: 8pt; font-weight: 700; padding: 3px 8px; border-radius: 5px; background: rgba(192, 132, 252, 0.2); color: #C084FC; border: 1px solid rgba(192, 132, 252, 0.4);")
+                self.h_title.setText("Edit Custom Task" if row else "Create Custom Task")
+                self.custom_box.setStyleSheet(
+                    "QFrame#taskCustomBox { background: rgba(99, 102, 241, 0.06); "
+                    "border: 1.5px solid rgba(129, 140, 248, 0.5); border-radius: 10px; padding: 10px; margin-top: 4px; }"
+                )
+                if not self.custom_rows:
+                    add_key_value_row()
+            else:
+                self.mode_standard_btn.setStyleSheet(active_btn_style)
+                self.mode_custom_btn.setStyleSheet(inactive_btn_style)
+                if self.custom_task_toggle.isChecked():
+                    self.custom_task_toggle.blockSignals(True)
+                    self.custom_task_toggle.setChecked(False)
+                    self.custom_task_toggle.blockSignals(False)
+                self.type_indicator_pill.setText("📋 STANDARD TASK")
+                self.type_indicator_pill.setStyleSheet("font-size: 8pt; font-weight: 700; padding: 3px 8px; border-radius: 5px; background: rgba(99, 102, 241, 0.2); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.4);")
+                self.h_title.setText("Edit Task Details" if row else "Create New Task")
+                self.custom_box.setStyleSheet(
+                    "QFrame#taskCustomBox { background: rgba(255, 255, 255, 0.02); "
+                    "border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 10px; margin-top: 4px; }"
+                )
+
+        self.set_custom_mode = set_custom_mode
+        self.toggle_task_mode = set_custom_mode
+        self.custom_card = self.custom_box
+        self.mode_standard_btn.clicked.connect(lambda: set_custom_mode(False))
+        self.mode_custom_btn.clicked.connect(lambda: set_custom_mode(True))
+        self.custom_task_toggle.toggled.connect(lambda c: set_custom_mode(c))
+        set_custom_mode(self.is_custom)
 
         # Backward compatibility properties (hidden from layout)
         self.manager_note = self.next_action
@@ -2900,11 +3086,38 @@ class TaskDialog(QDialog):
         self.employee.currentIndexChanged.connect(_on_emp_or_date_target_sync)
         self.date.dateChanged.connect(_on_emp_or_date_target_sync)
 
-        # Dialog Buttons
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        main_layout.addWidget(buttons)
+        # Dialog Buttons with Modern Styling
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(0, 8, 0, 0)
+        btn_layout.setSpacing(10)
+        btn_layout.addStretch(1)
+
+        cancel_btn = QPushButton("✕ Cancel")
+        cancel_btn.setMinimumHeight(38)
+        cancel_btn.setMinimumWidth(100)
+        cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        cancel_btn.setStyleSheet(
+            "QPushButton { background: rgba(255, 255, 255, 0.05); color: #94A3B8; "
+            "border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; font-weight: 600; padding: 6px 16px; } "
+            "QPushButton:hover { background: rgba(255, 255, 255, 0.10); color: #F1F5F9; }"
+        )
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("💾 Save Assignment")
+        save_btn.setObjectName("taskSaveBtn")
+        save_btn.setMinimumHeight(38)
+        save_btn.setMinimumWidth(150)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(
+            "QPushButton#taskSaveBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); "
+            "color: #FFFFFF; border: 1px solid rgba(129, 140, 248, 0.5); border-radius: 8px; font-weight: 700; padding: 6px 20px; font-size: 9.5pt; } "
+            "QPushButton#taskSaveBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #4F46E5); border-color: #818CF8; } "
+            "QPushButton#taskSaveBtn:pressed { background: #3730A3; }"
+        )
+        save_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(save_btn)
+        main_layout.addLayout(btn_layout)
 
     def accept(self):
         eid = self.employee.currentData()
@@ -2913,6 +3126,15 @@ class TaskDialog(QDialog):
         a_text = self.actual_qty.text().strip() or self.target_status_input.text().strip()
         if eid and hasattr(self.db, "set_employee_target"):
             self.db.set_employee_target(eid, dt, t_text, a_text)
+        dept_text = self.department.currentText().strip() if hasattr(self.department, "currentText") else self.department.text().strip()
+        if eid and dept_text:
+            try:
+                emp = self.db.employee(eid)
+                if emp and not emp["department"]:
+                    self.db.conn.execute("UPDATE employees SET department=? WHERE id=?", (dept_text, eid))
+                    self.db.conn.commit()
+            except Exception:
+                pass
         super().accept()
 
     def values(self):
@@ -2932,6 +3154,7 @@ class TaskDialog(QDialog):
         details_val = self.details.toPlainText().strip()
         due_val = self.due.time().toString("HH:mm") if (hasattr(self, "due") and not self.due.isHidden()) else ((self.row["due_time"] if self.row else "") or "")
         proof_note_val = self.proof_note.text().strip() if (hasattr(self, "proof_note") and not self.proof_note.isHidden()) else ((self.row["proof_note"] if self.row else "") or "")
+        dept_text = self.department.currentText().strip() if hasattr(self.department, "currentText") else self.department.text().strip()
 
         custom_pairs = []
         for k_in, v_in, _ in getattr(self, "custom_rows", []):
@@ -2945,6 +3168,7 @@ class TaskDialog(QDialog):
             self.employee.currentData(),
             self.date.date().toString("yyyy-MM-dd"),
             self.title.text().strip(),
+            dept_text,
             details_val,
             due_val,
             self.priority.currentText(),
@@ -4318,6 +4542,7 @@ class MainWindow(QMainWindow):
         )
         self.header_sync_badge.setToolTip("Continuous Cloud Sync is Active. Data is continuously encrypted and synchronized automatically in the background. Click to check for updates now.")
         self.header_sync_badge.clicked.connect(lambda: self.schedule_auto_sync(immediate=True))
+        self.header_sync_badge.hide()
 
         # Compatibility aliases for existing references/tests
         self.shared_sync_push_button = self.header_sync_badge
@@ -6891,6 +7116,48 @@ class MainWindow(QMainWindow):
 
         l.addWidget(task_toolbar_card)
 
+        # Bento KPI Metric Cards Row (Total Tasks, Completed, In Progress, Custom Tasks)
+        bento_row = QHBoxLayout()
+        bento_row.setSpacing(12)
+
+        def make_task_kpi_card(title, icon, accent_col):
+            card = QFrame()
+            card.setObjectName("taskKpiMetricCard")
+            card.setStyleSheet(
+                f"QFrame#taskKpiMetricCard {{ background: rgba(30, 41, 59, 0.45); border: 1.5px solid rgba(255, 255, 255, 0.08); "
+                f"border-top: 3.5px solid {accent_col}; border-radius: 12px; padding: 10px 14px; }} "
+                f"QFrame#taskKpiMetricCard:hover {{ border-color: {accent_col}; background: rgba(30, 41, 59, 0.70); }}"
+            )
+            c_lay = QHBoxLayout(card)
+            c_lay.setContentsMargins(10, 8, 10, 8)
+            c_lay.setSpacing(12)
+            
+            icon_lbl = QLabel(icon)
+            icon_lbl.setStyleSheet("font-size: 16pt; padding: 6px; border-radius: 8px; background: rgba(255, 255, 255, 0.06);")
+            c_lay.addWidget(icon_lbl)
+
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            t_lbl = QLabel(title)
+            t_lbl.setStyleSheet("font-size: 8pt; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px;")
+            val_lbl = QLabel("0")
+            val_lbl.setStyleSheet(f"font-size: 17pt; font-weight: 900; color: {accent_col};")
+            col.addWidget(t_lbl)
+            col.addWidget(val_lbl)
+            c_lay.addLayout(col, 1)
+            return card, val_lbl
+
+        c1, self.kpi_total_tasks = make_task_kpi_card("Total Tasks", "📋", "#6366F1")
+        c2, self.kpi_completed_tasks = make_task_kpi_card("Completed", "✅", "#10B981")
+        c3, self.kpi_in_progress_tasks = make_task_kpi_card("In Progress", "⏳", "#F59E0B")
+        c4, self.kpi_custom_tasks = make_task_kpi_card("Custom Tasks", "✨", "#C084FC")
+
+        bento_row.addWidget(c1)
+        bento_row.addWidget(c2)
+        bento_row.addWidget(c3)
+        bento_row.addWidget(c4)
+        l.addLayout(bento_row)
+
         # Card 2: Tasks Overview Bento Enclosure
         task_roster_card = QFrame()
         task_roster_card.setObjectName("taskRosterCard")
@@ -7754,6 +8021,7 @@ class MainWindow(QMainWindow):
 
         header_badge = getattr(self, "header_sync_badge", None)
         if header_badge is not None:
+            header_badge.hide()
             if not sync.is_configured:
                 header_badge.setText("⚪ Sync Config")
                 header_badge.setToolTip("Cloud sync not configured. Click to configure.")
@@ -8347,8 +8615,8 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
         except sqlite3.Error as ex:
             error(self, f"Could not save task: {ex}")
@@ -8567,23 +8835,20 @@ class MainWindow(QMainWindow):
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
     def add_custom_task(self):
-        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date())
-        d.setWindowTitle("Create Custom Task")
-        if hasattr(d, "add_key_value_row") and not d.custom_rows:
-            d.add_key_value_row()
+        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date(),is_custom=True)
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Custom task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
@@ -8598,7 +8863,7 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,department=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
             self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not update task: {ex}")
 
@@ -8631,6 +8896,7 @@ class MainWindow(QMainWindow):
             wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.addWidget(check); row.addWidget(widget,1)
             form.addRow(label, wrap); fields[label] = (check, widget)
         title = QLineEdit(); field_row("Assigned Task", title)
+        dept = QLineEdit(); field_row("Department", dept)
         target_qty = QLineEdit(); field_row("Target Qty", target_qty)
         actual_qty = QLineEdit(); field_row("Actual Qty", actual_qty)
         progress = QSpinBox(); progress.setRange(0,100); progress.setSuffix("%"); field_row("Completion %", progress)
@@ -8651,6 +8917,7 @@ class MainWindow(QMainWindow):
             value = title.text().strip()
             if not value: return error(self, "Assigned Task cannot be blank.")
             updates["title"] = value
+        if fields["Department"][0].isChecked(): updates["department"] = dept.text().strip()
         if fields["Target Qty"][0].isChecked(): updates["target_qty"] = target_qty.text().strip()
         if fields["Actual Qty"][0].isChecked(): updates["actual_qty"] = actual_qty.text().strip()
         if fields["Completion %"][0].isChecked(): updates["progress"] = progress.value()
@@ -8960,6 +9227,17 @@ class MainWindow(QMainWindow):
             self.set_row_items(self.task_table, r, vals, status_cols={8, 9})
         if hasattr(self, "task_count_badge"):
             self.task_count_badge.setText(f"Tasks: {len(rows)}")
+
+        total_cnt = len(rows)
+        comp_cnt = sum(1 for t in rows if str(t["status"]).strip().lower() in ("completed", "done") or (t["progress"] is not None and t["progress"] >= 100))
+        prog_cnt = sum(1 for t in rows if str(t["status"]).strip().lower() in ("in progress", "running") or (t["progress"] is not None and 0 < t["progress"] < 100))
+        cust_cnt = sum(1 for t in rows if bool(parse_custom_values(t["custom_values"] if "custom_values" in t.keys() else "")))
+
+        if hasattr(self, "kpi_total_tasks"): self.kpi_total_tasks.setText(str(total_cnt))
+        if hasattr(self, "kpi_completed_tasks"): self.kpi_completed_tasks.setText(str(comp_cnt))
+        if hasattr(self, "kpi_in_progress_tasks"): self.kpi_in_progress_tasks.setText(str(prog_cnt))
+        if hasattr(self, "kpi_custom_tasks"): self.kpi_custom_tasks.setText(str(cust_cnt))
+
         self.refresh_dashboard()
 
     def _on_task_table_selection_changed(self):

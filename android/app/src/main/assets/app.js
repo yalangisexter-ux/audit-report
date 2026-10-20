@@ -340,6 +340,7 @@ function renderTasks() {
 
   container.innerHTML = filtered.map(t => {
     const emp = state.employees.find(e => e.id == t.employee_id);
+    const dept = t.department || (emp ? emp.department : "") || "—";
     const progress = Math.max(0, Math.min(100, Number(t.progress) || 0));
     const targetQ = t.target_qty || "—";
     const actualQ = t.actual_qty || "—";
@@ -353,7 +354,7 @@ function renderTasks() {
         </div>
         <div class="task-meta-row" style="margin-top: 6px;">
           <span>👤 ${escapeHtml(emp ? emp.name : "Unassigned")}</span>
-          <span>🏢 ${escapeHtml(emp ? (emp.department || "General") : "—")}</span>
+          <span>🏢 ${escapeHtml(dept)}</span>
           <span>📅 ${t.task_date}</span>
           <span><strong>${t.status || "Not started"}</strong></span>
         </div>
@@ -457,9 +458,46 @@ function getMobileCustomValues() {
 }
 
 document.getElementById("mobileAddKeyValueBtn")?.addEventListener("click", () => {
+  setMobileTaskMode(true);
   const row = addMobileKeyValueRow();
   row?.querySelector(".kv-key-input")?.focus();
 });
+
+document.querySelectorAll(".preset-chip").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const key = btn.getAttribute("data-preset-key") || "";
+    setMobileTaskMode(true);
+    const row = addMobileKeyValueRow(key, "");
+    row?.querySelector(".kv-val-input")?.focus();
+  });
+});
+
+function setMobileTaskMode(isCustom) {
+  const stdBtn = document.getElementById("mobileTaskModeStandard");
+  const custBtn = document.getElementById("mobileTaskModeCustom");
+  const card = document.getElementById("mobileCustomTaskCard");
+  const modalTitle = document.getElementById("modalTaskTitle");
+  const taskId = document.getElementById("taskFormId")?.value;
+
+  if (isCustom) {
+    if (stdBtn) { stdBtn.style.background = "transparent"; stdBtn.style.color = "#94A3B8"; }
+    if (custBtn) { custBtn.style.background = "#A855F7"; custBtn.style.color = "#FFFFFF"; }
+    if (card) { card.style.borderColor = "rgba(192, 132, 252, 0.6)"; card.style.background = "rgba(192, 132, 252, 0.08)"; }
+    if (modalTitle) modalTitle.textContent = taskId ? "Edit Custom Task" : "Create Custom Task";
+    const kvContainer = document.getElementById("mobileCustomValuesContainer");
+    if (kvContainer && kvContainer.children.length === 0) {
+      addMobileKeyValueRow("", "");
+    }
+  } else {
+    if (stdBtn) { stdBtn.style.background = "#6366F1"; stdBtn.style.color = "#FFFFFF"; }
+    if (custBtn) { custBtn.style.background = "transparent"; custBtn.style.color = "#94A3B8"; }
+    if (card) { card.style.borderColor = "rgba(192, 132, 252, 0.25)"; card.style.background = "rgba(192, 132, 252, 0.04)"; }
+    if (modalTitle) modalTitle.textContent = taskId ? "Edit Task" : "Add New Task";
+  }
+}
+
+document.getElementById("mobileTaskModeStandard")?.addEventListener("click", () => setMobileTaskMode(false));
+document.getElementById("mobileTaskModeCustom")?.addEventListener("click", () => setMobileTaskMode(true));
 
 function updateModalDept() {
   const empSelect = document.getElementById("taskFormEmployee");
@@ -467,8 +505,14 @@ function updateModalDept() {
   if (!empSelect || !deptInput) return;
   const empId = empSelect.value;
   const emp = state.employees.find(e => e.id == empId);
-  deptInput.value = emp ? (emp.department || "General") : "";
+  if (!deptInput.dataset.manual) {
+    deptInput.value = emp ? (emp.department || "") : "";
+  }
 }
+
+document.getElementById("taskFormDepartment")?.addEventListener("input", (e) => {
+  e.target.dataset.manual = "1";
+});
 
 function autoCalcProgress() {
   const tStr = (document.getElementById("taskFormTargetQty")?.value || "").trim();
@@ -501,8 +545,10 @@ function openTaskModal(taskId = null, isCustom = false) {
   const form = document.getElementById("formTask");
   const title = document.getElementById("modalTaskTitle");
   const empSelect = document.getElementById("taskFormEmployee");
+  const deptInput = document.getElementById("taskFormDepartment");
   const kvContainer = document.getElementById("mobileCustomValuesContainer");
   if (kvContainer) kvContainer.innerHTML = "";
+  if (deptInput) deptInput.dataset.manual = "";
 
   empSelect.innerHTML = state.employees.map(e => `<option value="${e.id}">${escapeHtml(e.name)} (${escapeHtml(e.department || "Staff")})</option>`).join("");
 
@@ -514,6 +560,11 @@ function openTaskModal(taskId = null, isCustom = false) {
     empSelect.value = t.employee_id;
     document.getElementById("taskFormDate").value = t.task_date;
     document.getElementById("taskFormTitle").value = t.title;
+    if (deptInput) {
+      const emp = state.employees.find(e => e.id == t.employee_id);
+      deptInput.value = t.department || (emp ? emp.department : "") || "";
+      if (t.department) deptInput.dataset.manual = "1";
+    }
     document.getElementById("taskFormTargetQty").value = t.target_qty || "";
     document.getElementById("taskFormActualQty").value = t.actual_qty || "";
     document.getElementById("taskFormPriority").value = t.priority || "Normal";
@@ -527,11 +578,14 @@ function openTaskModal(taskId = null, isCustom = false) {
 
     const existingPairs = parseMobileCustomValues(t.custom_values);
     existingPairs.forEach(p => addMobileKeyValueRow(p.key, p.value));
+    const isCustomTask = Boolean(isCustom) || existingPairs.length > 0;
+    setMobileTaskMode(isCustomTask);
   } else {
     title.textContent = isCustom ? "Create Custom Task" : "Add New Task";
     form.reset();
     document.getElementById("taskFormId").value = "";
     document.getElementById("taskFormDate").value = state.currentDate;
+    if (deptInput) deptInput.value = "";
     document.getElementById("taskFormTargetQty").value = "";
     document.getElementById("taskFormActualQty").value = "";
     document.getElementById("taskFormProgressVal").textContent = "0%";
@@ -539,13 +593,13 @@ function openTaskModal(taskId = null, isCustom = false) {
     if (expEl) expEl.checked = false;
     document.getElementById("taskFormNextAction").value = "";
 
+    updateModalDept();
+    setMobileTaskMode(isCustom);
     if (isCustom) {
-      const row = addMobileKeyValueRow("", "");
-      setTimeout(() => row?.querySelector(".kv-key-input")?.focus(), 50);
+      setTimeout(() => kvContainer?.querySelector(".kv-key-input")?.focus(), 50);
     }
   }
 
-  updateModalDept();
   modal.classList.remove("hidden");
 }
 
@@ -561,11 +615,13 @@ document.getElementById("formTask")?.addEventListener("submit", (e) => {
   e.preventDefault();
   const idVal = document.getElementById("taskFormId").value;
   const nextActionVal = (document.getElementById("taskFormNextAction")?.value || "").trim();
+  const deptVal = (document.getElementById("taskFormDepartment")?.value || "").trim();
   const taskObj = {
     id: idVal ? Number(idVal) : Date.now(),
     employee_id: Number(document.getElementById("taskFormEmployee").value),
     task_date: document.getElementById("taskFormDate").value,
     title: document.getElementById("taskFormTitle").value.trim(),
+    department: deptVal,
     details: "",
     target_qty: (document.getElementById("taskFormTargetQty")?.value || "").trim(),
     actual_qty: (document.getElementById("taskFormActualQty")?.value || "").trim(),
