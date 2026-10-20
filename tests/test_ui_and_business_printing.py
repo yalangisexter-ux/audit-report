@@ -258,3 +258,151 @@ def test_combobox_wheel_rotation_does_not_change_selection(monkeypatch):
     assert combo.currentIndex() == 1
     assert combo.currentText() == "Option B"
 
+
+
+
+def test_print_center_options_match_task_manager_columns(tmp_path, monkeypatch):
+    from docx import Document
+    import reportlab.platypus
+    import json
+
+    qt_app, database, window = _make_window(tmp_path, monkeypatch)
+    try:
+        today = date.today().isoformat()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 1. Assert all Task Manager fields are present in eod_checks
+        expected_keys = [
+            "target_qty", "actual_qty", "completion_pct", "priority",
+            "custom_values", "next_action", "tasks", "details", "due_time",
+            "proof", "proof_notes", "expose_link", "remarks"
+        ]
+        for key in expected_keys:
+            assert key in window.eod_checks, f"Missing {key} in window.eod_checks"
+
+        # 2. Insert test employee and task with full Task Manager fields
+        emp_id = database.conn.execute(
+            "INSERT INTO employees(name,employee_code,department,designation,active,created_at) VALUES(?,?,?,?,?,?)",
+            ("Print QA Athlete", "PQA01", "Calisthenics", "Senior Coach", 1, now_str),
+        ).lastrowid
+
+        custom_json = json.dumps([{"key": "Tracked By", "value": "Coach John"}, {"key": "Equipment", "value": "Rings"}])
+        database.conn.execute(
+            """INSERT INTO tasks(employee_id, task_date, title, department, details, due_time, priority, status, progress,
+                                proof_url, proof_note, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values,
+                                created_at, updated_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (emp_id, today, "Muscle-up sets", "Strength", "Strict form", "11:00", "High", "In progress", 75,
+             "https://example.com/mu", "Great angle", "Manager reviewing", 0, "50 reps", "38 reps", "Review grip video",
+             custom_json, now_str, now_str)
+        )
+        database.conn.commit()
+
+        # 3. Test with all Task Manager options checked
+        opts_all = window.selected_eod_options()
+        assert opts_all["target_qty"] is True
+        assert opts_all["actual_qty"] is True
+        assert opts_all["completion_pct"] is True
+        assert opts_all["priority"] is True
+        assert opts_all["custom_values"] is True
+        assert opts_all["next_action"] is True
+
+        # Preview text
+        preview = window.report_preview_text(today, emp_id)
+        assert "Target Qty: 50 reps" in preview
+        assert "Actual Qty: 38 reps" in preview
+        assert "Completion %: 75%" in preview
+        assert "Priority: High" in preview
+        assert "Custom Values: Tracked By: Coach John  |  Equipment: Rings" in preview
+        assert "Next Action: Review grip video" in preview
+
+        # Word document
+        docx_path = tmp_path / "test_tm_options.docx"
+        window.make_docx(docx_path, today, emp_id, "Audit / EOD", opts_all)
+        doc = Document(docx_path)
+        doc_text = "\n".join(p.text for p in doc.paragraphs)
+        assert "Target Qty: 50 reps" in doc_text
+        assert "Actual Qty: 38 reps" in doc_text
+        assert "Completion %: 75%" in doc_text
+        assert "Priority: High" in doc_text
+        assert "Custom Values: Tracked By: Coach John  |  Equipment: Rings" in doc_text
+        assert "Next Action: Review grip video" in doc_text
+
+        # CSV export
+        csv_path = tmp_path / "test_tm_options.csv"
+        window.export_report_csv(csv_path, today, emp_id, "Audit / EOD", opts_all)
+        with open(csv_path, encoding="utf-8-sig") as f:
+            csv_rows = list(csv.reader(f))
+        headers = csv_rows[0]
+        assert "Target Qty" in headers
+        assert "Actual Qty" in headers
+        assert "Completion %" in headers
+        assert "Priority" in headers
+        assert "Custom Values" in headers
+        assert "Next Action" in headers
+        data_row = csv_rows[1]
+        assert "50 reps" in data_row
+        assert "38 reps" in data_row
+        assert "75%" in data_row
+        assert "High" in data_row
+        assert "Tracked By: Coach John  |  Equipment: Rings" in data_row
+        assert "Review grip video" in data_row
+
+        # PDF export
+        captured_story = []
+        class CaptureDoc:
+            def __init__(self, *args, **kwargs): pass
+            def build(self, story, **kwargs): captured_story.extend(story)
+        monkeypatch.setattr(reportlab.platypus, "SimpleDocTemplate", CaptureDoc)
+        pdf_path = tmp_path / "test_tm_options.pdf"
+        window.make_pdf(pdf_path, today, emp_id, "Audit / EOD", opts_all)
+        pdf_text = " ".join(getattr(f, "text", "") for f in captured_story if hasattr(f, "text"))
+        assert "Target Qty: 50 reps" in pdf_text
+        assert "Actual Qty: 38 reps" in pdf_text
+        assert "Completion %: 75%" in pdf_text
+        assert "Priority: High" in pdf_text
+        assert "Custom Values:" in pdf_text and "Coach John" in pdf_text and "Rings" in pdf_text
+        assert "Next Action: Review grip video" in pdf_text
+
+        # 4. Now uncheck Task Manager options and verify exclusion
+        window.eod_checks["target_qty"].setChecked(False)
+        window.eod_checks["actual_qty"].setChecked(False)
+        window.eod_checks["completion_pct"].setChecked(False)
+        window.eod_checks["priority"].setChecked(False)
+        window.eod_checks["custom_values"].setChecked(False)
+        window.eod_checks["next_action"].setChecked(False)
+        opts_unchecked = window.selected_eod_options()
+
+        preview_un = window.report_preview_text(today, emp_id)
+        assert "Target Qty" not in preview_un
+        assert "Actual Qty" not in preview_un
+        assert "Completion %" not in preview_un
+        assert "Priority: High" not in preview_un
+        assert "Custom Values" not in preview_un
+        assert "Next Action" not in preview_un
+
+        docx_un_path = tmp_path / "test_tm_options_un.docx"
+        window.make_docx(docx_un_path, today, emp_id, "Audit / EOD", opts_unchecked)
+        doc_un = Document(docx_un_path)
+        doc_un_text = "\n".join(p.text for p in doc_un.paragraphs)
+        assert "Target Qty" not in doc_un_text
+        assert "Actual Qty" not in doc_un_text
+        assert "Completion %" not in doc_un_text
+        assert "Priority: High" not in doc_un_text
+        assert "Custom Values" not in doc_un_text
+        assert "Next Action" not in doc_un_text
+
+        csv_un_path = tmp_path / "test_tm_options_un.csv"
+        window.export_report_csv(csv_un_path, today, emp_id, "Audit / EOD", opts_unchecked)
+        with open(csv_un_path, encoding="utf-8-sig") as f:
+            csv_un_headers = list(csv.reader(f))[0]
+        assert "Target Qty" not in csv_un_headers
+        assert "Actual Qty" not in csv_un_headers
+        assert "Completion %" not in csv_un_headers
+        assert "Priority" not in csv_un_headers
+        assert "Custom Values" not in csv_un_headers
+        assert "Next Action" not in csv_un_headers
+    finally:
+        window.close()
+        database.conn.close()
+        qt_app.processEvents()

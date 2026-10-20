@@ -223,6 +223,66 @@ def is_remarks_included(opts):
             return False
     return bool(opts.get("remarks", True))
 
+
+def is_target_qty_included(opts):
+    """Check if target qty should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("target_qty", "targetqty", "target_quantity"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("target_qty", True))
+
+
+def is_actual_qty_included(opts):
+    """Check if actual qty should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("actual_qty", "actualqty", "actual_quantity"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("actual_qty", True))
+
+
+def is_completion_pct_included(opts):
+    """Check if completion % should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("completion_pct", "progress", "completion", "pct"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("completion_pct", True))
+
+
+def is_priority_included(opts):
+    """Check if priority should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("priority", "task_priority"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("priority", True))
+
+
+def is_custom_values_included(opts):
+    """Check if custom values should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("custom_values", "customvalues", "custom_fields", "custom_task"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("custom_values", True))
+
+
+def is_next_action_included(opts):
+    """Check if next action should be included, handling aliases and explicit falsy exclusions."""
+    if not isinstance(opts, dict):
+        return True
+    for key in ("next_action", "nextaction", "next_actions"):
+        if key in opts and not opts[key]:
+            return False
+    return bool(opts.get("next_action", True))
+
 # Embedded historical audit seed data (combined from audit_seed.py).
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
 SOURCE_DATE_DISPLAY = "09-10-2026"
@@ -7770,7 +7830,13 @@ class MainWindow(QMainWindow):
         self.report_options_grid.setVerticalSpacing(8)
         self.eod_checks = {}
         self.report_option_keys = {
-            "Audit / EOD": ("summary", "identity", "contact", "target", "work_status", "late_links", "missing_proof", "target_status", "tasks", "details", "due_time", "proof", "proof_notes", "expose_link", "remarks", "pending"),
+            "Audit / EOD": (
+                "summary", "identity", "contact", "target", "work_status",
+                "late_links", "missing_proof", "target_status", "tasks",
+                "target_qty", "actual_qty", "completion_pct", "priority",
+                "details", "due_time", "proof", "proof_notes", "custom_values",
+                "next_action", "remarks", "expose_link", "pending"
+            ),
             "Employee Attendance": ("attendance_identity", "attendance_status", "attendance_times", "attendance_remarks", "attendance_summary"),
             "Employee Details": ("details_identity", "details_contact", "details_joining", "details_status", "details_notes"),
             "Employee Productivity": ("productivity_identity", "productivity_metrics", "productivity_explanation", "productivity_tracking", "productivity_tasks"),
@@ -7785,12 +7851,18 @@ class MainWindow(QMainWindow):
             ("missing_proof", "Missing proof", True),
             ("target_status", "Target status", True),
             ("tasks", "Task names and status", True),
+            ("target_qty", "Target Qty", True),
+            ("actual_qty", "Actual Qty", True),
+            ("completion_pct", "Completion %", True),
+            ("priority", "Priority", True),
             ("details", "Task details", True),
             ("due_time", "Due time", True),
             ("proof", "Proof / evidence links", True),
             ("proof_notes", "Proof notes", False),
-            ("expose_link", "Expose proof links (show full URLs for all employees)", False),
+            ("custom_values", "Custom Values (Tracking Fields)", True),
+            ("next_action", "Next Action", True),
             ("remarks", "Manager remarks", True),
+            ("expose_link", "Expose proof links (show full URLs for all employees)", False),
             ("pending", "Pending items", True),
             ("attendance_identity", "Employee ID / Department", True),
             ("attendance_status", "Attendance status", True),
@@ -8853,8 +8925,10 @@ class MainWindow(QMainWindow):
     def selected_eod_options(self):
         defaults = {
             "summary": True, "identity": True, "target": True, "contact": False, "work_status": True,
-            "late_links": True, "missing_proof": True, "target_status": True, "tasks": True, "details": True,
-            "due_time": True, "proof": True, "proof_notes": False, "expose_link": False,
+            "late_links": True, "missing_proof": True, "target_status": True, "tasks": True,
+            "target_qty": True, "actual_qty": True, "completion_pct": True, "priority": True,
+            "details": True, "due_time": True, "proof": True, "proof_notes": False,
+            "custom_values": True, "next_action": True, "expose_link": False,
             "remarks": True, "pending": True,
             "attendance_identity": True, "attendance_status": True, "attendance_times": True,
             "attendance_remarks": True, "attendance_summary": True,
@@ -8873,6 +8947,12 @@ class MainWindow(QMainWindow):
         if "remarks" in res:
             res["manager_remarks"] = res["remarks"]
             res["manager_note"] = res["remarks"]
+        if "completion_pct" in res:
+            res["progress"] = res["completion_pct"]
+        if "next_action" in res:
+            res["nextaction"] = res["next_action"]
+        if "custom_values" in res:
+            res["customvalues"] = res["custom_values"]
         return res
 
     def is_task_link_exposed(self, task, opts=None):
@@ -10135,6 +10215,16 @@ class MainWindow(QMainWindow):
                     if tasks:
                         for idx,t in enumerate(tasks,1):
                             doc.add_paragraph(f'{idx}. {t["title"]} — Status: {task_status_label(t["status"])}',style="List Bullet")
+                            target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
+                            actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
+                            if is_target_qty_included(opts) and target_q:
+                                doc.add_paragraph(f'Target Qty: {target_q}', style="List Bullet 2")
+                            if is_actual_qty_included(opts) and actual_q:
+                                doc.add_paragraph(f'Actual Qty: {actual_q}', style="List Bullet 2")
+                            if is_completion_pct_included(opts) and t["progress"] is not None:
+                                doc.add_paragraph(f'Completion %: {t["progress"]}%', style="List Bullet 2")
+                            if is_priority_included(opts) and t["priority"]:
+                                doc.add_paragraph(f'Priority: {t["priority"]}', style="List Bullet 2")
                             if opts.get("details",True) and t["details"]: doc.add_paragraph(f'Details: {t["details"]}',style="List Bullet 2")
                             if is_due_time_included(opts) and t["due_time"]: doc.add_paragraph(f'Due time: {t["due_time"]}',style="List Bullet 2")
                             if opts.get("proof",True):
@@ -10153,6 +10243,12 @@ class MainWindow(QMainWindow):
                                 note_paragraph.add_run("Proof notes: ")
                                 note_text = proof_note_display_text(t, opts.get("proof", True))
                                 add_docx_linkified_text(note_paragraph,note_text,self.is_task_link_exposed(t, opts))
+                            custom_val = format_custom_values_display(t["custom_values"] if "custom_values" in t.keys() else "")
+                            if is_custom_values_included(opts) and custom_val and custom_val != "—":
+                                doc.add_paragraph(f'Custom Values: {custom_val}', style="List Bullet 2")
+                            next_act = str((t["next_action"] if "next_action" in t.keys() else "") or "")
+                            if is_next_action_included(opts) and next_act:
+                                doc.add_paragraph(f'Next Action: {next_act}', style="List Bullet 2")
                             if is_remarks_included(opts): doc.add_paragraph(f'Manager remarks: {t["manager_note"] or "N/A"}',style="List Bullet 2")
                     else:
                         doc.add_paragraph("No tasks recorded for this date.",style="List Bullet")
@@ -10367,6 +10463,16 @@ class MainWindow(QMainWindow):
                     if tasks:
                         for idx, t in enumerate(tasks, 1):
                             story.append(bullet(f'{idx}. {t["title"]} — Status: {task_status_label(t["status"])}'))
+                            target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
+                            actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
+                            if is_target_qty_included(opts) and target_q:
+                                story.append(bullet(f'Target Qty: {target_q}'))
+                            if is_actual_qty_included(opts) and actual_q:
+                                story.append(bullet(f'Actual Qty: {actual_q}'))
+                            if is_completion_pct_included(opts) and t["progress"] is not None:
+                                story.append(bullet(f'Completion %: {t["progress"]}%'))
+                            if is_priority_included(opts) and t["priority"]:
+                                story.append(bullet(f'Priority: {t["priority"]}'))
                             if opts.get("details", True) and t["details"]:
                                 story.append(bullet(f'Details: {t["details"]}'))
                             if is_due_time_included(opts) and t["due_time"]:
@@ -10388,6 +10494,12 @@ class MainWindow(QMainWindow):
                             if opts.get("proof_notes", False) and t["proof_note"]:
                                 note_text = proof_note_display_text(t, opts.get("proof", True))
                                 story.append(bullet(f'Proof notes: {note_text}', expose_full_url=self.is_task_link_exposed(t, opts)))
+                            custom_val = format_custom_values_display(t["custom_values"] if "custom_values" in t.keys() else "")
+                            if is_custom_values_included(opts) and custom_val and custom_val != "—":
+                                story.append(bullet(f'Custom Values: {custom_val}'))
+                            next_act = str((t["next_action"] if "next_action" in t.keys() else "") or "")
+                            if is_next_action_included(opts) and next_act:
+                                story.append(bullet(f'Next Action: {next_act}'))
                             if is_remarks_included(opts):
                                 story.append(bullet(f'Manager remarks: {t["manager_note"] or "N/A"}'))
                     else:
@@ -10493,11 +10605,32 @@ class MainWindow(QMainWindow):
                 field_keys=[("work_status","EOD status"),("late_links","Late"),("late_links","Links status"),("missing_proof","Missing proof")]
                 if opts.get("target_status", True):
                     field_keys.append(("target_status","Target status"))
-                field_keys.extend([("tasks","Task"),("details","Task details"),("tasks","Task status"),("due_time","Due time"),("proof","Proof URL"),("proof_notes","Proof notes"),("remarks","Manager remarks"),("pending","Pending items")])
+                field_keys.extend([
+                    ("tasks","Task"),
+                    ("target_qty","Target Qty"),
+                    ("actual_qty","Actual Qty"),
+                    ("completion_pct","Completion %"),
+                    ("priority","Priority"),
+                    ("details","Task details"),
+                    ("tasks","Task status"),
+                    ("due_time","Due time"),
+                    ("proof","Proof URL"),
+                    ("proof_notes","Proof notes"),
+                    ("custom_values","Custom Values"),
+                    ("next_action","Next Action"),
+                    ("remarks","Manager remarks"),
+                    ("pending","Pending items"),
+                ])
                 def _is_csv_field_active(k):
                     if k == "due_time": return is_due_time_included(opts)
                     if k == "remarks": return is_remarks_included(opts)
                     if k == "target_status": return bool(opts.get("target_status", True))
+                    if k == "target_qty": return is_target_qty_included(opts)
+                    if k == "actual_qty": return is_actual_qty_included(opts)
+                    if k == "completion_pct": return is_completion_pct_included(opts)
+                    if k == "priority": return is_priority_included(opts)
+                    if k == "custom_values": return is_custom_values_included(opts)
+                    if k == "next_action": return is_next_action_included(opts)
                     return bool(opts.get(k, True))
                 headers += [label for key,label in field_keys if key!="proof" and _is_csv_field_active(key)]
                 proof_idx = [k for k,_l in field_keys].index("proof")
@@ -10510,12 +10643,19 @@ class MainWindow(QMainWindow):
                     emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
                     emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
                     eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
-                    base=[report_date,e["employee_code"] or "N/A",e["name"],e["department"] or "N/A",e["designation"] or "N/A"]
-                    if include_target:
-                        base.append(emp_target)
                     task_rows=tasks or [None]
                     for t in task_rows:
                         links=task_proof_links(t)
+                        target_q = str((t["target_qty"] if "target_qty" in t.keys() else "") if t else "") or ""
+                        actual_q = str((t["actual_qty"] if "actual_qty" in t.keys() else "") if t else "") or ""
+                        comp_pct = f'{t["progress"]}%' if (t and t["progress"] is not None) else "N/A"
+                        prio = str((t["priority"] if "priority" in t.keys() else "") if t else "") or "N/A"
+                        custom_val = format_custom_values_display((t["custom_values"] if "custom_values" in t.keys() else "") if t else "")
+                        next_act = str(((t["next_action"] if "next_action" in t.keys() else "") or (t["manager_note"] if t else "")) if t else "") or ""
+                        dept_val = str(((t["department"] if "department" in t.keys() else "") if t else "") or e["department"] or "N/A")
+                        base=[report_date,e["employee_code"] or "N/A",e["name"],dept_val,e["designation"] or "N/A"]
+                        if include_target:
+                            base.append(emp_target)
                         values={
                             "EOD status":eod,
                             "Late":self.source_status(e,"late",report_date) or "Review required",
@@ -10523,10 +10663,16 @@ class MainWindow(QMainWindow):
                             "Missing proof":self.employee_missing_proof(e,tasks,report_date),
                             "Target status":emp_target_status,
                             "Task":t["title"] if t else "N/A",
+                            "Target Qty":target_q or "N/A",
+                            "Actual Qty":actual_q or "N/A",
+                            "Completion %":comp_pct,
+                            "Priority":prio,
                             "Task details":t["details"] if t else "N/A",
                             "Task status":task_status_label(t["status"]) if t else "N/A",
                             "Due time":t["due_time"] or "N/A" if t else "N/A",
                             "Proof notes":(re.sub(URI_PATTERN, "[link]", str(t["proof_note"]), flags=re.IGNORECASE).strip() or "N/A") if t and t["proof_note"] else "N/A",
+                            "Custom Values":custom_val if custom_val != "—" else "N/A",
+                            "Next Action":next_act or "N/A",
                             "Manager remarks":t["manager_note"] or "N/A" if t else "N/A",
                             "Pending items":"; ".join(x["title"] for x in tasks if not is_explicitly_completed_task_status(x["status"]) and not is_cancelled_task_status(x["status"])) or "No",
                         }
@@ -10658,6 +10804,16 @@ class MainWindow(QMainWindow):
                 if tasks:
                     for i,t in enumerate(tasks,1):
                         lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}')
+                        target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
+                        actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
+                        if is_target_qty_included(opts) and target_q:
+                            lines.append(f'  • Target Qty: {target_q}')
+                        if is_actual_qty_included(opts) and actual_q:
+                            lines.append(f'  • Actual Qty: {actual_q}')
+                        if is_completion_pct_included(opts) and t["progress"] is not None:
+                            lines.append(f'  • Completion %: {t["progress"]}%')
+                        if is_priority_included(opts) and t["priority"]:
+                            lines.append(f'  • Priority: {t["priority"]}')
                         if opts.get("details",True) and t["details"]: lines.append(f'  • Details: {t["details"]}')
                         if is_due_time_included(opts) and t["due_time"]: lines.append(f'  • Due time: {t["due_time"]}')
                         if opts.get("proof",True):
@@ -10670,6 +10826,12 @@ class MainWindow(QMainWindow):
                         if opts.get("proof_notes",False) and t["proof_note"]:
                             note_text = proof_note_display_text(t, opts.get("proof", True))
                             lines.append(f'  • Proof notes: {note_text}')
+                        custom_val = format_custom_values_display(t["custom_values"] if "custom_values" in t.keys() else "")
+                        if is_custom_values_included(opts) and custom_val and custom_val != "—":
+                            lines.append(f'  • Custom Values: {custom_val}')
+                        next_act = str((t["next_action"] if "next_action" in t.keys() else "") or "")
+                        if is_next_action_included(opts) and next_act:
+                            lines.append(f'  • Next Action: {next_act}')
                         if is_remarks_included(opts): lines.append(f'  • Manager remarks: {t["manager_note"] or "N/A"}')
                 else: lines.append("• No tasks recorded for this date.")
             if opts.get("pending",True):
