@@ -341,28 +341,36 @@ function renderTasks() {
   container.innerHTML = filtered.map(t => {
     const emp = state.employees.find(e => e.id == t.employee_id);
     const progress = Math.max(0, Math.min(100, Number(t.progress) || 0));
+    const targetQ = t.target_qty || "—";
+    const actualQ = t.actual_qty || "—";
+    const nextAct = t.next_action || t.manager_note || "";
     return `
       <div class="task-card">
         <div class="task-card-top">
           <div class="task-title">${escapeHtml(t.title)}</div>
           <span class="task-priority-badge priority-${(t.priority || "normal").toLowerCase()}">${t.priority}</span>
         </div>
-        ${t.details ? `<p class="muted-text" style="font-size: 13px;">${escapeHtml(t.details)}</p>` : ""}
-        <div class="task-meta-row">
+        <div class="task-meta-row" style="margin-top: 6px;">
           <span>👤 ${escapeHtml(emp ? emp.name : "Unassigned")}</span>
+          <span>🏢 ${escapeHtml(emp ? (emp.department || "General") : "—")}</span>
           <span>📅 ${t.task_date}</span>
           <span><strong>${t.status || "Not started"}</strong></span>
+        </div>
+        <div style="display: flex; gap: 14px; font-size: 12px; margin: 6px 0; color: var(--text-muted);">
+          <span>🎯 Target Qty: <strong>${escapeHtml(targetQ)}</strong></span>
+          <span>📊 Actual Qty: <strong>${escapeHtml(actualQ)}</strong></span>
         </div>
         <div class="task-progress-bar-container">
           <div class="task-progress-fill" style="width: ${progress}%;"></div>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-          <span style="font-size: 11px; color: var(--text-muted);">${progress}% Completed</span>
+          <span style="font-size: 11px; color: var(--text-muted);">${progress}% Completion</span>
           <div style="display: flex; gap: 8px;">
-            ${t.proof_url ? `<a href="${escapeHtml(t.proof_url)}" target="_blank" class="btn-link">🔗 Proof Link</a>` : ""}
+            ${t.proof_url ? `<a href="${escapeHtml(t.proof_url)}" target="_blank" class="btn-link">🔗 Proof / Link</a>` : ""}
             <button class="btn btn-sm btn-outline" onclick="openTaskModal(${t.id})">Edit</button>
           </div>
         </div>
+        ${nextAct ? `<div style="margin-top: 6px; padding: 4px 8px; border-radius: 4px; background: rgba(99,102,241,0.08); font-size: 12px; color: #818CF8;">⚡ Next Action: ${escapeHtml(nextAct)}</div>` : ""}
       </div>
     `;
   }).join("");
@@ -372,6 +380,41 @@ document.getElementById("taskSearchInput")?.addEventListener("input", renderTask
 document.getElementById("taskFilterStatus")?.addEventListener("change", renderTasks);
 document.getElementById("taskFilterPriority")?.addEventListener("change", renderTasks);
 document.getElementById("openNewTaskModalBtn")?.addEventListener("click", () => openTaskModal());
+
+function updateModalDept() {
+  const empSelect = document.getElementById("taskFormEmployee");
+  const deptInput = document.getElementById("taskFormDepartment");
+  if (!empSelect || !deptInput) return;
+  const empId = empSelect.value;
+  const emp = state.employees.find(e => e.id == empId);
+  deptInput.value = emp ? (emp.department || "General") : "";
+}
+
+function autoCalcProgress() {
+  const tStr = (document.getElementById("taskFormTargetQty")?.value || "").trim();
+  const aStr = (document.getElementById("taskFormActualQty")?.value || "").trim();
+  const tVal = parseFloat(tStr);
+  const aVal = parseFloat(aStr);
+  if (!isNaN(tVal) && !isNaN(aVal) && tVal > 0) {
+    const pct = Math.max(0, Math.min(100, Math.round((aVal / tVal) * 100)));
+    const progEl = document.getElementById("taskFormProgress");
+    const progValEl = document.getElementById("taskFormProgressVal");
+    if (progEl) progEl.value = pct;
+    if (progValEl) progValEl.textContent = `${pct}%`;
+    const statEl = document.getElementById("taskFormStatus");
+    if (statEl) {
+      if (pct === 100) {
+        statEl.value = "Completed";
+      } else if (pct > 0 && statEl.value === "Not started") {
+        statEl.value = "In progress";
+      }
+    }
+  }
+}
+
+document.getElementById("taskFormTargetQty")?.addEventListener("input", autoCalcProgress);
+document.getElementById("taskFormActualQty")?.addEventListener("input", autoCalcProgress);
+document.getElementById("taskFormEmployee")?.addEventListener("change", updateModalDept);
 
 function openTaskModal(taskId = null) {
   const modal = document.getElementById("modalTask");
@@ -389,45 +432,65 @@ function openTaskModal(taskId = null) {
     empSelect.value = t.employee_id;
     document.getElementById("taskFormDate").value = t.task_date;
     document.getElementById("taskFormTitle").value = t.title;
-    document.getElementById("taskFormDetails").value = t.details || "";
+    document.getElementById("taskFormTargetQty").value = t.target_qty || "";
+    document.getElementById("taskFormActualQty").value = t.actual_qty || "";
     document.getElementById("taskFormPriority").value = t.priority || "Normal";
     document.getElementById("taskFormStatus").value = t.status || "Not started";
     document.getElementById("taskFormProgress").value = t.progress || 0;
     document.getElementById("taskFormProgressVal").textContent = `${t.progress || 0}%`;
     document.getElementById("taskFormProofUrl").value = t.proof_url || "";
+    const expEl = document.getElementById("taskFormExposeLink");
+    if (expEl) expEl.checked = Boolean(t.expose_link);
+    document.getElementById("taskFormNextAction").value = t.next_action || t.manager_note || "";
   } else {
     title.textContent = "Add New Task";
     form.reset();
     document.getElementById("taskFormId").value = "";
     document.getElementById("taskFormDate").value = state.currentDate;
+    document.getElementById("taskFormTargetQty").value = "";
+    document.getElementById("taskFormActualQty").value = "";
     document.getElementById("taskFormProgressVal").textContent = "0%";
+    const expEl = document.getElementById("taskFormExposeLink");
+    if (expEl) expEl.checked = false;
+    document.getElementById("taskFormNextAction").value = "";
   }
 
+  updateModalDept();
   modal.classList.remove("hidden");
 }
 
 document.getElementById("taskFormProgress")?.addEventListener("input", (e) => {
   document.getElementById("taskFormProgressVal").textContent = `${e.target.value}%`;
+  if (Number(e.target.value) === 100) {
+    const statEl = document.getElementById("taskFormStatus");
+    if (statEl) statEl.value = "Completed";
+  }
 });
 
 document.getElementById("formTask")?.addEventListener("submit", (e) => {
   e.preventDefault();
   const idVal = document.getElementById("taskFormId").value;
+  const nextActionVal = (document.getElementById("taskFormNextAction")?.value || "").trim();
   const taskObj = {
     id: idVal ? Number(idVal) : Date.now(),
     employee_id: Number(document.getElementById("taskFormEmployee").value),
     task_date: document.getElementById("taskFormDate").value,
     title: document.getElementById("taskFormTitle").value.trim(),
-    details: document.getElementById("taskFormDetails").value.trim(),
+    details: "",
+    target_qty: (document.getElementById("taskFormTargetQty")?.value || "").trim(),
+    actual_qty: (document.getElementById("taskFormActualQty")?.value || "").trim(),
     priority: document.getElementById("taskFormPriority").value,
     status: document.getElementById("taskFormStatus").value,
     progress: Number(document.getElementById("taskFormProgress").value),
-    proof_url: document.getElementById("taskFormProofUrl").value.trim()
+    proof_url: document.getElementById("taskFormProofUrl").value.trim(),
+    expose_link: document.getElementById("taskFormExposeLink")?.checked ? 1 : 0,
+    next_action: nextActionVal,
+    manager_note: nextActionVal
   };
 
   if (idVal) {
     const idx = state.tasks.findIndex(x => x.id == idVal);
-    if (idx >= 0) state.tasks[idx] = taskObj;
+    if (idx >= 0) state.tasks[idx] = Object.assign({}, state.tasks[idx], taskObj);
   } else {
     state.tasks.unshift(taskObj);
   }

@@ -36,6 +36,7 @@ def setup_test_schema(conn: sqlite3.Connection):
           status TEXT DEFAULT 'Not started', progress INTEGER DEFAULT 0,
           proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
           manager_note TEXT DEFAULT '', expose_link INTEGER NOT NULL DEFAULT 0,
+          target_qty TEXT DEFAULT '', actual_qty TEXT DEFAULT '', next_action TEXT DEFAULT '',
           created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '',
           FOREIGN KEY(employee_id) REFERENCES employees(id)
         );

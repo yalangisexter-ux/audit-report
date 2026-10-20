@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re, math
+import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re, math, threading, logging
 from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, date
@@ -1258,6 +1258,9 @@ class Database:
             ("submitted_at", "TEXT DEFAULT ''"),
             ("manager_note", "TEXT DEFAULT ''"),
             ("expose_link", "INTEGER NOT NULL DEFAULT 0"),
+            ("target_qty", "TEXT DEFAULT ''"),
+            ("actual_qty", "TEXT DEFAULT ''"),
+            ("next_action", "TEXT DEFAULT ''"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
@@ -1363,7 +1366,7 @@ class Database:
         return self.conn.execute("SELECT * FROM employees WHERE id=?", (emp_id,)).fetchone()
 
     def tasks(self, task_date=None, employee_id=None):
-        q = """SELECT t.*, e.name AS employee_name, e.employee_code FROM tasks t
+        q = """SELECT t.*, e.name AS employee_name, e.employee_code, e.department FROM tasks t
                JOIN employees e ON e.id=t.employee_id WHERE 1=1"""
         args = []
         if task_date: q += " AND t.task_date=?"; args.append(task_date)
@@ -1450,6 +1453,17 @@ def is_privileged_user(user_or_role) -> bool:
     if role:
         return role in ("admin", "developer")
     return username in ("admin", "developer", "dev")
+
+
+def _ensure_local_task_columns(conn: sqlite3.Connection):
+    """Ensure newer task columns exist in any local connection before inserting/updating."""
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        for col_name in ("target_qty", "actual_qty", "next_action"):
+            if col_name not in cols:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {col_name} TEXT DEFAULT ''")
+    except Exception:
+        pass
 
 
 def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes | str | dict) -> dict:
@@ -1589,6 +1603,7 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     stats["attendance"] += 1
 
         # 3. Merge tasks
+        _ensure_local_task_columns(local_conn)
         remote_tasks = data.get("tasks") or []
         if isinstance(remote_tasks, list):
             for rt in remote_tasks:
@@ -1606,13 +1621,15 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                 ).fetchone()
                 if not lt:
                     local_conn.execute(
-                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, created_at, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (target_eid, tdate, title, str(rt.get("details") or ""), str(rt.get("due_time") or ""),
                          str(rt.get("priority") or "Normal"), str(rt.get("status") or "Not started"),
                          int(rt.get("progress") or 0), str(rt.get("proof_url") or ""), str(rt.get("proof_note") or ""),
                          str(rt.get("submitted_at") or ""), str(rt.get("manager_note") or ""),
-                         int(rt.get("expose_link") or 0), str(rt.get("created_at") or now_text()), str(rt.get("updated_at") or now_text()))
+                         int(rt.get("expose_link") or 0), str(rt.get("target_qty") or ""), str(rt.get("actual_qty") or ""),
+                         str(rt.get("next_action") or rt.get("manager_note") or ""),
+                         str(rt.get("created_at") or now_text()), str(rt.get("updated_at") or now_text()))
                     )
                     stats["tasks"] += 1
                 else:
@@ -1623,9 +1640,12 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     r_note = str(rt.get("manager_note") or "")
                     if r_note and r_note not in new_note:
                         new_note = f"{new_note} | {r_note}".strip(" |")
+                    t_qty = str(rt.get("target_qty") or (lt["target_qty"] if "target_qty" in lt.keys() else "") or "")
+                    a_qty = str(rt.get("actual_qty") or (lt["actual_qty"] if "actual_qty" in lt.keys() else "") or "")
+                    nxt_act = str(rt.get("next_action") or (lt["next_action"] if "next_action" in lt.keys() else "") or new_note)
                     local_conn.execute(
-                        """UPDATE tasks SET progress=?, status=?, proof_url=?, manager_note=?, updated_at=? WHERE id=?""",
-                        (new_prog, new_stat, new_url, new_note, now_text(), lt["id"])
+                        """UPDATE tasks SET progress=?, status=?, proof_url=?, manager_note=?, target_qty=?, actual_qty=?, next_action=?, updated_at=? WHERE id=?""",
+                        (new_prog, new_stat, new_url, new_note, t_qty, a_qty, nxt_act, now_text(), lt["id"])
                     )
                     stats["tasks"] += 1
 
@@ -1826,6 +1846,7 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
 
         # 4. Merge tasks
         if "tasks" in remote_tables:
+            _ensure_local_task_columns(local_conn)
             remote_tasks = remote.execute("SELECT * FROM tasks").fetchall()
             for rt in remote_tasks:
                 rt_dict = dict(rt)
@@ -1841,14 +1862,15 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                 if lt_row is None:
                     local_conn.execute(
                         """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status,
-                           progress, proof_url, proof_note, submitted_at, manager_note, expose_link, created_at, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (lid, tdate, ttitle, rt_dict.get("details", ""), rt_dict.get("due_time", ""),
                          rt_dict.get("priority", "Normal"), rt_dict.get("status", "Not started"),
                          int(rt_dict.get("progress", 0)), rt_dict.get("proof_url", ""), rt_dict.get("proof_note", ""),
                          rt_dict.get("submitted_at", ""), rt_dict.get("manager_note", ""),
-                         int(rt_dict.get("expose_link", 0)), rt_dict.get("created_at", now_text()),
-                         rt_dict.get("updated_at", now_text()))
+                         int(rt_dict.get("expose_link", 0)), str(rt_dict.get("target_qty") or ""),
+                         str(rt_dict.get("actual_qty") or ""), str(rt_dict.get("next_action") or rt_dict.get("manager_note") or ""),
+                         rt_dict.get("created_at", now_text()), rt_dict.get("updated_at", now_text()))
                     )
                     stats["tasks"] += 1
                 else:
@@ -1868,10 +1890,13 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     r_upd = str(rt_dict.get("updated_at") or "")
                     l_upd = str(lt.get("updated_at") or "")
                     upd = max(l_upd, r_upd, now_text())
+                    t_qty = str(rt_dict.get("target_qty") or lt.get("target_qty") or "")
+                    a_qty = str(rt_dict.get("actual_qty") or lt.get("actual_qty") or "")
+                    nxt_act = str(rt_dict.get("next_action") or lt.get("next_action") or m_note)
                     local_conn.execute(
-                        """UPDATE tasks SET progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, updated_at=?
+                        """UPDATE tasks SET progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, target_qty=?, actual_qty=?, next_action=?, updated_at=?
                            WHERE id=?""",
-                        (new_progress, new_status, p_url, p_note, m_note, exp_link, upd, lt["id"])
+                        (new_progress, new_status, p_url, p_note, m_note, exp_link, t_qty, a_qty, nxt_act, upd, lt["id"])
                     )
 
         # 5. Merge employee_targets
@@ -2453,91 +2478,329 @@ class TaskDialog(QDialog):
         ("Not selected", None),
     ]
     def __init__(self, db, parent=None, row=None, employee_id=None, task_date=None):
-        super().__init__(parent); self.setWindowTitle("Task details"); self.setMinimumWidth(520)
-        self.layout=QFormLayout(self); self.db=db; self.row=row
-        self.employee=QComboBox()
-        for e in db.employees(False): self.employee.addItem(f'{e["name"]} ({e["employee_code"] or e["id"]})', e["id"])
-        if employee_id is not None:
-            idx=self.employee.findData(employee_id)
-            if idx >= 0: self.employee.setCurrentIndex(idx)
-        self.date=QDateEdit(); configure_date_edit(self.date); self.date.setDisplayFormat("yyyy-MM-dd")
+        super().__init__(parent)
+        self.setWindowTitle("Task details")
+        self.setMinimumWidth(560)
+        self.db = db
+        self.row = row
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(18, 16, 18, 16)
+        main_layout.setSpacing(12)
+
+        # Advanced Header Banner
+        header_frame = QFrame()
+        header_frame.setObjectName("taskDialogHeader")
+        header_frame.setStyleSheet(
+            "QFrame#taskDialogHeader { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(30, 41, 59, 0.75), stop:1 rgba(15, 23, 42, 0.90)); "
+            "border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 10px 14px; }"
+        )
+        h_layout = QVBoxLayout(header_frame)
+        h_layout.setContentsMargins(4, 4, 4, 4)
+        h_layout.setSpacing(2)
+        h_title = QLabel("Edit Task Details" if row else "Create New Task")
+        h_title.setStyleSheet("font-size: 11pt; font-weight: 700; color: #F8FAFC;")
+        h_sub = QLabel("Configure assigned task, target vs actual metrics, proof, and next action.")
+        h_sub.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
+        h_layout.addWidget(h_title)
+        h_layout.addWidget(h_sub)
+        main_layout.addWidget(header_frame)
+
+        self.layout = QFormLayout()
+        self.layout.setSpacing(10)
+        self.layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        # 1. Date
+        self.date = QDateEdit()
+        configure_date_edit(self.date)
+        self.date.setDisplayFormat("yyyy-MM-dd")
         parsed_task_date = None
         if row and row["task_date"]:
             parsed_task_date = QDate.fromString(row["task_date"], "yyyy-MM-dd")
         elif task_date:
             parsed_task_date = task_date if isinstance(task_date, QDate) else QDate.fromString(str(task_date), "yyyy-MM-dd")
         self.date.setDate(parsed_task_date if (parsed_task_date and parsed_task_date.isValid()) else QDate.currentDate())
-        self.title=QLineEdit(row["title"] if row else "")
-        self.details=QTextEdit(row["details"] if row else ""); self.details.setMaximumHeight(70)
-        self.due=QTimeEdit(); self.due.setDisplayFormat("HH:mm")
-        parsed_due_time = QTime.fromString(row["due_time"], "HH:mm") if row and row["due_time"] else None
-        self.due.setTime(parsed_due_time if (parsed_due_time and parsed_due_time.isValid()) else QTime(17, 0))
-        self.priority=QComboBox(); self.priority.addItems(["Low","Normal","High","Urgent"])
-        self.status=QComboBox()
-        for label, value in self.STATUSES: self.status.addItem(label, value)
-        self.progress=QSpinBox(); self.progress.setRange(0,100); self.progress.setSuffix("%")
-        self.proof=QTextEdit(row["proof_url"] if row else ""); self.proof.setPlaceholderText("Optional URL or local file path. Use one proof link per line."); self.proof.setMaximumHeight(78)
-        self.proof_note=QLineEdit(row["proof_note"] if row else "")
-        self.expose_link=QCheckBox("Expose full evidence URL in reports")
-        self.expose_link.setChecked(bool(row["expose_link"]) if row and "expose_link" in row.keys() else False)
-        self.manager_note=QLineEdit(row["manager_note"] if row else "")
+        self.layout.addRow("Date *", self.date)
+
+        # 2. Employee & 3. Department
+        self.employee = QComboBox()
+        self.emp_dept_map = {}
+        for e in db.employees(False):
+            self.employee.addItem(f'{e["name"]} ({e["employee_code"] or e["id"]})', e["id"])
+            dept_val = ""
+            try:
+                dept_val = str(e["department"] or "")
+            except Exception:
+                pass
+            self.emp_dept_map[e["id"]] = dept_val
+
+        if employee_id is not None:
+            idx = self.employee.findData(employee_id)
+            if idx >= 0: self.employee.setCurrentIndex(idx)
+        elif row and "employee_id" in row.keys() and row["employee_id"]:
+            idx = self.employee.findData(row["employee_id"])
+            if idx >= 0: self.employee.setCurrentIndex(idx)
+
+        self.layout.addRow("Employee *", self.employee)
+
+        self.department = QLineEdit()
+        self.department.setReadOnly(True)
+        self.department.setPlaceholderText("No department assigned")
+        self.department.setStyleSheet(
+            "QLineEdit { background: rgba(255, 255, 255, 0.04); color: #94A3B8; "
+            "border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 6px 10px; font-weight: 500; }"
+        )
+        self.layout.addRow("Department", self.department)
+
+        def _update_dept():
+            eid = self.employee.currentData()
+            self.department.setText(self.emp_dept_map.get(eid, "") or "General")
+
+        self.employee.currentIndexChanged.connect(_update_dept)
+        _update_dept()
+
+        # 4. Assigned Task
+        self.title = QLineEdit(row["title"] if row else "")
+        self.title.setPlaceholderText("Enter assigned task description or title...")
+        self.title.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
+        self.layout.addRow("Assigned Task *", self.title)
+
+        # 5. Target Qty & 6. Actual Qty
+        qty_widget = QWidget()
+        qty_layout = QHBoxLayout(qty_widget)
+        qty_layout.setContentsMargins(0, 0, 0, 0)
+        qty_layout.setSpacing(8)
+
+        init_t_qty = ""
+        init_a_qty = ""
         if row:
-            idx=self.employee.findData(row["employee_id"])
-            if idx>=0: self.employee.setCurrentIndex(idx)
-            self.priority.setCurrentText(row["priority"])
-            status_index=self.status.findData(row["status"])
-            if status_index < 0:
-                label = "Not selected" if row["status"] is None or not str(row["status"]).strip() else row["status"]
-                self.status.addItem(label, row["status"])
-                status_index=self.status.count()-1
-            self.status.setCurrentIndex(status_index); self.progress.setValue(row["progress"])
+            if "target_qty" in row.keys() and row["target_qty"]:
+                init_t_qty = str(row["target_qty"])
+            if "actual_qty" in row.keys() and row["actual_qty"]:
+                init_a_qty = str(row["actual_qty"])
 
         initial_emp = self.employee.currentData()
         initial_d = self.date.date().toString("yyyy-MM-dd")
         tinfo = self.db.get_employee_target(initial_emp, initial_d) if (initial_emp and hasattr(self.db, "get_employee_target")) else {}
+        if not init_t_qty and tinfo.get("target"):
+            init_t_qty = str(tinfo.get("target"))
+
+        self.target_qty = QLineEdit(init_t_qty)
+        self.target_qty.setPlaceholderText("Target Qty (e.g. 10)")
+        self.target_qty.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
+
+        self.actual_qty = QLineEdit(init_a_qty)
+        self.actual_qty.setPlaceholderText("Actual Qty (e.g. 5)")
+        self.actual_qty.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
+
+        qty_layout.addWidget(self.target_qty, 1)
+        qty_layout.addWidget(self.actual_qty, 1)
+        self.layout.addRow("Target / Actual Qty", qty_widget)
+
+        # 7. Completion %
+        self.progress = QSpinBox()
+        self.progress.setRange(0, 100)
+        self.progress.setSuffix("%")
+        self.progress.setStyleSheet("QSpinBox { padding: 6px 10px; border-radius: 6px; }")
+        if row and "progress" in row.keys() and row["progress"] is not None:
+            self.progress.setValue(int(row["progress"]))
+        else:
+            self.progress.setValue(0)
+        self.layout.addRow("Completion %", self.progress)
+
+        # Auto-compute Completion % when Target Qty or Actual Qty changes
+        def _recalc_completion():
+            t_str = self.target_qty.text().strip()
+            a_str = self.actual_qty.text().strip()
+            try:
+                t_val = float(t_str)
+                a_val = float(a_str)
+                if t_val > 0:
+                    pct = max(0, min(100, int(round((a_val / t_val) * 100))))
+                    self.progress.setValue(pct)
+                    if pct == 100:
+                        comp_idx = self.status.findData("Completed")
+                        if comp_idx >= 0 and self.status.currentData() in ("Not started", "In progress", "Partially completed"):
+                            self.status.setCurrentIndex(comp_idx)
+                    elif pct > 0:
+                        part_idx = self.status.findData("Partially completed")
+                        if part_idx >= 0 and self.status.currentData() == "Not started":
+                            self.status.setCurrentIndex(part_idx)
+            except (ValueError, TypeError):
+                pass
+
+        self.target_qty.textChanged.connect(_recalc_completion)
+        self.actual_qty.textChanged.connect(_recalc_completion)
+
+        # 8. Priority
+        self.priority = QComboBox()
+        self.priority.addItems(["Low", "Normal", "High", "Urgent"])
+        if row and "priority" in row.keys() and row["priority"]:
+            self.priority.setCurrentText(row["priority"])
+        self.layout.addRow("Priority", self.priority)
+
+        # 9. Status
+        self.status = QComboBox()
+        for label, value in self.STATUSES:
+            self.status.addItem(label, value)
+        if row and "status" in row.keys() and row["status"]:
+            status_index = self.status.findData(row["status"])
+            if status_index < 0:
+                label = "Not selected" if row["status"] is None or not str(row["status"]).strip() else row["status"]
+                self.status.addItem(label, row["status"])
+                status_index = self.status.count() - 1
+            self.status.setCurrentIndex(status_index)
+        self.layout.addRow("Status", self.status)
+
+        def _on_status_changed(idx):
+            if self.status.currentData() == "Completed":
+                self.progress.setValue(100)
+        self.status.currentIndexChanged.connect(_on_status_changed)
+
+        def _on_progress_changed(val):
+            if val == 100:
+                comp_idx = self.status.findData("Completed")
+                if comp_idx >= 0 and self.status.currentData() in ("Not started", "In progress", "Partially completed"):
+                    self.status.setCurrentIndex(comp_idx)
+        self.progress.valueChanged.connect(_on_progress_changed)
+
+        # 10. Proof / Link (and expose_link)
+        self.proof = QTextEdit(row["proof_url"] if row else "")
+        self.proof.setPlaceholderText("Optional URL or local file path. Use one proof link per line.")
+        self.proof.setMaximumHeight(70)
+        self.expose_link = QCheckBox("Expose full evidence URL in reports")
+        self.expose_link.setChecked(bool(row["expose_link"]) if row and "expose_link" in row.keys() else False)
+
+        proof_box = QWidget()
+        proof_box_layout = QVBoxLayout(proof_box)
+        proof_box_layout.setContentsMargins(0, 0, 0, 0)
+        proof_box_layout.setSpacing(4)
+        proof_box_layout.addWidget(self.proof)
+        proof_box_layout.addWidget(self.expose_link)
+        self.layout.addRow("Proof / Link", proof_box)
+
+        # 11. Next Action
+        init_next_action = ""
+        if row:
+            if "next_action" in row.keys() and row["next_action"]:
+                init_next_action = str(row["next_action"])
+            elif "manager_note" in row.keys() and row["manager_note"]:
+                init_next_action = str(row["manager_note"])
+
+        self.next_action = QLineEdit(init_next_action)
+        self.next_action.setPlaceholderText("Enter next action or remarks...")
+        self.next_action.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
+        self.layout.addRow("Next Action", self.next_action)
+
+        main_layout.addLayout(self.layout)
+
+        # Backward compatibility properties (hidden from layout)
+        self.manager_note = self.next_action
+        self.details = QTextEdit(row["details"] if row and "details" in row.keys() and row["details"] else "")
+        self.details.hide()
+        self.due = QTimeEdit()
+        self.due.setDisplayFormat("HH:mm")
+        if row and "due_time" in row.keys() and row["due_time"]:
+            parsed_due_time = QTime.fromString(row["due_time"], "HH:mm")
+            if parsed_due_time and parsed_due_time.isValid():
+                self.due.setTime(parsed_due_time)
+        self.due.hide()
+        self.proof_note = QLineEdit(row["proof_note"] if row and "proof_note" in row.keys() and row["proof_note"] else "")
+        self.proof_note.hide()
         self.target_input = QLineEdit(tinfo.get("target", ""))
-        self.target_input.setPlaceholderText("Custom target (e.g. NA or 5 tasks)")
+        self.target_input.hide()
         self.target_status_input = QLineEdit(tinfo.get("target_status", ""))
-        self.target_status_input.setPlaceholderText("Custom target status (e.g. NA or 5/5 Completed)")
-        def _on_emp_or_date_changed():
+        self.target_status_input.hide()
+
+        def _sync_ti_to_tq(txt):
+            if self.target_qty.text() != txt:
+                self.target_qty.blockSignals(True)
+                self.target_qty.setText(txt)
+                self.target_qty.blockSignals(False)
+        self.target_input.textChanged.connect(_sync_ti_to_tq)
+
+        def _sync_tq_to_ti(txt):
+            if self.target_input.text() != txt:
+                self.target_input.blockSignals(True)
+                self.target_input.setText(txt)
+                self.target_input.blockSignals(False)
+        self.target_qty.textChanged.connect(_sync_tq_to_ti)
+
+        def _sync_tsi_to_aq(txt):
+            if self.actual_qty.text() != txt:
+                self.actual_qty.blockSignals(True)
+                self.actual_qty.setText(txt)
+                self.actual_qty.blockSignals(False)
+        self.target_status_input.textChanged.connect(_sync_tsi_to_aq)
+
+        def _sync_aq_to_tsi(txt):
+            if self.target_status_input.text() != txt:
+                self.target_status_input.blockSignals(True)
+                self.target_status_input.setText(txt)
+                self.target_status_input.blockSignals(False)
+        self.actual_qty.textChanged.connect(_sync_aq_to_tsi)
+
+        def _on_emp_or_date_target_sync():
             eid = self.employee.currentData()
             dt = self.date.date().toString("yyyy-MM-dd")
             if eid and hasattr(self.db, "get_employee_target"):
                 ti = self.db.get_employee_target(eid, dt)
                 self.target_input.setText(ti.get("target", ""))
                 self.target_status_input.setText(ti.get("target_status", ""))
-        self.employee.currentIndexChanged.connect(_on_emp_or_date_changed)
-        self.date.dateChanged.connect(_on_emp_or_date_changed)
+        self.employee.currentIndexChanged.connect(_on_emp_or_date_target_sync)
+        self.date.dateChanged.connect(_on_emp_or_date_target_sync)
 
-        self.layout.addRow("Employee *", self.employee); self.layout.addRow("Task date", self.date)
-        self.layout.addRow("Target", self.target_input); self.layout.addRow("Target status", self.target_status_input)
-        self.layout.addRow("Task title *", self.title); self.layout.addRow("Description", self.details)
-        self.layout.addRow("Due time", self.due); self.layout.addRow("Priority", self.priority)
-        self.layout.addRow("Status", self.status); self.layout.addRow("Progress", self.progress)
-        self.layout.addRow("Evidence link or file", self.proof); self.layout.addRow("", self.expose_link); self.layout.addRow("Evidence notes", self.proof_note)
-        self.layout.addRow("Manager notes", self.manager_note)
-        buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); self.layout.addRow(buttons)
+        # Dialog Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        main_layout.addWidget(buttons)
+
     def accept(self):
         eid = self.employee.currentData()
         dt = self.date.date().toString("yyyy-MM-dd")
+        t_text = self.target_qty.text().strip() or self.target_input.text().strip()
+        a_text = self.actual_qty.text().strip() or self.target_status_input.text().strip()
         if eid and hasattr(self.db, "set_employee_target"):
-            self.db.set_employee_target(eid, dt, self.target_input.text().strip(), self.target_status_input.text().strip())
+            self.db.set_employee_target(eid, dt, t_text, a_text)
         super().accept()
+
     def values(self):
-        if self.employee.count()==0: return None
-        status=self.status.currentData(); progress=self.progress.value()
-        if status=="Completed": progress=100
+        if self.employee.count() == 0: return None
+        status = self.status.currentData()
+        progress = self.progress.value()
+        if status == "Completed": progress = 100
         # Preserve original submission time; only set it on first transition to Submitted/Completed
-        if status in ("Submitted","Completed"):
+        if status in ("Submitted", "Completed"):
             existing = (self.row["submitted_at"] if self.row else "") or ""
             submitted = existing if existing else now_text()
         else:
             submitted = (self.row["submitted_at"] if self.row else "") or ""
-        return (self.employee.currentData(), self.date.date().toString("yyyy-MM-dd"), self.title.text().strip(),
-                self.details.toPlainText().strip(), self.due.time().toString("HH:mm"), self.priority.currentText(),
-                status, progress, self.proof.toPlainText().strip(), self.proof_note.text().strip(), submitted,
-                self.manager_note.text().strip(), int(self.expose_link.isChecked()))
+        next_act = self.next_action.text().strip()
+        target_q = self.target_qty.text().strip()
+        actual_q = self.actual_qty.text().strip()
+        details_val = self.details.toPlainText().strip()
+        due_val = self.due.time().toString("HH:mm") if (hasattr(self, "due") and not self.due.isHidden()) else ((self.row["due_time"] if self.row else "") or "")
+        proof_note_val = self.proof_note.text().strip() if (hasattr(self, "proof_note") and not self.proof_note.isHidden()) else ((self.row["proof_note"] if self.row else "") or "")
+
+        return (
+            self.employee.currentData(),
+            self.date.date().toString("yyyy-MM-dd"),
+            self.title.text().strip(),
+            details_val,
+            due_val,
+            self.priority.currentText(),
+            status,
+            progress,
+            self.proof.toPlainText().strip(),
+            proof_note_val,
+            submitted,
+            next_act,
+            int(self.expose_link.isChecked()),
+            target_q,
+            actual_q,
+            next_act,
+        )
 
 _ACCESSIBLE_TOOLTIP_CONTROLLER = None
 _COMBOBOX_WHEEL_FILTER = None
@@ -6488,13 +6751,31 @@ class MainWindow(QMainWindow):
         task_header_row.addWidget(task_hint)
         task_roster_layout.addLayout(task_header_row)
 
-        self.task_table = QTableWidget(0, 9)
-        self.task_table.setHorizontalHeaderLabels(["ID", "Employee", "Task", "Priority", "Status", "Progress", "Due", "Proof", "Manager remarks"])
-        self.task_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.task_table = QTableWidget(0, 12)
+        self.task_table.setHorizontalHeaderLabels([
+            "ID", "Date", "Employee", "Department", "Assigned Task",
+            "Target Qty", "Actual Qty", "Completion %", "Priority",
+            "Status", "Proof / Link", "Next Action"
+        ])
+        self.task_table.setColumnHidden(0, True)
+        task_hdr = self.task_table.horizontalHeader()
+        task_hdr.setSectionResizeMode(QHeaderView.Interactive)
+        task_hdr.setSectionResizeMode(4, QHeaderView.Stretch)   # Assigned Task
+        task_hdr.setSectionResizeMode(10, QHeaderView.Stretch)  # Proof / Link
+        task_hdr.setSectionResizeMode(11, QHeaderView.Stretch)  # Next Action
+        task_hdr.resizeSection(1, 100)  # Date
+        task_hdr.resizeSection(2, 140)  # Employee
+        task_hdr.resizeSection(3, 110)  # Department
+        task_hdr.resizeSection(5, 90)   # Target Qty
+        task_hdr.resizeSection(6, 90)   # Actual Qty
+        task_hdr.resizeSection(7, 100)  # Completion %
+        task_hdr.resizeSection(8, 90)   # Priority
+        task_hdr.resizeSection(9, 110)  # Status
         self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.task_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.task_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.task_table.itemSelectionChanged.connect(self._on_task_table_selection_changed)
+        self.task_table.itemDoubleClicked.connect(lambda _item: self.edit_task())
         task_roster_layout.addWidget(self.task_table)
         l.addWidget(task_roster_card)
 
@@ -7807,7 +8088,8 @@ class MainWindow(QMainWindow):
         status_cols = set(status_cols or [])
         center_headers = {
             "id", "#", "code", "employee id", "priority", "status", "progress", "due",
-            "due time", "date", "phone", "check-in", "check-out", "net hours"
+            "due time", "date", "phone", "check-in", "check-out", "net hours",
+            "target qty", "actual qty", "completion %"
         }
         for c, v in enumerate(values):
             text = task_status_label(v) if c in status_cols and (v is None or not str(v).strip()) else str(v or "")
@@ -7904,8 +8186,8 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
         except sqlite3.Error as ex:
             error(self, f"Could not save task: {ex}")
@@ -8124,8 +8406,8 @@ class MainWindow(QMainWindow):
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
@@ -8140,7 +8422,7 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
             self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not update task: {ex}")
 
@@ -8172,31 +8454,32 @@ class MainWindow(QMainWindow):
             check = QCheckBox("Apply")
             wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.addWidget(check); row.addWidget(widget,1)
             form.addRow(label, wrap); fields[label] = (check, widget)
-        title = QLineEdit(); field_row("Task title", title)
+        title = QLineEdit(); field_row("Assigned Task", title)
+        target_qty = QLineEdit(); field_row("Target Qty", target_qty)
+        actual_qty = QLineEdit(); field_row("Actual Qty", actual_qty)
+        progress = QSpinBox(); progress.setRange(0,100); progress.setSuffix("%"); field_row("Completion %", progress)
         priority = QComboBox(); priority.addItems(["Low","Normal","High","Urgent"]); field_row("Priority", priority)
         status = QComboBox()
         for label, value in TaskDialog.STATUSES: status.addItem(label, value)
         field_row("Status", status)
-        progress = QSpinBox(); progress.setRange(0,100); progress.setSuffix("%"); field_row("Progress", progress)
-        due = QLineEdit(); due.setPlaceholderText("HH:MM"); field_row("Due time", due)
-        manager_note = QLineEdit(); field_row("Manager remarks", manager_note)
+        next_action = QLineEdit(); field_row("Next Action", next_action)
         expose_link = QCheckBox("Expose full proof URL in reports"); field_row("Expose links", expose_link)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
         if dialog.exec() != QDialog.Accepted: return
         updates = {}
-        if fields["Task title"][0].isChecked():
+        if fields["Assigned Task"][0].isChecked():
             value = title.text().strip()
-            if not value: return error(self, "Task title cannot be blank.")
+            if not value: return error(self, "Assigned Task cannot be blank.")
             updates["title"] = value
+        if fields["Target Qty"][0].isChecked(): updates["target_qty"] = target_qty.text().strip()
+        if fields["Actual Qty"][0].isChecked(): updates["actual_qty"] = actual_qty.text().strip()
+        if fields["Completion %"][0].isChecked(): updates["progress"] = progress.value()
         if fields["Priority"][0].isChecked(): updates["priority"] = priority.currentText()
         if fields["Status"][0].isChecked(): updates["status"] = status.currentData()
-        if fields["Progress"][0].isChecked(): updates["progress"] = progress.value()
-        if fields["Due time"][0].isChecked():
-            value = due.text().strip()
-            if value and not valid_hhmm(value): return error(self, "Due time must use 24-hour HH:MM format.")
-            updates["due_time"] = value
-        if fields["Manager remarks"][0].isChecked(): updates["manager_note"] = manager_note.text().strip()
+        if fields["Next Action"][0].isChecked():
+            updates["next_action"] = next_action.text().strip()
+            updates["manager_note"] = next_action.text().strip()
         if fields["Expose links"][0].isChecked(): updates["expose_link"] = 1 if expose_link.isChecked() else 0
         if not updates: return info(self, "No fields were selected to update.")
         if updates.get("status") == "Completed": updates["progress"] = 100
@@ -8472,8 +8755,26 @@ class MainWindow(QMainWindow):
         self.task_table.setRowCount(0)
         for t in rows:
             r=self.task_table.rowCount(); self.task_table.insertRow(r)
-            vals=[t["id"],t["employee_name"],t["title"],t["priority"],task_status_label(t["status"]),f'{t["progress"]}%',t["due_time"],t["proof_url"],t["manager_note"]]
-            self.set_row_items(self.task_table, r, vals, status_cols={3, 4})
+            dept = str(t["department"] if "department" in t.keys() else "") or ""
+            target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
+            actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
+            comp_pct = f'{t["progress"]}%' if t["progress"] is not None else "0%"
+            next_act = str((t["next_action"] if "next_action" in t.keys() else "") or t["manager_note"] or "")
+            vals=[
+                t["id"],
+                t["task_date"],
+                t["employee_name"],
+                dept,
+                t["title"],
+                target_q,
+                actual_q,
+                comp_pct,
+                t["priority"],
+                task_status_label(t["status"]),
+                t["proof_url"],
+                next_act,
+            ]
+            self.set_row_items(self.task_table, r, vals, status_cols={8, 9})
         if hasattr(self, "task_count_badge"):
             self.task_count_badge.setText(f"Tasks: {len(rows)}")
         self.refresh_dashboard()

@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 try:
     from build_info import APP_VERSION
 except Exception:
-    APP_VERSION = "1.3.15"
+    APP_VERSION = "1.3.16"
 
 
 _SNAPSHOT_MAGIC = b"RSCDB1"
