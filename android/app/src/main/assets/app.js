@@ -344,6 +344,7 @@ function renderTasks() {
     const targetQ = t.target_qty || "—";
     const actualQ = t.actual_qty || "—";
     const nextAct = t.next_action || t.manager_note || "";
+    const customDisplay = formatMobileCustomValuesDisplay(t.custom_values);
     return `
       <div class="task-card">
         <div class="task-card-top">
@@ -370,6 +371,7 @@ function renderTasks() {
             <button class="btn btn-sm btn-outline" onclick="openTaskModal(${t.id})">Edit</button>
           </div>
         </div>
+        ${customDisplay ? `<div style="margin-top: 6px; padding: 4px 8px; border-radius: 4px; background: rgba(16,185,129,0.08); font-size: 12px; color: #34D399; font-weight: 500;">🏷️ Custom: ${escapeHtml(customDisplay)}</div>` : ""}
         ${nextAct ? `<div style="margin-top: 6px; padding: 4px 8px; border-radius: 4px; background: rgba(99,102,241,0.08); font-size: 12px; color: #818CF8;">⚡ Next Action: ${escapeHtml(nextAct)}</div>` : ""}
       </div>
     `;
@@ -380,6 +382,84 @@ document.getElementById("taskSearchInput")?.addEventListener("input", renderTask
 document.getElementById("taskFilterStatus")?.addEventListener("change", renderTasks);
 document.getElementById("taskFilterPriority")?.addEventListener("change", renderTasks);
 document.getElementById("openNewTaskModalBtn")?.addEventListener("click", () => openTaskModal());
+document.getElementById("openNewCustomTaskModalBtn")?.addEventListener("click", () => openTaskModal(null, true));
+
+function parseMobileCustomValues(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.map(item => {
+      if (item && typeof item === "object") {
+        if ("key" in item && "value" in item) return { key: String(item.key || "").trim(), value: String(item.value || "").trim() };
+        const entries = Object.entries(item);
+        if (entries.length > 0) return { key: String(entries[0][0] || "").trim(), value: String(entries[0][1] || "").trim() };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+  if (typeof raw === "object") {
+    return Object.entries(raw).map(([k, v]) => ({ key: String(k || "").trim(), value: String(v || "").trim() }));
+  }
+  const s = String(raw).trim();
+  if (!s) return [];
+  if (s.startsWith("[") || s.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(s);
+      return parseMobileCustomValues(parsed);
+    } catch (_) {}
+  }
+  const pairs = [];
+  s.split(/[\r\n,]+/).forEach(part => {
+    part = part.trim();
+    if (!part) return;
+    const idx = part.indexOf(":") >= 0 ? part.indexOf(":") : part.indexOf("=");
+    if (idx > 0) {
+      pairs.push({ key: part.slice(0, idx).trim(), value: part.slice(idx + 1).trim() });
+    } else {
+      pairs.push({ key: part, value: "" });
+    }
+  });
+  return pairs;
+}
+
+function formatMobileCustomValuesDisplay(raw) {
+  const pairs = parseMobileCustomValues(raw);
+  if (!pairs.length) return "";
+  return pairs.map(p => `${p.key}: ${p.value}`).join(" | ");
+}
+
+function addMobileKeyValueRow(k = "", v = "") {
+  const container = document.getElementById("mobileCustomValuesContainer");
+  if (!container) return null;
+  const row = document.createElement("div");
+  row.className = "mobile-kv-row";
+  row.style.cssText = "display: flex; gap: 6px; align-items: center;";
+  row.innerHTML = `
+    <input type="text" class="kv-key-input" placeholder="Key (e.g. Client)" value="${escapeHtml(k)}" style="flex: 1; padding: 6px 8px; font-size: 13px; border-radius: 6px;">
+    <input type="text" class="kv-val-input" placeholder="Value (e.g. Acme)" value="${escapeHtml(v)}" style="flex: 1; padding: 6px 8px; font-size: 13px; border-radius: 6px;">
+    <button type="button" class="btn btn-sm kv-del-btn" style="color: #EF4444; background: rgba(239,68,68,0.1); border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">✕</button>
+  `;
+  row.querySelector(".kv-del-btn").addEventListener("click", () => row.remove());
+  container.appendChild(row);
+  return row;
+}
+
+function getMobileCustomValues() {
+  const container = document.getElementById("mobileCustomValuesContainer");
+  if (!container) return "[]";
+  const rows = container.querySelectorAll(".mobile-kv-row");
+  const pairs = [];
+  rows.forEach(r => {
+    const k = (r.querySelector(".kv-key-input")?.value || "").trim();
+    const v = (r.querySelector(".kv-val-input")?.value || "").trim();
+    if (k || v) pairs.push({ key: k, value: v });
+  });
+  return JSON.stringify(pairs);
+}
+
+document.getElementById("mobileAddKeyValueBtn")?.addEventListener("click", () => {
+  const row = addMobileKeyValueRow();
+  row?.querySelector(".kv-key-input")?.focus();
+});
 
 function updateModalDept() {
   const empSelect = document.getElementById("taskFormEmployee");
@@ -416,11 +496,13 @@ document.getElementById("taskFormTargetQty")?.addEventListener("input", autoCalc
 document.getElementById("taskFormActualQty")?.addEventListener("input", autoCalcProgress);
 document.getElementById("taskFormEmployee")?.addEventListener("change", updateModalDept);
 
-function openTaskModal(taskId = null) {
+function openTaskModal(taskId = null, isCustom = false) {
   const modal = document.getElementById("modalTask");
   const form = document.getElementById("formTask");
   const title = document.getElementById("modalTaskTitle");
   const empSelect = document.getElementById("taskFormEmployee");
+  const kvContainer = document.getElementById("mobileCustomValuesContainer");
+  if (kvContainer) kvContainer.innerHTML = "";
 
   empSelect.innerHTML = state.employees.map(e => `<option value="${e.id}">${escapeHtml(e.name)} (${escapeHtml(e.department || "Staff")})</option>`).join("");
 
@@ -442,8 +524,11 @@ function openTaskModal(taskId = null) {
     const expEl = document.getElementById("taskFormExposeLink");
     if (expEl) expEl.checked = Boolean(t.expose_link);
     document.getElementById("taskFormNextAction").value = t.next_action || t.manager_note || "";
+
+    const existingPairs = parseMobileCustomValues(t.custom_values);
+    existingPairs.forEach(p => addMobileKeyValueRow(p.key, p.value));
   } else {
-    title.textContent = "Add New Task";
+    title.textContent = isCustom ? "Create Custom Task" : "Add New Task";
     form.reset();
     document.getElementById("taskFormId").value = "";
     document.getElementById("taskFormDate").value = state.currentDate;
@@ -453,6 +538,11 @@ function openTaskModal(taskId = null) {
     const expEl = document.getElementById("taskFormExposeLink");
     if (expEl) expEl.checked = false;
     document.getElementById("taskFormNextAction").value = "";
+
+    if (isCustom) {
+      const row = addMobileKeyValueRow("", "");
+      setTimeout(() => row?.querySelector(".kv-key-input")?.focus(), 50);
+    }
   }
 
   updateModalDept();
@@ -485,7 +575,8 @@ document.getElementById("formTask")?.addEventListener("submit", (e) => {
     proof_url: document.getElementById("taskFormProofUrl").value.trim(),
     expose_link: document.getElementById("taskFormExposeLink")?.checked ? 1 : 0,
     next_action: nextActionVal,
-    manager_note: nextActionVal
+    manager_note: nextActionVal,
+    custom_values: getMobileCustomValues()
   };
 
   if (idVal) {

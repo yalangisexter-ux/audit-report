@@ -3,6 +3,7 @@ import sqlite3
 import pytest
 import app
 import database_sync
+import build_info
 
 
 def setup_test_schema(conn: sqlite3.Connection):
@@ -37,6 +38,7 @@ def setup_test_schema(conn: sqlite3.Connection):
           proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
           manager_note TEXT DEFAULT '', expose_link INTEGER NOT NULL DEFAULT 0,
           target_qty TEXT DEFAULT '', actual_qty TEXT DEFAULT '', next_action TEXT DEFAULT '',
+          custom_values TEXT DEFAULT '',
           created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '',
           FOREIGN KEY(employee_id) REFERENCES employees(id)
         );
@@ -461,7 +463,7 @@ def test_hybrid_snapshot_contains_sqlite_and_json_manifest(tmp_path):
     assert idx != -1
     json_str = decrypted[idx + len(marker):].decode("utf-8")
     parsed = __import__("json").loads(json_str)
-    assert parsed["version"] == "1.3.15"
+    assert parsed["version"] == build_info.APP_VERSION
     assert any(e["name"] == "Charlie" for e in parsed["employees"])
 
 
@@ -490,5 +492,69 @@ def test_continuous_sync_ui_elements(tmp_path, monkeypatch):
     assert win.github_sync_pull_button.isHidden() is True
 
     win.close()
+
+
+def test_custom_values_parsing_and_formatting():
+    # 1. Parsing from text string with lines and delimiters
+    raw_str = "Client: Acme Corp\nLocation: Zone B\nBatch: 101"
+    pairs = app.parse_custom_values(raw_str)
+    assert pairs == [("Client", "Acme Corp"), ("Location", "Zone B"), ("Batch", "101")]
+
+    # 2. Formatting for display
+    display = app.format_custom_values_display(raw_str)
+    assert display == "Client: Acme Corp  |  Location: Zone B  |  Batch: 101"
+
+    # 3. Serializing and re-parsing
+    serialized = app.serialize_custom_values(pairs)
+    assert '"key": "Client"' in serialized
+    assert '"value": "Acme Corp"' in serialized
+    reparsed = app.parse_custom_values(serialized)
+    assert reparsed == pairs
+
+    # 4. Parsing JSON dict or list of dicts
+    dict_input = {"Project": "Phoenix", "Owner": "Alice"}
+    dict_pairs = app.parse_custom_values(dict_input)
+    assert ("Project", "Phoenix") in dict_pairs
+    assert ("Owner", "Alice") in dict_pairs
+
+    # 5. Empty / whitespace cases
+    assert app.parse_custom_values("") == []
+    assert app.parse_custom_values(None) == []
+    assert app.format_custom_values_display("") == "—"
+    assert app.format_custom_values_display(None) == "—"
+
+
+def test_custom_values_task_persistence_and_merge(tmp_path):
+    db_path = tmp_path / "custom_task_test.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    setup_test_schema(conn)
+
+    # Insert employee
+    conn.execute(
+        "INSERT INTO employees (name, employee_code, department, created_at) VALUES ('David', 'EMP005', 'Ops', '2026-10-18')"
+    )
+    emp_id = conn.execute("SELECT id FROM employees WHERE employee_code='EMP005'").fetchone()["id"]
+
+    # Insert task with custom values
+    custom_json = app.serialize_custom_values([("Client", "Wayne Enterprises"), ("Security Level", "Alpha")])
+    conn.execute(
+        """INSERT INTO tasks (employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
+           VALUES (?, '2026-10-20', 'Facility Patrol', '', '', 'High', 'In progress', 50, '', '', '', '', 0, '10', '5', 'Check gate 3', ?, '2026-10-20', '2026-10-20')""",
+        (emp_id, custom_json)
+    )
+    conn.commit()
+
+    # Verify task retrieval and custom values display
+    task = conn.execute("SELECT * FROM tasks WHERE employee_id=?", (emp_id,)).fetchone()
+    assert task is not None
+    assert task["custom_values"] == custom_json
+    parsed = app.parse_custom_values(task["custom_values"])
+    assert ("Client", "Wayne Enterprises") in parsed
+    assert ("Security Level", "Alpha") in parsed
+    assert app.format_custom_values_display(task["custom_values"]) == "Client: Wayne Enterprises  |  Security Level: Alpha"
+
+    conn.close()
+
 
 

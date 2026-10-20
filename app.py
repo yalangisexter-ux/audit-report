@@ -433,6 +433,66 @@ def is_known_task_status(status):
     }
 
 
+def parse_custom_values(raw):
+    """Parse custom values from JSON string, dict, list, or text lines into list of (key, value) pairs."""
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        pairs = []
+        for item in raw:
+            if isinstance(item, dict):
+                k = str(item.get("key") or item.get("k") or item.get("name") or "").strip()
+                v = str(item.get("value") or item.get("v") or item.get("val") or "").strip()
+                if k or v:
+                    pairs.append((k, v))
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                pairs.append((str(item[0]).strip(), str(item[1]).strip()))
+        return pairs
+    if isinstance(raw, dict):
+        return [(str(k).strip(), str(v).strip()) for k, v in raw.items()]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        if (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]")):
+            try:
+                parsed = json.loads(text)
+                return parse_custom_values(parsed)
+            except Exception:
+                pass
+        pairs = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if ":" in line:
+                k, v = line.split(":", 1)
+                pairs.append((k.strip(), v.strip()))
+            elif "=" in line:
+                k, v = line.split("=", 1)
+                pairs.append((k.strip(), v.strip()))
+            else:
+                pairs.append(("Custom", line))
+        return pairs
+    return []
+
+
+def format_custom_values_display(raw) -> str:
+    """Format custom key-value pairs for table cell display."""
+    pairs = parse_custom_values(raw)
+    if not pairs:
+        return "—"
+    return "  |  ".join(f"{k}: {v}" if k else v for k, v in pairs)
+
+
+def serialize_custom_values(pairs) -> str:
+    """Serialize list of (key, value) pairs or dict to clean JSON string."""
+    if isinstance(pairs, dict):
+        pairs = list(pairs.items())
+    clean = [{"key": str(k).strip(), "value": str(v).strip()} for k, v in (pairs or []) if str(k).strip() or str(v).strip()]
+    return json.dumps(clean, ensure_ascii=False) if clean else ""
+
+
 URI_PATTERN = r"\b[a-z][a-z0-9+.-]*:[^\s<>]+"
 
 
@@ -1261,6 +1321,7 @@ class Database:
             ("target_qty", "TEXT DEFAULT ''"),
             ("actual_qty", "TEXT DEFAULT ''"),
             ("next_action", "TEXT DEFAULT ''"),
+            ("custom_values", "TEXT DEFAULT ''"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
@@ -1459,7 +1520,7 @@ def _ensure_local_task_columns(conn: sqlite3.Connection):
     """Ensure newer task columns exist in any local connection before inserting/updating."""
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
-        for col_name in ("target_qty", "actual_qty", "next_action"):
+        for col_name in ("target_qty", "actual_qty", "next_action", "custom_values"):
             if col_name not in cols:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col_name} TEXT DEFAULT ''")
     except Exception:
@@ -1620,15 +1681,16 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     (target_eid, tdate, title)
                 ).fetchone()
                 if not lt:
+                    c_vals = str(rt.get("custom_values") or "")
                     local_conn.execute(
-                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, created_at, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status, progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (target_eid, tdate, title, str(rt.get("details") or ""), str(rt.get("due_time") or ""),
                          str(rt.get("priority") or "Normal"), str(rt.get("status") or "Not started"),
                          int(rt.get("progress") or 0), str(rt.get("proof_url") or ""), str(rt.get("proof_note") or ""),
                          str(rt.get("submitted_at") or ""), str(rt.get("manager_note") or ""),
                          int(rt.get("expose_link") or 0), str(rt.get("target_qty") or ""), str(rt.get("actual_qty") or ""),
-                         str(rt.get("next_action") or rt.get("manager_note") or ""),
+                         str(rt.get("next_action") or rt.get("manager_note") or ""), c_vals,
                          str(rt.get("created_at") or now_text()), str(rt.get("updated_at") or now_text()))
                     )
                     stats["tasks"] += 1
@@ -1643,9 +1705,10 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     t_qty = str(rt.get("target_qty") or (lt["target_qty"] if "target_qty" in lt.keys() else "") or "")
                     a_qty = str(rt.get("actual_qty") or (lt["actual_qty"] if "actual_qty" in lt.keys() else "") or "")
                     nxt_act = str(rt.get("next_action") or (lt["next_action"] if "next_action" in lt.keys() else "") or new_note)
+                    c_vals = str(rt.get("custom_values") or (lt["custom_values"] if "custom_values" in lt.keys() else "") or "")
                     local_conn.execute(
-                        """UPDATE tasks SET progress=?, status=?, proof_url=?, manager_note=?, target_qty=?, actual_qty=?, next_action=?, updated_at=? WHERE id=?""",
-                        (new_prog, new_stat, new_url, new_note, t_qty, a_qty, nxt_act, now_text(), lt["id"])
+                        """UPDATE tasks SET progress=?, status=?, proof_url=?, manager_note=?, target_qty=?, actual_qty=?, next_action=?, custom_values=?, updated_at=? WHERE id=?""",
+                        (new_prog, new_stat, new_url, new_note, t_qty, a_qty, nxt_act, c_vals, now_text(), lt["id"])
                     )
                     stats["tasks"] += 1
 
@@ -1860,17 +1923,18 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     (lid, tdate, ttitle)
                 ).fetchone()
                 if lt_row is None:
+                    c_vals = str(rt_dict.get("custom_values") or "")
                     local_conn.execute(
                         """INSERT INTO tasks(employee_id, task_date, title, details, due_time, priority, status,
-                           progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, created_at, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           progress, proof_url, proof_note, submitted_at, manager_note, expose_link, target_qty, actual_qty, next_action, custom_values, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (lid, tdate, ttitle, rt_dict.get("details", ""), rt_dict.get("due_time", ""),
                          rt_dict.get("priority", "Normal"), rt_dict.get("status", "Not started"),
                          int(rt_dict.get("progress", 0)), rt_dict.get("proof_url", ""), rt_dict.get("proof_note", ""),
                          rt_dict.get("submitted_at", ""), rt_dict.get("manager_note", ""),
                          int(rt_dict.get("expose_link", 0)), str(rt_dict.get("target_qty") or ""),
                          str(rt_dict.get("actual_qty") or ""), str(rt_dict.get("next_action") or rt_dict.get("manager_note") or ""),
-                         rt_dict.get("created_at", now_text()), rt_dict.get("updated_at", now_text()))
+                         c_vals, rt_dict.get("created_at", now_text()), rt_dict.get("updated_at", now_text()))
                     )
                     stats["tasks"] += 1
                 else:
@@ -1893,10 +1957,11 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     t_qty = str(rt_dict.get("target_qty") or lt.get("target_qty") or "")
                     a_qty = str(rt_dict.get("actual_qty") or lt.get("actual_qty") or "")
                     nxt_act = str(rt_dict.get("next_action") or lt.get("next_action") or m_note)
+                    c_vals = str(rt_dict.get("custom_values") or lt.get("custom_values") or "")
                     local_conn.execute(
-                        """UPDATE tasks SET progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, target_qty=?, actual_qty=?, next_action=?, updated_at=?
+                        """UPDATE tasks SET progress=?, status=?, proof_url=?, proof_note=?, manager_note=?, expose_link=?, target_qty=?, actual_qty=?, next_action=?, custom_values=?, updated_at=?
                            WHERE id=?""",
-                        (new_progress, new_status, p_url, p_note, m_note, exp_link, t_qty, a_qty, nxt_act, upd, lt["id"])
+                        (new_progress, new_status, p_url, p_note, m_note, exp_link, t_qty, a_qty, nxt_act, c_vals, upd, lt["id"])
                     )
 
         # 5. Merge employee_targets
@@ -2692,6 +2757,91 @@ class TaskDialog(QDialog):
         self.next_action.setStyleSheet("QLineEdit { padding: 6px 10px; border-radius: 6px; }")
         self.layout.addRow("Next Action", self.next_action)
 
+        # 12. Custom Values (Key-Value Attributes)
+        custom_box = QFrame()
+        custom_box.setObjectName("taskCustomBox")
+        custom_box.setStyleSheet(
+            "QFrame#taskCustomBox { background: rgba(255, 255, 255, 0.03); "
+            "border: 1px dashed rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 10px; margin-top: 4px; }"
+        )
+        custom_vbox = QVBoxLayout(custom_box)
+        custom_vbox.setContentsMargins(6, 6, 6, 6)
+        custom_vbox.setSpacing(6)
+
+        custom_header = QHBoxLayout()
+        custom_lbl = QLabel("🏷️ Key-Value Attributes")
+        custom_lbl.setStyleSheet("font-weight: 600; font-size: 9pt; color: #CBD5E1;")
+        custom_header.addWidget(custom_lbl)
+        custom_header.addStretch(1)
+
+        self.add_custom_btn = QPushButton("➕ Add Key-Value")
+        self.add_custom_btn.setObjectName("addCustomKeyValueBtn")
+        self.add_custom_btn.setStyleSheet(
+            "QPushButton { font-size: 8.5pt; font-weight: 600; padding: 3px 8px; border-radius: 4px; "
+            "background: rgba(99, 102, 241, 0.2); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.4); } "
+            "QPushButton:hover { background: rgba(99, 102, 241, 0.35); }"
+        )
+        self.add_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        custom_header.addWidget(self.add_custom_btn)
+        custom_vbox.addLayout(custom_header)
+
+        self.custom_rows_container = QWidget()
+        self.custom_rows_layout = QVBoxLayout(self.custom_rows_container)
+        self.custom_rows_layout.setContentsMargins(0, 0, 0, 0)
+        self.custom_rows_layout.setSpacing(6)
+        custom_vbox.addWidget(self.custom_rows_container)
+
+        self.custom_rows = []  # list of (key_input, value_input, row_widget)
+
+        def add_key_value_row(k_text="", v_text=""):
+            row_w = QWidget()
+            row_h = QHBoxLayout(row_w)
+            row_h.setContentsMargins(0, 0, 0, 0)
+            row_h.setSpacing(6)
+
+            k_in = QLineEdit(k_text)
+            k_in.setPlaceholderText("Key (e.g. Client, Machine, Tag)")
+            k_in.setStyleSheet("QLineEdit { padding: 5px 8px; border-radius: 5px; }")
+
+            v_in = QLineEdit(v_text)
+            v_in.setPlaceholderText("Value (e.g. Acme, Line 3, #101)")
+            v_in.setStyleSheet("QLineEdit { padding: 5px 8px; border-radius: 5px; }")
+
+            del_btn = QPushButton("✕")
+            del_btn.setFixedSize(26, 26)
+            del_btn.setToolTip("Remove this custom value")
+            del_btn.setStyleSheet(
+                "QPushButton { color: #EF4444; font-weight: bold; border-radius: 4px; background: rgba(239,68,68,0.1); border: none; } "
+                "QPushButton:hover { background: rgba(239,68,68,0.25); }"
+            )
+            del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+            def _remove():
+                for item in list(self.custom_rows):
+                    if item[0] is k_in and item[1] is v_in:
+                        self.custom_rows.remove(item)
+                        break
+                row_w.deleteLater()
+
+            del_btn.clicked.connect(_remove)
+            row_h.addWidget(k_in, 1)
+            row_h.addWidget(v_in, 1)
+            row_h.addWidget(del_btn)
+
+            self.custom_rows_layout.addWidget(row_w)
+            self.custom_rows.append((k_in, v_in, row_w))
+            k_in.setFocus()
+            return (k_in, v_in, row_w)
+
+        self.add_custom_btn.clicked.connect(lambda: add_key_value_row())
+        self.add_key_value_row = add_key_value_row
+
+        existing_custom = parse_custom_values(row["custom_values"] if row and "custom_values" in row.keys() else "")
+        for ek, ev in existing_custom:
+            add_key_value_row(ek, ev)
+
+        self.layout.addRow("Custom Values", custom_box)
+
         main_layout.addLayout(self.layout)
 
         # Backward compatibility properties (hidden from layout)
@@ -2783,6 +2933,14 @@ class TaskDialog(QDialog):
         due_val = self.due.time().toString("HH:mm") if (hasattr(self, "due") and not self.due.isHidden()) else ((self.row["due_time"] if self.row else "") or "")
         proof_note_val = self.proof_note.text().strip() if (hasattr(self, "proof_note") and not self.proof_note.isHidden()) else ((self.row["proof_note"] if self.row else "") or "")
 
+        custom_pairs = []
+        for k_in, v_in, _ in getattr(self, "custom_rows", []):
+            k = k_in.text().strip()
+            v = v_in.text().strip()
+            if k or v:
+                custom_pairs.append((k, v))
+        custom_vals_str = serialize_custom_values(custom_pairs)
+
         return (
             self.employee.currentData(),
             self.date.date().toString("yyyy-MM-dd"),
@@ -2800,6 +2958,7 @@ class TaskDialog(QDialog):
             target_q,
             actual_q,
             next_act,
+            custom_vals_str,
         )
 
 _ACCESSIBLE_TOOLTIP_CONTROLLER = None
@@ -6709,6 +6868,7 @@ class MainWindow(QMainWindow):
 
         task_actions = [
             ("➕ Add Task", self.add_task, "Create a new task for the selected date", True, "taskAddBtn"),
+            ("✨ Add Custom Task", self.add_custom_task, "Add a task with custom key-value attributes", False, "taskAddCustomBtn"),
             ("✏️ Edit Selected", self.edit_task, "Edit one selected task", False, "taskEditBtn"),
             ("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False, "taskBulkEditBtn"),
             ("☑️ Select All", self.task_table_select_all, "Select every task shown for the selected date and employee filter", False, "taskSelectAllBtn"),
@@ -6751,18 +6911,19 @@ class MainWindow(QMainWindow):
         task_header_row.addWidget(task_hint)
         task_roster_layout.addLayout(task_header_row)
 
-        self.task_table = QTableWidget(0, 12)
+        self.task_table = QTableWidget(0, 13)
         self.task_table.setHorizontalHeaderLabels([
             "ID", "Date", "Employee", "Department", "Assigned Task",
             "Target Qty", "Actual Qty", "Completion %", "Priority",
-            "Status", "Proof / Link", "Next Action"
+            "Status", "Proof / Link", "Custom Values", "Next Action"
         ])
         self.task_table.setColumnHidden(0, True)
         task_hdr = self.task_table.horizontalHeader()
         task_hdr.setSectionResizeMode(QHeaderView.Interactive)
         task_hdr.setSectionResizeMode(4, QHeaderView.Stretch)   # Assigned Task
         task_hdr.setSectionResizeMode(10, QHeaderView.Stretch)  # Proof / Link
-        task_hdr.setSectionResizeMode(11, QHeaderView.Stretch)  # Next Action
+        task_hdr.setSectionResizeMode(11, QHeaderView.Stretch)  # Custom Values
+        task_hdr.setSectionResizeMode(12, QHeaderView.Stretch)  # Next Action
         task_hdr.resizeSection(1, 100)  # Date
         task_hdr.resizeSection(2, 140)  # Employee
         task_hdr.resizeSection(3, 110)  # Department
@@ -8186,8 +8347,8 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
         except sqlite3.Error as ex:
             error(self, f"Could not save task: {ex}")
@@ -8406,9 +8567,24 @@ class MainWindow(QMainWindow):
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
+        except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
+
+    def add_custom_task(self):
+        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date())
+        d.setWindowTitle("Create Custom Task")
+        if hasattr(d, "add_key_value_row") and not d.custom_rows:
+            d.add_key_value_row()
+        if d.exec()!=QDialog.Accepted: return
+        vals=d.values()
+        if not vals: return error(self,"Add an active employee before assigning tasks.")
+        if not vals[2]: return error(self,"Task title is required.")
+        try:
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.commit(); self.db.log("Custom task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
     def edit_task(self, table=None):
@@ -8422,7 +8598,7 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
             self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not update task: {ex}")
 
@@ -8462,6 +8638,9 @@ class MainWindow(QMainWindow):
         status = QComboBox()
         for label, value in TaskDialog.STATUSES: status.addItem(label, value)
         field_row("Status", status)
+        custom_values_in = QLineEdit()
+        custom_values_in.setPlaceholderText("e.g. Client: Acme, Location: Zone 2")
+        field_row("Custom Values", custom_values_in)
         next_action = QLineEdit(); field_row("Next Action", next_action)
         expose_link = QCheckBox("Expose full proof URL in reports"); field_row("Expose links", expose_link)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -8477,6 +8656,8 @@ class MainWindow(QMainWindow):
         if fields["Completion %"][0].isChecked(): updates["progress"] = progress.value()
         if fields["Priority"][0].isChecked(): updates["priority"] = priority.currentText()
         if fields["Status"][0].isChecked(): updates["status"] = status.currentData()
+        if fields["Custom Values"][0].isChecked():
+            updates["custom_values"] = serialize_custom_values(parse_custom_values(custom_values_in.text().strip()))
         if fields["Next Action"][0].isChecked():
             updates["next_action"] = next_action.text().strip()
             updates["manager_note"] = next_action.text().strip()
@@ -8759,6 +8940,7 @@ class MainWindow(QMainWindow):
             target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
             actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
             comp_pct = f'{t["progress"]}%' if t["progress"] is not None else "0%"
+            custom_val = format_custom_values_display(t["custom_values"] if "custom_values" in t.keys() else "")
             next_act = str((t["next_action"] if "next_action" in t.keys() else "") or t["manager_note"] or "")
             vals=[
                 t["id"],
@@ -8772,6 +8954,7 @@ class MainWindow(QMainWindow):
                 t["priority"],
                 task_status_label(t["status"]),
                 t["proof_url"],
+                custom_val,
                 next_act,
             ]
             self.set_row_items(self.task_table, r, vals, status_cols={8, 9})
