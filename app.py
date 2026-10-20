@@ -2554,9 +2554,9 @@ class TaskDialog(QDialog):
         self.db = db
         self.row = row
         existing_custom = parse_custom_values(row["custom_values"] if row and "custom_values" in row.keys() else "")
-        self.is_custom = bool(is_custom) or bool(existing_custom)
+        self.is_custom = True
 
-        self.setWindowTitle("Edit Custom Task" if (row and self.is_custom) else ("Edit Task Details" if row else ("Create Custom Task" if self.is_custom else "Create New Task")))
+        self.setWindowTitle("Edit Task Details" if row else "Create New Task")
         self.setMinimumWidth(600)
 
         main_layout = QVBoxLayout(self)
@@ -2573,47 +2573,14 @@ class TaskDialog(QDialog):
         h_layout = QVBoxLayout(header_frame)
         h_layout.setContentsMargins(4, 4, 4, 4)
         h_layout.setSpacing(4)
-        h_title_row = QHBoxLayout()
-        self.h_title = QLabel("Edit Custom Task" if (row and self.is_custom) else ("Edit Task Details" if row else ("Create Custom Task" if self.is_custom else "Create New Task")))
+        self.h_title = QLabel("Edit Task Details" if row else "Create New Task")
         self.h_title.setStyleSheet("font-size: 12pt; font-weight: 800; color: #F8FAFC; letter-spacing: 0.3px;")
-        h_title_row.addWidget(self.h_title)
-        h_title_row.addStretch(1)
+        h_layout.addWidget(self.h_title)
 
-        self.type_indicator_pill = QLabel("✨ CUSTOM TASK" if self.is_custom else "📋 STANDARD TASK")
-        self.type_indicator_pill.setStyleSheet(
-            "font-size: 8pt; font-weight: 700; padding: 3px 8px; border-radius: 5px; " +
-            ("background: rgba(192, 132, 252, 0.2); color: #C084FC; border: 1px solid rgba(192, 132, 252, 0.4);" if self.is_custom else "background: rgba(99, 102, 241, 0.2); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.4);")
-        )
-        h_title_row.addWidget(self.type_indicator_pill)
-        h_layout.addLayout(h_title_row)
-
-        self.h_sub = QLabel("Configure task metrics, assigned parameters, evidence, and custom key-value attributes.")
+        self.h_sub = QLabel("Configure assigned task parameters, metrics, evidence, and custom key-value tracking options.")
         self.h_sub.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
         h_layout.addWidget(self.h_sub)
         main_layout.addWidget(header_frame)
-
-        # Mode Switcher Segmented Bar (Available in both Create Task & Edit Task)
-        mode_bar = QFrame()
-        mode_bar.setObjectName("taskModeBar")
-        mode_bar.setStyleSheet(
-            "QFrame#taskModeBar { background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); "
-            "border-radius: 8px; padding: 4px; }"
-        )
-        mode_layout = QHBoxLayout(mode_bar)
-        mode_layout.setContentsMargins(0, 0, 0, 0)
-        mode_layout.setSpacing(6)
-
-        self.mode_standard_btn = QPushButton("📋 Standard Task")
-        self.mode_standard_btn.setCheckable(True)
-        self.mode_standard_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        self.mode_custom_btn = QPushButton("✨ Custom Task Option (Key-Value)")
-        self.mode_custom_btn.setCheckable(True)
-        self.mode_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        mode_layout.addWidget(self.mode_standard_btn, 1)
-        mode_layout.addWidget(self.mode_custom_btn, 1)
-        main_layout.addWidget(mode_bar)
 
         self.layout = QFormLayout()
         self.layout.setSpacing(10)
@@ -2865,36 +2832,44 @@ class TaskDialog(QDialog):
 
         # 12. Custom Task Option & Key-Value Attributes Card
         self.custom_box = QFrame()
+        # 12. Custom Key-Value Tracking Fields Card
+        self.custom_box = QFrame()
         self.custom_box.setObjectName("taskCustomBox")
+        self.custom_box.setStyleSheet(
+            "QFrame#taskCustomBox { background: rgba(30, 41, 59, 0.45); border: 1.5px solid rgba(129, 140, 248, 0.35); "
+            "border-radius: 10px; padding: 12px; margin-top: 4px; }"
+        )
         custom_vbox = QVBoxLayout(self.custom_box)
         custom_vbox.setContentsMargins(10, 10, 10, 10)
         custom_vbox.setSpacing(8)
 
         custom_header = QHBoxLayout()
-        custom_title_wrap = QHBoxLayout()
-        custom_title_wrap.setSpacing(6)
-        custom_icon = QLabel("✨")
-        custom_lbl = QLabel("Custom Task Option (Key-Value)")
+        custom_title_col = QVBoxLayout()
+        custom_title_col.setSpacing(2)
+
+        custom_title_row = QHBoxLayout()
+        custom_icon = QLabel("🏷️")
+        custom_lbl = QLabel("Custom Tracking Fields (Key - Value)")
         custom_lbl.setStyleSheet("font-weight: 700; font-size: 9.5pt; color: #E0E7FF;")
-        custom_title_wrap.addWidget(custom_icon)
-        custom_title_wrap.addWidget(custom_lbl)
-        custom_header.addLayout(custom_title_wrap)
+        custom_title_row.addWidget(custom_icon)
+        custom_title_row.addWidget(custom_lbl)
+        custom_title_row.addStretch(1)
+        custom_title_col.addLayout(custom_title_row)
 
-        custom_header.addStretch(1)
+        custom_hint = QLabel("Add custom options where you can enter your own field names and values (e.g. Tracked By : Name).")
+        custom_hint.setStyleSheet("font-size: 8pt; color: #94A3B8;")
+        custom_title_col.addWidget(custom_hint)
+        custom_header.addLayout(custom_title_col, 1)
 
-        self.custom_task_toggle = QCheckBox("Enable Custom Mode")
-        self.custom_task_toggle.setStyleSheet("font-weight: 600; font-size: 8.5pt; color: #CBD5E1;")
-        custom_header.addWidget(self.custom_task_toggle)
-
-        self.add_custom_btn = QPushButton("➕ Add Key-Value")
+        self.add_custom_btn = QPushButton("➕ Add Field")
         self.add_custom_btn.setObjectName("addCustomKeyValueBtn")
         self.add_custom_btn.setStyleSheet(
-            "QPushButton { font-size: 8.5pt; font-weight: 700; padding: 4px 10px; border-radius: 5px; "
-            "background: rgba(99, 102, 241, 0.25); color: #A5B4FC; border: 1px solid rgba(99, 102, 241, 0.5); } "
-            "QPushButton:hover { background: rgba(99, 102, 241, 0.45); color: #FFFFFF; }"
+            "QPushButton { font-size: 8.5pt; font-weight: 700; padding: 5px 12px; border-radius: 6px; "
+            "background: rgba(99, 102, 241, 0.25); color: #C7D2FE; border: 1px solid rgba(129, 140, 248, 0.5); } "
+            "QPushButton:hover { background: rgba(99, 102, 241, 0.45); color: #FFFFFF; border-color: #818CF8; }"
         )
         self.add_custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        custom_header.addWidget(self.add_custom_btn)
+        custom_header.addWidget(self.add_custom_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         custom_vbox.addLayout(custom_header)
 
         # Quick preset chips
@@ -2902,21 +2877,21 @@ class TaskDialog(QDialog):
         chips_layout = QHBoxLayout(chips_bar)
         chips_layout.setContentsMargins(0, 0, 0, 0)
         chips_layout.setSpacing(6)
-        chips_lbl = QLabel("Quick Keys:")
+        chips_lbl = QLabel("Quick Presets:")
         chips_lbl.setStyleSheet("font-size: 8pt; color: #94A3B8; font-weight: 600;")
         chips_layout.addWidget(chips_lbl)
 
-        quick_presets = ["Client", "Location", "Batch", "Priority Code", "Tag", "Machine"]
+        quick_presets = ["Tracked By", "Client", "Location", "Batch", "Priority Code", "Machine", "Tag"]
         for qk in quick_presets:
             chip = QPushButton(f"+ {qk}")
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.setStyleSheet(
-                "QPushButton { font-size: 8pt; color: #818CF8; background: rgba(99, 102, 241, 0.1); "
-                "border: 1px solid rgba(99, 102, 241, 0.22); border-radius: 4px; padding: 2px 7px; } "
-                "QPushButton:hover { background: rgba(99, 102, 241, 0.3); color: #FFFFFF; border-color: #A5B4FC; }"
+                "QPushButton { font-size: 8pt; color: #A5B4FC; background: rgba(99, 102, 241, 0.12); "
+                "border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 4px; padding: 2px 8px; } "
+                "QPushButton:hover { background: rgba(99, 102, 241, 0.35); color: #FFFFFF; border-color: #818CF8; }"
             )
             def _make_add_chip(key_name=qk):
-                return lambda: (self.set_custom_mode(True), self.add_key_value_row(key_name, ""))
+                return lambda: self.add_key_value_row(key_name, "")
             chip.clicked.connect(_make_add_chip(qk))
             chips_layout.addWidget(chip)
         chips_layout.addStretch(1)
@@ -2937,16 +2912,16 @@ class TaskDialog(QDialog):
             row_h.setSpacing(6)
 
             k_in = QLineEdit(k_text)
-            k_in.setPlaceholderText("Key (e.g. Client, Machine, Tag)")
+            k_in.setPlaceholderText("Field Name (e.g. Tracked By)")
             k_in.setStyleSheet("QLineEdit { padding: 6px 9px; border-radius: 5px; font-weight: 500; }")
 
             v_in = QLineEdit(v_text)
-            v_in.setPlaceholderText("Value (e.g. Acme, Line 3, #101)")
+            v_in.setPlaceholderText("Value (e.g. Name)")
             v_in.setStyleSheet("QLineEdit { padding: 6px 9px; border-radius: 5px; }")
 
             del_btn = QPushButton("✕")
             del_btn.setFixedSize(26, 26)
-            del_btn.setToolTip("Remove this custom value")
+            del_btn.setToolTip("Remove this field")
             del_btn.setStyleSheet(
                 "QPushButton { color: #EF4444; font-weight: bold; border-radius: 4px; background: rgba(239,68,68,0.12); border: none; } "
                 "QPushButton:hover { background: rgba(239,68,68,0.30); color: #FFFFFF; }"
@@ -2967,68 +2942,30 @@ class TaskDialog(QDialog):
 
             self.custom_rows_layout.addWidget(row_w)
             self.custom_rows.append((k_in, v_in, row_w))
-            k_in.setFocus()
+            if k_text:
+                v_in.setFocus()
+            else:
+                k_in.setFocus()
             return (k_in, v_in, row_w)
 
-        self.add_custom_btn.clicked.connect(lambda: (self.set_custom_mode(True), add_key_value_row()))
+        self.add_custom_btn.clicked.connect(lambda: add_key_value_row())
         self.add_key_value_row = add_key_value_row
 
         for ek, ev in existing_custom:
             add_key_value_row(ek, ev)
 
-        self.layout.addRow("Custom Values", self.custom_box)
+        self.layout.addRow("Custom Options", self.custom_box)
         main_layout.addLayout(self.layout)
 
-        # Mode switcher logic
-        def set_custom_mode(active):
-            self.is_custom = active
-            active_btn_style = (
-                "QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1); "
-                "color: #FFFFFF; font-weight: 700; font-size: 9pt; border-radius: 6px; padding: 6px 14px; border: 1px solid rgba(129,140,248,0.6); }"
-            )
-            inactive_btn_style = (
-                "QPushButton { background: transparent; color: #94A3B8; font-weight: 600; font-size: 9pt; "
-                "border-radius: 6px; padding: 6px 14px; border: none; } "
-                "QPushButton:hover { background: rgba(255, 255, 255, 0.06); color: #F1F5F9; }"
-            )
-            if active:
-                self.mode_custom_btn.setStyleSheet(active_btn_style)
-                self.mode_standard_btn.setStyleSheet(inactive_btn_style)
-                if not self.custom_task_toggle.isChecked():
-                    self.custom_task_toggle.blockSignals(True)
-                    self.custom_task_toggle.setChecked(True)
-                    self.custom_task_toggle.blockSignals(False)
-                self.type_indicator_pill.setText("✨ CUSTOM TASK")
-                self.type_indicator_pill.setStyleSheet("font-size: 8pt; font-weight: 700; padding: 3px 8px; border-radius: 5px; background: rgba(192, 132, 252, 0.2); color: #C084FC; border: 1px solid rgba(192, 132, 252, 0.4);")
-                self.h_title.setText("Edit Custom Task" if row else "Create Custom Task")
-                self.custom_box.setStyleSheet(
-                    "QFrame#taskCustomBox { background: rgba(99, 102, 241, 0.06); "
-                    "border: 1.5px solid rgba(129, 140, 248, 0.5); border-radius: 10px; padding: 10px; margin-top: 4px; }"
-                )
-                if not self.custom_rows:
-                    add_key_value_row()
-            else:
-                self.mode_standard_btn.setStyleSheet(active_btn_style)
-                self.mode_custom_btn.setStyleSheet(inactive_btn_style)
-                if self.custom_task_toggle.isChecked():
-                    self.custom_task_toggle.blockSignals(True)
-                    self.custom_task_toggle.setChecked(False)
-                    self.custom_task_toggle.blockSignals(False)
-                self.type_indicator_pill.setText("📋 STANDARD TASK")
-                self.type_indicator_pill.setStyleSheet("font-size: 8pt; font-weight: 700; padding: 3px 8px; border-radius: 5px; background: rgba(99, 102, 241, 0.2); color: #818CF8; border: 1px solid rgba(99, 102, 241, 0.4);")
-                self.h_title.setText("Edit Task Details" if row else "Create New Task")
-                self.custom_box.setStyleSheet(
-                    "QFrame#taskCustomBox { background: rgba(255, 255, 255, 0.02); "
-                    "border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 10px; margin-top: 4px; }"
-                )
-
-        self.set_custom_mode = set_custom_mode
-        self.toggle_task_mode = set_custom_mode
+        # Compatibility aliases
+        self.is_custom = True
         self.custom_card = self.custom_box
-        self.mode_standard_btn.clicked.connect(lambda: set_custom_mode(False))
-        self.mode_custom_btn.clicked.connect(lambda: set_custom_mode(True))
-        self.custom_task_toggle.toggled.connect(lambda c: set_custom_mode(c))
-        set_custom_mode(self.is_custom)
+        self.custom_task_toggle = QCheckBox()
+        self.type_indicator_pill = QLabel()
+        self.mode_standard_btn = QPushButton()
+        self.mode_custom_btn = QPushButton()
+        self.set_custom_mode = lambda active=True: None
+        self.toggle_task_mode = lambda active=True: None
 
         # Backward compatibility properties (hidden from layout)
         self.manager_note = self.next_action
@@ -7093,7 +7030,6 @@ class MainWindow(QMainWindow):
 
         task_actions = [
             ("➕ Add Task", self.add_task, "Create a new task for the selected date", True, "taskAddBtn"),
-            ("✨ Add Custom Task", self.add_custom_task, "Add a task with custom key-value attributes", False, "taskAddCustomBtn"),
             ("✏️ Edit Selected", self.edit_task, "Edit one selected task", False, "taskEditBtn"),
             ("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False, "taskBulkEditBtn"),
             ("☑️ Select All", self.task_table_select_all, "Select every task shown for the selected date and employee filter", False, "taskSelectAllBtn"),
@@ -7150,7 +7086,8 @@ class MainWindow(QMainWindow):
         c1, self.kpi_total_tasks = make_task_kpi_card("Total Tasks", "📋", "#6366F1")
         c2, self.kpi_completed_tasks = make_task_kpi_card("Completed", "✅", "#10B981")
         c3, self.kpi_in_progress_tasks = make_task_kpi_card("In Progress", "⏳", "#F59E0B")
-        c4, self.kpi_custom_tasks = make_task_kpi_card("Custom Tasks", "✨", "#C084FC")
+        c4, self.kpi_pending_tasks = make_task_kpi_card("Pending Tasks", "⏱️", "#EC4899")
+        self.kpi_custom_tasks = self.kpi_pending_tasks
 
         bento_row.addWidget(c1)
         bento_row.addWidget(c2)
@@ -8841,16 +8778,7 @@ class MainWindow(QMainWindow):
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
     def add_custom_task(self):
-        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date(),is_custom=True)
-        if d.exec()!=QDialog.Accepted: return
-        vals=d.values()
-        if not vals: return error(self,"Add an active employee before assigning tasks.")
-        if not vals[2]: return error(self,"Task title is required.")
-        try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
-            self.db.conn.commit(); self.db.log("Custom task added",vals[2]); self.refresh_all()
-        except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
+        return self.add_task()
 
     def edit_task(self, table=None):
         table=table or self.task_table
@@ -9231,12 +9159,13 @@ class MainWindow(QMainWindow):
         total_cnt = len(rows)
         comp_cnt = sum(1 for t in rows if str(t["status"]).strip().lower() in ("completed", "done") or (t["progress"] is not None and t["progress"] >= 100))
         prog_cnt = sum(1 for t in rows if str(t["status"]).strip().lower() in ("in progress", "running") or (t["progress"] is not None and 0 < t["progress"] < 100))
-        cust_cnt = sum(1 for t in rows if bool(parse_custom_values(t["custom_values"] if "custom_values" in t.keys() else "")))
+        pend_cnt = sum(1 for t in rows if str(t["status"]).strip().lower() in ("not started", "pending", "pending review", "blocked"))
 
         if hasattr(self, "kpi_total_tasks"): self.kpi_total_tasks.setText(str(total_cnt))
         if hasattr(self, "kpi_completed_tasks"): self.kpi_completed_tasks.setText(str(comp_cnt))
         if hasattr(self, "kpi_in_progress_tasks"): self.kpi_in_progress_tasks.setText(str(prog_cnt))
-        if hasattr(self, "kpi_custom_tasks"): self.kpi_custom_tasks.setText(str(cust_cnt))
+        if hasattr(self, "kpi_pending_tasks"): self.kpi_pending_tasks.setText(str(pend_cnt))
+        if hasattr(self, "kpi_custom_tasks"): self.kpi_custom_tasks.setText(str(pend_cnt))
 
         self.refresh_dashboard()
 

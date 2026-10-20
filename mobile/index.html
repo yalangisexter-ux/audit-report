@@ -115,7 +115,6 @@
       <div class="section-actions-bar">
         <input type="text" id="taskSearchInput" placeholder="🔍 Search tasks..." class="search-input">
         <button id="openNewTaskModalBtn" class="btn btn-primary">+ Add Task</button>
-        <button id="openNewCustomTaskModalBtn" class="btn btn-outline" style="white-space: nowrap;">✨ Custom Task</button>
       </div>
 
       <div class="filters-row">
@@ -359,11 +358,6 @@
       </div>
       <form id="formTask" class="form-column">
         <input type="hidden" id="taskFormId">
-        <!-- Task Type Segmented Switcher -->
-        <div class="task-mode-bar" style="display: flex; gap: 6px; background: rgba(15, 23, 42, 0.7); padding: 4px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 12px;">
-          <button type="button" id="mobileTaskModeStandard" class="btn-mode active" style="flex: 1; padding: 7px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; border: none; background: #6366F1; color: #FFFFFF; cursor: pointer; transition: all 0.2s;">📋 Standard Task</button>
-          <button type="button" id="mobileTaskModeCustom" class="btn-mode" style="flex: 1; padding: 7px 10px; font-size: 12px; font-weight: 700; border-radius: 6px; border: none; background: transparent; color: #94A3B8; cursor: pointer; transition: all 0.2s;">✨ Custom Task (Key-Value)</button>
-        </div>
         <div class="form-group">
           <label>Date *</label>
           <input type="date" id="taskFormDate" required>
@@ -439,18 +433,19 @@
           <label>Next Action</label>
           <input type="text" id="taskFormNextAction" placeholder="Next action or follow-up note...">
         </div>
-        <!-- Custom Task Option Card -->
-        <div id="mobileCustomTaskCard" class="form-group" style="background: rgba(192, 132, 252, 0.04); border: 1px solid rgba(192, 132, 252, 0.25); border-radius: 10px; padding: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <!-- Custom Tracking Fields Card -->
+        <div id="mobileCustomTaskCard" class="form-group" style="background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 10px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-size: 14px;">✨</span>
-              <strong style="color: #E2E8F0; font-size: 13px;">Custom Task Option</strong>
+              <span style="font-size: 14px;">🏷️</span>
+              <strong style="color: #E2E8F0; font-size: 13px;">Custom Tracking Fields (Key - Value)</strong>
             </div>
-            <button type="button" id="mobileAddKeyValueBtn" class="btn btn-sm" style="font-size: 11px; padding: 4px 10px; border-radius: 6px; background: rgba(192, 132, 252, 0.2); color: #E9D5FF; border: 1px solid rgba(192, 132, 252, 0.4); font-weight: 600;">➕ Add Key-Value</button>
+            <button type="button" id="mobileAddKeyValueBtn" class="btn btn-sm" style="font-size: 11px; padding: 4px 10px; border-radius: 6px; background: rgba(99, 102, 241, 0.25); color: #C7D2FE; border: 1px solid rgba(129, 140, 248, 0.4); font-weight: 600;">➕ Add Field</button>
           </div>
-          <div style="font-size: 11px; color: #94A3B8; margin-bottom: 8px;">Add specialized tracking parameters and custom key-value pairs:</div>
+          <div style="font-size: 11px; color: #94A3B8; margin-bottom: 8px;">Add custom tracking options where you can enter your own field names and values (e.g. Tracked By : Name):</div>
           <!-- Quick Preset Chips -->
           <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px;">
+            <button type="button" class="preset-chip" data-preset-key="Tracked By" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(129, 140, 248, 0.3); color: #C7D2FE; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;">+ Tracked By</button>
             <button type="button" class="preset-chip" data-preset-key="Client" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Client</button>
             <button type="button" class="preset-chip" data-preset-key="Location" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Location</button>
             <button type="button" class="preset-chip" data-preset-key="Batch" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Batch</button>

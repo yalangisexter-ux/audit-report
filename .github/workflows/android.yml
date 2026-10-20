@@ -42,14 +42,14 @@ jobs:
       - name: Rename and verify APK
         run: |
           mkdir -p apk-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk apk-output/RawStrengthEmployeeAuditManager-v1.3.18.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk apk-output/RawStrengthEmployeeAuditManager-v1.3.19.apk
           ls -la apk-output/
 
       - name: Upload APK as Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-v1.3.18-APK
-          path: apk-output/RawStrengthEmployeeAuditManager-v1.3.18.apk
+          name: RawStrengthEmployeeAuditManager-v1.3.19-APK
+          path: apk-output/RawStrengthEmployeeAuditManager-v1.3.19.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -57,8 +57,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.18
-          name: Raw Strength Employee Audit Manager v1.3.18
-          files: apk-output/RawStrengthEmployeeAuditManager-v1.3.18.apk
+          tag_name: v1.3.19
+          name: Raw Strength Employee Audit Manager v1.3.19
+          files: apk-output/RawStrengthEmployeeAuditManager-v1.3.19.apk
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
         continue-on-error: true

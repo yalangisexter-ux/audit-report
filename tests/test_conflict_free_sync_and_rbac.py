@@ -585,14 +585,9 @@ def test_task_dialog_custom_option_and_editable_department(tmp_path, monkeypatch
     dlg.department.setEditText("Special Operations")
     dlg.title.setText("Classified Audit")
 
-    # 2. Toggle to Custom Task mode inside the dialog
-    dlg.toggle_task_mode(True)
-    assert dlg.is_custom is True
-    assert "CUSTOM TASK" in dlg.type_indicator_pill.text()
+    # 2. Add custom key-value tracking fields (e.g. Tracked By : Name)
     assert dlg.custom_card.isHidden() is False
-
-    # 3. Add custom key-value pairs
-    dlg.add_key_value_row("Target Code", "Echo-7")
+    dlg.add_key_value_row("Tracked By", "Auditor Smith")
     dlg.add_key_value_row("Machine", "X-Ray Scanner")
     
     vals = dlg.values()
@@ -600,7 +595,7 @@ def test_task_dialog_custom_option_and_editable_department(tmp_path, monkeypatch
     assert vals[2] == "Classified Audit"
     assert vals[3] == "Special Operations"
     parsed_kv = app.parse_custom_values(vals[17])
-    assert ("Target Code", "Echo-7") in parsed_kv
+    assert ("Tracked By", "Auditor Smith") in parsed_kv
     assert ("Machine", "X-Ray Scanner") in parsed_kv
 
     # 4. Save and verify database persistence
@@ -619,9 +614,10 @@ def test_task_dialog_custom_option_and_editable_department(tmp_path, monkeypatch
     # 5. Open TaskDialog in edit mode on the saved task
     # It must automatically detect custom values and open in Custom Task mode
     edit_dlg = app.TaskDialog(db, row=matching[0])
-    assert edit_dlg.is_custom is True
-    assert "CUSTOM TASK" in edit_dlg.type_indicator_pill.text()
     assert edit_dlg.department.currentText() == "Special Operations"
+    edit_kv = [(r[0].text(), r[1].text()) for r in edit_dlg.custom_rows]
+    assert ("Tracked By", "Auditor Smith") in edit_kv
+    assert ("Machine", "X-Ray Scanner") in edit_kv
     
     dlg.close()
     edit_dlg.close()
@@ -642,4 +638,18 @@ def test_task_manager_bento_kpi_cards(tmp_path, monkeypatch):
     
     win.refresh_tasks()
     assert win.kpi_total_tasks.text() == "0"
+    win.close()
+
+
+def test_task_manager_toolbar_has_no_separate_custom_task_button(tmp_path, monkeypatch):
+    """Verify that Task Manager tab has removed the separate Add Custom Task button."""
+    _qt_app = app.QApplication.instance() or app.QApplication([])
+    db_path = tmp_path / "toolbar_test.db"
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    db = app.Database()
+    win = app.MainWindow(db, {"username": "Admin", "role": "Admin", "display_name": "Administrator"})
+
+    btn_texts = [b.text() for b in win.findChildren(app.QPushButton) if b.parent() is not None]
+    assert not any("Add Custom Task" in t for t in btn_texts)
+    assert any("Add Task" in t for t in btn_texts)
     win.close()

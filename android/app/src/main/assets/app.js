@@ -383,7 +383,6 @@ document.getElementById("taskSearchInput")?.addEventListener("input", renderTask
 document.getElementById("taskFilterStatus")?.addEventListener("change", renderTasks);
 document.getElementById("taskFilterPriority")?.addEventListener("change", renderTasks);
 document.getElementById("openNewTaskModalBtn")?.addEventListener("click", () => openTaskModal());
-document.getElementById("openNewCustomTaskModalBtn")?.addEventListener("click", () => openTaskModal(null, true));
 
 function parseMobileCustomValues(raw) {
   if (!raw) return [];
@@ -435,8 +434,8 @@ function addMobileKeyValueRow(k = "", v = "") {
   row.className = "mobile-kv-row";
   row.style.cssText = "display: flex; gap: 6px; align-items: center;";
   row.innerHTML = `
-    <input type="text" class="kv-key-input" placeholder="Key (e.g. Client)" value="${escapeHtml(k)}" style="flex: 1; padding: 6px 8px; font-size: 13px; border-radius: 6px;">
-    <input type="text" class="kv-val-input" placeholder="Value (e.g. Acme)" value="${escapeHtml(v)}" style="flex: 1; padding: 6px 8px; font-size: 13px; border-radius: 6px;">
+    <input type="text" class="kv-key-input" placeholder="Field Name (e.g. Tracked By)" value="${escapeHtml(k)}" style="flex: 1; padding: 6px 8px; font-size: 13px; border-radius: 6px;">
+    <input type="text" class="kv-val-input" placeholder="Value (e.g. Name)" value="${escapeHtml(v)}" style="flex: 1; padding: 6px 8px; font-size: 13px; border-radius: 6px;">
     <button type="button" class="btn btn-sm kv-del-btn" style="color: #EF4444; background: rgba(239,68,68,0.1); border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">✕</button>
   `;
   row.querySelector(".kv-del-btn").addEventListener("click", () => row.remove());
@@ -458,46 +457,21 @@ function getMobileCustomValues() {
 }
 
 document.getElementById("mobileAddKeyValueBtn")?.addEventListener("click", () => {
-  setMobileTaskMode(true);
-  const row = addMobileKeyValueRow();
+  const row = addMobileKeyValueRow("", "");
   row?.querySelector(".kv-key-input")?.focus();
 });
 
 document.querySelectorAll(".preset-chip").forEach(btn => {
   btn.addEventListener("click", () => {
     const key = btn.getAttribute("data-preset-key") || "";
-    setMobileTaskMode(true);
     const row = addMobileKeyValueRow(key, "");
     row?.querySelector(".kv-val-input")?.focus();
   });
 });
 
 function setMobileTaskMode(isCustom) {
-  const stdBtn = document.getElementById("mobileTaskModeStandard");
-  const custBtn = document.getElementById("mobileTaskModeCustom");
-  const card = document.getElementById("mobileCustomTaskCard");
-  const modalTitle = document.getElementById("modalTaskTitle");
-  const taskId = document.getElementById("taskFormId")?.value;
-
-  if (isCustom) {
-    if (stdBtn) { stdBtn.style.background = "transparent"; stdBtn.style.color = "#94A3B8"; }
-    if (custBtn) { custBtn.style.background = "#A855F7"; custBtn.style.color = "#FFFFFF"; }
-    if (card) { card.style.borderColor = "rgba(192, 132, 252, 0.6)"; card.style.background = "rgba(192, 132, 252, 0.08)"; }
-    if (modalTitle) modalTitle.textContent = taskId ? "Edit Custom Task" : "Create Custom Task";
-    const kvContainer = document.getElementById("mobileCustomValuesContainer");
-    if (kvContainer && kvContainer.children.length === 0) {
-      addMobileKeyValueRow("", "");
-    }
-  } else {
-    if (stdBtn) { stdBtn.style.background = "#6366F1"; stdBtn.style.color = "#FFFFFF"; }
-    if (custBtn) { custBtn.style.background = "transparent"; custBtn.style.color = "#94A3B8"; }
-    if (card) { card.style.borderColor = "rgba(192, 132, 252, 0.25)"; card.style.background = "rgba(192, 132, 252, 0.04)"; }
-    if (modalTitle) modalTitle.textContent = taskId ? "Edit Task" : "Add New Task";
-  }
+  // Retained for compatibility
 }
-
-document.getElementById("mobileTaskModeStandard")?.addEventListener("click", () => setMobileTaskMode(false));
-document.getElementById("mobileTaskModeCustom")?.addEventListener("click", () => setMobileTaskMode(true));
 
 function updateModalDept() {
   const empSelect = document.getElementById("taskFormEmployee");
@@ -555,7 +529,7 @@ function openTaskModal(taskId = null, isCustom = false) {
   if (taskId) {
     const t = state.tasks.find(x => x.id == taskId);
     if (!t) return;
-    title.textContent = "Edit Task";
+    title.textContent = "Edit Task Details";
     document.getElementById("taskFormId").value = t.id;
     empSelect.value = t.employee_id;
     document.getElementById("taskFormDate").value = t.task_date;
@@ -578,10 +552,8 @@ function openTaskModal(taskId = null, isCustom = false) {
 
     const existingPairs = parseMobileCustomValues(t.custom_values);
     existingPairs.forEach(p => addMobileKeyValueRow(p.key, p.value));
-    const isCustomTask = Boolean(isCustom) || existingPairs.length > 0;
-    setMobileTaskMode(isCustomTask);
   } else {
-    title.textContent = isCustom ? "Create Custom Task" : "Add New Task";
+    title.textContent = "Create New Task";
     form.reset();
     document.getElementById("taskFormId").value = "";
     document.getElementById("taskFormDate").value = state.currentDate;
@@ -594,10 +566,6 @@ function openTaskModal(taskId = null, isCustom = false) {
     document.getElementById("taskFormNextAction").value = "";
 
     updateModalDept();
-    setMobileTaskMode(isCustom);
-    if (isCustom) {
-      setTimeout(() => kvContainer?.querySelector(".kv-key-input")?.focus(), 50);
-    }
   }
 
   modal.classList.remove("hidden");
