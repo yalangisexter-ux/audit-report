@@ -37,7 +37,6 @@ from database_sync import (
     unprotect_sync_token,
 )
 from cloudflare_chat import CloudflareChatTab, verify_developer_password
-from aurora_command_ui import AuroraCommandHUD
 
 
 def resource_path(relative_path):
@@ -3653,6 +3652,60 @@ class NeonAttendanceGauge(QWidget):
         painter.end()
 
 
+class MiniSparkline(QWidget):
+    """Compact glowing neon bezier sparkline curve for KPI cards."""
+    def __init__(self, color="#00F0FF", points=None, parent=None):
+        super().__init__(parent)
+        self.color = QColor(color)
+        self.points = points or [0.25, 0.40, 0.35, 0.65, 0.50, 0.70, 0.60, 0.90, 0.85, 1.0]
+        self.setFixedSize(68, 38)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+    def set_points(self, points):
+        if points:
+            self.points = points
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        w, h = float(self.width()), float(self.height())
+        if len(self.points) < 2 or w <= 10:
+            return
+        step = (w - 8) / (len(self.points) - 1)
+        coords = [QPointF(4 + i * step, h - 4 - (p * (h - 10))) for i, p in enumerate(self.points)]
+
+        fill_path = QPainterPath()
+        fill_path.moveTo(coords[0].x(), h - 2)
+        fill_path.lineTo(coords[0])
+        for i in range(len(coords) - 1):
+            p0, p1 = coords[i], coords[i + 1]
+            mx = (p0.x() + p1.x()) / 2.0
+            fill_path.cubicTo(mx, p0.y(), mx, p1.y(), p1.x(), p1.y())
+        fill_path.lineTo(coords[-1].x(), h - 2)
+        fill_path.closeSubpath()
+
+        grad = QLinearGradient(0, 0, 0, h)
+        grad.setColorAt(0, QColor(self.color.red(), self.color.green(), self.color.blue(), 90))
+        grad.setColorAt(1, QColor(self.color.red(), self.color.green(), self.color.blue(), 0))
+        painter.fillPath(fill_path, grad)
+
+        pen = QPen(self.color, 2.0)
+        painter.setPen(pen)
+        curve = QPainterPath()
+        curve.moveTo(coords[0])
+        for i in range(len(coords) - 1):
+            p0, p1 = coords[i], coords[i + 1]
+            mx = (p0.x() + p1.x()) / 2.0
+            curve.cubicTo(mx, p0.y(), mx, p1.y(), p1.x(), p1.y())
+        painter.drawPath(curve)
+
+        painter.setBrush(QBrush(QColor("#FFFFFF")))
+        painter.setPen(QPen(self.color, 1.8))
+        painter.drawEllipse(coords[-1], 2.8, 2.8)
+        painter.end()
+
+
 class ProductivityChart(QWidget):
     """Lightweight native Qt bar chart; no charting dependency is required."""
     PALETTES = {
@@ -4674,7 +4727,7 @@ class MainWindow(QMainWindow):
         brand_copy.setSpacing(2)
         self.brand_heading = QLabel("Raw Strength Calisthenics")
         self.brand_heading.setObjectName("brandHeading")
-        self.brand_subheading = QLabel(f"AURORA COMMAND  •  OPERATIONS OS  •  v{APP_VERSION}")
+        self.brand_subheading = QLabel(f"EXECUTIVE AUDIT  •  OPERATIONS OS  •  v{APP_VERSION}")
         self.brand_subheading.setObjectName("brandSubheading")
         brand_copy.addWidget(self.brand_heading)
         brand_copy.addWidget(self.brand_subheading)
@@ -4894,8 +4947,8 @@ class MainWindow(QMainWindow):
             "day": {
                 "surface": "#FFFFFF",
                 "surface_card": "#FFFFFF",
-                "sidebar": "#F8FAFC",
-                "sidebar_border": "#E2E8F0",
+                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
+                "sidebar_border": "rgba(0, 240, 255, 0.20)",
                 "nav": "#FFFFFF",
                 "nav_border": "#E2E8F0",
                 "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4F46E5,stop:1 #6366F1)",
@@ -5004,8 +5057,8 @@ class MainWindow(QMainWindow):
             "ocean": {
                 "surface": "#F0F9FF",
                 "surface_card": "rgba(240, 249, 255, 0.96)",
-                "sidebar": "rgba(240, 249, 255, 0.75)",
-                "sidebar_border": "rgba(186, 230, 253, 0.85)",
+                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
+                "sidebar_border": "rgba(0, 240, 255, 0.20)",
                 "nav": "rgba(224, 242, 254, 0.80)",
                 "nav_border": "rgba(186, 230, 253, 0.85)",
                 "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0284C7,stop:1 #06B6D4)",
@@ -5059,8 +5112,8 @@ class MainWindow(QMainWindow):
             "sunset": {
                 "surface": "#FFF7ED",
                 "surface_card": "rgba(255, 247, 237, 0.96)",
-                "sidebar": "rgba(255, 247, 237, 0.75)",
-                "sidebar_border": "rgba(254, 215, 170, 0.85)",
+                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
+                "sidebar_border": "rgba(0, 240, 255, 0.20)",
                 "nav": "rgba(255, 237, 213, 0.80)",
                 "nav_border": "rgba(254, 215, 170, 0.85)",
                 "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #EA580C,stop:1 #F43F5E)",
@@ -5131,7 +5184,7 @@ class MainWindow(QMainWindow):
         is_dark = (theme_name or self.current_theme()).lower() in ("night", "dark")
         if hasattr(self, "sidebar"):
             self.sidebar.setStyleSheet(
-                f"QWidget#navigationSidebar {{ background: {sidebar_bg}; border-right: 1.5px solid {sidebar_border}; }}"
+                "QWidget#navigationSidebar { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810); border-right: 1.5px solid rgba(0, 240, 255, 0.20); }"
             )
         if hasattr(self, "sidebar_toggle"):
             self.sidebar_toggle.setStyleSheet(
@@ -5148,20 +5201,30 @@ class MainWindow(QMainWindow):
         if hasattr(self, "title_label"):
             self.title_label.setStyleSheet("QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }")
         if hasattr(self, "sidebar_buttons"):
-            nav_bg = colors.get("nav", surface)
-            nav_border = colors.get("nav_border", border)
-            nav_active = colors.get("nav_active_grad", "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4338CA,stop:1 #6366F1)")
             for button, _title in self.sidebar_buttons:
-                button.setStyleSheet(f"""
-                    QPushButton#sidebarNavButton {{ background: {nav_bg}; color: {colors['text']};
-                        border: 1px solid {nav_border}; border-radius: 9px; font-size: 9.5pt;
-                        font-weight: 600; text-align: left; padding: 9px 12px; }}
-                    QPushButton#sidebarNavButton:hover {{ background: {colors['hover']};
-                        color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
-                    QPushButton#sidebarNavButton:checked {{
-                        background: {nav_active};
-                        color: {"#00F0FF" if is_dark else "#FFFFFF"}; border: {"1.5px solid #00F0FF" if is_dark else f"1px solid {colors['accent_glow']}"};
-                        border-radius: 9px; font-weight: 800; }}
+                button.setStyleSheet("""
+                    QPushButton#sidebarNavButton {
+                        background: transparent;
+                        color: #94A3B8;
+                        border: 1px solid transparent;
+                        border-radius: 9px;
+                        font-size: 9.5pt;
+                        font-weight: 600;
+                        text-align: left;
+                        padding: 9px 12px;
+                    }
+                    QPushButton#sidebarNavButton:hover {
+                        background: rgba(255, 255, 255, 0.05);
+                        color: #FFFFFF;
+                        border: 1px solid rgba(0, 240, 255, 0.35);
+                    }
+                    QPushButton#sidebarNavButton:checked {
+                        background: rgba(0, 240, 255, 0.12);
+                        color: #00F0FF;
+                        border: 1.5px solid #00F0FF;
+                        border-radius: 9px;
+                        font-weight: 800;
+                    }
                 """)
         for header in self.findChildren(QWidget, "pageHeader"):
             header.setStyleSheet(
@@ -5691,13 +5754,46 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle.setText("☰" if collapsed else "☰  Collapse menu")
         self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
         for button, title in getattr(self, "sidebar_buttons", []):
-            label = title.split("  ", 1)[0] if collapsed else title
-            text_width = max(0, button.contentsRect().width() - 22)
-            elided = button.fontMetrics().elidedText(
-                label, Qt.TextElideMode.ElideRight, text_width
-            )
-            clean_text = elided.replace("&&", "&").replace("&", "&&")
-            button.setText(clean_text)
+            if collapsed:
+                label = title.split("  ", 1)[0]
+                button.setText(label)
+                button.setStyleSheet("""
+                    QPushButton#sidebarNavButton {
+                        background: transparent; color: #94A3B8;
+                        border: 1px solid transparent; border-radius: 9px;
+                        font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0;
+                    }
+                    QPushButton#sidebarNavButton:hover {
+                        background: rgba(255, 255, 255, 0.05); color: #FFFFFF;
+                        border: 1px solid rgba(0, 240, 255, 0.35);
+                    }
+                    QPushButton#sidebarNavButton:checked {
+                        background: rgba(0, 240, 255, 0.14); color: #00F0FF;
+                        border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
+                    }
+                """)
+            else:
+                text_width = max(0, button.contentsRect().width() - 22)
+                elided = button.fontMetrics().elidedText(
+                    title, Qt.TextElideMode.ElideRight, text_width
+                )
+                clean_text = elided.replace("&&", "&").replace("&", "&&")
+                button.setText(clean_text)
+                button.setStyleSheet("""
+                    QPushButton#sidebarNavButton {
+                        background: transparent; color: #94A3B8;
+                        border: 1px solid transparent; border-radius: 9px;
+                        font-size: 9.5pt; font-weight: 600; text-align: left; padding: 9px 12px;
+                    }
+                    QPushButton#sidebarNavButton:hover {
+                        background: rgba(255, 255, 255, 0.05); color: #FFFFFF;
+                        border: 1px solid rgba(0, 240, 255, 0.35);
+                    }
+                    QPushButton#sidebarNavButton:checked {
+                        background: rgba(0, 240, 255, 0.12); color: #00F0FF;
+                        border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
+                    }
+                """)
             button.setToolTip(title)
 
     def update_title_label(self):
@@ -6537,13 +6633,13 @@ class MainWindow(QMainWindow):
         role_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         session_layout.addWidget(role_label, 0, 2)
         session_layout.setColumnStretch(3, 1)
-        self.home_launch_aurora_btn = QPushButton("⚡  Aurora Command HUD  ➔")
-        self.home_launch_aurora_btn.setObjectName("homeLaunchAuroraBtn")
-        self.home_launch_aurora_btn.setMinimumHeight(32)
-        self.home_launch_aurora_btn.setStyleSheet("QPushButton#homeLaunchAuroraBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00F0FF, stop:1 #6366F1); color: #020617; font-weight: 800; font-size: 8.5pt; border-radius: 7px; padding: 4px 12px; border: 0; } QPushButton#homeLaunchAuroraBtn:hover { background: #38BDF8; color: #FFFFFF; }")
-        self.home_launch_aurora_btn.setToolTip("Switch directly to the Aurora Command Executive Operations HUD")
-        self.home_launch_aurora_btn.clicked.connect(lambda: self.tabs.setCurrentWidget(self.dashboard))
-        session_layout.addWidget(self.home_launch_aurora_btn, 0, 3, Qt.AlignmentFlag.AlignRight)
+        self.home_launch_dashboard_btn = QPushButton("📊  Executive Dashboard  ➔")
+        self.home_launch_dashboard_btn.setObjectName("homeLaunchDashboardBtn")
+        self.home_launch_dashboard_btn.setMinimumHeight(32)
+        self.home_launch_dashboard_btn.setStyleSheet("QPushButton#homeLaunchDashboardBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00F0FF, stop:1 #6366F1); color: #020617; font-weight: 800; font-size: 8.5pt; border-radius: 7px; padding: 4px 12px; border: 0; } QPushButton#homeLaunchDashboardBtn:hover { background: #38BDF8; color: #FFFFFF; }")
+        self.home_launch_dashboard_btn.setToolTip("Open Executive Operations Dashboard")
+        self.home_launch_dashboard_btn.clicked.connect(lambda: self.tabs.setCurrentWidget(self.dashboard))
+        session_layout.addWidget(self.home_launch_dashboard_btn, 0, 3, Qt.AlignmentFlag.AlignRight)
 
         version_label = QLabel(f"Version {APP_VERSION}")
         version_label.setProperty("mutedText", True)
@@ -6979,7 +7075,7 @@ class MainWindow(QMainWindow):
         self.dashboard_hero.setStyleSheet("QFrame#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #090E1C, stop:0.5 #121D38, stop:1 #0A1124); border: 1.5px solid rgba(0, 229, 255, 0.35); border-radius: 12px; padding: 6px 14px; }")
         hero_layout = QHBoxLayout(self.dashboard_hero)
         hero_layout.setContentsMargins(12, 6, 12, 6)
-        hero_title = QLabel("⚡  AURORA COMMAND // EXECUTIVE OPERATIONS")
+        hero_title = QLabel("⚡  OPERATIONS COMMAND // REAL-TIME WORKFORCE AUDIT")
         hero_title.setStyleSheet("font-size: 10.5pt; font-weight: 900; color: #F8FAFC; letter-spacing: 1px;")
         hero_layout.addWidget(hero_title)
         hero_layout.addStretch(1)
@@ -6987,14 +7083,12 @@ class MainWindow(QMainWindow):
         hero_status.setStyleSheet("background: rgba(16,185,129,0.18); color: #34D399; border: 1px solid rgba(16,185,129,0.35); border-radius: 6px; padding: 3px 10px; font-size: 8pt; font-weight: 700; letter-spacing: 0.5px;")
         hero_layout.addWidget(hero_status)
         root.addWidget(self.dashboard_hero)
-        self.aurora_hud = AuroraCommandHUD()
-        self.aurora_hud.action_pills.actionTriggered.connect(self._handle_aurora_action)
-        root.addWidget(self.aurora_hud)
 
         self.kpis = QGridLayout()
         self.kpis.setHorizontalSpacing(10)
         self.kpis.setVerticalSpacing(10)
         self.kpi_cards = []
+        self.kpi_sparklines = []
         root.addLayout(self.kpis)
         self.kpi_labels = []
         specs = [
@@ -7049,6 +7143,9 @@ class MainWindow(QMainWindow):
             sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 700; color: {sub_col}; letter-spacing: 0.3px;")
             metric_col.addWidget(sub_label)
             layout.addLayout(metric_col, 1)
+            spark = MiniSparkline(color=active_accent)
+            layout.addWidget(spark)
+            self.kpi_sparklines.append(spark)
             self.kpi_cards.append(card)
             self.kpi_labels.append(value)
 
@@ -9990,11 +10087,14 @@ class MainWindow(QMainWindow):
             self.dashboard_attendance_summary.setText(
                 f"{percent}% checked in\n{present} Present  ·  {absent} Absent  ·  {leave} Leave  ·  {not_checked} Not checked"
             )
-        if hasattr(self, "aurora_hud") and self.aurora_hud is not None:
-            emp_cnt = len(employees)
-            self.aurora_hud.kpi_liquidity.set_data(f"${428.4 + emp_cnt * 0.1:.1f}M")
-            att_pct = round((present / emp_cnt) * 100) if emp_cnt else 100
-            self.aurora_hud.kpi_valuation.set_data(f"${2.10 + att_pct * 0.005:.2f}B")
+        if hasattr(self, "kpi_sparklines") and len(self.kpi_sparklines) >= 5:
+            total_emp = len(employees)
+            att_ratio = (present / total_emp) if total_emp else 0.0
+            self.kpi_sparklines[0].set_points([0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+            self.kpi_sparklines[1].set_points([0.2, 0.4, 0.5, 0.3, 0.6, 0.7, max(0.1, att_ratio)])
+            self.kpi_sparklines[2].set_points([0.5, 0.3, 0.4, 0.2, 0.3, 0.1, max(0.05, 1.0 - att_ratio)])
+            self.kpi_sparklines[3].set_points([0.3, 0.5, 0.4, 0.6, 0.7, 0.8, 0.9])
+            self.kpi_sparklines[4].set_points([0.3, 0.45, 0.5, 0.65, 0.7, 0.85, max(0.1, att_ratio)])
         metrics = []
         self.productivity_table.setRowCount(0)
         for employee in employees:
@@ -11802,6 +11902,11 @@ def main():
             if db.get_setting("animation_style") in ("Love Couple", "Love & Couples", None, ""):
                 db.set_setting("animation_style", "Aurora Waves")
             db.set_setting("aurora_command_hud_v1324", "1")
+        if db.get_setting("cyber_hud_theme_v1325") != "1":
+            db.set_setting("ui_theme", "night")
+            if db.get_setting("animation_style") in ("Love Couple", "Love & Couples", None, ""):
+                db.set_setting("animation_style", "Galaxy")
+            db.set_setting("cyber_hud_theme_v1325", "1")
         apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")

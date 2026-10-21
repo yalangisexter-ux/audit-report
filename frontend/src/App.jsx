@@ -33,7 +33,6 @@ import {
   Tag
 } from 'lucide-react';
 
-import AuroraCommandHUD from './AuroraCommandHUD';
 
 const API_BASE = '/api';
 
@@ -563,8 +562,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Aurora Command Executive Operations HUD */}
-              <AuroraCommandHUD onNavigate={(tab) => setActiveTab(tab)} />
 
               {/* Bento KPI Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
