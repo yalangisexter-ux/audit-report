@@ -4673,7 +4673,7 @@ class MainWindow(QMainWindow):
         brand_copy.setSpacing(2)
         self.brand_heading = QLabel("Raw Strength Calisthenics")
         self.brand_heading.setObjectName("brandHeading")
-        self.brand_subheading = QLabel("ENTERPRISE AUDIT & OPERATIONS OS  •  v1.3.22")
+        self.brand_subheading = QLabel("ENTERPRISE AUDIT & OPERATIONS OS  •  v1.3.23")
         self.brand_subheading.setObjectName("brandSubheading")
         brand_copy.addWidget(self.brand_heading)
         brand_copy.addWidget(self.brand_subheading)

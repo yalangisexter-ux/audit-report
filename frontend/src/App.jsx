@@ -1201,7 +1201,7 @@ export default function App() {
                         Application Updates
                       </h4>
                       <p className="text-slate-400 text-[11px]">
-                        Installed Version: <span className="text-cyan-400 font-mono font-bold">v{updateInfo?.current_version || '1.3.22'}</span>
+                        Installed Version: <span className="text-cyan-400 font-mono font-bold">v{updateInfo?.current_version || '1.3.23'}</span>
                         {updateInfo?.latest_version && (
                           <span className="ml-2 text-slate-400">· Latest Release: <span className="text-emerald-400 font-mono font-bold">v{updateInfo.latest_version}</span></span>
                         )}

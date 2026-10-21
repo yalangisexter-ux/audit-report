@@ -1,6 +1,6 @@
 # Raw Strength Calisthenics — Employee Audit Manager & Operations OS
 
-## Modern React SPA + FastAPI REST API Interface (v1.3.22)
+## Modern React SPA + FastAPI REST API Interface (v1.3.23)
 
 A state-of-the-art web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a high-speed **FastAPI REST API** backend that connects directly to the underlying SQLite database with 100% business logic and audit trail parity.
 
