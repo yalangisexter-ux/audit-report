@@ -11,6 +11,18 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
+import app as desktop_app
+import business_tracking
+_test_db = desktop_app.Database()
+try:
+    business_tracking.setup_business_tables(_test_db.conn)
+except Exception:
+    pass
+if hasattr(_test_db, "close_github_sync"):
+    _test_db.close_github_sync(timeout=0)
+if hasattr(_test_db, "conn") and _test_db.conn:
+    _test_db.conn.close()
+
 from fastapi.testclient import TestClient
 from api_server import app
 

@@ -39,8 +39,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_DB_INITIALIZED = False
+
+def ensure_database():
+    global _DB_INITIALIZED
+    if not _DB_INITIALIZED:
+        try:
+            db = desktop_app.Database()
+            try:
+                import business_tracking
+                business_tracking.setup_business_tables(db.conn)
+            except Exception:
+                pass
+            if hasattr(db, "close_github_sync"):
+                db.close_github_sync(timeout=0)
+            if hasattr(db, "conn") and db.conn:
+                db.conn.close()
+        except Exception:
+            pass
+        _DB_INITIALIZED = True
+
 def get_db():
     """Create a thread-safe connection to the exact same database."""
+    ensure_database()
     db_path = desktop_app.DB_PATH
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
