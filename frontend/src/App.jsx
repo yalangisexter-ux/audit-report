@@ -33,6 +33,8 @@ import {
   Tag
 } from 'lucide-react';
 
+import AuroraCommandHUD from './AuroraCommandHUD';
+
 const API_BASE = '/api';
 
 export default function App() {
@@ -425,7 +427,7 @@ export default function App() {
             </div>
             {sidebarOpen && (
               <div className="flex flex-col">
-                <span className="font-extrabold text-sm tracking-wider text-white">RAW STRENGTH</span>
+                <span className="font-extrabold text-sm tracking-wider text-white">AURORA COMMAND</span>
                 <span className="text-[10px] text-cyan-400 font-semibold tracking-widest">OPERATIONS OS</span>
               </div>
             )}
@@ -449,7 +451,7 @@ export default function App() {
                 onClick={() => setActiveTab(item.id)}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all group ${
                   isActive
-                    ? 'glass-nav-active text-white font-bold shadow-lg shadow-cyan-500/10'
+                    ? 'border-1.5 border-cyan-400 bg-cyan-500/15 text-cyan-300 font-bold shadow-[0_0_15px_rgba(0,240,255,0.25)]'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
                 }`}
                 title={!sidebarOpen ? item.label : undefined}
@@ -560,6 +562,9 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Aurora Command Executive Operations HUD */}
+              <AuroraCommandHUD onNavigate={(tab) => setActiveTab(tab)} />
 
               {/* Bento KPI Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

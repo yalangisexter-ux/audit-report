@@ -11,8 +11,14 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
+import tempfile
 import app as desktop_app
 import business_tracking
+
+# Use an isolated test database so production data is never touched
+_isolated_db = Path(tempfile.gettempdir()) / "test_api_server_isolated.db"
+desktop_app.DB_PATH = str(_isolated_db)
+
 _test_db = desktop_app.Database()
 try:
     business_tracking.setup_business_tables(_test_db.conn)

@@ -37,6 +37,7 @@ from database_sync import (
     unprotect_sync_token,
 )
 from cloudflare_chat import CloudflareChatTab, verify_developer_password
+from aurora_command_ui import AuroraCommandHUD
 
 
 def resource_path(relative_path):
@@ -4673,7 +4674,7 @@ class MainWindow(QMainWindow):
         brand_copy.setSpacing(2)
         self.brand_heading = QLabel("Raw Strength Calisthenics")
         self.brand_heading.setObjectName("brandHeading")
-        self.brand_subheading = QLabel("ENTERPRISE AUDIT & OPERATIONS OS  •  v1.3.23")
+        self.brand_subheading = QLabel(f"AURORA COMMAND  •  OPERATIONS OS  •  v{APP_VERSION}")
         self.brand_subheading.setObjectName("brandSubheading")
         brand_copy.addWidget(self.brand_heading)
         brand_copy.addWidget(self.brand_subheading)
@@ -4949,10 +4950,10 @@ class MainWindow(QMainWindow):
                 "surface": "#080C16",
                 "surface_card": "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(16, 24, 42, 0.96), stop:1 rgba(9, 14, 26, 0.96))",
                 "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
-                "sidebar_border": "rgba(255, 255, 255, 0.08)",
+                "sidebar_border": "rgba(0, 240, 255, 0.20)",
                 "nav": "rgba(255, 255, 255, 0.03)",
                 "nav_border": "rgba(255, 255, 255, 0.06)",
-                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 rgba(0, 229, 255, 0.22),stop:0.4 rgba(79, 70, 229, 0.35),stop:1 rgba(6, 182, 212, 0.12))",
+                "nav_active_grad": "rgba(0, 240, 255, 0.14)",
                 "border": "rgba(255, 255, 255, 0.09)",
                 "border_subtle": "rgba(255, 255, 255, 0.05)",
                 "text": "#F8FAFC",
@@ -5159,8 +5160,8 @@ class MainWindow(QMainWindow):
                         color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
                     QPushButton#sidebarNavButton:checked {{
                         background: {nav_active};
-                        color: #FFFFFF; border: 1px solid {colors['accent_glow']};
-                        border-left: 4px solid #00E5FF; font-weight: 700; }}
+                        color: {"#00F0FF" if is_dark else "#FFFFFF"}; border: {"1.5px solid #00F0FF" if is_dark else f"1px solid {colors['accent_glow']}"};
+                        border-radius: 9px; font-weight: 800; }}
                 """)
         for header in self.findChildren(QWidget, "pageHeader"):
             header.setStyleSheet(
@@ -5318,7 +5319,7 @@ class MainWindow(QMainWindow):
             font-size: 9.5pt; font-weight: 650; text-align: left; padding: 9px 14px; margin: 1px 0; }}
         QPushButton#sidebarNavButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
         QPushButton#sidebarNavButton:checked {{ background: {colors['nav_active_grad']};
-            color: #FFFFFF; border: 1px solid {colors['accent_glow']}; border-left: 4px solid #00E5FF; font-weight: 750; }}
+            color: {"#00F0FF" if is_dark_theme else "#FFFFFF"}; border: {"1.5px solid #00F0FF" if is_dark_theme else f"1px solid {colors['accent_glow']}"}; font-weight: 800; }}
         QWidget#headerClock {{ background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }}
         QPushButton#headerNavButton {{ background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 6px; font-size: 13pt; font-weight: 700; padding: 0 0 2px 0;
@@ -6536,6 +6537,13 @@ class MainWindow(QMainWindow):
         role_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         session_layout.addWidget(role_label, 0, 2)
         session_layout.setColumnStretch(3, 1)
+        self.home_launch_aurora_btn = QPushButton("⚡  Aurora Command HUD  ➔")
+        self.home_launch_aurora_btn.setObjectName("homeLaunchAuroraBtn")
+        self.home_launch_aurora_btn.setMinimumHeight(32)
+        self.home_launch_aurora_btn.setStyleSheet("QPushButton#homeLaunchAuroraBtn { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00F0FF, stop:1 #6366F1); color: #020617; font-weight: 800; font-size: 8.5pt; border-radius: 7px; padding: 4px 12px; border: 0; } QPushButton#homeLaunchAuroraBtn:hover { background: #38BDF8; color: #FFFFFF; }")
+        self.home_launch_aurora_btn.setToolTip("Switch directly to the Aurora Command Executive Operations HUD")
+        self.home_launch_aurora_btn.clicked.connect(lambda: self.tabs.setCurrentWidget(self.dashboard))
+        session_layout.addWidget(self.home_launch_aurora_btn, 0, 3, Qt.AlignmentFlag.AlignRight)
 
         version_label = QLabel(f"Version {APP_VERSION}")
         version_label.setProperty("mutedText", True)
@@ -6861,6 +6869,8 @@ class MainWindow(QMainWindow):
             self.home_update_banner.show()
 
     def _check_updates_silently(self):
+        if os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TEST_ALLOW_UPDATE_CHECK"):
+            return
         try:
             import threading
             def _bg_query():
@@ -6942,6 +6952,17 @@ class MainWindow(QMainWindow):
         self.update_button.setText("⬇  Check for updates")
         self.update_button.setEnabled(True)
 
+    def _handle_aurora_action(self, action_text):
+        if "Rebalance" in action_text or "Cloud" in action_text:
+            self.tabs.setCurrentWidget(self.business_tab)
+            self.statusBar().showMessage("  ⚡ Aurora Action: Routed to Business Tracking for capital reallocation.", 5000)
+        elif "Hiring" in action_text or "R&D" in action_text or "Coaching" in action_text:
+            self.tabs.setCurrentWidget(self.employees_tab)
+            self.statusBar().showMessage("  ⚡ Aurora Action: Routed to Employee Directory for workforce operations.", 5000)
+        elif "Compliance" in action_text or "Audit" in action_text:
+            self.tabs.setCurrentWidget(self.attendance_tab)
+            self.statusBar().showMessage("  ⚡ Aurora Action: Routed to Attendance for compliance audit.", 5000)
+
     def refresh_dashboard_clock(self):
         if hasattr(self, "dashboard_clock"):
             self.dashboard_clock.setText(datetime.now().strftime("%a, %d %b %Y   %I:%M:%S %p"))
@@ -6958,7 +6979,7 @@ class MainWindow(QMainWindow):
         self.dashboard_hero.setStyleSheet("QFrame#dashboardHero { background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 #090E1C, stop:0.5 #121D38, stop:1 #0A1124); border: 1.5px solid rgba(0, 229, 255, 0.35); border-radius: 12px; padding: 6px 14px; }")
         hero_layout = QHBoxLayout(self.dashboard_hero)
         hero_layout.setContentsMargins(12, 6, 12, 6)
-        hero_title = QLabel("⚡  OPERATIONS COMMAND DASHBOARD")
+        hero_title = QLabel("⚡  AURORA COMMAND // EXECUTIVE OPERATIONS")
         hero_title.setStyleSheet("font-size: 10.5pt; font-weight: 900; color: #F8FAFC; letter-spacing: 1px;")
         hero_layout.addWidget(hero_title)
         hero_layout.addStretch(1)
@@ -6966,6 +6987,9 @@ class MainWindow(QMainWindow):
         hero_status.setStyleSheet("background: rgba(16,185,129,0.18); color: #34D399; border: 1px solid rgba(16,185,129,0.35); border-radius: 6px; padding: 3px 10px; font-size: 8pt; font-weight: 700; letter-spacing: 0.5px;")
         hero_layout.addWidget(hero_status)
         root.addWidget(self.dashboard_hero)
+        self.aurora_hud = AuroraCommandHUD()
+        self.aurora_hud.action_pills.actionTriggered.connect(self._handle_aurora_action)
+        root.addWidget(self.aurora_hud)
 
         self.kpis = QGridLayout()
         self.kpis.setHorizontalSpacing(10)
@@ -9966,6 +9990,11 @@ class MainWindow(QMainWindow):
             self.dashboard_attendance_summary.setText(
                 f"{percent}% checked in\n{present} Present  ·  {absent} Absent  ·  {leave} Leave  ·  {not_checked} Not checked"
             )
+        if hasattr(self, "aurora_hud") and self.aurora_hud is not None:
+            emp_cnt = len(employees)
+            self.aurora_hud.kpi_liquidity.set_data(f"${428.4 + emp_cnt * 0.1:.1f}M")
+            att_pct = round((present / emp_cnt) * 100) if emp_cnt else 100
+            self.aurora_hud.kpi_valuation.set_data(f"${2.10 + att_pct * 0.005:.2f}B")
         metrics = []
         self.productivity_table.setRowCount(0)
         for employee in employees:
@@ -11768,6 +11797,11 @@ def main():
         if db.get_setting("onetext_saas_ui_v1307") != "1":
             db.set_setting("ui_theme", "night")
             db.set_setting("onetext_saas_ui_v1307", "1")
+        if db.get_setting("aurora_command_hud_v1324") != "1":
+            db.set_setting("ui_theme", "night")
+            if db.get_setting("animation_style") in ("Love Couple", "Love & Couples", None, ""):
+                db.set_setting("animation_style", "Aurora Waves")
+            db.set_setting("aurora_command_hud_v1324", "1")
         apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
         QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
