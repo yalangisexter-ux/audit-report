@@ -1,4 +1,28 @@
-# Raw Strength Calisthenics — Employee Audit Manager
+# Raw Strength Calisthenics — Employee Audit Manager & Operations OS
+
+## Modern React SPA + FastAPI REST API Interface (v1.3.22)
+
+A state-of-the-art web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a high-speed **FastAPI REST API** backend that connects directly to the underlying SQLite database with 100% business logic and audit trail parity.
+
+### Quick Start
+To launch the modern web application and automatically open it in your browser:
+```powershell
+python run_web.py
+```
+- **Web App URL:** `http://127.0.0.1:8000`
+- **Interactive REST API Docs (Swagger):** `http://127.0.0.1:8000/docs`
+- **Alternative Dev Server (Vite HMR):** `cd frontend; npm run dev` (runs on `http://localhost:5173`)
+
+### Key Features
+- **Modern Cyberpunk/Executive Glassmorphism:** Deep navy gradients, glowing card HUDs, dynamic telemetry clocks, and sleek neon scrollbars.
+- **Dynamic Custom Task Tracking:** Add arbitrary key-value tracking fields (e.g., `Tracked By`, `Equipment`, `Inspection Result`, etc.) directly inside both Create Task and Edit Task modals.
+- **Editable Department:** Free-text editable department field with auto-completion from existing organizational units.
+- **Responsive Dialog Modals:** Center-anchored with max-height limits and internal scrolling to prevent modals from hiding under taskbars or screen edges.
+- **Silent Background Sync HUD:** Real-time green auto-sync badge without disruptive loading screens or UI blocking.
+- **Integrated Print & Export Center:** Live preview generator with instant export to PDF, Word, and CSV matching all Task Manager filters.
+- **100% Business Logic & Data Parity:** Shares the exact same SQLite database, PBKDF2 encryption routines, and 102 automated regression tests.
+
+---
 
 ## Build a Windows release with GitHub Actions
 

@@ -1,7 +1,7 @@
 __pycache__/
 *.py[cod]
-build/
-dist/
+/build/
+/dist/
 *.spec
 *.db
 *.db-wal
@@ -13,4 +13,6 @@ scratch_screenshots/
 android/app/build/
 android/.gradle/
 apk-output/
+node_modules/
+frontend/node_modules/
 file
