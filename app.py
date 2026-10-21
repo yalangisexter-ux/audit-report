@@ -754,9 +754,10 @@ class UpdateWorker(QObject):
     progress = Signal(int, str)
     completed = Signal()
 
-    def __init__(self, current_version):
+    def __init__(self, current_version, force=False):
         super().__init__()
         self.current_version = current_version
+        self.force = force
 
     @staticmethod
     def request_bytes(url, accept="application/vnd.github+json"):
@@ -845,7 +846,7 @@ class UpdateWorker(QObject):
                     "Please try again later or contact your administrator."
                 )
             latest_parts, release, installer_asset = max(installable_releases, key=lambda item: item[0])
-            if latest_parts <= release_version_tuple(self.current_version):
+            if not getattr(self, "force", False) and latest_parts <= release_version_tuple(self.current_version):
                 self.current.emit(self.current_version)
                 return
 
@@ -5803,7 +5804,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "theme_toggle_btn"):
             self.theme_toggle_btn.setText("☀️  Day mode" if theme_name == "night" else "🌙  Night mode")
         if hasattr(self, "update_button"):
-            self.update_button.setText("⬇  Check for updates")
+            self.update_button.setText("⬇  Update application")
         if hasattr(self, "rollback_button"):
             self.rollback_button.setText("↶  Roll back")
         if hasattr(self, "header_clock"):
@@ -6539,7 +6540,7 @@ class MainWindow(QMainWindow):
         version_label = QLabel(f"Version {APP_VERSION}")
         version_label.setProperty("mutedText", True)
         session_layout.addWidget(version_label, 1, 0)
-        self.update_button = QPushButton("⬇  Check for updates")
+        self.update_button = QPushButton("⬇  Update application")
         self.update_button.setObjectName("homeUpdateBtn")
         self.update_button.setToolTip("Check GitHub for the latest application installer")
         self.update_button.setMinimumWidth(150)
@@ -6781,7 +6782,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def check_for_updates(self):
+    def check_for_updates(self, force=False):
         if getattr(self, "_update_thread", None) is not None:
             return
         self.update_button.setEnabled(False)
@@ -6815,7 +6816,7 @@ class MainWindow(QMainWindow):
         self._update_progress.show()
         self._update_progress.adjustSize()
         thread = QThread(self)
-        worker = UpdateWorker(APP_VERSION)
+        worker = UpdateWorker(APP_VERSION, force=force)
         worker.moveToThread(thread)
         self._update_thread = thread
         self._update_worker = worker
@@ -6844,7 +6845,15 @@ class MainWindow(QMainWindow):
         if progress is not None:
             progress.close()
             self._update_progress = None
-        info(self, f"You are already using the latest version ({version}).")
+        reply = QMessageBox.question(
+            self,
+            "Application is Up to Date",
+            f"You are already running the latest published release ({version}).\n\nWould you like to force re-download and repair/reinstall this version?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.check_for_updates(force=True)
 
     def show_update_alert(self, version):
         if hasattr(self, "home_update_banner") and hasattr(self, "home_update_text"):
@@ -6899,15 +6908,15 @@ class MainWindow(QMainWindow):
                     self._update_progress.setRange(0, 0)
                     self._update_progress.setLabelText("Installing update... Please wait; the app will reopen automatically.")
                     self._update_progress.repaint()
-                args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-"
+                args = "/SILENT /NORESTART /SP-"
                 result = ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", installer_path, args, None, 1
+                    None, "runas", str(installer_path), args, None, 1
                 )
                 if result <= 32:
-                    raise OSError(f"Windows could not launch the installer (ShellExecute error {result}).")
+                    os.startfile(str(installer_path))
             else:
-                subprocess.Popen([installer_path, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], close_fds=True)
-        except (OSError, AttributeError) as exc:
+                subprocess.Popen([str(installer_path), "/SILENT", "/NORESTART"], close_fds=True)
+        except Exception as exc:
             if getattr(self, "_update_progress", None):
                 self._update_progress.close()
                 self._update_progress = None

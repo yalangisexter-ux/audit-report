@@ -792,6 +792,76 @@ def update_settings(data: Dict[str, str], conn: sqlite3.Connection = Depends(get
     return {"success": True}
 
 
+# --- System Updates & Releases ---
+@app.get("/api/system/check-updates")
+def check_updates():
+    """Queries GitHub Releases API for the latest published application release."""
+    import urllib.request
+    try:
+        url = f"https://api.github.com/repos/{desktop_app.GITHUB_REPOSITORY}/releases?per_page=15"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "RawStrengthEmployeeAuditManager",
+                "Accept": "application/vnd.github+json",
+            }
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            releases = json.loads(resp.read().decode("utf-8"))
+
+        if not isinstance(releases, list) or not releases:
+            return {
+                "current_version": APP_VERSION,
+                "latest_version": APP_VERSION,
+                "has_update": False,
+                "message": "No releases currently found on GitHub."
+            }
+
+        latest_rel = None
+        for r in releases:
+            if not r.get("draft") and not r.get("prerelease") and r.get("published_at"):
+                latest_rel = r
+                break
+        if not latest_rel:
+            latest_rel = releases[0]
+
+        tag = latest_rel.get("tag_name", "").lstrip("vV")
+        installer_asset = next(
+            (a for a in latest_rel.get("assets", []) if a.get("name") == "RawStrengthEmployeeAuditManager-Setup.exe"),
+            None
+        )
+        apk_asset = next(
+            (a for a in latest_rel.get("assets", []) if a.get("name", "").endswith(".apk")),
+            None
+        )
+
+        has_update = desktop_app.release_version_tuple(tag) > desktop_app.release_version_tuple(APP_VERSION)
+
+        return {
+            "current_version": APP_VERSION,
+            "latest_version": tag,
+            "has_update": has_update,
+            "published_at": latest_rel.get("published_at"),
+            "release_name": latest_rel.get("name"),
+            "release_notes": latest_rel.get("body", ""),
+            "installer_url": installer_asset.get("browser_download_url") if installer_asset else f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
+            "installer_name": "RawStrengthEmployeeAuditManager-Setup.exe",
+            "installer_size": installer_asset.get("size") if installer_asset else 0,
+            "apk_url": apk_asset.get("browser_download_url") if apk_asset else None,
+            "github_releases_url": f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
+            "repository": desktop_app.GITHUB_REPOSITORY,
+        }
+    except Exception as exc:
+        return {
+            "current_version": APP_VERSION,
+            "latest_version": APP_VERSION,
+            "has_update": False,
+            "error": str(exc),
+            "github_releases_url": f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
+            "repository": desktop_app.GITHUB_REPOSITORY,
+        }
+
+
 # --- Serve Built React Frontend (SPA Fallback) ---
 DIST_DIR = ROOT_DIR / "frontend" / "dist"
 

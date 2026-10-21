@@ -149,3 +149,12 @@ def test_api_settings():
     data = res.json()
     assert "settings" in data
     assert "app_version" in data
+
+def test_api_system_updates():
+    res = client.get("/api/system/check-updates")
+    assert res.status_code == 200
+    data = res.json()
+    assert "current_version" in data
+    assert "latest_version" in data
+    assert "has_update" in data
+    assert "github_releases_url" in data

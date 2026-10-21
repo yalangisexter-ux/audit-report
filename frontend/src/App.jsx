@@ -53,6 +53,8 @@ export default function App() {
   const [reportPreview, setReportPreview] = useState('');
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   // Modals
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -109,7 +111,8 @@ export default function App() {
         fetchHolidays(),
         fetchProducts(),
         fetchServices(),
-        fetchChat()
+        fetchChat(),
+        fetchUpdateInfo()
       ]);
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -197,6 +200,34 @@ export default function App() {
       setChatMessages(data);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const fetchUpdateInfo = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/system/check-updates`);
+      const data = await res.json();
+      setUpdateInfo(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await fetch(`${API_BASE}/system/check-updates`);
+      const data = await res.json();
+      setUpdateInfo(data);
+      if (data.has_update) {
+        showNotification(`⚡ New update v${data.latest_version} available!`);
+      } else {
+        showNotification(`Application is up to date (v${data.current_version})`);
+      }
+    } catch (err) {
+      showNotification('Could not check for updates');
+    } finally {
+      setCheckingUpdate(false);
     }
   };
 
@@ -1159,6 +1190,97 @@ export default function App() {
                   >
                     Sync Now
                   </button>
+                </div>
+
+                {/* APPLICATION UPDATES SECTION */}
+                <div className="p-4 rounded-xl bg-slate-900/60 border border-cyan-500/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <Download className="w-4 h-4 text-cyan-400" />
+                        Application Updates
+                      </h4>
+                      <p className="text-slate-400 text-[11px]">
+                        Installed Version: <span className="text-cyan-400 font-mono font-bold">v{updateInfo?.current_version || '1.3.22'}</span>
+                        {updateInfo?.latest_version && (
+                          <span className="ml-2 text-slate-400">· Latest Release: <span className="text-emerald-400 font-mono font-bold">v{updateInfo.latest_version}</span></span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCheckUpdate}
+                      disabled={checkingUpdate}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs flex items-center gap-1.5 border border-white/10 transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${checkingUpdate ? 'animate-spin text-cyan-400' : ''}`} />
+                      {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+                    </button>
+                  </div>
+
+                  {updateInfo && (
+                    <div className="pt-2 border-t border-white/5 space-y-2">
+                      {updateInfo.has_update ? (
+                        <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+                          <div>
+                            <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5" />
+                              Update Available: v{updateInfo.latest_version}
+                            </div>
+                            <div className="text-[10px] text-slate-300">
+                              {updateInfo.release_name || 'New verified release ready for installation.'}
+                            </div>
+                          </div>
+                          <a
+                            href={updateInfo.installer_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase flex items-center gap-1 shadow-lg shadow-emerald-500/20"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Install Update (.exe)
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="p-3 rounded-lg bg-slate-950/60 border border-white/5 flex items-center justify-between">
+                          <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            Application is up to date (v{updateInfo.current_version}).
+                          </div>
+                          {updateInfo.installer_url && (
+                            <a
+                              href={updateInfo.installer_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] flex items-center gap-1 border border-white/10"
+                            >
+                              <Download className="w-3 h-3 text-cyan-400" /> Re-download Setup EXE
+                            </a>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-1">
+                        <a
+                          href={updateInfo.github_releases_url || "https://github.com/yalangisexter-ux/audit-report/releases/latest"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-cyan-400 hover:underline flex items-center gap-1"
+                        >
+                          <ExternalLink className="w-3 h-3" /> View GitHub Releases
+                        </a>
+                        {updateInfo.apk_url && (
+                          <a
+                            href={updateInfo.apk_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-400 hover:underline flex items-center gap-1"
+                          >
+                            <Download className="w-3 h-3" /> Android APK
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
