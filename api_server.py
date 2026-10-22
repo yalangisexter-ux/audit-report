@@ -835,7 +835,9 @@ def check_updates():
                 "current_version": APP_VERSION,
                 "latest_version": APP_VERSION,
                 "has_update": False,
-                "message": "No releases currently found on GitHub."
+                "message": "No releases currently found on GitHub.",
+                "github_releases_url": f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
+                "repository": desktop_app.GITHUB_REPOSITORY
             }
 
         latest_rel = None
