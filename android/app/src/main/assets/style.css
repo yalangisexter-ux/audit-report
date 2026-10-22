@@ -844,3 +844,294 @@ body.theme-day .att-row-card {
   margin-top: 6px;
   line-height: 1.4;
 }
+
+/* ==========================================================================
+   CYBER-HUD AURORA THEME & USER AUTHENTICATION STYLES (Matching Desktop v1.3.25)
+   ========================================================================== */
+
+:root {
+  --cyber-bg: #080B11;
+  --cyber-panel: rgba(13, 17, 28, 0.94);
+  --cyber-card: rgba(15, 23, 42, 0.85);
+  --cyber-border: rgba(99, 102, 241, 0.35);
+  --cyber-cyan: #00F5FF;
+  --cyber-violet: #A855F7;
+  --cyber-emerald: #10B981;
+  --cyber-amber: #F59E0B;
+  --cyber-rose: #F43F5E;
+}
+
+body.theme-night {
+  --bg-color: var(--cyber-bg);
+  --panel-bg: var(--cyber-panel);
+  --card-bg: var(--cyber-card);
+  --border-color: var(--cyber-border);
+  --accent-cyan: var(--cyber-cyan);
+  --accent-purple: var(--cyber-violet);
+}
+
+/* User Profile Chip in Header */
+.header-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 4px 10px;
+  margin-right: 6px;
+}
+
+.user-avatar-badge {
+  font-size: 14px;
+}
+
+.user-meta-group {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.user-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #F8FAFC;
+}
+
+.role-pill {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-top: 1px;
+}
+
+.role-pill.role-admin {
+  background: rgba(245, 158, 11, 0.22);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+}
+
+.role-pill.role-developer {
+  background: rgba(0, 245, 255, 0.20);
+  color: #00F5FF;
+  border: 1px solid rgba(0, 245, 255, 0.45);
+}
+
+.role-pill.role-hr {
+  background: rgba(236, 72, 153, 0.22);
+  color: #F472B6;
+  border: 1px solid rgba(236, 72, 153, 0.45);
+}
+
+.role-pill.role-staff,
+.role-pill.role-employee {
+  background: rgba(99, 102, 241, 0.22);
+  color: #A5B4FC;
+  border: 1px solid rgba(99, 102, 241, 0.45);
+}
+
+.role-pill.role-offline {
+  background: rgba(148, 163, 184, 0.18);
+  color: #94A3B8;
+  border: 1px solid rgba(148, 163, 184, 0.30);
+}
+
+.btn-logout {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-logout:hover {
+  color: #F43F5E;
+  background: rgba(244, 63, 94, 0.15);
+}
+
+/* Session Strip on Dashboard */
+.session-strip-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(17, 24, 39, 0.95), stop:1 rgba(15, 23, 42, 0.92));
+  background: linear-gradient(135deg, rgba(17, 24, 39, 0.95) 0%, rgba(15, 23, 42, 0.92) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.session-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-badge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  color: #94A3B8;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.hud-telemetry-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 6px;
+  padding: 3px 8px;
+  letter-spacing: 0.4px;
+}
+
+/* Cyber-HUD Authentication Modal */
+.auth-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(8, 11, 17, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.auth-modal-overlay.hidden {
+  display: none !important;
+}
+
+.auth-modal-card {
+  width: 100%;
+  max-width: 380px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(10, 15, 30, 0.98) 100%);
+  border: 1.5px solid rgba(99, 102, 241, 0.55);
+  box-shadow: 0 0 35px rgba(99, 102, 241, 0.25), 0 10px 40px rgba(0, 0, 0, 0.6);
+  border-radius: 18px;
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.auth-header {
+  margin-bottom: 22px;
+}
+
+.auth-logo-cyber {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px auto;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #00F5FF 0%, #6366F1 50%, #A855F7 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 18px;
+  color: #020617;
+  box-shadow: 0 0 20px rgba(0, 245, 255, 0.45);
+}
+
+.auth-header h2 {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #F8FAFC;
+  margin-bottom: 4px;
+}
+
+.auth-subtitle {
+  font-size: 12px;
+  color: #94A3B8;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.auth-sync-status {
+  font-size: 11px;
+  color: #38BDF8;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  display: inline-block;
+  padding: 2px 10px;
+}
+
+.auth-form {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.input-cyber {
+  width: 100%;
+  background: rgba(2, 6, 23, 0.7);
+  border: 1.5px solid rgba(99, 102, 241, 0.35);
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: #F8FAFC;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-cyber:focus {
+  border-color: #00F5FF;
+  box-shadow: 0 0 12px rgba(0, 245, 255, 0.3);
+}
+
+.btn-cyber-glow {
+  background: linear-gradient(135deg, #00F5FF 0%, #4F46E5 100%);
+  color: #020617;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 245, 255, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn-cyber-glow:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(0, 245, 255, 0.5);
+  color: #FFFFFF;
+}
+
+.auth-error-msg {
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  color: #FB7185;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.auth-footer-actions {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}

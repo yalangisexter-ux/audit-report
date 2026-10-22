@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-night">
-  <!-- Top App Bar -->
+  <!-▶Top App Bar -->
   <header class="app-header">
     <div class="header-left">
       <div class="app-logo">RSC</div>
@@ -18,6 +18,14 @@
       </div>
     </div>
     <div class="header-right">
+      <div id="headerUserChip" class="header-user-chip" title="Active User Session">
+        <span class="user-avatar-badge" id="headerUserAvatar">👤</span>
+        <div class="user-meta-group">
+          <span id="headerUserName" class="user-name">Guest</span>
+          <span id="headerUserRole" class="role-pill role-offline">Offline</span>
+        </div>
+        <button id="headerLogoutBtn" class="btn-logout" title="Sign Out">⎋</button>
+      </div>
       <button id="quickSyncBtn" class="icon-btn" title="Sync with Cloud" aria-label="Sync">
         <span class="sync-icon">🔄</span>
       </button>
@@ -27,11 +35,23 @@
     </div>
   </header>
 
-  <!-- Main Views Container -->
+  <!-▶Main Views Container -->
   <main class="app-content">
     
-    <!-- 1. DASHBOARD VIEW -->
+    <!-▶1. DASHBOARD VIEW -->
     <section id="viewDashboard" class="view-panel active">
+      <!-- Cyber-HUD Session Strip matching Desktop -->
+      <div class="session-strip-card" id="dashSessionStrip">
+        <div class="session-strip-left">
+          <span class="session-badge">SESSION</span>
+          <strong id="sessionStripUser">Admin</strong>
+          <span id="sessionStripRole" class="role-pill role-admin">Admin</span>
+        </div>
+        <div class="session-strip-right">
+          <span class="hud-telemetry-badge">🟢 CLOUD SYNC ACTIVE</span>
+        </div>
+      </div>
+
       <div class="welcome-card">
         <div class="welcome-text">
           <h2 id="dashGreeting">Welcome Back</h2>
@@ -40,7 +60,7 @@
         <div id="holidayBadge" class="badge badge-holiday hidden">Holiday Declared</div>
       </div>
 
-      <!-- Stat Cards Grid -->
+      <!-▶Stat Cards Grid -->
       <div class="stats-grid">
         <div class="stat-card" style="border-left-color: #3b82f6;">
           <span class="stat-num" id="statTotalEmployees">0</span>
@@ -58,9 +78,13 @@
           <span class="stat-num" id="statLeaveCount">0</span>
           <span class="stat-label">On Leave</span>
         </div>
+        <div class="stat-card" style="border-left-color: #8b5cf6;">
+          <span class="stat-num" id="statTasksCount">0</span>
+          <span class="stat-label">Priority Tasks</span>
+        </div>
       </div>
 
-      <!-- Quick Actions -->
+      <!-▶Quick Actions -->
       <div class="card">
         <div class="card-header">
           <h3>Quick Actions</h3>
@@ -72,7 +96,7 @@
         </div>
       </div>
 
-      <!-- Tasks Summary -->
+      <!-▶Tasks Summary -->
       <div class="card">
         <div class="card-header">
           <h3>Today's Priority Tasks</h3>
@@ -84,7 +108,7 @@
       </div>
     </section>
 
-    <!-- 2. ATTENDANCE VIEW -->
+    <!-▶2. ATTENDANCE VIEW -->
     <section id="viewAttendance" class="view-panel">
       <div class="date-navigator card">
         <button id="attPrevDayBtn" class="btn-nav">◀</button>
@@ -110,11 +134,11 @@
       </div>
     </section>
 
-    <!-- 3. TASK MANAGER VIEW -->
+    <!-▶3. TASK MANAGER VIEW -->
     <section id="viewTasks" class="view-panel">
       <div class="section-actions-bar">
         <input type="text" id="taskSearchInput" placeholder="🔍 Search tasks..." class="search-input">
-        <button id="openNewTaskModalBtn" class="btn btn-primary">+ Add Task</button>
+        <button id="openNewTaskModalBtn" class="btn btn-primary">🚪 Add Task</button>
       </div>
 
       <div class="filters-row">
@@ -139,11 +163,11 @@
       </div>
     </section>
 
-    <!-- 4. EMPLOYEES VIEW -->
+    <!-▶4. EMPLOYEES VIEW -->
     <section id="viewEmployees" class="view-panel">
       <div class="section-actions-bar">
         <input type="text" id="empSearchInput" placeholder="🔍 Search employee by name, code or department..." class="search-input">
-        <button id="openNewEmpModalBtn" class="btn btn-primary">+ Add Staff</button>
+        <button id="openNewEmpModalBtn" class="btn btn-primary">🚪 Add Staff</button>
       </div>
 
       <div id="empList" class="employees-grid">
@@ -151,7 +175,7 @@
       </div>
     </section>
 
-    <!-- 5. LIVE CHAT VIEW -->
+    <!-▶5. LIVE CHAT VIEW -->
     <section id="viewChat" class="view-panel">
       <div id="chatAuthContainer" class="card">
         <h3>Live Chat Sign In</h3>
@@ -195,7 +219,7 @@
       </div>
     </section>
 
-    <!-- 6. SETTINGS & CLOUD SYNC VIEW -->
+    <!-▶6. SETTINGS & CLOUD SYNC VIEW -->
     <section id="viewSettings" class="view-panel">
       <div class="card">
         <div class="card-header">
@@ -220,7 +244,7 @@
         <div class="form-group">
           <label>Installation Identifier</label>
           <div class="input-with-btn">
-            <input type="text" id="settingInstallId" value="mobile-client-001" readonly class="input-readonly">
+            <input type="text" id="settingInstallId" value="c4cf201d3c68e2fcaf60aa05fd423d9a" readonly class="input-readonly">
             <button id="genNewInstallIdBtn" class="btn btn-sm">Generate</button>
           </div>
         </div>
@@ -278,7 +302,7 @@
 
   </main>
 
-  <!-- Bottom Navigation Bar -->
+  <!-▶Bottom Navigation Bar -->
   <nav class="bottom-nav">
     <button class="nav-item active" data-view="viewDashboard">
       <span class="nav-icon">📊</span>
@@ -306,9 +330,9 @@
     </button>
   </nav>
 
-  <!-- Modals -->
+  <!-▶Modals -->
 
-  <!-- Add/Edit Employee Modal -->
+  <!-▶Add/Edit Employee Modal -->
   <div id="modalEmployee" class="modal-overlay hidden">
     <div class="modal-card">
       <div class="modal-header">
@@ -335,7 +359,7 @@
         </div>
         <div class="form-group">
           <label>Phone Number</label>
-          <input type="tel" id="empFormPhone" placeholder="+91 9876543210">
+          <input type="tel" id="empFormPhone" placeholder="🚪91 9876543210">
         </div>
         <div class="form-group">
           <label>Email Address</label>
@@ -349,7 +373,7 @@
     </div>
   </div>
 
-  <!-- Add/Edit Task Modal -->
+  <!-▶Add/Edit Task Modal -->
   <div id="modalTask" class="modal-overlay hidden">
     <div class="modal-card">
       <div class="modal-header">
@@ -433,25 +457,25 @@
           <label>Next Action</label>
           <input type="text" id="taskFormNextAction" placeholder="Next action or follow-up note...">
         </div>
-        <!-- Custom Tracking Fields Card -->
+        <!-▶Custom Tracking Fields Card -->
         <div id="mobileCustomTaskCard" class="form-group" style="background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(129, 140, 248, 0.35); border-radius: 10px; padding: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="font-size: 14px;">🏷️</span>
-              <strong style="color: #E2E8F0; font-size: 13px;">Custom Tracking Fields (Key - Value)</strong>
+              <strong style="color: #E2E8F0; font-size: 13px;">Custom Tracking Fields (Key ▶Value)</strong>
             </div>
             <button type="button" id="mobileAddKeyValueBtn" class="btn btn-sm" style="font-size: 11px; padding: 4px 10px; border-radius: 6px; background: rgba(99, 102, 241, 0.25); color: #C7D2FE; border: 1px solid rgba(129, 140, 248, 0.4); font-weight: 600;">➕ Add Field</button>
           </div>
           <div style="font-size: 11px; color: #94A3B8; margin-bottom: 8px;">Add custom tracking options where you can enter your own field names and values (e.g. Tracked By : Name):</div>
-          <!-- Quick Preset Chips -->
+          <!-▶Quick Preset Chips -->
           <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px;">
-            <button type="button" class="preset-chip" data-preset-key="Tracked By" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(129, 140, 248, 0.3); color: #C7D2FE; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;">+ Tracked By</button>
-            <button type="button" class="preset-chip" data-preset-key="Client" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Client</button>
-            <button type="button" class="preset-chip" data-preset-key="Location" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Location</button>
-            <button type="button" class="preset-chip" data-preset-key="Batch" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Batch</button>
-            <button type="button" class="preset-chip" data-preset-key="Priority Code" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Priority Code</button>
-            <button type="button" class="preset-chip" data-preset-key="Machine" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Machine</button>
-            <button type="button" class="preset-chip" data-preset-key="Tag" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">+ Tag</button>
+            <button type="button" class="preset-chip" data-preset-key="Tracked By" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(129, 140, 248, 0.3); color: #C7D2FE; padding: 2px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; font-weight: 600;">🚪 Tracked By</button>
+            <button type="button" class="preset-chip" data-preset-key="Client" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">🚪 Client</button>
+            <button type="button" class="preset-chip" data-preset-key="Location" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">🚪 Location</button>
+            <button type="button" class="preset-chip" data-preset-key="Batch" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">🚪 Batch</button>
+            <button type="button" class="preset-chip" data-preset-key="Priority Code" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">🚪 Priority Code</button>
+            <button type="button" class="preset-chip" data-preset-key="Machine" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">🚪 Machine</button>
+            <button type="button" class="preset-chip" data-preset-key="Tag" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #CBD5E1; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; cursor: pointer;">🚪 Tag</button>
           </div>
           <div id="mobileCustomValuesContainer" style="display: flex; flex-direction: column; gap: 6px;"></div>
         </div>
@@ -463,10 +487,37 @@
     </div>
   </div>
 
-  <!-- Toast Notification -->
+  <!-▶Toast Notification -->
+  <!-- Cyber-HUD Terminal Authentication Modal -->
+  <div id="modalAppAuth" class="modal-overlay auth-modal-overlay">
+    <div class="modal-card auth-modal-card">
+      <div class="auth-header">
+        <div class="auth-logo-cyber">RSC</div>
+        <h2>RAW STRENGTH CYBER-HUD</h2>
+        <span class="auth-subtitle">Terminal Session Authentication</span>
+        <div class="auth-sync-status">🟢 Central Cloud Synchronized</div>
+      </div>
+      <form id="appAuthForm" class="auth-form">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="appAuthUsername" class="input-cyber" placeholder="Enter username (e.g. admin)" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label>Password / PIN</label>
+          <input type="password" id="appAuthPassword" class="input-cyber" placeholder="Enter password or PIN" required autocomplete="current-password">
+        </div>
+        <div id="appAuthError" class="auth-error-msg hidden"></div>
+        <button type="submit" id="btnAppSignIn" class="btn btn-primary btn-block btn-cyber-glow">INITIALIZE SESSION ➔</button>
+      </form>
+      <div class="auth-footer-actions">
+        <button type="button" id="btnSyncAccountsNow" class="btn btn-outline btn-sm">🔄 Pull Latest Accounts from Cloud</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toastNotification" class="toast hidden"></div>
 
-  <!-- Scripts -->
+  <!-▶Scripts -->
   <script src="app.js"></script>
 </body>
 </html>

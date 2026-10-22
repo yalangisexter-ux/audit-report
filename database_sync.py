@@ -215,6 +215,24 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
         manifest = {}
         try:
             destination.row_factory = sqlite3.Row
+            if "auth_users" in tables:
+                manifest["auth_users"] = [
+                    {
+                        "id": r["id"],
+                        "username": r["username"],
+                        "display_name": r["display_name"] or r["username"],
+                        "role": r["role"],
+                        "password_salt": r["password_salt"],
+                        "password_hash": r["password_hash"],
+                        "security_question": r["security_question"] if "security_question" in r.keys() else "",
+                        "answer_salt": r["answer_salt"] if "answer_salt" in r.keys() else "",
+                        "answer_hash": r["answer_hash"] if "answer_hash" in r.keys() else "",
+                        "active": int(r["active"]) if "active" in r.keys() else 1,
+                        "created_at": r["created_at"] if "created_at" in r.keys() else "",
+                        "updated_at": r["updated_at"] if "updated_at" in r.keys() else "",
+                    }
+                    for r in destination.execute("SELECT * FROM auth_users").fetchall()
+                ]
             if "employees" in tables:
                 manifest["employees"] = [dict(r) for r in destination.execute("SELECT * FROM employees").fetchall()]
             if "attendance" in tables:

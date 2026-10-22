@@ -1624,6 +1624,52 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
     local_conn.execute("PRAGMA foreign_keys=OFF")
     local_conn.execute("BEGIN IMMEDIATE")
     try:
+        # 0. Merge auth_users
+        remote_users = data.get("auth_users") or []
+        if isinstance(remote_users, list):
+            local_users = {
+                dict(r)["username"].strip().lower(): dict(r)
+                for r in local_conn.execute("SELECT * FROM auth_users").fetchall()
+            }
+            for ru in remote_users:
+                if not isinstance(ru, dict):
+                    continue
+                uname = str(ru.get("username", "")).strip().lower()
+                if not uname:
+                    continue
+                if uname not in local_users:
+                    local_conn.execute(
+                        """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
+                           security_question, answer_salt, answer_hash, active, created_at, updated_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (ru["username"], ru.get("display_name", "") or ru["username"], ru.get("role", "Staff"),
+                         ru.get("password_salt", ""), ru.get("password_hash", ""),
+                         ru.get("security_question", ""), ru.get("answer_salt", ""), ru.get("answer_hash", ""),
+                         int(ru.get("active", 1)), ru.get("created_at", now_text()), ru.get("updated_at", now_text()))
+                    )
+                    stats["users"] += 1
+                else:
+                    lu = local_users[uname]
+                    r_upd = str(ru.get("updated_at") or "")
+                    l_upd = str(lu.get("updated_at") or "")
+                    if r_upd > l_upd:
+                        new_role = ru.get("role", lu.get("role", "Staff"))
+                        if is_privileged_user(lu) and not is_privileged_user(new_role):
+                            new_role = lu.get("role", "Admin")
+                        local_conn.execute(
+                            """UPDATE auth_users SET display_name=?, role=?, password_salt=?, password_hash=?,
+                               security_question=?, answer_salt=?, answer_hash=?, active=?, updated_at=?
+                               WHERE id=?""",
+                            (ru.get("display_name", lu.get("display_name", "")), new_role,
+                             ru.get("password_salt", lu.get("password_salt", "")),
+                             ru.get("password_hash", lu.get("password_hash", "")),
+                             ru.get("security_question", lu.get("security_question", "")),
+                             ru.get("answer_salt", lu.get("answer_salt", "")),
+                             ru.get("answer_hash", lu.get("answer_hash", "")),
+                             int(ru.get("active", 1)), now_text(), lu["id"])
+                        )
+                        stats["users"] += 1
+
         # 1. Merge employees & map remote IDs
         remote_to_local_emp_id = {}
         local_emps = [dict(r) for r in local_conn.execute("SELECT * FROM employees").fetchall()]

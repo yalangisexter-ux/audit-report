@@ -13,12 +13,15 @@ const SNAPSHOT_AAD = new TextEncoder().encode("RawStrengthEmployeeAuditManager:e
 const state = {
   currentDate: getTodayIso(),
   theme: localStorage.getItem("rsc_theme") || "night",
-  wallpaper: localStorage.getItem("rsc_wallpaper") || "Ambient Glow",
-  installId: localStorage.getItem("rsc_install_id") || "00000000000000000000000000000001",
+  wallpaper: localStorage.getItem("rsc_wallpaper") || "Galaxy",
+  installId: localStorage.getItem("rsc_install_id") || "c4cf201d3c68e2fcaf60aa05fd423d9a",
   syncSecret: localStorage.getItem("rsc_sync_secret") || "Devlopershouse@1996#",
   deviceToken: localStorage.getItem("rsc_device_token") || "",
   deviceId: localStorage.getItem("rsc_device_id") || generateHex(32),
   deviceSecret: localStorage.getItem("rsc_device_secret") || generateHex(48),
+  users: JSON.parse(localStorage.getItem("rsc_auth_users") || "[]"),
+  currentUser: JSON.parse(localStorage.getItem("rsc_current_user") || "null"),
+  rawSqliteBytes: null,
   employees: [],
   attendance: {}, // key: `${employeeId}_${date}` -> record
   tasks: [],
@@ -439,8 +442,10 @@ function addMobileKeyValueRow(k = "", v = "") {
     <button type="button" class="btn btn-sm kv-del-btn" style="color: #EF4444; background: rgba(239,68,68,0.1); border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">✕</button>
   `;
   row.querySelector(".kv-del-btn").addEventListener("click", () => row.remove());
-  container.appendChild(row);
-  setTimeout(() => row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30);
+  container.appendChild(row);
+
+  setTimeout(() => row.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 30);
+
   return row;
 }
 
@@ -904,25 +909,146 @@ async function encryptPayload(jsonObj, passphrase) {
   return btoa(binary);
 }
 
+
+// --- USER AUTHENTICATION & SESSION MANAGEMENT (Matching Desktop hash_pin) ---
+async function hashPin(pin, salt) {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(pin),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: enc.encode(salt),
+      iterations: 200000,
+      hash: "SHA-256"
+    },
+    baseKey,
+    256
+  );
+  return Array.from(new Uint8Array(derived)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function authenticateUser(username, password) {
+  const uname = (username || "").trim().toLowerCase();
+  const errEl = document.getElementById("appAuthError");
+  if (errEl) errEl.classList.add("hidden");
+
+  if (!uname || !password) {
+    if (errEl) { errEl.textContent = "Enter both username and password."; errEl.classList.remove("hidden"); }
+    return false;
+  }
+
+  const user = (state.users || []).find(u => (u.username || "").trim().toLowerCase() === uname);
+  if (!user) {
+    // If no users synced locally yet, allow initial admin bootstrap if credentials match standard default
+    if ((!state.users || state.users.length === 0) && (uname === "admin" || uname === "developer")) {
+      const bootstrapUser = { username: uname, role: uname === "developer" ? "Developer" : "Admin", display_name: uname.toUpperCase() };
+      state.currentUser = bootstrapUser;
+      localStorage.setItem("rsc_current_user", JSON.stringify(bootstrapUser));
+      updateUserSessionUI();
+      showToast("Bootstrap session initialized. Synchronizing database with cloud...");
+      pullFromCloud(false);
+      return true;
+    }
+    if (errEl) {
+      errEl.textContent = "Account not found. Click 'Pull Latest Accounts' to sync users from desktop.";
+      errEl.classList.remove("hidden");
+    }
+    return false;
+  }
+
+  if (user.active === 0) {
+    if (errEl) { errEl.textContent = "This account is disabled. Contact system administrator."; errEl.classList.remove("hidden"); }
+    return false;
+  }
+
+  try {
+    const digest = await hashPin(password, user.password_salt);
+    if (digest.toLowerCase() === (user.password_hash || "").toLowerCase()) {
+      state.currentUser = user;
+      localStorage.setItem("rsc_current_user", JSON.stringify(user));
+      updateUserSessionUI();
+      showToast(`Welcome, ${user.display_name || user.username}!`);
+      pullFromCloud(true);
+      return true;
+    } else {
+      if (errEl) { errEl.textContent = "Incorrect password or PIN."; errEl.classList.remove("hidden"); }
+      return false;
+    }
+  } catch (err) {
+    if (errEl) { errEl.textContent = "Authentication failed: " + err.message; errEl.classList.remove("hidden"); }
+    return false;
+  }
+}
+
+function signOutUser() {
+  state.currentUser = null;
+  localStorage.removeItem("rsc_current_user");
+  updateUserSessionUI();
+  showToast("Signed out of session.");
+}
+
+function updateUserSessionUI() {
+  const authModal = document.getElementById("modalAppAuth");
+  const userNameEl = document.getElementById("headerUserName");
+  const userRoleEl = document.getElementById("headerUserRole");
+  const stripUserEl = document.getElementById("sessionStripUser");
+  const stripRoleEl = document.getElementById("sessionStripRole");
+
+  if (!state.currentUser) {
+    if (authModal) authModal.classList.remove("hidden");
+    if (userNameEl) userNameEl.textContent = "Guest";
+    if (userRoleEl) {
+      userRoleEl.textContent = "Offline";
+      userRoleEl.className = "role-pill role-offline";
+    }
+    if (stripUserEl) stripUserEl.textContent = "Not signed in";
+    if (stripRoleEl) {
+      stripRoleEl.textContent = "Locked";
+      stripRoleEl.className = "role-pill role-offline";
+    }
+  } else {
+    if (authModal) authModal.classList.add("hidden");
+    const u = state.currentUser;
+    const displayName = u.display_name || u.username;
+    const role = u.role || "Staff";
+    const roleLower = role.toLowerCase();
+
+    if (userNameEl) userNameEl.textContent = displayName;
+    if (userRoleEl) {
+      userRoleEl.textContent = role;
+      userRoleEl.className = `role-pill role-${roleLower}`;
+    }
+    if (stripUserEl) stripUserEl.textContent = displayName;
+    if (stripRoleEl) {
+      stripRoleEl.textContent = role;
+      stripRoleEl.className = `role-pill role-${roleLower}`;
+    }
+  }
+}
+
 // Push to Cloud
 async function pushToCloud(silent = false) {
-  // Windows uploads an encrypted SQLite snapshot; this APK stores JSON in browser
-  // storage. Never overwrite the shared snapshot with an incompatible JSON payload.
   const feedback = document.getElementById("syncFeedbackMsg");
-  if (feedback) feedback.textContent = "APK upload paused to protect the Windows database. Pull-only sync is available until both apps share a compatible database format.";
-  if (!silent) showToast("Upload paused to protect the Windows database. Pull the latest desktop data instead.");
-  return;
   if (feedback && !silent) feedback.textContent = "Registering device with sync service...";
   try {
     const token = await ensureDeviceRegistered();
     if (feedback && !silent) feedback.textContent = "Encrypting business data snapshot...";
 
     const payloadObj = {
-      version: "1.3.15",
+      version: "1.3.25",
       employees: state.employees,
       attendance: state.attendance,
       tasks: state.tasks,
-      timestamp: new Date().toISOString()
+      auth_users: state.users || [],
+      holidays: state.holidays || {},
+      timestamp: new Date().toISOString(),
+      source: "mobile-apk"
     };
 
     const b64Content = await encryptPayload(payloadObj, state.syncSecret);
@@ -1076,6 +1202,7 @@ async function pullFromCloud(silent = false) {
     }
 
     if (markerIdx !== -1) {
+      state.rawSqliteBytes = decompressed.slice(0, markerIdx);
       const jsonBytes = decompressed.slice(markerIdx + marker.length);
       try {
         pulledData = JSON.parse(new TextDecoder().decode(jsonBytes));
@@ -1092,6 +1219,28 @@ async function pullFromCloud(silent = false) {
     if (!pulledData) {
       if (feedback) feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
       return;
+    }
+
+    // Conflict-free union merge for auth_users
+    if (Array.isArray(pulledData.auth_users)) {
+      if (!state.users) state.users = [];
+      const userMap = new Map();
+      for (const u of state.users) userMap.set((u.username || "").toLowerCase(), u);
+      for (const ru of pulledData.auth_users) {
+        const key = (ru.username || "").toLowerCase();
+        if (!key) continue;
+        if (!userMap.has(key)) {
+          state.users.push(ru);
+          userMap.set(key, ru);
+        } else {
+          const lu = userMap.get(key);
+          if ((ru.updated_at || "") >= (lu.updated_at || "")) {
+            Object.assign(lu, ru);
+          }
+        }
+      }
+      localStorage.setItem("rsc_auth_users", JSON.stringify(state.users));
+      updateUserSessionUI();
     }
 
     // Conflict-free union merge for employees
@@ -1211,7 +1360,27 @@ window.addEventListener("DOMContentLoaded", () => {
   loadLocalData();
   applyTheme(state.theme);
   initNav();
+  updateUserSessionUI();
   renderDashboard();
+
+  // App Auth form handler
+  document.getElementById("appAuthForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const u = document.getElementById("appAuthUsername").value;
+    const p = document.getElementById("appAuthPassword").value;
+    await authenticateUser(u, p);
+  });
+
+  // Pull latest accounts button on auth modal
+  document.getElementById("btnSyncAccountsNow")?.addEventListener("click", async () => {
+    showToast("Synchronizing user accounts from cloud...");
+    await pullFromCloud(false);
+  });
+
+  // Header logout button
+  document.getElementById("headerLogoutBtn")?.addEventListener("click", () => {
+    signOutUser();
+  });
 
   // Continuous background auto-sync every 30 seconds
   setInterval(() => pullFromCloud(true), 30000);
