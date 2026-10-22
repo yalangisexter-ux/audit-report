@@ -906,7 +906,12 @@ async function encryptPayload(jsonObj, passphrase) {
 
 // Push to Cloud
 async function pushToCloud(silent = false) {
+  // Windows uploads an encrypted SQLite snapshot; this APK stores JSON in browser
+  // storage. Never overwrite the shared snapshot with an incompatible JSON payload.
   const feedback = document.getElementById("syncFeedbackMsg");
+  if (feedback) feedback.textContent = "APK upload paused to protect the Windows database. Pull-only sync is available until both apps share a compatible database format.";
+  if (!silent) showToast("Upload paused to protect the Windows database. Pull the latest desktop data instead.");
+  return;
   if (feedback && !silent) feedback.textContent = "Registering device with sync service...";
   try {
     const token = await ensureDeviceRegistered();
