@@ -939,18 +939,8 @@ async function authenticateUser(username, password) {
 
   const user = (state.users || []).find(u => (u.username || "").trim().toLowerCase() === uname);
   if (!user) {
-    // If no users synced locally yet, allow initial admin bootstrap if credentials match standard default
-    if ((!state.users || state.users.length === 0) && (uname === "admin" || uname === "developer")) {
-      const bootstrapUser = { username: uname, role: uname === "developer" ? "Developer" : "Admin", display_name: uname.toUpperCase() };
-      state.currentUser = bootstrapUser;
-      localStorage.setItem("rsc_current_user", JSON.stringify(bootstrapUser));
-      updateUserSessionUI();
-      showToast("Bootstrap session initialized. Synchronizing database with cloud...");
-      pullFromCloud(false);
-      return true;
-    }
     if (errEl) {
-      errEl.textContent = "Account not found. Click 'Pull Latest Accounts' to sync users from desktop.";
+      errEl.textContent = "Login rejected: this account has not been synchronized from the desktop database. Check cloud sync and try again.";
       errEl.classList.remove("hidden");
     }
     return false;
@@ -1062,11 +1052,15 @@ async function pushToCloud(silent = false) {
       throw new Error(err.error || `Push failed with status ${res.status}`);
     }
 
-    if (feedback) feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
-    if (!silent) showToast("Cloud sync completed successfully!");
+    if (feedback) feedback.textContent = `✅ Upload confirmed by sync service at ${new Date().toLocaleTimeString()}.`;
+    const badge = document.querySelector("#syncStatusCard .sync-status-header strong");
+    if (badge) badge.textContent = "Cloud upload confirmed; pull not yet verified";
+    if (!silent) showToast("Encrypted snapshot upload accepted.");
   } catch (err) {
-    if (feedback) feedback.textContent = `❌ Sync error: ${err.message}`;
-    if (!silent) showToast(`Sync error: ${err.message}`, 4000);
+    if (feedback) feedback.textContent = `❌ Sync failed: ${err.message}. Data is not confirmed synced.`;
+    const badge = document.querySelector("#syncStatusCard .sync-status-header strong");
+    if (badge) badge.textContent = "Cloud sync failed";
+    if (!silent) showToast(`Sync failed: ${err.message}`, 5000);
   }
 }
 
@@ -1211,8 +1205,7 @@ async function pullFromCloud(silent = false) {
     }
 
     if (!pulledData) {
-      if (feedback) feedback.textContent = `✅ Synced to cloud at ${new Date().toLocaleTimeString()}!`;
-      return;
+      throw new Error("Downloaded snapshot did not contain a readable mobile data manifest. No local data was changed.");
     }
 
     // Conflict-free union merge for auth_users
@@ -1345,7 +1338,9 @@ document.getElementById("btnCheckAppUpdate")?.addEventListener("click", async ()
       if (feedback) feedback.textContent = "No newer APK is published yet. Latest release: v" + latest + ".";
     }
   } catch (err) {
-    if (feedback) feedback.textContent = "Could not check updates: " + err.message + " Open the releases page to check manually.";
+    if (feedback) feedback.textContent = "Release API unavailable: " + err.message + ". Opening official releases page.";
+    // Android WebView can block cross-origin API calls or popups; navigate directly as fallback.
+    window.location.href = "https://github.com/yalangisexter-ux/audit-report/releases";
   } finally {
     if (btn) btn.disabled = false;
   }
