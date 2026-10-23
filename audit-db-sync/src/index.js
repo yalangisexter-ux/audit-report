@@ -27,13 +27,6 @@ export default {
           status: "online",
           message: "Raw Strength Database Sync Service is online and operational.",
         });
-      if ((url.pathname === "/" || url.pathname === "/health") && request.method === "GET") {
-        response = json({
-          ok: true,
-          service: "raw-strength-audit-db-sync",
-          status: "online",
-          message: "Raw Strength Database Sync Service is online and operational.",
-        });
       } else if (url.pathname === "/latest-release" && request.method === "GET") {
         const releaseResponse = await fetch("https://api.github.com/repos/yalangisexter-ux/audit-report/releases/latest", {
           headers: { "Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager" },
