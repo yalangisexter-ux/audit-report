@@ -2,8 +2,15 @@
 
 The app stores one encrypted SQLite snapshot per customer installation at
 `customer-data/<installation-id>.db.enc` in the `yalangisexter-ux/audit-report` repository.
-Each installation has its own random ID, so snapshots from different installations do not
-overwrite each other.
+
+**Desktop EXE and Android APK share the same cloud installation by default**
+(`c4cf201d3c68e2fcaf60aa05fd423d9a`) so accounts (`auth_users`), employees, tasks, and
+attendance can be merged conflict-free across devices. Existing custom installation IDs are
+never overwritten. Use **Link / Change ID** on desktop (or Settings on mobile) only when you
+intentionally want a separate cloud namespace.
+
+Snapshots may be a full SQLite database (desktop) or a JSON business manifest (mobile). Both
+formats are accepted on pull. Merges are additive: local users and records are preserved.
 
 ## Configure and push
 
@@ -35,9 +42,9 @@ mode settings before enabling Git sync. Archived work files remain on the custom
 they are not uploaded. If the customer recovery copy is missing or invalid, startup stops before
 syncing and leaves the current database untouched.
 
-Snapshots omit `auth_users` and local settings except the business `working_weekdays` setting.
-Employee, task, attendance, audit, report-source, and archived-document data remain in the
-encrypted database.
+Snapshots **include** `auth_users` (for shared login across EXE and APK) and omit local-only
+settings except the business `working_weekdays` setting. Employee, task, attendance, audit,
+report-source, and archived-document data remain in the encrypted database.
 
 ## Decrypt a customer snapshot for debugging
 
