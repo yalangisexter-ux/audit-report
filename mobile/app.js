@@ -1306,6 +1306,57 @@ async function pullFromCloud(silent = false) {
   }
 }
 
+// Check the published Android APK release separately from cloud data sync.
+const MOBILE_APP_VERSION = "1.3.25";
+function compareAppVersions(a, b) {
+  const aa = String(a || "0").replace(/^[vV]/, "").split(".").map(n => parseInt(n, 10) || 0);
+  const bb = String(b || "0").replace(/^[vV]/, "").split(".").map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
+    const diff = (aa[i] || 0) - (bb[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+document.getElementById("btnCheckAppUpdate")?.addEventListener("click", async () => {
+  const btn = document.getElementById("btnCheckAppUpdate");
+  const feedback = document.getElementById("appUpdateFeedback");
+  if (btn) btn.disabled = true;
+  if (feedback) feedback.textContent = "Checking the latest published release...";
+  try {
+    const response = await fetch("https://api.github.com/repos/yalangisexter-ux/audit-report/releases?per_page=20", {
+      headers: { "Accept": "application/vnd.github+json" },
+      cache: "no-store"
+    });
+    if (!response.ok) throw new Error("Release check failed (HTTP " + response.status + ").");
+    const releases = await response.json();
+    const release = Array.isArray(releases) ? releases.find(item => !item.draft && !item.prerelease && item.published_at) : null;
+    if (!release) {
+      if (feedback) feedback.textContent = "No published release found. Open the official releases page to check manually.";
+      window.open("https://github.com/yalangisexter-ux/audit-report/releases", "_blank", "noopener");
+      return;
+    }
+    const latest = String(release.tag_name || "").replace(/^[vV]/, "");
+    const apk = (release.assets || []).find(asset => /\.apk$/i.test(asset.name || ""));
+    if (compareAppVersions(latest, MOBILE_APP_VERSION) > 0) {
+      if (apk && apk.browser_download_url) {
+        if (feedback) feedback.textContent = "Update available: v" + latest + ". Opening APK download. Android may ask you to confirm installation.";
+        window.open(apk.browser_download_url, "_blank", "noopener");
+      } else {
+        if (feedback) feedback.textContent = "Release v" + latest + " is newer, but it has no APK attached yet. Opening release page.";
+        window.open(release.html_url || "https://github.com/yalangisexter-ux/audit-report/releases", "_blank", "noopener");
+      }
+    } else if (apk && apk.browser_download_url) {
+      if (feedback) feedback.textContent = "You are on v" + MOBILE_APP_VERSION + ". Latest published release is v" + latest + ". Open release page to reinstall or review assets.";
+    } else {
+      if (feedback) feedback.textContent = "No newer APK is published yet. Latest release: v" + latest + ".";
+    }
+  } catch (err) {
+    if (feedback) feedback.textContent = "Could not check updates: " + err.message + " Open the releases page to check manually.";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
 document.getElementById("btnSyncCheck")?.addEventListener("click", () => {
   pullFromCloud(false);
   showToast("Checking cloud synchronization...");
