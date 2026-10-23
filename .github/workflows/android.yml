@@ -32,7 +32,7 @@ jobs:
       - name: Read canonical application version
         id: version
         run: |
-          VERSION=$(python -c "import re; print(re.search(r'APP_VERSION\\s*=\\s*[\"\\']([^\"\\']+)', open('build_info.py').read()).group(1))")
+          VERSION=$(sed -n 's/^APP_VERSION = "\([^"]*\)"/\1/p' build_info.py)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Sync latest mobile web assets to Android assets
