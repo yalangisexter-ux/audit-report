@@ -5,19 +5,49 @@ const DEVICE_RE = /^[0-9a-f]{32}$/;
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-    if ((url.pathname === "/" || url.pathname === "/health") && request.method === "GET") {
-      return json({
-        ok: true,
-        service: "raw-strength-audit-db-sync",
-        status: "online",
-        message: "Raw Strength Database Sync Service is online and operational.",
-      });
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Max-Age": "86400",
+      "Vary": "Origin",
+    };
+
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
-    if (url.pathname === "/register" && request.method === "POST") return handleRegister(request, env);
-    if (url.pathname === "/push" && request.method === "POST") return handlePush(request, env);
-    if (url.pathname === "/pull" && request.method === "POST") return handlePull(request, env);
-    return json({ error: "Not found" }, 404);
+
+    const url = new URL(request.url);
+    let response;
+    try {
+      if ((url.pathname === "/" || url.pathname === "/health") && request.method === "GET") {
+        response = json({
+          ok: true,
+          service: "raw-strength-audit-db-sync",
+          status: "online",
+          message: "Raw Strength Database Sync Service is online and operational.",
+        });
+      } else if (url.pathname === "/register" && request.method === "POST") {
+        response = await handleRegister(request, env);
+      } else if (url.pathname === "/push" && request.method === "POST") {
+        response = await handlePush(request, env);
+      } else if (url.pathname === "/pull" && request.method === "POST") {
+        response = await handlePull(request, env);
+      } else {
+        response = json({ error: "Not found" }, 404);
+      }
+    } catch (err) {
+      console.error("Unhandled sync worker request failure", {
+        path: url.pathname,
+        message: String(err?.stack || err),
+      });
+      response = json({ error: "Internal sync service error", detail: String(err?.message || err).slice(0, 500) }, 500);
+    }
+
+    const headers = new Headers(response.headers);
+    for (const [key, value] of Object.entries(corsHeaders)) headers.set(key, value);
+    headers.set("Cache-Control", "no-store");
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   },
 };
 
