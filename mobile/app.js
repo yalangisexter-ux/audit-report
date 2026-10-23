@@ -1,7 +1,7 @@
 /**
  * Raw Strength Calisthenics - Employee Audit Manager Mobile App
  * Synchronized with Desktop Database via Cloudflare Encrypted Sync
- * Version 1.3.15
+ * Version 1.3.26
  */
 
 const SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev";
@@ -1025,7 +1025,7 @@ async function pushToCloud(silent = false) {
     if (feedback && !silent) feedback.textContent = "Encrypting business data snapshot...";
 
     const payloadObj = {
-      version: "1.3.25",
+      version: "1.3.26",
       employees: state.employees,
       attendance: state.attendance,
       tasks: state.tasks,
@@ -1294,7 +1294,7 @@ async function pullFromCloud(silent = false) {
 }
 
 // Check the published Android APK release separately from cloud data sync.
-const MOBILE_APP_VERSION = "1.3.25";
+const MOBILE_APP_VERSION = "1.3.26";
 function compareAppVersions(a, b) {
   const aa = String(a || "0").replace(/^[vV]/, "").split(".").map(n => parseInt(n, 10) || 0);
   const bb = String(b || "0").replace(/^[vV]/, "").split(".").map(n => parseInt(n, 10) || 0);
@@ -1310,13 +1310,12 @@ document.getElementById("btnCheckAppUpdate")?.addEventListener("click", async ()
   if (btn) btn.disabled = true;
   if (feedback) feedback.textContent = "Checking the latest published release...";
   try {
-    const response = await fetch("https://api.github.com/repos/yalangisexter-ux/audit-report/releases?per_page=20", {
+    const response = await fetch(`${SYNC_WORKER_URL}/latest-release`, {
       headers: { "Accept": "application/vnd.github+json" },
       cache: "no-store"
     });
     if (!response.ok) throw new Error("Release check failed (HTTP " + response.status + ").");
-    const releases = await response.json();
-    const release = Array.isArray(releases) ? releases.find(item => !item.draft && !item.prerelease && item.published_at) : null;
+    const release = await response.json();
     if (!release) {
       if (feedback) feedback.textContent = "No published release found. Open the official releases page to check manually.";
       window.open("https://github.com/yalangisexter-ux/audit-report/releases", "_blank", "noopener");
