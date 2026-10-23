@@ -93,15 +93,9 @@ function loadLocalData() {
   if (attStr) state.attendance = JSON.parse(attStr);
   if (taskStr) state.tasks = JSON.parse(taskStr);
 
-  // If no employees, provide demo initial team
-  if (!state.employees || state.employees.length === 0) {
-    state.employees = [
-      { id: 1, employee_code: "EMP001", name: "Alex Hunter", department: "Calisthenics", designation: "Head Trainer", phone: "+91 98765 43210", email: "alex@rawstrength.com", active: 1 },
-      { id: 2, employee_code: "EMP002", name: "Sara Connor", department: "Operations", designation: "Floor Manager", phone: "+91 98765 43211", email: "sara@rawstrength.com", active: 1 },
-      { id: 3, employee_code: "EMP003", name: "David Miller", department: "Training", designation: "Skills Specialist", phone: "+91 98765 43212", email: "david@rawstrength.com", active: 1 }
-    ];
-    saveLocalData();
-  }
+  // Do not seed demo employees into a real customer installation.
+  // The list stays empty until real local data or a validated cloud snapshot is loaded.
+  if (!Array.isArray(state.employees)) state.employees = [];
 }
 
 // Navigation
