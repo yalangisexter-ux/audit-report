@@ -61,29 +61,49 @@ async function handlePush(request, env) {
   try { binary = base64ToBytes(content); } catch { return json({ error: "Invalid snapshot encoding" }, 400); }
   if (binary.byteLength === 0 || binary.byteLength > MAX_SNAPSHOT_BYTES) return json({ error: "Snapshot too large or empty" }, 413);
 
+  const branch = String(env.GITHUB_BRANCH || "main").trim() || "main";
   const path = "customer-data/" + auth.installation_id + ".db.enc";
   const endpoint = githubContentsUrl(env, path);
-  const current = await fetch(endpoint, { method: "GET", headers: githubHeaders(env, "application/vnd.github+json") });
+  let current;
+  try {
+    current = await fetch(endpoint + "?ref=" + encodeURIComponent(branch), {
+      method: "GET",
+      headers: githubHeaders(env, "application/vnd.github+json"),
+    });
+  } catch (err) {
+    console.error("GitHub snapshot metadata request failed", { path, branch, message: String(err) });
+    return json({ error: "Network error inspecting existing snapshot", detail: String(err).slice(0, 500) }, 502);
+  }
   let sha = null;
   if (current.ok) {
     const metadata = await current.json();
     sha = typeof metadata.sha === "string" ? metadata.sha : null;
     if (!sha) return json({ error: "GitHub returned invalid snapshot metadata" }, 502);
   } else if (current.status !== 404) {
-    return json({ error: "Could not inspect the existing snapshot" }, 502);
+    const detail = await current.text().catch(() => "");
+    console.error("GitHub snapshot metadata request rejected", { status: current.status, path, branch, detail: detail.slice(0, 1000) });
+    return json({ error: "Could not inspect existing snapshot", github_status: current.status, detail: detail.slice(0, 1000) }, 502);
   }
   const response = await fetch(endpoint, {
     method: "PUT",
     headers: githubHeaders(env, "application/vnd.github+json", true),
     body: JSON.stringify({
       message: "Update encrypted database snapshot for " + auth.installation_id,
-      content, branch: "main", ...(sha ? { sha } : {}),
+      content, branch, ...(sha ? { sha } : {}),
     }),
   });
   if (response.status === 409 || response.status === 422) {
     return json({ error: "Concurrent snapshot update detected; retry after pulling the latest data" }, 409);
   }
-  if (!response.ok) return json({ error: "GitHub could not store the encrypted snapshot" }, 502);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    console.error("GitHub snapshot upload failed", { status: response.status, path, branch, detail: detail.slice(0, 1500) });
+    return json({
+      error: "GitHub could not store the encrypted snapshot",
+      github_status: response.status,
+      detail: detail.slice(0, 1500),
+    }, 502);
+  }
   return json({ success: true });
 }
 
