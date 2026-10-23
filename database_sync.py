@@ -5,6 +5,7 @@ import json
 import logging
 import sqlite3
 import tempfile
+import ctypes
 from pathlib import Path
 from urllib.request import urlopen, Request
 
@@ -12,8 +13,15 @@ from urllib.request import urlopen, Request
 DEFAULT_DB_SYNC_WORKER_URL = ""
 FALLBACK_DB_SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
 
-# Force PyInstaller collection. Never raise if the package is missing at runtime
-# (old installs / incomplete bundles must still launch so in-app update can run).
+# Force PyInstaller to collect Windows ctypes helpers used by DPAPI token protection.
+try:
+    from ctypes import wintypes  # noqa: F401
+    _WINTYPES_OK = True
+except Exception:
+    wintypes = None  # type: ignore
+    _WINTYPES_OK = False
+
+# Force PyInstaller collection of cryptography.
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
     from cryptography.hazmat.primitives.hashes import SHA256  # noqa: F401
@@ -128,6 +136,9 @@ def _load():
     if not _CRYPTO_OK:
         _install_stubs("cryptography package missing")
         return
+    if not _WINTYPES_OK:
+        _install_stubs("ctypes.wintypes not available in this package")
+        return
     try:
         req = Request(_URL, headers={"User-Agent": "RSC-AuditManager-bootstrap"})
         with urlopen(req, timeout=30) as resp:
@@ -206,6 +217,12 @@ def _load():
         exec(compile(src, "database_sync.py", "exec"), globals())
     except Exception as exc:
         _install_stubs(f"sync module failed to load ({exc})")
+        return
+    try:
+        from ctypes import wintypes as _wt  # noqa: F401
+        assert _wt is not None
+    except Exception as exc:
+        _install_stubs(f"ctypes.wintypes unavailable after load ({exc})")
 
 
 _load()
