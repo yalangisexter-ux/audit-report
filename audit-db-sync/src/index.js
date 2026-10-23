@@ -44,7 +44,7 @@ export default {
           response = json({ error: "Could not check the latest release", github_status: releaseResponse.status }, 502);
         } else {
           const release = await releaseResponse.json();
-          const apk = (release.assets || []).find(asset => /\\.apk$/i.test(asset.name || ""));
+          const apk = (release.assets || []).find(asset => /\.apk$/i.test(asset.name || ""));
           response = json({
             tag_name: release.tag_name,
             html_url: release.html_url,
