@@ -7,6 +7,12 @@ import tempfile
 from pathlib import Path
 from urllib.request import urlopen, Request
 
+# Force PyInstaller to collect cryptography (used by the bootstrapped module).
+# Without these static imports the frozen EXE raises ModuleNotFoundError.
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
+from cryptography.hazmat.primitives.hashes import SHA256  # noqa: F401
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC  # noqa: F401
+
 # Static marker for release validation / worker URL injection (overridden by bootstrapped module).
 DEFAULT_DB_SYNC_WORKER_URL = ""
 FALLBACK_DB_SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
