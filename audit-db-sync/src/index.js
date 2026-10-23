@@ -27,6 +27,31 @@ export default {
           status: "online",
           message: "Raw Strength Database Sync Service is online and operational.",
         });
+      if ((url.pathname === "/" || url.pathname === "/health") && request.method === "GET") {
+        response = json({
+          ok: true,
+          service: "raw-strength-audit-db-sync",
+          status: "online",
+          message: "Raw Strength Database Sync Service is online and operational.",
+        });
+      } else if (url.pathname === "/latest-release" && request.method === "GET") {
+        const releaseResponse = await fetch("https://api.github.com/repos/yalangisexter-ux/audit-report/releases/latest", {
+          headers: { "Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager" },
+        });
+        if (!releaseResponse.ok) {
+          const detail = await releaseResponse.text().catch(() => "");
+          console.error("Latest release lookup failed", { status: releaseResponse.status, detail: detail.slice(0, 500) });
+          response = json({ error: "Could not check the latest release", github_status: releaseResponse.status }, 502);
+        } else {
+          const release = await releaseResponse.json();
+          const apk = (release.assets || []).find(asset => /\\.apk$/i.test(asset.name || ""));
+          response = json({
+            tag_name: release.tag_name,
+            html_url: release.html_url,
+            published_at: release.published_at,
+            apk: apk ? { name: apk.name, browser_download_url: apk.browser_download_url } : null,
+          });
+        }
       } else if (url.pathname === "/register" && request.method === "POST") {
         response = await handleRegister(request, env);
       } else if (url.pathname === "/push" && request.method === "POST") {
