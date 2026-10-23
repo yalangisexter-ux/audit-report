@@ -40,7 +40,11 @@ _log = logging.getLogger("database_sync")
 
 
 def _install_stubs(reason: str = ""):
-    """Minimal stubs so app.py can import and the UI (including updates) can start."""
+    """Minimal stubs so app.py can import and the UI (including updates) can start.
+
+    protect/unprotect must NOT raise — app DB init calls them and treats
+    any exception as a fatal startup failure.
+    """
     global GitHubDatabaseSync, SyncableSQLiteConnection, protect_sync_token, unprotect_sync_token
 
     class SyncableSQLiteConnection(sqlite3.Connection):
@@ -102,7 +106,7 @@ def _install_stubs(reason: str = ""):
             self._status = str(status)
 
         def set_encryption_secret(self, secret):
-            pass
+            self._encryption_secret = secret or ""
 
         def set_token(self, token):
             pass
@@ -120,10 +124,11 @@ def _install_stubs(reason: str = ""):
             return None
 
     def protect_sync_token(token: str) -> str:
-        raise ValueError("Secure sync is not available in this build.")
+        # Pass-through when DPAPI is unavailable so startup never dies.
+        return token or ""
 
     def unprotect_sync_token(value: str) -> str:
-        raise ValueError("Secure sync is not available in this build.")
+        return value or ""
 
     globals()["GitHubDatabaseSync"] = GitHubDatabaseSync
     globals()["SyncableSQLiteConnection"] = SyncableSQLiteConnection
