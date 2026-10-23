@@ -2,30 +2,139 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import tempfile
 from pathlib import Path
 from urllib.request import urlopen, Request
 
-# Force PyInstaller to collect cryptography (used by the bootstrapped module).
-# Without these static imports the frozen EXE raises ModuleNotFoundError.
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
-from cryptography.hazmat.primitives.hashes import SHA256  # noqa: F401
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC  # noqa: F401
-
-# Static marker for release validation / worker URL injection (overridden by bootstrapped module).
+# Static marker for release validation / worker URL injection.
 DEFAULT_DB_SYNC_WORKER_URL = ""
 FALLBACK_DB_SYNC_WORKER_URL = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
+
+# Force PyInstaller collection. Never raise if the package is missing at runtime
+# (old installs / incomplete bundles must still launch so in-app update can run).
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: F401
+    from cryptography.hazmat.primitives.hashes import SHA256  # noqa: F401
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC  # noqa: F401
+    _CRYPTO_OK = True
+except Exception:
+    AESGCM = SHA256 = PBKDF2HMAC = None  # type: ignore
+    _CRYPTO_OK = False
 
 _URL = (
     "https://raw.githubusercontent.com/yalangisexter-ux/audit-report/"
     "c023b0ebf9cbfcca6d83a3ddfddffd7fd254c1e0/database_sync.py"
 )
 
+_log = logging.getLogger("database_sync")
+
+
+def _install_stubs(reason: str = ""):
+    """Minimal stubs so app.py can import and the UI (including updates) can start."""
+    global GitHubDatabaseSync, SyncableSQLiteConnection, protect_sync_token, unprotect_sync_token
+
+    class SyncableSQLiteConnection(sqlite3.Connection):
+        def set_commit_callback(self, callback):
+            self._commit_callback = callback
+
+        def commit(self):
+            super().commit()
+            cb = getattr(self, "_commit_callback", None)
+            if cb is not None:
+                try:
+                    cb()
+                except Exception:
+                    pass
+
+    class GitHubDatabaseSync:
+        def __init__(self, *args, **kwargs):
+            self._status = "Sync unavailable: " + (reason or "module not loaded")
+            self._busy = False
+            self._dirty = False
+            self._closed = False
+            self._encryption_secret = ""
+            self.worker_url = ""
+            self._last_error = reason or "database_sync bootstrap failed"
+            self._error_serial = 0
+
+        @property
+        def has_token(self):
+            return False
+
+        @property
+        def is_configured(self):
+            return False
+
+        @property
+        def status(self):
+            return self._status
+
+        @property
+        def is_dirty(self):
+            return False
+
+        @property
+        def is_busy(self):
+            return False
+
+        @property
+        def last_error(self):
+            return self._last_error
+
+        @property
+        def error_serial(self):
+            return self._error_serial
+
+        def mark_pending(self):
+            pass
+
+        def set_status(self, status):
+            self._status = str(status)
+
+        def set_encryption_secret(self, secret):
+            pass
+
+        def set_token(self, token):
+            pass
+
+        def set_device_credentials(self, credentials=None):
+            pass
+
+        def request_sync(self):
+            return False
+
+        def close(self, timeout=3):
+            self._closed = True
+
+        def download_latest_snapshot(self, *args, **kwargs):
+            return None
+
+    def protect_sync_token(token: str) -> str:
+        raise ValueError("Secure sync is not available in this build.")
+
+    def unprotect_sync_token(value: str) -> str:
+        raise ValueError("Secure sync is not available in this build.")
+
+    globals()["GitHubDatabaseSync"] = GitHubDatabaseSync
+    globals()["SyncableSQLiteConnection"] = SyncableSQLiteConnection
+    globals()["protect_sync_token"] = protect_sync_token
+    globals()["unprotect_sync_token"] = unprotect_sync_token
+    _log.warning("database_sync running in degraded mode: %s", reason or "bootstrap failed")
+
+
 def _load():
-    req = Request(_URL, headers={"User-Agent": "RSC-AuditManager-bootstrap"})
-    with urlopen(req, timeout=60) as resp:
-        src = resp.read().decode("utf-8")
+    if not _CRYPTO_OK:
+        _install_stubs("cryptography package missing")
+        return
+    try:
+        req = Request(_URL, headers={"User-Agent": "RSC-AuditManager-bootstrap"})
+        with urlopen(req, timeout=30) as resp:
+            src = resp.read().decode("utf-8")
+    except Exception as exc:
+        _install_stubs(f"could not download sync module ({exc})")
+        return
 
     old = (
         "        raw = decrypt_snapshot_bytes(encrypted, encryption_secret)\n"
@@ -90,8 +199,13 @@ def _load():
         "        )\n"
     )
     if old not in src:
-        raise RuntimeError("Unexpected database_sync.py shape from bootstrap URL")
+        _install_stubs("unexpected remote database_sync.py shape")
+        return
     src = src.replace(old, new, 1)
-    exec(compile(src, "database_sync.py", "exec"), globals())
+    try:
+        exec(compile(src, "database_sync.py", "exec"), globals())
+    except Exception as exc:
+        _install_stubs(f"sync module failed to load ({exc})")
+
 
 _load()
