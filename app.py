@@ -9144,7 +9144,6 @@ class MainWindow(QMainWindow):
             table.setWordWrap(False)
             table.setTextElideMode(Qt.TextElideMode.ElideRight)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
-            table.setSelectionMode(QAbstractItemView.SingleSelection)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)

@@ -75,3 +75,24 @@ def test_toolbar_checkout_uses_visible_checkin_and_extended_statuses(monkeypatch
     finally:
         window.close()
         db.conn.close()
+
+
+def test_attendance_select_all_keeps_multi_selection_after_table_polish(monkeypatch, tmp_path):
+    qt_app, db, window, employee_id, today = make_attendance_window(monkeypatch, tmp_path)
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        db.conn.execute(
+            "INSERT INTO employees(employee_code,name,joining_date,active,created_at) VALUES(?,?,?,?,?)",
+            ("EMP-ATT-2", "Second Attendance Check", today, 1, timestamp),
+        )
+        db.conn.commit()
+        window.refresh_attendance()
+
+        assert window.att_table.selectionMode() == app.QAbstractItemView.ExtendedSelection
+        assert window.task_table.selectionMode() == app.QAbstractItemView.ExtendedSelection
+        window.att_table.selectAll()
+        assert len(window.att_table.selectionModel().selectedRows()) == 2
+        qt_app.processEvents()
+    finally:
+        window.close()
+        db.conn.close()
