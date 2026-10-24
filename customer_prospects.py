@@ -555,20 +555,27 @@ class WebScraperWorker(QThread):
             self.finished.emit(found, str(exc))
 
 class WebScraperDialog(QDialog):
-    """Dialog for fetching/scraping new stores from Google & the web."""
+    """Single-tab, multi-engine search for supplement-store prospects."""
     def __init__(self, parent=None, default_state="All States / UTs"):
         super().__init__(parent)
-        self.setWindowTitle("🌐 Fetch & Scrape Supplement Stores from Web")
-        self.setMinimumSize(540, 380)
+        self.setWindowTitle("🌐 India-Wide Multi-Engine Store Search")
+        self.setMinimumSize(640, 460)
         self.results = []
 
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setSpacing(8)
+        self.tabs = QTabWidget()
+        search_page = QWidget()
+        layout = QVBoxLayout(search_page)
         layout.setSpacing(10)
 
         info = QLabel(
-            "<b>Web Scraper for Supplement Stores across India</b><br>"
-            "<span style='color: #64748B;'>Searches online directories & business listings for authentic sports nutrition stores.<br>"
-            "<b>Strict Filters:</b> ❌ No pharmacies / medical · ❌ No herbal / ayurvedic · ❌ No HealthKart</span>"
+            "<b>One search. Multiple search engines. Nationwide coverage.</b><br>"
+            "<span style='color: #64748B;'>Runs the same search across Google, Bing and DuckDuckGo, "
+            "including public Google search operators. Select a region or search all India, including "
+            "States, Union Territories and island regions.<br>"
+            "<b>Excluded:</b> HealthKart, pharmacies / medical stores, herbal and Ayurvedic businesses. "
+            "Search results are candidates and must be verified before use.</span>"
         )
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -579,19 +586,24 @@ class WebScraperDialog(QDialog):
         self.state_combo.addItems(INDIA_REGIONS)
         if default_state in INDIA_REGIONS:
             self.state_combo.setCurrentText(default_state)
-        
+
         self.keyword_input = QLineEdit()
-        self.keyword_input.setPlaceholderText("Keywords (e.g. supplement store, sports nutrition, protein shop)")
+        self.keyword_input.setPlaceholderText("One search query (e.g. sports nutrition supplement store)")
         self.keyword_input.setText("supplement store sports nutrition")
+        self.keyword_input.returnPressed.connect(self._start_scraping)
 
         form_layout.addWidget(QLabel("Region:"))
         form_layout.addWidget(self.state_combo, 1)
-        form_layout.addWidget(QLabel("Query:"))
+        form_layout.addWidget(QLabel("Search:"))
         form_layout.addWidget(self.keyword_input, 2)
         layout.addLayout(form_layout)
 
-        self.btn_start = QPushButton("🚀 Start Web Scraping")
-        self.btn_start.setMinimumHeight(36)
+        self.engine_status = QLabel("Engines: Google · Bing · DuckDuckGo")
+        self.engine_status.setStyleSheet("font-weight: 700; color: #0D9488;")
+        layout.addWidget(self.engine_status)
+
+        self.btn_start = QPushButton("🚀 Search All Engines")
+        self.btn_start.setMinimumHeight(38)
         self.btn_start.setStyleSheet("font-weight: 700; background: #2563EB; color: white; border-radius: 6px;")
         self.btn_start.clicked.connect(self._start_scraping)
         layout.addWidget(self.btn_start)
@@ -602,7 +614,7 @@ class WebScraperDialog(QDialog):
 
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
-        self.log_view.setPlaceholderText("Scraping logs will appear here...")
+        self.log_view.setPlaceholderText("Each engine and query status will appear here...")
         layout.addWidget(self.log_view, 1)
 
         btn_row = QHBoxLayout()
@@ -610,20 +622,26 @@ class WebScraperDialog(QDialog):
         self.btn_save.setEnabled(False)
         self.btn_save.setStyleSheet("font-weight: 700; background: #059669; color: white; border-radius: 6px; min-height: 32px;")
         self.btn_save.clicked.connect(self.accept)
-        self.btn_close = QPushButton("Cancel")
+        self.btn_close = QPushButton("Close")
         self.btn_close.clicked.connect(self.reject)
         btn_row.addWidget(self.btn_save, 2)
         btn_row.addWidget(self.btn_close, 1)
         layout.addLayout(btn_row)
 
+        self.tabs.addTab(search_page, "One-Tab Multi-Engine Search")
+        root.addWidget(self.tabs)
+
     def _start_scraping(self):
         region = self.state_combo.currentText()
         query = self.keyword_input.text().strip()
+        if not query:
+            QMessageBox.information(self, "Search query required", "Enter a business search query first.")
+            return
         self.btn_start.setEnabled(False)
+        self.btn_save.setEnabled(False)
         self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(10)
-        self.log_view.append(f"Starting web scrape for: {region} ({query})...")
-
+        self.progress_bar.setValue(0)
+        self.log_view.append(f"Starting one-tab multi-engine search for: {region} ({query})...")
         self.worker = WebScraperWorker(region=region, query_term=query)
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_finished)
@@ -636,17 +654,17 @@ class WebScraperDialog(QDialog):
     def _on_finished(self, records, error):
         self.btn_start.setEnabled(True)
         if error:
-            self.log_view.append(f"❌ Error during scrape: {error}")
-            QMessageBox.warning(self, "Scrape Warning", f"Scrape encountered an issue: {error}")
-            return
+            self.log_view.append(f"⚠️ Search completed with issues: {error}")
         self.results = records
-        self.log_view.append(f"✅ Finished! Found {len(records)} clean supplement stores.")
-        for r in records[:8]:
-            self.log_view.append(f"  • {r['business_name']} ({r['state']})")
+        self.log_view.append(
+            f"Search finished. {len(records)} unique candidate(s) found. "
+            "Search listings are not verified business records."
+        )
+        for record in records[:8]:
+            self.log_view.append(f"  • {record['business_name']} ({record['state']})")
         if len(records) > 8:
             self.log_view.append(f"  ... and {len(records) - 8} more.")
         self.btn_save.setEnabled(bool(records))
-
 
 class CustomerProspectsTab(QWidget):
     """Prospect explorer backed by the app database with printing, web scraping, and multi-format exports."""
