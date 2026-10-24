@@ -344,6 +344,11 @@ def continuous_auto_sync(db) -> dict:
     except Exception:
         pass
 
+    # Developer test accounts must never run live Google Sheets sync.
+    # Keep this guard before any network request or database/snapshot mutation.
+    if is_dev:
+        return {"status": "test_mode", "message": "Developer test mode active. Google Sheets sync is paused."}
+
     try:
         # Check connectivity by fetching sheet bytes with 5s timeout
         req = urllib.request.Request(
