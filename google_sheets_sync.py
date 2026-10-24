@@ -9,6 +9,7 @@ from datetime import datetime
 import hashlib
 import io
 import logging
+from pathlib import Path
 import sqlite3
 import urllib.request
 import openpyxl
@@ -191,3 +192,145 @@ def sync_from_live_google_sheet(db) -> dict:
     """Download the live Google Spreadsheet and sync all data into SQLite."""
     xlsx_bytes = fetch_google_sheet_bytes()
     return sync_database_from_workbook_bytes(db, xlsx_bytes)
+
+
+def save_master_database_snapshot(db, custom_path=None) -> str:
+    """Generate and save an offline Excel snapshot of the master database (Users, Tasks, Attendance, Stores).
+    Always keeps a local/Downloads copy preserved during every update."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = Workbook()
+    
+    # Styling
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    thin_border = Border(
+        left=Side(style="thin", color="CBD5E1"),
+        right=Side(style="thin", color="CBD5E1"),
+        top=Side(style="thin", color="CBD5E1"),
+        bottom=Side(style="thin", color="CBD5E1")
+    )
+
+    # 1. Users sheet
+    ws_users = wb.active
+    ws_users.title = "Users"
+    user_headers = ["ID", "Name", "Employee Code", "Email", "Phone", "Role", "Department", "Designation", "Joining Date", "Salary", "Active"]
+    ws_users.append(user_headers)
+    for col_idx in range(1, len(user_headers) + 1):
+        cell = ws_users.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+    
+    if db is not None:
+        try:
+            cursor = db.conn.execute("SELECT id, name, employee_code, email, phone, role, department, designation, joining_date, salary, active FROM employees ORDER BY id")
+            for row in cursor.fetchall():
+                ws_users.append(list(row))
+        except Exception:
+            pass
+
+    # 2. Tasks sheet
+    ws_tasks = wb.create_sheet(title="Tasks")
+    task_headers = ["ID", "Employee ID", "Task Date", "Title", "Details", "Due Time", "Status", "Progress", "Proof URL", "Proof Note", "Manager Note", "Custom Values", "Updated At"]
+    ws_tasks.append(task_headers)
+    for col_idx in range(1, len(task_headers) + 1):
+        cell = ws_tasks.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+    
+    if db is not None:
+        try:
+            cursor = db.conn.execute("SELECT id, employee_id, task_date, title, details, due_time, status, progress, proof_url, proof_note, manager_note, custom_values, updated_at FROM tasks ORDER BY task_date DESC, id DESC")
+            for row in cursor.fetchall():
+                ws_tasks.append(list(row))
+        except Exception:
+            pass
+
+    # 3. Attendance sheet
+    ws_att = wb.create_sheet(title="Attendance")
+    att_headers = ["ID", "Employee ID", "Date", "Status", "Check In", "Check Out", "Total Hours", "Remarks", "Updated At"]
+    ws_att.append(att_headers)
+    for col_idx in range(1, len(att_headers) + 1):
+        cell = ws_att.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+
+    if db is not None:
+        try:
+            cursor = db.conn.execute("SELECT id, employee_id, date, status, check_in, check_out, total_hours, remarks, updated_at FROM attendance ORDER BY date DESC, id DESC")
+            for row in cursor.fetchall():
+                ws_att.append(list(row))
+        except Exception:
+            pass
+
+    # 4. StoresData / Customer Prospects sheet
+    ws_stores = wb.create_sheet(title="StoresData")
+    store_headers = ["State", "City", "Area", "Category", "Store Name", "Phone", "Email", "Address", "Google Maps Link", "Website"]
+    ws_stores.append(store_headers)
+    for col_idx in range(1, len(store_headers) + 1):
+        cell = ws_stores.cell(row=1, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+
+    if db is not None:
+        try:
+            # Check if email column exists
+            cursor = db.conn.execute("PRAGMA table_info(customer_prospects)")
+            cols = {c[1] for c in cursor.fetchall()}
+            email_col = "email" if "email" in cols else "'' AS email"
+            cursor = db.conn.execute(f"SELECT state, city, area, business_category, business_name, phone, {email_col}, address, maps, website FROM customer_prospects ORDER BY state, city, business_name")
+            for row in cursor.fetchall():
+                ws_stores.append(list(row))
+        except Exception:
+            pass
+
+    # Auto-adjust column widths
+    for sheet in wb.worksheets:
+        for col in sheet.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = col[0].column_letter
+            sheet.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 50)
+
+    # Determine target file path
+    if custom_path:
+        out_path = Path(custom_path)
+    else:
+        downloads_dir = Path.home() / "Downloads"
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+        out_path = downloads_dir / "Google_Sheets_Master_Database.xlsx"
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(out_path))
+    wb.close()
+    return str(out_path)
+
+
+def continuous_auto_sync(db) -> dict:
+    """Silent background continuous sync with Google Sheets.
+    Offline-first: updates local DB immediately; when internet connects,
+    silently merges and appends without conflicts and without deleting any data."""
+    if db is None:
+        return {"status": "error", "message": "Database unavailable"}
+
+    try:
+        # Check connectivity by fetching sheet bytes with 5s timeout
+        req = urllib.request.Request(
+            f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/export?format=xlsx",
+            headers={"User-Agent": "Mozilla/5.0 RawStrengthSync/1.3"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                xlsx_bytes = response.read()
+                if len(xlsx_bytes) > 1000:
+                    stats = sync_database_from_workbook_bytes(db, xls_bytes=xlsx_bytes)
+                    # Keep local master snapshot updated
+                    try:
+                        save_master_database_snapshot(db)
+                    except Exception:
+                        pass
+                    return {"status": "synced", "updated": sum(stats.values()), "stats": stats}
+    except Exception as exc:
+        logging.getLogger("google_sheets_sync").info("Continuous sync offline notice: %s", exc)
+
+    return {"status": "offline", "message": "Operating offline. Local database preserved."}

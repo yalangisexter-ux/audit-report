@@ -298,3 +298,36 @@ def test_customer_prospects_filter_options_for_stores_gyms_and_hybrids(tmp_path,
         assert not tab.leads_table.isRowHidden(2)
     finally:
         tab.close()
+
+
+def test_one_tap_scrape_and_continuous_sync_ui_and_master_backup(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    import app
+    import google_sheets_sync
+    from pathlib import Path
+
+    qt_app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "prospects_test.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    
+    tab = prospects.CustomerProspectsTab(db=db)
+    try:
+        assert hasattr(tab, "btn_one_tap_scrape_and_update")
+        assert hasattr(tab, "sync_status_badge")
+        assert hasattr(tab, "snapshot_badge")
+        assert hasattr(tab, "btn_print_preview")
+        assert hasattr(tab, "btn_folder")
+        assert "Active" in tab.sync_status_badge.text() or "Conflict-Free" in tab.sync_status_badge.text()
+
+        # Test silent continuous sync
+        tab._run_silent_continuous_sync()
+        assert tab.sync_status_badge.text() != ""
+
+        # Test master snapshot generation
+        snapshot = google_sheets_sync.save_master_database_snapshot(db, custom_path=tmp_path / "Master_DB_Test.xlsx")
+        assert Path(snapshot).is_file()
+        assert Path(snapshot).stat().st_size > 1000
+    finally:
+        tab.close()
