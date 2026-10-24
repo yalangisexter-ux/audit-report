@@ -488,12 +488,12 @@ class WebScraperWorker(QThread):
                     # Search result markup differs by engine. Extract links and text
                     # conservatively, ignoring engine-internal/navigation links.
                     anchors = re.findall(
-                        r'<a\\b[^>]*href=["\\']([^"\\']+)["\\'][^>]*>(.*?)</a>',
+                        r"<a\b[^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>",
                         html, flags=re.IGNORECASE | re.DOTALL
                     )
                     for href, raw_title in anchors:
                         title = re.sub(r"<[^>]+>", " ", raw_title)
-                        title = re.sub(r"\\s+", " ", title).strip()
+                        title = re.sub(r"\s+", " ", title).strip()
                         title = (title.replace("&amp;", "&").replace("&quot;", '"')
                                       .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">"))
                         href = href.replace("&amp;", "&")
