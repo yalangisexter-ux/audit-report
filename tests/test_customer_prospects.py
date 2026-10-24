@@ -577,3 +577,71 @@ def test_density_mode_switcher_and_command_palette(tmp_path, monkeypatch):
             palette.close()
     finally:
         tab.close()
+
+def test_unified_excludes_dropdown_print_dropdown_and_scroll_area(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QScrollArea
+
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        # 1. Verify vertical scroll area exists and wraps the page
+        assert hasattr(tab, "leads_scroll_area")
+        assert isinstance(tab.leads_scroll_area, QScrollArea)
+        assert tab.leads_scroll_area.widgetResizable() is True
+        assert hasattr(tab, "regional_scroll_area")
+        assert isinstance(tab.regional_scroll_area, QScrollArea)
+        assert tab.leads_table.minimumHeight() >= 400
+
+        # 2. Verify unified print/export dropdown
+        assert hasattr(tab, "print_export_combo")
+        assert tab.print_export_combo.count() >= 8
+        assert "Print & Export" in tab.print_export_combo.itemText(0)
+
+        # 3. Verify unified exclude controls
+        assert hasattr(tab, "exclude_dropdown")
+        assert hasattr(tab, "exclude_keyword")
+        assert hasattr(tab, "btn_clear_excludes")
+
+        sample_records = [
+            {"kind": "Store", "business_name": "Pro Nutrition Hub", "state": "Haryana", "city": "Gurgaon", "business_category": "Sports Nutrition"},
+            {"kind": "Gym", "business_name": "Iron Body Gym", "state": "Delhi", "city": "South Delhi", "business_category": "Fitness Gym"},
+            {"kind": "Gym + Store", "business_name": "FitFuel Island Pro", "state": "Andaman and Nicobar Islands", "city": "Port Blair", "business_category": "Gym with Supplement Counter"},
+        ]
+        tab.records = sample_records
+        tab._refresh_filters()
+        tab._refresh_views()
+        assert tab.leads_table.rowCount() == 3
+
+        # Exclude Category via unified dropdown
+        tab.exclude_dropdown.setCurrentText("Exclude Category: Gym")
+        tab.apply_filters()
+        assert not tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+
+        # Exclude State via unified dropdown
+        tab.clear_exclude_filters()
+        tab.exclude_dropdown.setCurrentText("Exclude State: Haryana")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(0)
+        assert not tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+
+        # Exclude by unified keyword input
+        tab.clear_exclude_filters()
+        tab.exclude_keyword.setText("Iron Body")
+        tab.apply_filters()
+        assert not tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+
+        # Clear excludes resets dropdown and keyword
+        tab.clear_exclude_filters()
+        assert tab.exclude_dropdown.currentIndex() == 0
+        assert tab.exclude_keyword.text() == ""
+        assert not tab.leads_table.isRowHidden(0)
+        assert not tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+    finally:
+        tab.close()

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -1505,27 +1506,143 @@ class CustomerProspectsTab(QWidget):
         self.apply_theme("night")
         self._refresh_views()
 
+    def _on_print_export_changed(self, index):
+        if index <= 0:
+            return
+        self.print_export_combo.blockSignals(True)
+        self.print_export_combo.setCurrentIndex(0)
+        self.print_export_combo.blockSignals(False)
+
+        if index == 1:
+            self.open_print_preview()
+        elif index == 2:
+            self.print_leads()
+        elif index == 3:
+            self.export_xlsx()
+        elif index == 4:
+            self.export_pdf()
+        elif index == 5:
+            self.export_csv()
+        elif index == 6:
+            self.export_doc()
+        elif index == 7:
+            self.open_export_folder()
+
+    def _on_more_filters_changed(self, text):
+        if text == "Has Phone / Email":
+            self.contact_filter.setCurrentText("Has phone/email")
+            self.website_filter.setCurrentText("All websites")
+            self.verification_filter.setCurrentText("All verification")
+        elif text == "Missing Contact":
+            self.contact_filter.setCurrentText("Missing contact")
+            self.website_filter.setCurrentText("All websites")
+            self.verification_filter.setCurrentText("All verification")
+        elif text == "Has Website":
+            self.contact_filter.setCurrentText("All contacts")
+            self.website_filter.setCurrentText("Has website")
+            self.verification_filter.setCurrentText("All verification")
+        elif text == "Missing Website":
+            self.contact_filter.setCurrentText("All contacts")
+            self.website_filter.setCurrentText("Missing website")
+            self.verification_filter.setCurrentText("All verification")
+        elif text == "Verified Only":
+            self.contact_filter.setCurrentText("All contacts")
+            self.website_filter.setCurrentText("All websites")
+            self.verification_filter.setCurrentText("Verified")
+        elif text == "Unverified Only":
+            self.contact_filter.setCurrentText("All contacts")
+            self.website_filter.setCurrentText("All websites")
+            self.verification_filter.setCurrentText("Unverified")
+        else:
+            self.contact_filter.setCurrentText("All contacts")
+            self.website_filter.setCurrentText("All websites")
+            self.verification_filter.setCurrentText("All verification")
+        self.apply_filters()
+
     def _build_leads_page(self):
         page = QWidget()
+        self.leads_page = page
         layout = QVBoxLayout(page)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        # Filter and Print/Export Bar
+        # Print & Export Actions (Dropdown and fallback buttons)
+        self.print_export_combo = QComboBox()
+        self.print_export_combo.addItem("🖨️ Print & Export ▾")
+        self.print_export_combo.addItem("👁️ Full Print Preview")
+        self.print_export_combo.addItem("🖨️ Direct Print / PDF")
+        self.print_export_combo.addItem("📗 Export to Excel (.xlsx)")
+        self.print_export_combo.addItem("📄 Export to PDF (.pdf)")
+        self.print_export_combo.addItem("📊 Export to CSV (.csv)")
+        self.print_export_combo.addItem("📝 Export to Word (.doc)")
+        self.print_export_combo.addItem("📂 Open Export Folder")
+        self.print_export_combo.setToolTip("Print Center: Print preview, direct print, and exports in Excel, PDF, CSV, Word")
+        self.print_export_combo.currentIndexChanged.connect(self._on_print_export_changed)
+        self.print_export_combo.setStyleSheet(
+            "QComboBox { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; min-width: 140px; } "
+            "QComboBox::drop-down { border: none; } "
+            "QComboBox QAbstractItemView { background: #1E293B; color: #F8FAFC; selection-background-color: #2563EB; }"
+        )
+
+        # Retain explicit QPushButton instances for backward compatibility & direct invocation
+        self.btn_print_preview = QPushButton("🖨️ Print Preview")
+        self.btn_print_preview.clicked.connect(self.open_print_preview)
+        self.btn_print = QPushButton("🖨️ Print")
+        self.btn_print.clicked.connect(self.print_leads)
+        self.btn_pdf = QPushButton("📄 PDF")
+        self.btn_pdf.clicked.connect(self.export_pdf)
+        self.btn_csv = QPushButton("📊 CSV")
+        self.btn_csv.clicked.connect(self.export_csv)
+        self.btn_xlsx = QPushButton("📗 Excel")
+        self.btn_xlsx.clicked.connect(self.export_xlsx)
+        self.btn_doc = QPushButton("📝 Word")
+        self.btn_doc.clicked.connect(self.export_doc)
+        self.btn_folder = QPushButton("📂 Open Folder")
+        self.btn_folder.clicked.connect(self.open_export_folder)
+
+        # Row 1: Primary Search, Category, State, More Filters, and Print & Export Dropdown
         toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search business name, phone, address, city…")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.textChanged.connect(lambda _text: self._filter_timer.start())
-        
+        toolbar.addWidget(self.search_input, 2)
+
         self.kind_filter = QComboBox()
         self.kind_filter.addItems(["All types", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
+        self.kind_filter.setToolTip("Filter by store / gym category")
         self.kind_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
-        
+        toolbar.addWidget(self.kind_filter, 1)
+
         self.state_filter = QComboBox()
         self.state_filter.addItem("All States / UTs")
+        self.state_filter.setToolTip("Filter by State, UT, or Island")
         self.state_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
+        toolbar.addWidget(self.state_filter, 1)
 
+        # More Filters (Contacts, Websites, Verification status)
+        self.more_filters = QComboBox()
+        self.more_filters.addItems([
+            "Filter: All Records",
+            "Has Phone / Email",
+            "Missing Contact",
+            "Has Website",
+            "Missing Website",
+            "Verified Only",
+            "Unverified Only",
+        ])
+        self.more_filters.setToolTip("Filter by Contact, Website, or Verification status")
+        self.more_filters.currentTextChanged.connect(self._on_more_filters_changed)
+        toolbar.addWidget(self.more_filters, 1)
+
+        # Single unified Print & Export Dropdown
+        toolbar.addWidget(self.print_export_combo, 0)
+        layout.addLayout(toolbar)
+
+        # Retain underlying contact, website, verification filters for compatibility
         self.contact_filter = QComboBox()
         self.contact_filter.addItems(["All contacts", "Has phone/email", "Missing contact"])
         self.contact_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
@@ -1538,100 +1655,72 @@ class CustomerProspectsTab(QWidget):
         self.verification_filter.addItems(["All verification", "Verified", "Unverified"])
         self.verification_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
 
-        toolbar.addWidget(self.search_input, 2)
-        toolbar.addWidget(self.kind_filter)
-        toolbar.addWidget(self.state_filter, 1)
-        toolbar.addWidget(self.contact_filter)
-        toolbar.addWidget(self.website_filter)
-        toolbar.addWidget(self.verification_filter)
-        layout.addLayout(toolbar)
-
-        # Row 2: Negative / Exclude Filter Toolbar
+        # Row 2: Consolidated Exclude Dropdown + Keyword Search + Clear Button + Results Counter
         exclude_bar = QHBoxLayout()
-        exclude_bar.setSpacing(6)
-        ex_badge = QLabel("🚫 Exclude:")
-        ex_badge.setStyleSheet("font-weight: 700; color: #F87171; font-size: 8.5pt;")
-        exclude_bar.addWidget(ex_badge)
+        exclude_bar.setSpacing(8)
 
+        self.exclude_dropdown = QComboBox()
+        self.exclude_dropdown.addItem("🚫 Exclude Target: None (Show All)")
+        self.exclude_dropdown.addItem("Exclude Category: Pure Product Selling Stores")
+        self.exclude_dropdown.addItem("Exclude Category: Gym")
+        self.exclude_dropdown.addItem("Exclude Category: Gyms which sell products also")
+        self.exclude_dropdown.addItem("Exclude: Missing Phone / Email")
+        self.exclude_dropdown.addItem("Exclude: Missing Website")
+        self.exclude_dropdown.addItem("Exclude: Unverified Leads")
+        self.exclude_dropdown.setToolTip("Select any category, territory, or condition to exclude from the directory")
+        self.exclude_dropdown.currentTextChanged.connect(lambda _text: self.apply_filters())
+        self.exclude_dropdown.setStyleSheet(
+            "QComboBox { font-size: 8.5pt; font-weight: 600; color: #FCA5A5; background: rgba(239, 68, 68, 0.12); "
+            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 220px; }"
+        )
+        exclude_bar.addWidget(self.exclude_dropdown, 0)
+
+        self.exclude_keyword = QLineEdit()
+        self.exclude_keyword.setPlaceholderText("🚫 Exclude keyword, name, district, or city…")
+        self.exclude_keyword.setClearButtonEnabled(True)
+        self.exclude_keyword.textChanged.connect(lambda _text: self._filter_timer.start())
+        self.exclude_keyword.setStyleSheet(
+            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; }"
+        )
+        exclude_bar.addWidget(self.exclude_keyword, 1)
+
+        self.btn_clear_excludes = QPushButton("✖ Clear Exclude")
+        self.btn_clear_excludes.setToolTip("Clear all negative / exclude filters")
+        self.btn_clear_excludes.clicked.connect(self.clear_exclude_filters)
+        self.btn_clear_excludes.setStyleSheet(
+            "QPushButton { font-size: 8.5pt; font-weight: 600; background: rgba(239, 68, 68, 0.18); "
+            "border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; color: #FCA5A5; } "
+            "QPushButton:hover { background: rgba(239, 68, 68, 0.3); color: #FFFFFF; }"
+        )
+        exclude_bar.addWidget(self.btn_clear_excludes)
+
+        # Backward compatibility exclude widgets
         self.exclude_state = QComboBox()
         self.exclude_state.addItem("Exclude State: None")
         self.exclude_state.currentTextChanged.connect(lambda _text: self.apply_filters())
-        exclude_bar.addWidget(self.exclude_state, 1)
 
         self.exclude_kind = QComboBox()
         self.exclude_kind.addItems(["Exclude Category: None", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
         self.exclude_kind.currentTextChanged.connect(lambda _text: self.apply_filters())
-        exclude_bar.addWidget(self.exclude_kind, 1)
 
         self.exclude_name = QLineEdit()
-        self.exclude_name.setPlaceholderText("Exclude Business Name...")
-        self.exclude_name.setClearButtonEnabled(True)
         self.exclude_name.textChanged.connect(lambda _text: self._filter_timer.start())
-        exclude_bar.addWidget(self.exclude_name, 1)
 
         self.exclude_district = QLineEdit()
-        self.exclude_district.setPlaceholderText("Exclude District / City...")
-        self.exclude_district.setClearButtonEnabled(True)
         self.exclude_district.textChanged.connect(lambda _text: self._filter_timer.start())
-        exclude_bar.addWidget(self.exclude_district, 1)
 
         self.exclude_custom = QLineEdit()
-        self.exclude_custom.setPlaceholderText("Exclude Custom Keywords (comma-sep)...")
-        self.exclude_custom.setClearButtonEnabled(True)
         self.exclude_custom.textChanged.connect(lambda _text: self._filter_timer.start())
-        exclude_bar.addWidget(self.exclude_custom, 2)
 
-        self.btn_clear_excludes = QPushButton("✖ Clear Excludes")
-        self.btn_clear_excludes.setToolTip("Clear all negative / exclude filters")
-        self.btn_clear_excludes.clicked.connect(self.clear_exclude_filters)
-        exclude_bar.addWidget(self.btn_clear_excludes)
+        exclude_bar.addSpacing(12)
+        self.results_label = QLabel("Showing 0 stores")
+        self.results_label.setStyleSheet("font-size: 8.5pt; font-weight: 600; color: #94A3B8;")
+        exclude_bar.addWidget(self.results_label, 0)
+        exclude_bar.addStretch(1)
+
         layout.addLayout(exclude_bar)
 
-        # Row 3: Print & Export Bar (Replicating Print Center)
-        print_bar = QHBoxLayout()
-        print_bar.setSpacing(6)
-        self.btn_print_preview = QPushButton("🖨️ Print Preview")
-        self.btn_print_preview.setToolTip("Open full-page print preview with printable layout")
-        self.btn_print_preview.clicked.connect(self.open_print_preview)
-
-        self.btn_print = QPushButton("🖨️ Print")
-        self.btn_print.setToolTip("Direct Print or Print to PDF")
-        self.btn_print.clicked.connect(self.print_leads)
-
-        self.btn_pdf = QPushButton("📄 PDF")
-        self.btn_pdf.setToolTip("Export filtered stores to PDF report")
-        self.btn_pdf.clicked.connect(self.export_pdf)
-
-        self.btn_csv = QPushButton("📊 CSV")
-        self.btn_csv.setToolTip("Export to OneDrive format CSV")
-        self.btn_csv.clicked.connect(self.export_csv)
-
-        self.btn_xlsx = QPushButton("📗 Excel")
-        self.btn_xlsx.setToolTip("Export currently filtered stores to Excel (.xlsx)")
-        self.btn_xlsx.clicked.connect(self.export_xlsx)
-
-        self.btn_doc = QPushButton("📝 Word")
-        self.btn_doc.setToolTip("Export to Microsoft Word (.doc)")
-        self.btn_doc.clicked.connect(self.export_doc)
-
-        self.btn_folder = QPushButton("📂 Open Folder")
-        self.btn_folder.setToolTip("Open folder containing exports and downloaded master databases")
-        self.btn_folder.clicked.connect(self.open_export_folder)
-
-        print_bar.addWidget(self.btn_print_preview)
-        print_bar.addWidget(self.btn_print)
-        print_bar.addWidget(self.btn_pdf)
-        print_bar.addWidget(self.btn_csv)
-        print_bar.addWidget(self.btn_xlsx)
-        print_bar.addWidget(self.btn_doc)
-        print_bar.addWidget(self.btn_folder)
-        print_bar.addStretch(1)
-        layout.addLayout(print_bar)
-
-        self.results_label = QLabel("Showing 0 stores")
-        self.results_label.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
-        layout.addWidget(self.results_label)
-
+        # Data Table
         self.leads_table = QTableWidget(0, len(self.LEAD_COLUMNS))
         self.leads_table.setHorizontalHeaderLabels([label for label, _key in self.LEAD_COLUMNS])
         self.leads_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -1645,24 +1734,51 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.leads_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.leads_table.setSortingEnabled(False)
+        self.leads_table.setMinimumHeight(450)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
         for index, width in enumerate((74, 190, 140, 150, 120, 140, 125, 300, 105, 145, 90, 170, 170, 230, 160, 105, 120, 300, 300, 150)):
             self.leads_table.setColumnWidth(index, width)
         layout.addWidget(self.leads_table, 1)
-        return page
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setWidget(page)
+        self.leads_scroll_area = scroll_area
+        return scroll_area
 
     def clear_exclude_filters(self):
         """Reset all negative / exclude filters to show all unexcluded records."""
+        if hasattr(self, "exclude_dropdown"):
+            self.exclude_dropdown.blockSignals(True)
+            self.exclude_dropdown.setCurrentIndex(0)
+            self.exclude_dropdown.blockSignals(False)
+        if hasattr(self, "exclude_keyword"):
+            self.exclude_keyword.blockSignals(True)
+            self.exclude_keyword.clear()
+            self.exclude_keyword.blockSignals(False)
         if hasattr(self, "exclude_state"):
+            self.exclude_state.blockSignals(True)
             self.exclude_state.setCurrentIndex(0)
+            self.exclude_state.blockSignals(False)
         if hasattr(self, "exclude_kind"):
+            self.exclude_kind.blockSignals(True)
             self.exclude_kind.setCurrentIndex(0)
+            self.exclude_kind.blockSignals(False)
         if hasattr(self, "exclude_name"):
+            self.exclude_name.blockSignals(True)
             self.exclude_name.clear()
+            self.exclude_name.blockSignals(False)
         if hasattr(self, "exclude_district"):
+            self.exclude_district.blockSignals(True)
             self.exclude_district.clear()
+            self.exclude_district.blockSignals(False)
         if hasattr(self, "exclude_custom"):
+            self.exclude_custom.blockSignals(True)
             self.exclude_custom.clear()
+            self.exclude_custom.blockSignals(False)
         self.apply_filters()
 
     def _build_regional_page(self):
@@ -1764,7 +1880,14 @@ class CustomerProspectsTab(QWidget):
         privacy.setWordWrap(True)
         privacy.setStyleSheet("font-size: 8pt; color: #94A3B8;")
         layout.addWidget(privacy)
-        return page
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setWidget(page)
+        self.regional_scroll_area = scroll_area
+        return scroll_area
 
     def open_web_scrape_dialog(self):
         """Open web scraper modal for searching supplement stores across Indian states/cities."""
@@ -2580,6 +2703,23 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
                 self.exclude_state.setCurrentText(prev_ex)
             self.exclude_state.blockSignals(False)
 
+        if hasattr(self, "exclude_dropdown"):
+            prev_drop = self.exclude_dropdown.currentText()
+            self.exclude_dropdown.blockSignals(True)
+            self.exclude_dropdown.clear()
+            self.exclude_dropdown.addItem("🚫 Exclude Target: None (Show All)")
+            self.exclude_dropdown.addItem("Exclude Category: Pure Product Selling Stores")
+            self.exclude_dropdown.addItem("Exclude Category: Gym")
+            self.exclude_dropdown.addItem("Exclude Category: Gyms which sell products also")
+            self.exclude_dropdown.addItem("Exclude: Missing Phone / Email")
+            self.exclude_dropdown.addItem("Exclude: Missing Website")
+            self.exclude_dropdown.addItem("Exclude: Unverified Leads")
+            for st in states:
+                self.exclude_dropdown.addItem(f"Exclude State: {st}")
+            if prev_drop and self.exclude_dropdown.findText(prev_drop) >= 0:
+                self.exclude_dropdown.setCurrentText(prev_drop)
+            self.exclude_dropdown.blockSignals(False)
+
     def _refresh_views(self):
         self._fill_leads_table()
         self._fill_regional_table()
@@ -2730,17 +2870,45 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
         website = self.website_filter.currentText()
         verification = self.verification_filter.currentText()
 
-        # Exclude filter values
+        # Exclude filter values from unified exclude_dropdown
+        ex_drop = self.exclude_dropdown.currentText() if hasattr(self, "exclude_dropdown") else ""
+        ex_drop_category = ""
+        ex_drop_state = ""
+        ex_drop_missing_contact = False
+        ex_drop_missing_website = False
+        ex_drop_unverified = False
+
+        if ex_drop.startswith("Exclude Category: "):
+            ex_drop_category = ex_drop.replace("Exclude Category: ", "").strip()
+        elif ex_drop.startswith("Exclude State: "):
+            ex_drop_state = ex_drop.replace("Exclude State: ", "").strip()
+        elif ex_drop == "Exclude: Missing Phone / Email":
+            ex_drop_missing_contact = True
+        elif ex_drop == "Exclude: Missing Website":
+            ex_drop_missing_website = True
+        elif ex_drop == "Exclude: Unverified Leads":
+            ex_drop_unverified = True
+
+        # Fallback / explicit exclude controls (for direct API/test compatibility)
         ex_state = self.exclude_state.currentText() if hasattr(self, "exclude_state") else ""
         if ex_state == "Exclude State: None":
             ex_state = ""
+        if not ex_state and ex_drop_state:
+            ex_state = ex_drop_state
+
         ex_kind = self.exclude_kind.currentText() if hasattr(self, "exclude_kind") else ""
         if ex_kind == "Exclude Category: None":
             ex_kind = ""
+        if not ex_kind and ex_drop_category:
+            ex_kind = ex_drop_category
+
         ex_name = self.exclude_name.text().strip().casefold() if hasattr(self, "exclude_name") else ""
         ex_district = self.exclude_district.text().strip().casefold() if hasattr(self, "exclude_district") else ""
         ex_custom_raw = self.exclude_custom.text().strip().casefold() if hasattr(self, "exclude_custom") else ""
-        ex_keywords = [kw.strip() for kw in ex_custom_raw.split(",") if kw.strip()]
+        ex_kw_raw = self.exclude_keyword.text().strip().casefold() if hasattr(self, "exclude_keyword") else ""
+
+        all_kw_raw = f"{ex_custom_raw},{ex_kw_raw}".strip(",")
+        ex_keywords = [kw.strip() for kw in all_kw_raw.split(",") if kw.strip()]
 
         visible = 0
         for row_index, record in enumerate(self.records):
@@ -2790,7 +2958,14 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
 
             # Negative / Exclude filtering
             excluded = False
-            if ex_state and record.get("state") == ex_state:
+            if ex_drop_missing_contact and not has_contact:
+                excluded = True
+            if not excluded and ex_drop_missing_website and not has_website:
+                excluded = True
+            if not excluded and ex_drop_unverified and not is_verified:
+                excluded = True
+
+            if not excluded and ex_state and record.get("state") == ex_state:
                 excluded = True
 
             if not excluded and ex_kind:
