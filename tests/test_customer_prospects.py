@@ -147,3 +147,63 @@ def test_main_window_exposes_customer_prospects_tab(tmp_path, monkeypatch):
     finally:
         window.close()
         database.conn.close()
+
+
+def test_negative_filter_excludes_pharmacy_herbal_healthkart():
+    # Strict negative filter checks
+    assert prospects.NEGATIVE_FILTER_PATTERN.search("Apollo Pharmacy Store")
+    assert prospects.NEGATIVE_FILTER_PATTERN.search("MedPlus Medical and Chemist")
+    assert prospects.NEGATIVE_FILTER_PATTERN.search("Herbalife Nutrition Center")
+    assert prospects.NEGATIVE_FILTER_PATTERN.search("Patanjali Ayurvedic Shop")
+    assert prospects.NEGATIVE_FILTER_PATTERN.search("HealthKart Store Rohini")
+    assert prospects.NEGATIVE_FILTER_PATTERN.search("Health Kart Store")
+
+    # Clean supplement stores should NOT be matched
+    assert not prospects.NEGATIVE_FILTER_PATTERN.search("Alpha Sports Nutrition")
+    assert not prospects.NEGATIVE_FILTER_PATTERN.search("Fit Fuel Supplements")
+    assert not prospects.NEGATIVE_FILTER_PATTERN.search("Pro Body Nutrition")
+    assert not prospects.NEGATIVE_FILTER_PATTERN.search("Optimum Vitamin Store")
+
+
+def test_export_csv_pdf_doc_generate_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    qt_app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *args, **kwargs: None)
+
+    tab = prospects.CustomerProspectsTab()
+    tab.records = [
+        {
+            "state": "Himachal Pradesh", "city": "Shimla", "area": "BCS market",
+            "business_category": "Vitamin & supplements stores", "business_name": "NR Nutrition and Supplements",
+            "phone": "88898 50001", "address": "3rd Floor of Building, BCS Market, Shimla 171009",
+            "maps": "https://maps.google.com/test", "website": "https://nr.example"
+        }
+    ]
+    tab._fill_leads_table()
+
+    # Test CSV export
+    csv_file = str(tmp_path / "test_out.csv")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: (csv_file, "CSV"))
+    tab.export_csv()
+    assert (tmp_path / "test_out.csv").is_file()
+    assert "NR Nutrition and Supplements" in (tmp_path / "test_out.csv").read_text(encoding="utf-8")
+
+    # Test PDF export
+    pdf_file = str(tmp_path / "test_out.pdf")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: (pdf_file, "PDF"))
+    tab.export_pdf()
+    assert (tmp_path / "test_out.pdf").is_file()
+    assert (tmp_path / "test_out.pdf").stat().st_size > 500
+
+    # Test DOC export
+    doc_file = str(tmp_path / "test_out.doc")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: (doc_file, "DOC"))
+    tab.export_doc()
+    assert (tmp_path / "test_out.doc").is_file()
+    assert "NR Nutrition and Supplements" in (tmp_path / "test_out.doc").read_text(encoding="utf-8")
+
+    tab.close()

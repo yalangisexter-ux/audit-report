@@ -8745,6 +8745,7 @@ class MainWindow(QMainWindow):
             ("Manage accounts", self.manage_accounts, "Create or manage user accounts and assign limited access"),
             ("Export employees CSV", self.export_employees_csv, "Export employee list to CSV"),
             ("Expose all proof links", self.apply_global_expose_links, "Expose proof links for all employee tasks and reports"),
+            ("☁️ Sync Google Sheets", self.sync_google_sheets_action, "Sync all tables (Employees, Tasks, Attendance, Stores) with central Google Sheets"),
         ]
         for index, (label, slot, tip) in enumerate(actions):
             button = QPushButton(label)
@@ -11797,6 +11798,22 @@ class MainWindow(QMainWindow):
     def open_export_folder(self):
         if sys.platform=="win32": os.startfile(str(EXPORT_DIR))
         else: webbrowser.open(EXPORT_DIR.as_uri())
+
+    def sync_google_sheets_action(self):
+        try:
+            import google_sheets_sync
+            stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
+            self.refresh_employees()
+            self.refresh_tasks()
+            self.refresh_attendance()
+            if hasattr(self, "customer_tab") and hasattr(self.customer_tab, "_reload_saved_records"):
+                self.customer_tab._reload_saved_records()
+            msg = "Synced with Google Sheets Database!\n\n"
+            for k, v in stats.items():
+                msg += f"• {k.capitalize()}: {v:,} updated\n"
+            QMessageBox.information(self, "Google Sheets Sync", msg)
+        except Exception as exc:
+            QMessageBox.warning(self, "Google Sheets Sync", f"Could not sync with Google Sheets:\n{exc}")
 
     def backup_db(self, silent=False):
         """Create a backup. Returns True on success, False on failure."""
