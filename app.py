@@ -30,6 +30,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from build_info import APP_VERSION
 from business_tracking import BusinessTrackingTab, available_stock
+from customer_prospects import CustomerProspectsTab, seed_official_web_prospects
 from database_sync import (
     GitHubDatabaseSync,
     SyncableSQLiteConnection,
@@ -1130,6 +1131,12 @@ class Database:
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.setup()
             self._recover_legacy_developer_mode()
+            try:
+                seed_official_web_prospects(self)
+            except Exception:
+                logging.getLogger("db").exception(
+                    "Official retailer leads were not seeded; the application will continue to start."
+                )
             self._initialize_github_sync()
         except Exception as exc:
             # Attempt to close and re-raise with context
@@ -1345,6 +1352,28 @@ class Database:
           updated_at TEXT NOT NULL, UNIQUE(employee_id, target_date),
           FOREIGN KEY(employee_id) REFERENCES employees(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS customer_prospects(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          dedupe_key TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL DEFAULT 'Store',
+          business_name TEXT NOT NULL,
+          business_category TEXT DEFAULT '',
+          state TEXT DEFAULT '', city TEXT DEFAULT '', area TEXT DEFAULT '',
+          contact_person TEXT DEFAULT '', phone TEXT DEFAULT '', address TEXT DEFAULT '',
+          website TEXT DEFAULT '', maps TEXT DEFAULT '',
+          followup_date TEXT DEFAULT '', call_time TEXT DEFAULT '',
+          connection TEXT DEFAULT '', verified TEXT DEFAULT '', response TEXT DEFAULT '',
+          notes TEXT DEFAULT '',
+          source_name TEXT NOT NULL DEFAULT '', source_url TEXT DEFAULT '',
+          source_type TEXT NOT NULL DEFAULT 'Workbook',
+          source_checked_at TEXT DEFAULT '', source_sheet TEXT DEFAULT '', source_row INTEGER,
+          source_status TEXT NOT NULL DEFAULT 'Needs direct confirmation',
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_customer_prospects_region
+          ON customer_prospects(state, city, kind);
+        CREATE INDEX IF NOT EXISTS idx_customer_prospects_name
+          ON customer_prospects(business_name COLLATE NOCASE);
         """)
         # Additive migrations only — never drop existing data.
         def apply_column_migrations(table_name, migrations):
@@ -5286,12 +5315,14 @@ class MainWindow(QMainWindow):
             page.setStyleSheet("QWidget#appPageSurface { background: transparent; }")
         self.business_tab = BusinessTrackingTab(self.db)
         self.chat_tab = CloudflareChatTab(self.db, self.current_user)
+        self.customer_tab = CustomerProspectsTab(self.db)
         tab_items = [
             (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
             (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
             (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
             (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
             (self.business_tab, "💼  Business Tracking"), (self.chat_tab, "💬  Live Chat"), (self.settings_tab, "⚙️  Settings & Backup"),
+            (self.customer_tab, "📈  Customer Prospects"),
         ]
         self.sidebar_buttons = []
         for index, (widget, title) in enumerate(tab_items):
@@ -6373,6 +6404,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "business_tab") and hasattr(self.business_tab, "apply_theme"):
             try:
                 self.business_tab.apply_theme(theme_name)
+            except Exception:
+                pass
+        if hasattr(self, "customer_tab") and hasattr(self.customer_tab, "apply_theme"):
+            try:
+                self.customer_tab.apply_theme(theme_name)
             except Exception:
                 pass
         # Reapply title button styles so they stay visible after theme change
