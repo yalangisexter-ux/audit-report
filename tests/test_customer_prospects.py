@@ -133,9 +133,11 @@ def test_main_window_exposes_customer_prospects_tab(tmp_path, monkeypatch):
     try:
         saved = prospects.load_saved_prospects(database)
         index = window.tabs.indexOf(window.customer_tab)
+        chat_index = window.tabs.indexOf(window.chat_tab)
         assert index >= 0
-        assert window.tabs.tabText(index) == "📈  Customer Prospects"
-        assert window.sidebar_buttons[index][0].toolTip() == "📈  Customer Prospects"
+        assert index == chat_index - 1, "Store Directory must be positioned directly above Live Chat"
+        assert window.tabs.tabText(index) == "🏪  Store Directory"
+        assert window.sidebar_buttons[index][0].toolTip() == "🏪  Store Directory"
         assert len(initially_seeded) >= len(prospects.RESEARCHED_WEB_LEADS)
         assert first_import == {"inserted": 0, "duplicates": 1}
         assert second_import == {"inserted": 0, "duplicates": 1}
@@ -329,5 +331,78 @@ def test_one_tap_scrape_and_continuous_sync_ui_and_master_backup(tmp_path, monke
         snapshot = google_sheets_sync.save_master_database_snapshot(db, custom_path=tmp_path / "Master_DB_Test.xlsx")
         assert Path(snapshot).is_file()
         assert Path(snapshot).stat().st_size > 1000
+    finally:
+        tab.close()
+
+
+def test_territory_separation_states_uts_islands():
+    assert len(prospects.INDIA_STATES) == 28
+    assert len(prospects.INDIA_UNION_TERRITORIES) == 6
+    assert len(prospects.INDIA_ISLAND_TERRITORIES) == 2
+    assert len(prospects.INDIA_STATES) + len(prospects.INDIA_UNION_TERRITORIES) + len(prospects.INDIA_ISLAND_TERRITORIES) == 36
+
+    assert prospects.territory_type("Haryana") == "State"
+    assert prospects.territory_type("Maharashtra") == "State"
+    assert prospects.territory_type("Delhi") == "Union Territory"
+    assert prospects.territory_type("Chandigarh") == "Union Territory"
+    assert prospects.territory_type("Andaman and Nicobar Islands") == "Island Territory"
+    assert prospects.territory_type("Lakshadweep") == "Island Territory"
+
+
+def test_store_directory_exclude_filters(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        sample_records = [
+            {"kind": "Store", "business_name": "Pro Nutrition Hub", "state": "Haryana", "city": "Gurgaon", "business_category": "Sports Nutrition"},
+            {"kind": "Gym", "business_name": "Iron Body Gym", "state": "Delhi", "city": "South Delhi", "business_category": "Fitness Gym"},
+            {"kind": "Gym + Store", "business_name": "FitFuel Island Pro", "state": "Andaman and Nicobar Islands", "city": "Port Blair", "business_category": "Gym with Supplement Counter"},
+        ]
+        tab.records = sample_records
+        tab._refresh_filters()
+        tab._refresh_views()
+        assert tab.leads_table.rowCount() == 3
+
+        # Exclude by state
+        tab.exclude_state.setCurrentText("Haryana")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(0)
+        assert not tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+
+        # Clear excludes
+        tab.clear_exclude_filters()
+        assert not tab.leads_table.isRowHidden(0)
+        assert not tab.leads_table.isRowHidden(1)
+
+        # Exclude by category / kind
+        tab.exclude_kind.setCurrentText("Gym")
+        tab.apply_filters()
+        assert not tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+
+        # Exclude by business name
+        tab.clear_exclude_filters()
+        tab.exclude_name.setText("Iron Body")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(0)
+
+        # Exclude by district / city
+        tab.clear_exclude_filters()
+        tab.exclude_district.setText("Port Blair")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(2)
+        assert not tab.leads_table.isRowHidden(0)
+
+        # Exclude by custom comma-separated keywords
+        tab.clear_exclude_filters()
+        tab.exclude_custom.setText("island, fuel")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(2)
+        assert not tab.leads_table.isRowHidden(0)
     finally:
         tab.close()

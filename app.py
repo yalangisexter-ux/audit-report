@@ -2797,13 +2797,41 @@ class EmployeeDialog(QDialog):
         self.department=QComboBox()
         self.department.setEditable(True)
         self.department.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        default_depts = ["General", "Housekeeping", "Trainer / Fitness", "Management", "Sales", "Others"]
+        existing_groups = []
         if parent and hasattr(parent, "db") and hasattr(parent.db, "employee_groups"):
             for g in parent.db.employee_groups():
-                self.department.addItem(g["name"])
-        cur_dept = row["department"] if row else ""
-        if cur_dept and self.department.findText(cur_dept) == -1:
-            self.department.addItem(cur_dept)
-        self.department.setEditText(cur_dept or "")
+                gname = (g.get("name") or "").strip()
+                if gname and gname not in existing_groups:
+                    existing_groups.append(gname)
+        combined_depts = []
+        for d in default_depts + existing_groups:
+            if d and d not in combined_depts:
+                combined_depts.append(d)
+        cur_dept = (row["department"] if row else "").strip()
+        if cur_dept and cur_dept not in combined_depts:
+            combined_depts.append(cur_dept)
+        for d in combined_depts:
+            self.department.addItem(d)
+        self.department.addItem("➕ Add Custom Department...")
+        if cur_dept:
+            self.department.setEditText(cur_dept)
+        else:
+            self.department.setCurrentIndex(0)
+
+        def _on_dept_changed(idx):
+            if self.department.itemText(idx) == "➕ Add Custom Department...":
+                name, ok = QInputDialog.getText(self, "Add Custom Department", "Enter Custom Department Name:")
+                if ok and name.strip():
+                    new_dept = name.strip()
+                    if parent and hasattr(parent, "db") and hasattr(parent.db, "add_employee_group"):
+                        parent.db.add_employee_group(new_dept)
+                    add_idx = max(0, self.department.count() - 1)
+                    self.department.insertItem(add_idx, new_dept)
+                    self.department.setCurrentIndex(add_idx)
+                else:
+                    self.department.setCurrentIndex(0)
+        self.department.currentIndexChanged.connect(_on_dept_changed)
         self.designation=QLineEdit(row["designation"] if row else "")
         self.phone=QLineEdit(row["phone"] if row and "phone" in row.keys() else "")
         self.email=QLineEdit(row["email"] if row and "email" in row.keys() else "")
@@ -3050,27 +3078,35 @@ class TaskDialog(QDialog):
 
         self.layout.addRow("Employee *", self.employee)
 
-        # Department (fully editable combobox, no hardcoded 'General')
+        # Department (editable combobox with standard & custom departments)
         self.department = QComboBox()
         self.department.setEditable(True)
         self.department.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         if self.department.lineEdit():
             self.department.lineEdit().setPlaceholderText("Select or enter department...")
 
+        default_depts = ["General", "Housekeeping", "Trainer / Fitness", "Management", "Sales", "Others"]
+        group_names = []
+        if db and hasattr(db, "employee_groups"):
+            for g in db.employee_groups():
+                gname = (g.get("name") or "").strip()
+                if gname and gname not in group_names:
+                    group_names.append(gname)
         emp_depts = []
         for e in db.employees(True):
             try:
                 d_str = str(e["department"] or "").strip()
-                if d_str: emp_depts.append(d_str)
+                if d_str and d_str not in group_names and d_str not in default_depts and d_str not in emp_depts:
+                    emp_depts.append(d_str)
             except Exception:
                 pass
-        preset_depts = [
-            "Operations", "Sales", "Marketing", "Customer Support", "Engineering",
-            "Finance", "HR", "Management", "Training / Calisthenics", "Quality Assurance"
-        ]
-        all_depts = sorted(list(dict.fromkeys([d for d in emp_depts + preset_depts if d])))
+        all_depts = []
+        for d in default_depts + group_names + emp_depts:
+            if d and d not in all_depts:
+                all_depts.append(d)
         for d in all_depts:
             self.department.addItem(d)
+        self.department.addItem("➕ Add Custom Department...")
 
         initial_dept = ""
         if row and "department" in row.keys() and row["department"]:
@@ -3082,14 +3118,28 @@ class TaskDialog(QDialog):
         else:
             first_eid = self.employee.currentData()
             initial_dept = self.emp_dept_map.get(first_eid, "")
-        self.department.setEditText(initial_dept)
+        self.department.setEditText(initial_dept or "General")
+
+        def _on_task_dept_changed(idx):
+            if self.department.itemText(idx) == "➕ Add Custom Department...":
+                name, ok = QInputDialog.getText(self, "Add Custom Department", "Enter Custom Department Name:")
+                if ok and name.strip():
+                    new_dept = name.strip()
+                    if self.db and hasattr(self.db, "add_employee_group"):
+                        self.db.add_employee_group(new_dept)
+                    add_idx = max(0, self.department.count() - 1)
+                    self.department.insertItem(add_idx, new_dept)
+                    self.department.setCurrentIndex(add_idx)
+                else:
+                    self.department.setCurrentIndex(0)
+        self.department.currentIndexChanged.connect(_on_task_dept_changed)
 
         def _on_emp_changed_sync_dept():
             eid = self.employee.currentData()
             cur = self.department.currentText().strip()
             new_emp_dept = self.emp_dept_map.get(eid, "")
             if not cur or cur in all_depts:
-                self.department.setEditText(new_emp_dept)
+                self.department.setEditText(new_emp_dept or "General")
 
         self.employee.currentIndexChanged.connect(_on_emp_changed_sync_dept)
         self.layout.addRow("Department", self.department)
@@ -4908,12 +4958,12 @@ class EmployeeTableWidget(QTableWidget):
     def __init__(self, rows=0, cols=8, parent_window=None):
         super().__init__(rows, cols)
         self.window = parent_window
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        self.viewport().setAcceptDrops(True)
+        self.setDragEnabled(False)
+        self.setAcceptDrops(False)
+        self.viewport().setAcceptDrops(False)
         self.setDragDropOverwriteMode(False)
-        self.setDropIndicatorShown(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDropIndicatorShown(False)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.NoDragDrop)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -4921,83 +4971,19 @@ class EmployeeTableWidget(QTableWidget):
         self._drag_start_row = -1
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            idx = self.indexAt(event.position().toPoint())
-            if idx.isValid():
-                item = self.item(idx.row(), 0)
-                if item and item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
-                    self._drag_start_row = -1
-                else:
-                    self._drag_start_row = idx.row()
         super().mousePressEvent(event)
 
     def startDrag(self, supportedActions):
-        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
-            return
-        if self._drag_start_row < 0:
-            return
-        item = self.item(self._drag_start_row, 0)
-        if not item or item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
-            return
-        if hasattr(self.window, "emp_search") and self.window.emp_search.text().strip():
-            return
-        super().startDrag(supportedActions)
+        pass
 
     def dragEnterEvent(self, event):
-        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
-            event.ignore()
-            return
-        if hasattr(self.window, "emp_search") and self.window.emp_search.text().strip():
-            event.ignore()
-            return
-        if self._drag_start_row >= 0:
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+        event.ignore()
 
     def dragMoveEvent(self, event):
-        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
-            event.ignore()
-            return
-        if hasattr(self.window, "emp_search") and self.window.emp_search.text().strip():
-            event.ignore()
-            return
-        if self._drag_start_row >= 0:
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+        event.ignore()
 
     def dropEvent(self, event):
-        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
-            event.ignore()
-            return
-        if self._drag_start_row < 0:
-            event.ignore()
-            return
-
-        source_row = self._drag_start_row
-        self._drag_start_row = -1
-        pos = event.position().toPoint()
-        target_row = self.rowAt(pos.y())
-        if target_row < 0:
-            target_row = self.rowCount() - 1
-
-        if source_row == target_row:
-            event.accept()
-            return
-
-        source_item = self.item(source_row, 0)
-        if not source_item:
-            event.ignore()
-            return
-        source_emp_id = source_item.data(Qt.ItemDataRole.UserRole)
-        if not isinstance(source_emp_id, int):
-            event.ignore()
-            return
-
-        event.accept()
-        if self.window and hasattr(self.window, "handle_employee_dropped"):
-            self.window.handle_employee_dropped(source_emp_id, source_row, target_row)
+        event.ignore()
 
     def on_context_menu(self, pos):
         if not self.window:
@@ -5325,8 +5311,10 @@ class MainWindow(QMainWindow):
             (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
             (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
             (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
-            (self.business_tab, "💼  Business Tracking"), (self.chat_tab, "💬  Live Chat"), (self.settings_tab, "⚙️  Settings & Backup"),
-            (self.customer_tab, "📈  Customer Prospects"),
+            (self.business_tab, "💼  Business Tracking"),
+            (self.customer_tab, "🏪  Store Directory"),
+            (self.chat_tab, "💬  Live Chat"),
+            (self.settings_tab, "⚙️  Settings & Backup"),
         ]
         self.sidebar_buttons = []
         for index, (widget, title) in enumerate(tab_items):
@@ -9472,18 +9460,22 @@ class MainWindow(QMainWindow):
         
         groups = self.db.employee_groups()
         group_names = [g["name"].strip() for g in groups if g["name"].strip()]
+        default_depts = ["General", "Housekeeping", "Trainer / Fitness", "Management", "Sales", "Others"]
         
         emp_depts = []
         for e in filtered_emps:
             d = (e["department"] or "").strip()
-            if d and d not in group_names and d not in emp_depts:
+            if d and d not in group_names and d not in default_depts and d not in emp_depts:
                 emp_depts.append(d)
                 
-        all_section_names = group_names + emp_depts
+        all_section_names = []
+        for d in group_names + default_depts + emp_depts:
+            if d and d not in all_section_names:
+                all_section_names.append(d)
         has_unassigned = any(not (e["department"] or "").strip() for e in filtered_emps)
         if has_unassigned or not all_section_names:
             if "General" not in all_section_names:
-                all_section_names.append("General")
+                all_section_names.insert(0, "General")
             
         is_dark_mode = self.current_theme().lower() in ("night", "dark")
         
@@ -9493,8 +9485,9 @@ class MainWindow(QMainWindow):
                 sec_emps = [e for e in filtered_emps if not (e["department"] or "").strip() or (e["department"] or "").strip().lower() == sec_lower]
             else:
                 sec_emps = [e for e in filtered_emps if (e["department"] or "").strip().lower() == sec_lower]
+            sec_emps = sorted(sec_emps, key=lambda x: int(x["id"] or 0))
                 
-            if search_text and not sec_emps:
+            if not sec_emps and (search_text or sec_lower not in [g.lower() for g in group_names]):
                 continue
                 
             sec_r = self.emp_table.rowCount()

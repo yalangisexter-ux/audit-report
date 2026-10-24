@@ -853,10 +853,6 @@ def check_updates():
             (a for a in latest_rel.get("assets", []) if a.get("name") == "RawStrengthEmployeeAuditManager-Setup.exe"),
             None
         )
-        apk_asset = next(
-            (a for a in latest_rel.get("assets", []) if a.get("name", "").endswith(".apk")),
-            None
-        )
 
         has_update = desktop_app.release_version_tuple(tag) > desktop_app.release_version_tuple(APP_VERSION)
 
@@ -870,7 +866,6 @@ def check_updates():
             "installer_url": installer_asset.get("browser_download_url") if installer_asset else f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
             "installer_name": "RawStrengthEmployeeAuditManager-Setup.exe",
             "installer_size": installer_asset.get("size") if installer_asset else 0,
-            "apk_url": apk_asset.get("browser_download_url") if apk_asset else None,
             "github_releases_url": f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
             "repository": desktop_app.GITHUB_REPOSITORY,
         }

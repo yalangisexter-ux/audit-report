@@ -193,3 +193,44 @@ def test_handle_employee_dropped_reorders_and_moves_group(temp_db, qapp):
     # Check database
     e2_updated = temp_db.conn.execute("SELECT * FROM employees WHERE id=?", (e2,)).fetchone()
     assert e2_updated["department"] == "Housekeeping"
+
+
+def test_employees_sorted_by_serial_number_and_drag_drop_disabled(temp_db, qapp):
+    table = app.EmployeeTableWidget()
+    assert table.dragEnabled() is False
+    assert table.acceptDrops() is False
+
+    now = app.now_text()
+    temp_db.conn.execute("DELETE FROM employees")
+    temp_db.conn.execute("INSERT INTO employees(id, employee_code, name, department, created_at) VALUES(1, 'E01', 'Zoe Senior', 'General', ?)", (now,))
+    temp_db.conn.execute("INSERT INTO employees(id, employee_code, name, department, created_at) VALUES(2, 'E02', 'Adam Junior', 'General', ?)", (now,))
+    temp_db.conn.execute("INSERT INTO employees(id, employee_code, name, department, created_at) VALUES(3, 'E03', 'Ben Mid', 'General', ?)", (now,))
+    temp_db.conn.commit()
+
+    class DummyMainWindow:
+        def __init__(self, db):
+            self.db = db
+            self.is_admin_or_dev = True
+            self.emp_table = app.EmployeeTableWidget(0, 8, self)
+            self.emp_search = app.QLineEdit()
+        handle_employee_dropped = app.MainWindow.handle_employee_dropped
+        refresh_employees = app.MainWindow.refresh_employees
+        set_row_items = app.MainWindow.set_row_items
+        status_item = app.MainWindow.status_item
+        current_theme = lambda self: "night"
+        refresh_task_filter = lambda self: None
+        refresh_report_employees = lambda self: None
+        refresh_all = lambda self: None
+        selected_id = app.MainWindow.selected_id
+
+    win = DummyMainWindow(temp_db)
+    win.refresh_employees()
+
+    # The rows under General header must be ordered by serial number (1, 2, 3), not alphabetical (Adam, Ben, Zoe)
+    assert win.emp_table.rowCount() == 4  # 1 header + 3 employees
+    assert win.emp_table.item(1, 0).text() == "1"
+    assert win.emp_table.item(1, 2).text() == "Zoe Senior"
+    assert win.emp_table.item(2, 0).text() == "2"
+    assert win.emp_table.item(2, 2).text() == "Adam Junior"
+    assert win.emp_table.item(3, 0).text() == "3"
+    assert win.emp_table.item(3, 2).text() == "Ben Mid"

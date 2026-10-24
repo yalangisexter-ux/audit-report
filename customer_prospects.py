@@ -163,6 +163,34 @@ STATE_NAMES = {
 }
 INDIA_REGIONS = tuple(sorted(set(STATE_NAMES.values()), key=str.casefold))
 
+INDIA_STATES = (
+    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
+    "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand",
+    "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur",
+    "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab",
+    "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
+    "Uttar Pradesh", "Uttarakhand", "West Bengal"
+)
+
+INDIA_UNION_TERRITORIES = (
+    "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi",
+    "Jammu and Kashmir", "Ladakh", "Puducherry"
+)
+
+INDIA_ISLAND_TERRITORIES = (
+    "Andaman and Nicobar Islands", "Lakshadweep"
+)
+
+
+def territory_type(region_name):
+    """Categorize an administrative region into State, Union Territory, or Island Territory."""
+    name = str(region_name or "").strip()
+    if name in INDIA_ISLAND_TERRITORIES:
+        return "Island Territory"
+    if name in INDIA_UNION_TERRITORIES:
+        return "Union Territory"
+    return "State"
+
 
 def _normalise_key(value):
     return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
@@ -1025,7 +1053,8 @@ class CustomerProspectsTab(QWidget):
     )
 
     REGIONAL_COLUMNS = (
-        ("State / UT", "state"),
+        ("State / UT / Island", "state"),
+        ("Territory Type", "territory_type"),
         ("Web leads", "web_leads"),
         ("Workbook leads", "workbook_leads"),
         ("All stores", "stores"),
@@ -1050,7 +1079,7 @@ class CustomerProspectsTab(QWidget):
 
         # Header Title & Subtitle
         heading = QVBoxLayout()
-        title = QLabel("Customer & Store Prospect Explorer")
+        title = QLabel("Store Directory & Market Coverage")
         title.setObjectName("prospectTitle")
         title.setStyleSheet("font-size: 18pt; font-weight: 800;")
         subtitle = QLabel(
@@ -1154,10 +1183,10 @@ class CustomerProspectsTab(QWidget):
             kpi_row.addWidget(card, 1)
         root.addLayout(kpi_row)
 
-        # Tabs: Prospect List & Regional Dashboard
+        # Tabs: Store Directory & Regional Dashboard
         self.pages = QTabWidget()
-        self.pages.addTab(self._build_leads_page(), "Store Directory")
-        self.pages.addTab(self._build_regional_page(), "Regional Dashboard")
+        self.pages.addTab(self._build_leads_page(), "🏪 Store Directory")
+        self.pages.addTab(self._build_regional_page(), "🗺️ Regional Dashboard (States / UTs / Islands)")
         root.addWidget(self.pages, 1)
 
         self._filter_timer = QTimer(self)
@@ -1213,8 +1242,52 @@ class CustomerProspectsTab(QWidget):
         toolbar.addWidget(self.contact_filter)
         toolbar.addWidget(self.website_filter)
         toolbar.addWidget(self.verification_filter)
+        layout.addLayout(toolbar)
 
-        # Print & Export Buttons (Replicating Print Center)
+        # Row 2: Negative / Exclude Filter Toolbar
+        exclude_bar = QHBoxLayout()
+        exclude_bar.setSpacing(6)
+        ex_badge = QLabel("🚫 Exclude:")
+        ex_badge.setStyleSheet("font-weight: 700; color: #F87171; font-size: 8.5pt;")
+        exclude_bar.addWidget(ex_badge)
+
+        self.exclude_state = QComboBox()
+        self.exclude_state.addItem("Exclude State: None")
+        self.exclude_state.currentTextChanged.connect(lambda _text: self.apply_filters())
+        exclude_bar.addWidget(self.exclude_state, 1)
+
+        self.exclude_kind = QComboBox()
+        self.exclude_kind.addItems(["Exclude Category: None", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
+        self.exclude_kind.currentTextChanged.connect(lambda _text: self.apply_filters())
+        exclude_bar.addWidget(self.exclude_kind, 1)
+
+        self.exclude_name = QLineEdit()
+        self.exclude_name.setPlaceholderText("Exclude Business Name...")
+        self.exclude_name.setClearButtonEnabled(True)
+        self.exclude_name.textChanged.connect(lambda _text: self._filter_timer.start())
+        exclude_bar.addWidget(self.exclude_name, 1)
+
+        self.exclude_district = QLineEdit()
+        self.exclude_district.setPlaceholderText("Exclude District / City...")
+        self.exclude_district.setClearButtonEnabled(True)
+        self.exclude_district.textChanged.connect(lambda _text: self._filter_timer.start())
+        exclude_bar.addWidget(self.exclude_district, 1)
+
+        self.exclude_custom = QLineEdit()
+        self.exclude_custom.setPlaceholderText("Exclude Custom Keywords (comma-sep)...")
+        self.exclude_custom.setClearButtonEnabled(True)
+        self.exclude_custom.textChanged.connect(lambda _text: self._filter_timer.start())
+        exclude_bar.addWidget(self.exclude_custom, 2)
+
+        self.btn_clear_excludes = QPushButton("✖ Clear Excludes")
+        self.btn_clear_excludes.setToolTip("Clear all negative / exclude filters")
+        self.btn_clear_excludes.clicked.connect(self.clear_exclude_filters)
+        exclude_bar.addWidget(self.btn_clear_excludes)
+        layout.addLayout(exclude_bar)
+
+        # Row 3: Print & Export Bar (Replicating Print Center)
+        print_bar = QHBoxLayout()
+        print_bar.setSpacing(6)
         self.btn_print_preview = QPushButton("🖨️ Print Preview")
         self.btn_print_preview.setToolTip("Open full-page print preview with printable layout")
         self.btn_print_preview.clicked.connect(self.open_print_preview)
@@ -1243,14 +1316,15 @@ class CustomerProspectsTab(QWidget):
         self.btn_folder.setToolTip("Open folder containing exports and downloaded master databases")
         self.btn_folder.clicked.connect(self.open_export_folder)
 
-        toolbar.addWidget(self.btn_print_preview)
-        toolbar.addWidget(self.btn_print)
-        toolbar.addWidget(self.btn_pdf)
-        toolbar.addWidget(self.btn_csv)
-        toolbar.addWidget(self.btn_xlsx)
-        toolbar.addWidget(self.btn_doc)
-        toolbar.addWidget(self.btn_folder)
-        layout.addLayout(toolbar)
+        print_bar.addWidget(self.btn_print_preview)
+        print_bar.addWidget(self.btn_print)
+        print_bar.addWidget(self.btn_pdf)
+        print_bar.addWidget(self.btn_csv)
+        print_bar.addWidget(self.btn_xlsx)
+        print_bar.addWidget(self.btn_doc)
+        print_bar.addWidget(self.btn_folder)
+        print_bar.addStretch(1)
+        layout.addLayout(print_bar)
 
         self.results_label = QLabel("Showing 0 stores")
         self.results_label.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
@@ -1275,18 +1349,99 @@ class CustomerProspectsTab(QWidget):
         layout.addWidget(self.leads_table, 1)
         return page
 
+    def clear_exclude_filters(self):
+        """Reset all negative / exclude filters to show all unexcluded records."""
+        if hasattr(self, "exclude_state"):
+            self.exclude_state.setCurrentIndex(0)
+        if hasattr(self, "exclude_kind"):
+            self.exclude_kind.setCurrentIndex(0)
+        if hasattr(self, "exclude_name"):
+            self.exclude_name.clear()
+        if hasattr(self, "exclude_district"):
+            self.exclude_district.clear()
+        if hasattr(self, "exclude_custom"):
+            self.exclude_custom.clear()
+        self.apply_filters()
+
     def _build_regional_page(self):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
+
+        # Territory KPI Cards: clearly separating 28 States, 6 UTs, 2 Island Territories
+        kpi_row = QHBoxLayout()
+        kpi_row.setSpacing(10)
+
+        # 1. 28 States Card
+        card_states = QFrame()
+        card_states.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 6px 12px;")
+        l_s = QVBoxLayout(card_states)
+        l_s.setContentsMargins(4, 4, 4, 4)
+        l_s.setSpacing(2)
+        lbl_s_title = QLabel("🏛️ 28 Indian States")
+        lbl_s_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #93C5FD;")
+        self.card_states_val = QLabel("28 States (Calculating...)")
+        self.card_states_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
+        l_s.addWidget(lbl_s_title)
+        l_s.addWidget(self.card_states_val)
+        kpi_row.addWidget(card_states, 1)
+
+        # 2. 6 Union Territories Card
+        card_ut = QFrame()
+        card_ut.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 6px 12px;")
+        l_u = QVBoxLayout(card_ut)
+        l_u.setContentsMargins(4, 4, 4, 4)
+        l_u.setSpacing(2)
+        lbl_u_title = QLabel("🏢 6 Union Territories")
+        lbl_u_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #FCD34D;")
+        self.card_ut_val = QLabel("6 UTs (Calculating...)")
+        self.card_ut_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
+        l_u.addWidget(lbl_u_title)
+        l_u.addWidget(self.card_ut_val)
+        kpi_row.addWidget(card_ut, 1)
+
+        # 3. 2 Island Territories Card
+        card_islands = QFrame()
+        card_islands.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 6px 12px;")
+        l_i = QVBoxLayout(card_islands)
+        l_i.setContentsMargins(4, 4, 4, 4)
+        l_i.setSpacing(2)
+        lbl_i_title = QLabel("🏝️ 2 Island Territories")
+        lbl_i_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #6EE7B7;")
+        self.card_islands_val = QLabel("2 Island UTs (Calculating...)")
+        self.card_islands_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
+        l_i.addWidget(lbl_i_title)
+        l_i.addWidget(self.card_islands_val)
+        kpi_row.addWidget(card_islands, 1)
+        layout.addLayout(kpi_row)
+
+        # Filter bar for territory separation
+        filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(8)
+        filter_lbl = QLabel("Filter Territory:")
+        filter_lbl.setStyleSheet("font-weight: 700; color: #E2E8F0; font-size: 9pt;")
+        filter_bar.addWidget(filter_lbl)
+
+        self.territory_filter = QComboBox()
+        self.territory_filter.addItems([
+            "All 36 Regions (Separated by Category)",
+            "🏛️ 28 States",
+            "🏢 6 Union Territories",
+            "🏝️ 2 Island Territories"
+        ])
+        self.territory_filter.currentTextChanged.connect(lambda _text: self._fill_regional_table())
+        filter_bar.addWidget(self.territory_filter, 1)
+
         self.reconciliation_label = QLabel(
             "Coverage uses saved app database leads. Stores across all 36 States and UTs are tracked against target counts."
         )
         self.reconciliation_label.setWordWrap(True)
         self.reconciliation_label.setObjectName("prospectReconciliation")
-        self.reconciliation_label.setStyleSheet("font-size: 9pt; font-weight: 600; color: #94A3B8;")
-        layout.addWidget(self.reconciliation_label)
+        self.reconciliation_label.setStyleSheet("font-size: 8.5pt; font-weight: 600; color: #94A3B8;")
+        filter_bar.addWidget(self.reconciliation_label, 2)
+        layout.addLayout(filter_bar)
+
         self.region_table = QTableWidget(0, len(self.REGIONAL_COLUMNS))
         self.region_table.setHorizontalHeaderLabels([label for label, _key in self.REGIONAL_COLUMNS])
         self.region_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -1444,13 +1599,15 @@ class CustomerProspectsTab(QWidget):
             )
 
     def _get_visible_records(self):
-        """Return list of records currently matching the search and state/kind filters."""
+        """Return list of records currently matching search, state/kind filters, and exclude rules."""
+        if not hasattr(self, "leads_table") or self.leads_table.rowCount() == 0:
+            return self.records
         visible = []
         for row_index in range(self.leads_table.rowCount()):
             if not self.leads_table.isRowHidden(row_index):
                 if row_index < len(self.records):
                     visible.append(self.records[row_index])
-        return visible or self.records
+        return visible
 
     def export_csv(self):
         """Export currently filtered records to CSV matching the exact OneDrive schema."""
@@ -2038,6 +2195,16 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
             self.state_filter.setCurrentText(previous_state)
         self.state_filter.blockSignals(False)
 
+        if hasattr(self, "exclude_state"):
+            prev_ex = self.exclude_state.currentText()
+            self.exclude_state.blockSignals(True)
+            self.exclude_state.clear()
+            self.exclude_state.addItem("Exclude State: None")
+            self.exclude_state.addItems(states)
+            if prev_ex in states:
+                self.exclude_state.setCurrentText(prev_ex)
+            self.exclude_state.blockSignals(False)
+
     def _refresh_views(self):
         self._fill_leads_table()
         self._fill_regional_table()
@@ -2082,18 +2249,58 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
         for row in rows:
             row["web_leads"] = source_counts[row["state"]]["web"]
             row["workbook_leads"] = source_counts[row["state"]]["workbook"]
-        self.region_table.setRowCount(len(rows))
-        for row_index, data in enumerate(rows):
+            row["territory_type"] = territory_type(row["state"])
+
+        t_filter = self.territory_filter.currentText() if hasattr(self, "territory_filter") else "All"
+        if "States" in t_filter:
+            display_rows = [r for r in rows if r.get("territory_type") == "State"]
+        elif "Union Territories" in t_filter:
+            display_rows = [r for r in rows if r.get("territory_type") == "Union Territory"]
+        elif "Island" in t_filter:
+            display_rows = [r for r in rows if r.get("territory_type") == "Island Territory"]
+        else:
+            display_rows = sorted(
+                rows,
+                key=lambda r: (
+                    0 if r.get("territory_type") == "State" else 1 if r.get("territory_type") == "Union Territory" else 2,
+                    r["state"].casefold()
+                )
+            )
+
+        self.region_table.setRowCount(len(display_rows))
+        for row_index, data in enumerate(display_rows):
             for column_index, (_label, key) in enumerate(self.REGIONAL_COLUMNS):
-                value = data[key]
+                value = data.get(key)
                 text = "—" if value is None else f"{value:+,}" if key == "variance" else f"{value:,}" if isinstance(value, int) else str(value)
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if key in {"web_leads", "workbook_leads", "stores", "gyms", "dashboard_stores", "variance"}:
+                if key in {"web_leads", "workbook_leads", "stores", "gyms", "dashboard_stores", "variance", "territory_type"}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if key == "territory_type":
+                    tt = data.get("territory_type", "")
+                    if tt == "State":
+                        item.setForeground(QColor("#60A5FA"))
+                    elif tt == "Union Territory":
+                        item.setForeground(QColor("#FBBF24"))
+                    elif tt == "Island Territory":
+                        item.setForeground(QColor("#34D399"))
                 if key == "variance" and value is not None and value != 0:
                     item.setForeground(QColor("#FCA5A5" if value > 0 else "#FCD34D"))
                 self.region_table.setItem(row_index, column_index, item)
+
+        states_stores = sum(r["stores"] for r in rows if r.get("territory_type") == "State")
+        states_gyms = sum(r["gyms"] for r in rows if r.get("territory_type") == "State")
+        ut_stores = sum(r["stores"] for r in rows if r.get("territory_type") == "Union Territory")
+        ut_gyms = sum(r["gyms"] for r in rows if r.get("territory_type") == "Union Territory")
+        islands_stores = sum(r["stores"] for r in rows if r.get("territory_type") == "Island Territory")
+        islands_gyms = sum(r["gyms"] for r in rows if r.get("territory_type") == "Island Territory")
+
+        if hasattr(self, "card_states_val"):
+            self.card_states_val.setText(f"28 States ({states_stores:,} stores, {states_gyms:,} gyms)")
+        if hasattr(self, "card_ut_val"):
+            self.card_ut_val.setText(f"6 UTs ({ut_stores:,} stores, {ut_gyms:,} gyms)")
+        if hasattr(self, "card_islands_val"):
+            self.card_islands_val.setText(f"2 Islands ({islands_stores:,} stores, {islands_gyms:,} gyms)")
 
     def _refresh_kpis(self):
         stores = sum(record.get("kind") in {"Store", "Pure Product Selling Store"} and record.get("kind") != "Gym + Store" for record in self.records)
@@ -2147,10 +2354,25 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
         contact = self.contact_filter.currentText()
         website = self.website_filter.currentText()
         verification = self.verification_filter.currentText()
+
+        # Exclude filter values
+        ex_state = self.exclude_state.currentText() if hasattr(self, "exclude_state") else ""
+        if ex_state == "Exclude State: None":
+            ex_state = ""
+        ex_kind = self.exclude_kind.currentText() if hasattr(self, "exclude_kind") else ""
+        if ex_kind == "Exclude Category: None":
+            ex_kind = ""
+        ex_name = self.exclude_name.text().strip().casefold() if hasattr(self, "exclude_name") else ""
+        ex_district = self.exclude_district.text().strip().casefold() if hasattr(self, "exclude_district") else ""
+        ex_custom_raw = self.exclude_custom.text().strip().casefold() if hasattr(self, "exclude_custom") else ""
+        ex_keywords = [kw.strip() for kw in ex_custom_raw.split(",") if kw.strip()]
+
         visible = 0
         for row_index, record in enumerate(self.records):
             rec_kind = str(record.get("kind") or "Store").strip()
             rec_cat = str(record.get("business_category") or "").casefold()
+
+            # Positive filtering
             if kind in ("All types", "All Categories"):
                 matches_kind = True
             elif kind in ("Pure Product Selling Stores", "Store"):
@@ -2190,7 +2412,44 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
             )
             search_blob = " ".join(str(value or "") for value in record.values()).casefold()
             matches_search = not search or search in search_blob
-            shown = matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
+
+            # Negative / Exclude filtering
+            excluded = False
+            if ex_state and record.get("state") == ex_state:
+                excluded = True
+
+            if not excluded and ex_kind:
+                if ex_kind == "Pure Product Selling Stores":
+                    if rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store":
+                        excluded = True
+                elif ex_kind in ("Gym", "Gyms"):
+                    if rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store":
+                        excluded = True
+                elif ex_kind == "Gyms which sell products also":
+                    if (rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                        or "product" in rec_cat
+                        or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))):
+                        excluded = True
+                elif rec_kind.casefold() == ex_kind.casefold() or ex_kind.casefold() in rec_cat:
+                    excluded = True
+
+            if not excluded and ex_name:
+                rec_name = str(record.get("business_name") or record.get("name") or "").casefold()
+                if ex_name in rec_name:
+                    excluded = True
+
+            if not excluded and ex_district:
+                rec_district = " ".join([str(record.get("city") or ""), str(record.get("area") or ""), str(record.get("district") or "")]).casefold()
+                if ex_district in rec_district:
+                    excluded = True
+
+            if not excluded and ex_keywords:
+                for kw in ex_keywords:
+                    if kw in search_blob:
+                        excluded = True
+                        break
+
+            shown = (not excluded) and matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
             self.leads_table.setRowHidden(row_index, not shown)
             visible += shown
         self.results_label.setText(
