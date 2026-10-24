@@ -846,9 +846,24 @@ class CustomerProspectsTab(QWidget):
         self.state_filter.addItem("All States / UTs")
         self.state_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
 
+        self.contact_filter = QComboBox()
+        self.contact_filter.addItems(["All contacts", "Has phone/email", "Missing contact"])
+        self.contact_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
+
+        self.website_filter = QComboBox()
+        self.website_filter.addItems(["All websites", "Has website", "Missing website"])
+        self.website_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
+
+        self.verification_filter = QComboBox()
+        self.verification_filter.addItems(["All verification", "Verified", "Unverified"])
+        self.verification_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
+
         toolbar.addWidget(self.search_input, 2)
         toolbar.addWidget(self.kind_filter)
         toolbar.addWidget(self.state_filter, 1)
+        toolbar.addWidget(self.contact_filter)
+        toolbar.addWidget(self.website_filter)
+        toolbar.addWidget(self.verification_filter)
 
         # Print & Export Buttons
         self.btn_print = QPushButton("🖨️ Print")
@@ -1572,13 +1587,38 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
         search = self.search_input.text().strip().casefold()
         kind = self.kind_filter.currentText()
         state = self.state_filter.currentText()
+        contact = self.contact_filter.currentText()
+        website = self.website_filter.currentText()
+        verification = self.verification_filter.currentText()
         visible = 0
         for row_index, record in enumerate(self.records):
             matches_kind = kind == "All types" or record.get("kind") == kind
             matches_state = state == "All States / UTs" or record.get("state") == state
+            phone = str(record.get("phone") or "").strip()
+            email = str(record.get("email") or record.get("email_address") or "").strip()
+            has_contact = bool(phone or email) and not any(v.casefold() in {"n/a", "na", "none", "null", "-"} for v in (phone, email) if v)
+            matches_contact = (
+                contact == "All contacts"
+                or (contact == "Has phone/email" and has_contact)
+                or (contact == "Missing contact" and not has_contact)
+            )
+            website_value = str(record.get("website") or "").strip()
+            has_website = bool(website_value) and website_value.casefold() not in {"n/a", "na", "none", "null", "-"}
+            matches_website = (
+                website == "All websites"
+                or (website == "Has website" and has_website)
+                or (website == "Missing website" and not has_website)
+            )
+            verified_value = str(record.get("verified") or "").strip().casefold()
+            is_verified = verified_value in {"1", "true", "yes", "verified", "y"}
+            matches_verification = (
+                verification == "All verification"
+                or (verification == "Verified" and is_verified)
+                or (verification == "Unverified" and not is_verified)
+            )
             search_blob = " ".join(str(value or "") for value in record.values()).casefold()
             matches_search = not search or search in search_blob
-            shown = matches_kind and matches_state and matches_search
+            shown = matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
             self.leads_table.setRowHidden(row_index, not shown)
             visible += shown
         self.results_label.setText(
