@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QMessageBox, QFileDialog, QInputDialog, QDialog, QDialogButtonBox, QHeaderView, QProgressDialog, QToolTip,
     QGroupBox, QProgressBar, QAbstractItemView, QCheckBox, QScrollArea, QGraphicsOpacityEffect, QGraphicsDropShadowEffect,
-    QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea,
+    QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea, QListWidget, QListWidgetItem,
     QCalendarWidget, QAbstractSpinBox, QDateTimeEdit, QSpacerItem
 )
 from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage, QPainterPath
@@ -1318,6 +1318,12 @@ class Database:
         CREATE TABLE IF NOT EXISTS holidays(
           holiday_date TEXT PRIMARY KEY, holiday_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS employee_groups(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT UNIQUE NOT NULL,
+          display_order INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS archived_documents(
           id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NULL,
           report_date TEXT DEFAULT '', file_name TEXT NOT NULL, mime_type TEXT DEFAULT 'application/pdf',
@@ -1366,6 +1372,7 @@ class Database:
             ("joining_date", "TEXT DEFAULT ''"),
             ("active", "INTEGER DEFAULT 1"),
             ("notes", "TEXT DEFAULT ''"),
+            ("display_order", "INTEGER DEFAULT 0"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
         )
         employee_columns = apply_column_migrations("employees", employee_migrations)
@@ -1384,6 +1391,15 @@ class Database:
                 WHERE COALESCE(name, '') = ''
                   AND COALESCE(full_name, '') <> ''
             """)
+        try:
+            c.execute("""
+                INSERT OR IGNORE INTO employee_groups(name, display_order, created_at)
+                SELECT DISTINCT TRIM(department), 0, ?
+                FROM employees
+                WHERE department IS NOT NULL AND TRIM(department) != ''
+            """, (now_text(),))
+        except Exception:
+            pass
 
         task_migrations = (
             ("employee_id", "INTEGER"),
@@ -1503,10 +1519,117 @@ class Database:
     def employees(self, include_inactive=True):
         q = "SELECT * FROM employees"
         if not include_inactive: q += " WHERE active=1"
-        return self.conn.execute(q + " ORDER BY active DESC, name COLLATE NOCASE").fetchall()
+        return self.conn.execute(q + " ORDER BY active DESC, display_order ASC, name COLLATE NOCASE").fetchall()
 
     def employee(self, emp_id):
         return self.conn.execute("SELECT * FROM employees WHERE id=?", (emp_id,)).fetchone()
+
+    def employee_groups(self):
+        try:
+            db_groups = self.conn.execute(
+                "SELECT id, name, display_order FROM employee_groups ORDER BY display_order ASC, name COLLATE NOCASE"
+            ).fetchall()
+            group_map = {}
+            for g in db_groups:
+                gname = str(g["name"] or "").strip()
+                if gname:
+                    group_map[gname.lower()] = {"id": g["id"], "name": gname, "display_order": g["display_order"] or 0}
+            emp_depts = self.conn.execute(
+                "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL AND TRIM(department) != ''"
+            ).fetchall()
+            for row in emp_depts:
+                dept_name = str(row["department"] or "").strip()
+                if dept_name and dept_name.lower() not in group_map:
+                    group_map[dept_name.lower()] = {"id": None, "name": dept_name, "display_order": 9999}
+            return sorted(group_map.values(), key=lambda x: (x.get("display_order", 0), (x.get("name") or "").lower()))
+        except Exception:
+            return []
+
+    def add_employee_group(self, name):
+        name = (name or "").strip()
+        if not name:
+            return False
+        try:
+            max_order_row = self.conn.execute("SELECT COALESCE(MAX(display_order), 0) AS m FROM employee_groups").fetchone()
+            max_order = (max_order_row["m"] if max_order_row else 0) or 0
+            self.conn.execute(
+                "INSERT INTO employee_groups(name, display_order, created_at) VALUES(?,?,?)",
+                (name, max_order + 10, now_text())
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        except Exception:
+            return False
+
+    def rename_employee_group(self, old_name, new_name):
+        old_name = (old_name or "").strip()
+        new_name = (new_name or "").strip()
+        if not old_name or not new_name or old_name.lower() == new_name.lower():
+            return False
+        try:
+            self.conn.execute("UPDATE employee_groups SET name=? WHERE name=?", (new_name, old_name))
+            self.conn.execute("UPDATE employees SET department=? WHERE department=?", (new_name, old_name))
+            self.conn.execute("UPDATE tasks SET department=? WHERE department=?", (new_name, old_name))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def delete_employee_group(self, name):
+        name = (name or "").strip()
+        if not name:
+            return False
+        try:
+            self.conn.execute("DELETE FROM employee_groups WHERE name=?", (name,))
+            self.conn.execute("UPDATE employees SET department='' WHERE department=?", (name,))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def reorder_employee_groups(self, group_names):
+        try:
+            for idx, gname in enumerate(group_names):
+                order = (idx + 1) * 10
+                self.conn.execute(
+                    "INSERT INTO employee_groups(name, display_order, created_at) VALUES(?,?,?) "
+                    "ON CONFLICT(name) DO UPDATE SET display_order=excluded.display_order",
+                    (gname, order, now_text())
+                )
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def update_employee_order(self, employee_id, display_order, department=None):
+        try:
+            if department is not None:
+                self.conn.execute("UPDATE employees SET display_order=?, department=? WHERE id=?", (display_order, department, employee_id))
+            else:
+                self.conn.execute("UPDATE employees SET display_order=? WHERE id=?", (display_order, employee_id))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def update_employees_order(self, items):
+        try:
+            for item in items:
+                if len(item) == 3:
+                    emp_id, order, dept = item
+                    if dept is not None:
+                        self.conn.execute("UPDATE employees SET display_order=?, department=? WHERE id=?", (order, dept, emp_id))
+                    else:
+                        self.conn.execute("UPDATE employees SET display_order=? WHERE id=?", (order, emp_id))
+                else:
+                    emp_id, order = item
+                    self.conn.execute("UPDATE employees SET display_order=? WHERE id=?", (order, emp_id))
+            self.conn.commit()
+            return True
+        except Exception:
+            return False
 
     def tasks(self, task_date=None, employee_id=None):
         q = """SELECT t.*, e.name AS employee_name, e.employee_code,
@@ -1516,14 +1639,14 @@ class Database:
         args = []
         if task_date: q += " AND t.task_date=?"; args.append(task_date)
         if employee_id: q += " AND t.employee_id=?"; args.append(employee_id)
-        return self.conn.execute(q + " ORDER BY e.name, t.id DESC", args).fetchall()
+        return self.conn.execute(q + " ORDER BY e.display_order ASC, e.name COLLATE NOCASE, t.id DESC", args).fetchall()
 
     def attendance(self, work_date=None):
         q = """SELECT a.*, e.name AS employee_name, e.employee_code FROM attendance a
                JOIN employees e ON e.id=a.employee_id WHERE 1=1"""
         args=[]
         if work_date: q += " AND a.work_date=?"; args.append(work_date)
-        return self.conn.execute(q + " ORDER BY e.name", args).fetchall()
+        return self.conn.execute(q + " ORDER BY e.display_order ASC, e.name COLLATE NOCASE", args).fetchall()
 
     def upsert_attendance(self, emp_id, work_date, check_in=None, check_out=None, note=None, status=None):
         old = self.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (emp_id, work_date)).fetchone()
@@ -2634,11 +2757,20 @@ class LoginDialog(QDialog):
 
 class EmployeeDialog(QDialog):
     def __init__(self, parent=None, row=None):
-        super().__init__(parent); self.setWindowTitle("Employee details"); self.setMinimumWidth(420)
+        super().__init__(parent); self.setWindowTitle("Employee details"); self.setMinimumWidth(440)
         self.layout=QFormLayout(self)
         self.code=QLineEdit(row["employee_code"] if row else "")
         self.name=QLineEdit(row["name"] if row else "")
-        self.department=QLineEdit(row["department"] if row else "")
+        self.department=QComboBox()
+        self.department.setEditable(True)
+        self.department.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        if parent and hasattr(parent, "db") and hasattr(parent.db, "employee_groups"):
+            for g in parent.db.employee_groups():
+                self.department.addItem(g["name"])
+        cur_dept = row["department"] if row else ""
+        if cur_dept and self.department.findText(cur_dept) == -1:
+            self.department.addItem(cur_dept)
+        self.department.setEditText(cur_dept or "")
         self.designation=QLineEdit(row["designation"] if row else "")
         self.phone=QLineEdit(row["phone"] if row and "phone" in row.keys() else "")
         self.email=QLineEdit(row["email"] if row and "email" in row.keys() else "")
@@ -2653,13 +2785,13 @@ class EmployeeDialog(QDialog):
         self.join_known.toggled.connect(self.join.setEnabled)
         self.notes=QTextEdit(row["notes"] if row else ""); self.notes.setMaximumHeight(75)
         self.layout.addRow("Employee ID", self.code); self.layout.addRow("Full name *", self.name)
-        self.layout.addRow("Department", self.department); self.layout.addRow("Job title", self.designation)
+        self.layout.addRow("Section / Group", self.department); self.layout.addRow("Job title", self.designation)
         self.layout.addRow("Phone number (optional)", self.phone); self.layout.addRow("Email address (optional)", self.email)
         self.layout.addRow("Joining date", self.join); self.layout.addRow("", self.join_known); self.layout.addRow("Notes", self.notes)
         buttons=QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); self.layout.addRow(buttons)
     def values(self):
-        return (self.code.text().strip() or None, self.name.text().strip(), self.department.text().strip(),
+        return (self.code.text().strip() or None, self.name.text().strip(), self.department.currentText().strip(),
                 self.designation.text().strip(), self.phone.text().strip(), self.email.text().strip(),
                 self.join.date().toString("yyyy-MM-dd") if self.join_known.isChecked() else "", self.notes.toPlainText().strip())
 
@@ -4622,6 +4754,261 @@ class AnimatedBackground(QWidget):
             final_veil.setColorAt(1.0, QColor(4, 7, 18, 215))
             painter.fillRect(rect, final_veil)
         painter.end()
+
+class EmployeeGroupsDialog(QDialog):
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Manage Employee Sections & Groups")
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(440)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        
+        info = QLabel("Create and manage custom employee sections (e.g. Technical, House Keeping, Sales). Employees can be arranged under these sections and reordered.")
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #94A3B8; font-size: 8.5pt;")
+        layout.addWidget(info)
+
+        add_layout = QHBoxLayout()
+        self.new_group_input = QLineEdit()
+        self.new_group_input.setPlaceholderText("Enter new section name (e.g. Technical, House Keeping)...")
+        self.new_group_input.returnPressed.connect(self.on_add_group)
+        add_btn = QPushButton("➕ Add Section")
+        add_btn.clicked.connect(self.on_add_group)
+        add_layout.addWidget(self.new_group_input, 1)
+        add_layout.addWidget(add_btn)
+        layout.addLayout(add_layout)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        layout.addWidget(self.list_widget, 1)
+
+        btn_layout = QHBoxLayout()
+        up_btn = QPushButton("⬆ Move Up")
+        up_btn.clicked.connect(self.on_move_up)
+        down_btn = QPushButton("⬇ Move Down")
+        down_btn.clicked.connect(self.on_move_down)
+        rename_btn = QPushButton("✏️ Rename")
+        rename_btn.clicked.connect(self.on_rename)
+        del_btn = QPushButton("🗑️ Delete")
+        del_btn.clicked.connect(self.on_delete)
+        btn_layout.addWidget(up_btn)
+        btn_layout.addWidget(down_btn)
+        btn_layout.addWidget(rename_btn)
+        btn_layout.addWidget(del_btn)
+        btn_layout.addStretch(1)
+        layout.addLayout(btn_layout)
+
+        close_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_box.rejected.connect(self.accept)
+        layout.addWidget(close_box)
+
+        self.refresh_list()
+
+    def refresh_list(self, select_name=None):
+        self.list_widget.clear()
+        groups = self.db.employee_groups()
+        counts = {}
+        for row in self.db.conn.execute("SELECT COALESCE(NULLIF(TRIM(department), ''), 'General') AS dept, COUNT(*) AS c FROM employees GROUP BY dept").fetchall():
+            counts[row["dept"].lower()] = row["c"]
+        for g in groups:
+            c = counts.get(g["name"].lower(), 0)
+            item = QListWidgetItem(f"📁  {g['name']}  ({c} {'employee' if c==1 else 'employees'})")
+            item.setData(Qt.ItemDataRole.UserRole, g["name"])
+            self.list_widget.addItem(item)
+            if select_name and g["name"].lower() == select_name.lower():
+                self.list_widget.setCurrentItem(item)
+
+    def on_add_group(self):
+        name = self.new_group_input.text().strip()
+        if not name:
+            return
+        if not self.db.add_employee_group(name):
+            error(self, "A group with this name already exists or could not be added.")
+            return
+        self.new_group_input.clear()
+        self.refresh_list(select_name=name)
+
+    def on_rename(self):
+        item = self.list_widget.currentItem()
+        if not item:
+            return
+        old_name = item.data(Qt.ItemDataRole.UserRole)
+        new_name, ok = QInputDialog.getText(self, "Rename Section", "Enter new name for section:", text=old_name)
+        if ok and new_name.strip():
+            if not self.db.rename_employee_group(old_name, new_name.strip()):
+                error(self, "Could not rename section.")
+                return
+            self.refresh_list(select_name=new_name.strip())
+
+    def on_delete(self):
+        item = self.list_widget.currentItem()
+        if not item:
+            return
+        name = item.data(Qt.ItemDataRole.UserRole)
+        if not ask(self, "Delete Section", f"Delete section '{name}'? Employees in this group will become Unassigned / General."):
+            return
+        self.db.delete_employee_group(name)
+        self.refresh_list()
+
+    def on_move_up(self):
+        r = self.list_widget.currentRow()
+        if r <= 0:
+            return
+        self._swap(r, r - 1)
+
+    def on_move_down(self):
+        r = self.list_widget.currentRow()
+        if r < 0 or r >= self.list_widget.count() - 1:
+            return
+        self._swap(r, r + 1)
+
+    def _swap(self, i1, i2):
+        names = [self.list_widget.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list_widget.count())]
+        names[i1], names[i2] = names[i2], names[i1]
+        self.db.reorder_employee_groups(names)
+        self.refresh_list(select_name=names[i2])
+
+
+class EmployeeTableWidget(QTableWidget):
+    def __init__(self, rows=0, cols=8, parent_window=None):
+        super().__init__(rows, cols)
+        self.window = parent_window
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDragDropOverwriteMode(False)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.on_context_menu)
+        self._drag_start_row = -1
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            idx = self.indexAt(event.position().toPoint())
+            if idx.isValid():
+                item = self.item(idx.row(), 0)
+                if item and item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
+                    self._drag_start_row = -1
+                else:
+                    self._drag_start_row = idx.row()
+        super().mousePressEvent(event)
+
+    def startDrag(self, supportedActions):
+        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
+            return
+        if self._drag_start_row < 0:
+            return
+        item = self.item(self._drag_start_row, 0)
+        if not item or item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
+            return
+        if hasattr(self.window, "emp_search") and self.window.emp_search.text().strip():
+            return
+        super().startDrag(supportedActions)
+
+    def dragEnterEvent(self, event):
+        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
+            event.ignore()
+            return
+        if hasattr(self.window, "emp_search") and self.window.emp_search.text().strip():
+            event.ignore()
+            return
+        if self._drag_start_row >= 0:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
+            event.ignore()
+            return
+        if hasattr(self.window, "emp_search") and self.window.emp_search.text().strip():
+            event.ignore()
+            return
+        if self._drag_start_row >= 0:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if not (self.window and getattr(self.window, "is_admin_or_dev", False)):
+            event.ignore()
+            return
+        if self._drag_start_row < 0:
+            event.ignore()
+            return
+
+        source_row = self._drag_start_row
+        self._drag_start_row = -1
+        pos = event.position().toPoint()
+        target_row = self.rowAt(pos.y())
+        if target_row < 0:
+            target_row = self.rowCount() - 1
+
+        if source_row == target_row:
+            event.accept()
+            return
+
+        source_item = self.item(source_row, 0)
+        if not source_item:
+            event.ignore()
+            return
+        source_emp_id = source_item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(source_emp_id, int):
+            event.ignore()
+            return
+
+        event.accept()
+        if self.window and hasattr(self.window, "handle_employee_dropped"):
+            self.window.handle_employee_dropped(source_emp_id, source_row, target_row)
+
+    def on_context_menu(self, pos):
+        if not self.window:
+            return
+        row = self.rowAt(pos.y())
+        if row < 0:
+            return
+        item = self.item(row, 0)
+        if not item:
+            return
+        emp_id = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(emp_id, int):
+            return
+
+        self.selectRow(row)
+        menu = QMenu(self)
+        
+        groups = self.window.db.employee_groups()
+        if getattr(self.window, "is_admin_or_dev", False):
+            move_menu = menu.addMenu("📁 Move to Section")
+            for g in groups:
+                gname = g["name"]
+                action = move_menu.addAction(gname)
+                action.triggered.connect(lambda ch=False, eid=emp_id, gn=gname: self.window.move_employee_to_group(eid, gn))
+            move_menu.addSeparator()
+            new_grp_action = move_menu.addAction("➕ New Section...")
+            new_grp_action.triggered.connect(lambda: self.window.create_and_move_to_group(emp_id))
+
+            up_act = menu.addAction("⬆ Move Up")
+            up_act.triggered.connect(self.window.move_employee_up)
+            down_act = menu.addAction("⬇ Move Down")
+            down_act.triggered.connect(self.window.move_employee_down)
+            menu.addSeparator()
+
+        edit_act = menu.addAction("✏️ Edit Employee")
+        edit_act.triggered.connect(self.window.edit_employee)
+        toggle_act = menu.addAction("🔄 Activate / Deactivate")
+        toggle_act.triggered.connect(self.window.toggle_employee)
+        if getattr(self.window, "is_admin_or_dev", False):
+            del_act = menu.addAction("🗑️ Delete Employee")
+            del_act.triggered.connect(self.window.delete_employee)
+
+        menu.exec(self.viewport().mapToGlobal(pos))
+
 
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
@@ -7374,6 +7761,9 @@ class MainWindow(QMainWindow):
         actions_row.setSpacing(8)
         actions = [
             ("➕ Add Employee", self.add_employee, "Add a new employee record", True, "empAddBtn"),
+            ("📁 Manage Sections", self.manage_employee_groups, "Manage custom sections and groups (e.g. Technical, House Keeping)", False, "empGroupsBtn"),
+            ("⬆ Move Up", self.move_employee_up, "Move selected employee up in custom order", False, "empMoveUpBtn"),
+            ("⬇ Move Down", self.move_employee_down, "Move selected employee down in custom order", False, "empMoveDownBtn"),
             ("✏️ Edit Selected", self.edit_employee, "Edit the selected employee", False, "empEditBtn"),
             ("🔄 Activate / Deactivate", self.toggle_employee, "Toggle active status for selected employee", False, "empToggleBtn"),
             ("🗑️ Delete Employee", self.delete_employee, "Permanently delete the selected employee", False, "empDeleteBtn"),
@@ -7417,11 +7807,12 @@ class MainWindow(QMainWindow):
         emp_header_row.addWidget(emp_hint)
         emp_roster_layout.addLayout(emp_header_row)
 
-        self.emp_table = QTableWidget(0, 8)
+        self.emp_table = EmployeeTableWidget(0, 8, self)
         self.emp_table.setHorizontalHeaderLabels(["ID", "Employee ID", "Name", "Department", "Role", "Phone", "Email", "Status"])
         self.emp_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.emp_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.emp_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.emp_table.cellDoubleClicked.connect(lambda r, c: self.edit_employee())
         emp_roster_layout.addWidget(self.emp_table)
         l.addWidget(emp_roster_card)
 
@@ -8906,7 +9297,16 @@ class MainWindow(QMainWindow):
         rows=table.selectionModel().selectedRows()
         if not rows: return None
         item=table.item(rows[0].row(),col)
-        return int(item.text()) if item else None
+        if not item: return None
+        data_val = item.data(Qt.ItemDataRole.UserRole)
+        if data_val == "__section_header__":
+            return None
+        if isinstance(data_val, int):
+            return data_val
+        try:
+            return int(item.text())
+        except (ValueError, TypeError):
+            return None
 
     def status_item(self, value):
         """Create a table cell styled as a colored status pill."""
@@ -8991,16 +9391,213 @@ class MainWindow(QMainWindow):
 
     def refresh_employees(self):
         if not hasattr(self,"emp_table"): return
-        text=self.emp_search.text().lower() if hasattr(self,"emp_search") else ""
-        rows=[e for e in self.db.employees() if text in " ".join([str(e["employee_code"] or ""),e["name"],e["department"],e["designation"],e["phone"] or "",e["email"] or ""]).lower()]
+        search_text = self.emp_search.text().lower().strip() if hasattr(self,"emp_search") else ""
+        all_emps = self.db.employees()
+        filtered_emps = [e for e in all_emps if not search_text or search_text in " ".join([str(e["employee_code"] or ""), e["name"], e["department"] or "", e["designation"] or "", e["phone"] or "", e["email"] or ""]).lower()]
+        
+        selected_eid = self.selected_id(self.emp_table)
+        restore_row = -1
+
         self.emp_table.setRowCount(0)
-        for e in rows:
-            r=self.emp_table.rowCount(); self.emp_table.insertRow(r)
-            vals=[e["id"],e["employee_code"] or "",e["name"],e["department"],e["designation"],e["phone"] or "",e["email"] or "","Active" if e["active"] else "Inactive"]
-            self.set_row_items(self.emp_table, r, vals, status_cols={7})
+        
+        groups = self.db.employee_groups()
+        group_names = [g["name"].strip() for g in groups if g["name"].strip()]
+        
+        emp_depts = []
+        for e in filtered_emps:
+            d = (e["department"] or "").strip()
+            if d and d not in group_names and d not in emp_depts:
+                emp_depts.append(d)
+                
+        all_section_names = group_names + emp_depts
+        has_unassigned = any(not (e["department"] or "").strip() for e in filtered_emps)
+        if has_unassigned or not all_section_names:
+            if "General" not in all_section_names:
+                all_section_names.append("General")
+            
+        is_dark_mode = self.current_theme().lower() in ("night", "dark")
+        
+        for sec_name in all_section_names:
+            sec_lower = sec_name.lower()
+            if sec_lower in ("general", "unassigned", "default"):
+                sec_emps = [e for e in filtered_emps if not (e["department"] or "").strip() or (e["department"] or "").strip().lower() == sec_lower]
+            else:
+                sec_emps = [e for e in filtered_emps if (e["department"] or "").strip().lower() == sec_lower]
+                
+            if search_text and not sec_emps:
+                continue
+                
+            sec_r = self.emp_table.rowCount()
+            self.emp_table.insertRow(sec_r)
+            self.emp_table.setSpan(sec_r, 0, 1, 8)
+            self.emp_table.setRowHeight(sec_r, 36)
+            
+            count_text = f"({len(sec_emps)} {'employee' if len(sec_emps) == 1 else 'employees'})"
+            header_item = QTableWidgetItem(f"   📁  {sec_name.upper()}   {count_text}")
+            header_item.setData(Qt.ItemDataRole.UserRole, "__section_header__")
+            header_item.setData(Qt.ItemDataRole.UserRole + 1, sec_name)
+            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            
+            font = header_item.font()
+            font.setBold(True)
+            font.setPointSize(max(font.pointSize(), 9))
+            header_item.setFont(font)
+            if is_dark_mode:
+                header_item.setBackground(QColor(30, 41, 59))
+                header_item.setForeground(QColor(129, 140, 248))
+            else:
+                header_item.setBackground(QColor(241, 245, 249))
+                header_item.setForeground(QColor(79, 70, 229))
+            self.emp_table.setItem(sec_r, 0, header_item)
+            
+            for e in sec_emps:
+                r = self.emp_table.rowCount()
+                self.emp_table.insertRow(r)
+                self.emp_table.setRowHeight(r, 40)
+                vals = [
+                    e["id"],
+                    e["employee_code"] or "",
+                    e["name"],
+                    e["department"] or "General",
+                    e["designation"] or "—",
+                    e["phone"] or "—",
+                    e["email"] or "—",
+                    "Active" if e["active"] else "Inactive"
+                ]
+                self.set_row_items(self.emp_table, r, vals, status_cols={7})
+                first_item = self.emp_table.item(r, 0)
+                if first_item:
+                    first_item.setData(Qt.ItemDataRole.UserRole, e["id"])
+                    first_item.setData(Qt.ItemDataRole.UserRole + 1, e["department"] or "")
+                    first_item.setData(Qt.ItemDataRole.UserRole + 2, e["display_order"] if "display_order" in e.keys() else 0)
+                if selected_eid is not None and e["id"] == selected_eid:
+                    restore_row = r
+                    
+        if restore_row >= 0:
+            self.emp_table.selectRow(restore_row)
+            
         if hasattr(self, "emp_count_badge"):
-            self.emp_count_badge.setText(f"Total: {len(rows)}")
+            self.emp_count_badge.setText(f"Total: {len(filtered_emps)}")
         self.refresh_task_filter(); self.refresh_report_employees()
+
+    def handle_employee_dropped(self, source_emp_id, source_row, target_row):
+        if not self.is_admin_or_dev:
+            return
+        target_item = self.emp_table.item(target_row, 0)
+        if not target_item:
+            return
+            
+        target_role = target_item.data(Qt.ItemDataRole.UserRole)
+        if target_role == "__section_header__":
+            target_dept = target_item.data(Qt.ItemDataRole.UserRole + 1) or ""
+            target_emp_id = None
+        else:
+            target_emp_id = target_role
+            target_dept = target_item.data(Qt.ItemDataRole.UserRole + 1) or ""
+            
+        if target_dept.lower() in ("general", "unassigned", "default"):
+            target_dept = ""
+            
+        all_emps = [dict(e) for e in self.db.employees()]
+        source_emp = next((e for e in all_emps if e["id"] == source_emp_id), None)
+        if not source_emp:
+            return
+            
+        source_emp["department"] = target_dept
+        remaining = [e for e in all_emps if e["id"] != source_emp_id]
+        
+        new_list = []
+        if target_emp_id is None:
+            inserted = False
+            for e in remaining:
+                e_dept = (e.get("department") or "").strip().lower()
+                tgt_key = target_dept.strip().lower()
+                if not inserted and (e_dept == tgt_key or (not e_dept and not tgt_key)):
+                    new_list.append(source_emp)
+                    inserted = True
+                new_list.append(e)
+            if not inserted:
+                new_list.append(source_emp)
+        else:
+            for e in remaining:
+                if e["id"] == target_emp_id:
+                    if source_row < target_row:
+                        new_list.append(e)
+                        new_list.append(source_emp)
+                    else:
+                        new_list.append(source_emp)
+                        new_list.append(e)
+                else:
+                    new_list.append(e)
+            if source_emp not in new_list:
+                new_list.append(source_emp)
+                
+        updates = []
+        for idx, e in enumerate(new_list):
+            order_val = (idx + 1) * 10
+            dept_val = e.get("department", "")
+            updates.append((e["id"], order_val, dept_val))
+            
+        self.db.update_employees_order(updates)
+        self.refresh_employees()
+        self.refresh_all()
+
+    def move_employee_up(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can reorder employees.")
+        eid = self.selected_id(self.emp_table)
+        if not eid:
+            return error(self, "Select an employee first.")
+        r = self.emp_table.currentRow()
+        if r <= 1:
+            return
+        target_r = r - 1
+        target_item = self.emp_table.item(target_r, 0)
+        if target_item and target_item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
+            if target_r > 0:
+                target_r -= 1
+        self.handle_employee_dropped(eid, r, target_r)
+
+    def move_employee_down(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can reorder employees.")
+        eid = self.selected_id(self.emp_table)
+        if not eid:
+            return error(self, "Select an employee first.")
+        r = self.emp_table.currentRow()
+        if r < 0 or r >= self.emp_table.rowCount() - 1:
+            return
+        target_r = r + 1
+        target_item = self.emp_table.item(target_r, 0)
+        if target_item and target_item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
+            if target_r < self.emp_table.rowCount() - 1:
+                target_r += 1
+        self.handle_employee_dropped(eid, r, target_r)
+
+    def move_employee_to_group(self, emp_id, group_name):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can move employees to sections.")
+        dept = "" if group_name.lower() in ("general", "unassigned", "default") else group_name
+        self.db.conn.execute("UPDATE employees SET department=? WHERE id=?", (dept, emp_id))
+        self.db.conn.commit()
+        self.refresh_employees()
+        self.refresh_all()
+
+    def create_and_move_to_group(self, emp_id):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can create sections.")
+        name, ok = QInputDialog.getText(self, "New Section", "Enter new section / group name:")
+        if ok and name.strip():
+            self.db.add_employee_group(name.strip())
+            self.move_employee_to_group(emp_id, name.strip())
+
+    def manage_employee_groups(self):
+        if not self.is_admin_or_dev:
+            return error(self, "Only an Admin or Developer can manage sections.")
+        dlg = EmployeeGroupsDialog(self.db, self)
+        dlg.exec()
+        self.refresh_employees()
+        self.refresh_all()
 
     def refresh_task_filter(self):
         if not hasattr(self,"task_filter"): return
@@ -9222,7 +9819,9 @@ class MainWindow(QMainWindow):
         if vals[5] and ("@" not in vals[5] or "." not in vals[5].split("@")[-1]): return error(self,"Enter a valid email address or leave it blank.")
         try:
             self.db.conn.execute("INSERT INTO employees(employee_code,name,department,designation,phone,email,joining_date,notes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",(*vals,now_text()))
-            self.db.conn.commit(); self.db.log("Employee added",vals[1]); self.refresh_all()
+            self.db.conn.commit()
+            if vals[2]: self.db.add_employee_group(vals[2])
+            self.db.log("Employee added",vals[1]); self.refresh_all()
         except sqlite3.IntegrityError: error(self,"That employee code already exists.")
         except sqlite3.Error as ex: error(self, f"Could not save employee: {ex}")
 
@@ -9238,7 +9837,9 @@ class MainWindow(QMainWindow):
         if vals[5] and ("@" not in vals[5] or "." not in vals[5].split("@")[-1]): return error(self,"Enter a valid email address or leave it blank.")
         try:
             self.db.conn.execute("UPDATE employees SET employee_code=?,name=?,department=?,designation=?,phone=?,email=?,joining_date=?,notes=? WHERE id=?",(*vals,eid))
-            self.db.conn.commit(); self.db.log("Employee edited",vals[1]); self.refresh_all()
+            self.db.conn.commit()
+            if vals[2]: self.db.add_employee_group(vals[2])
+            self.db.log("Employee edited",vals[1]); self.refresh_all()
         except sqlite3.IntegrityError: error(self,"That employee code already exists.")
         except sqlite3.Error as ex: error(self, f"Could not update employee: {ex}")
 
