@@ -8090,9 +8090,29 @@ class MainWindow(QMainWindow):
         search_label.setStyleSheet("font-weight: 600;")
         search_row.addWidget(search_label)
         self.emp_search = QLineEdit()
-        self.emp_search.setPlaceholderText("Search employee name, ID or department...")
+        self.emp_search.setPlaceholderText("Search employee name, ID or role...")
         self.emp_search.textChanged.connect(self.refresh_employees)
-        search_row.addWidget(self.emp_search, 1)
+        search_row.addWidget(self.emp_search, 2)
+
+        dept_label = QLabel("🏢 Department:")
+        dept_label.setStyleSheet("font-weight: 600;")
+        search_row.addWidget(dept_label)
+        self.emp_dept_filter = QComboBox()
+        self.emp_dept_filter.addItem("🏢 All Departments / Groups")
+        self.emp_dept_filter.setToolTip("View only employees present in this department or group")
+        self.emp_dept_filter.currentTextChanged.connect(lambda _text: self.refresh_employees())
+        search_row.addWidget(self.emp_dept_filter, 1)
+
+        sort_label = QLabel("🔢 Sort:")
+        sort_label.setStyleSheet("font-weight: 600;")
+        search_row.addWidget(sort_label)
+        self.emp_sort_combo = QComboBox()
+        self.emp_sort_combo.addItem("🔢 Serial Number / ID")
+        self.emp_sort_combo.addItem("🏢 Department / Group")
+        self.emp_sort_combo.addItem("🔤 Name (A-Z)")
+        self.emp_sort_combo.setToolTip("Sort employees by Serial Number, Department, or Alphabetical")
+        self.emp_sort_combo.currentTextChanged.connect(lambda _text: self.refresh_employees())
+        search_row.addWidget(self.emp_sort_combo, 1)
 
         refresh_emp_btn = QPushButton("🔄 Refresh")
         refresh_emp_btn.setObjectName("empRefreshBtn")
@@ -9762,96 +9782,89 @@ class MainWindow(QMainWindow):
         if not hasattr(self,"emp_table"): return
         search_text = self.emp_search.text().lower().strip() if hasattr(self,"emp_search") else ""
         all_emps = self.db.employees()
-        filtered_emps = [e for e in all_emps if not search_text or search_text in " ".join([str(e["employee_code"] or ""), e["name"], e["department"] or "", e["designation"] or "", e["phone"] or "", e["email"] or ""]).lower()]
-        
+
+        # Update department dropdown choices dynamically
+        if hasattr(self, "emp_dept_filter"):
+            current_choice = self.emp_dept_filter.currentText()
+            groups = self.db.employee_groups()
+            group_names = [g["name"].strip() for g in groups if g["name"].strip()]
+            default_depts = ["General", "Housekeeping", "Trainer / Fitness", "Management", "Sales", "Others"]
+            emp_depts = [e["department"].strip() for e in all_emps if e["department"] and str(e["department"]).strip()]
+            
+            all_depts = ["🏢 All Departments / Groups"]
+            for d in group_names + default_depts + emp_depts:
+                if d and d not in all_depts:
+                    all_depts.append(d)
+            
+            existing_items = [self.emp_dept_filter.itemText(i) for i in range(self.emp_dept_filter.count())]
+            if existing_items != all_depts:
+                self.emp_dept_filter.blockSignals(True)
+                self.emp_dept_filter.clear()
+                self.emp_dept_filter.addItems(all_depts)
+                if current_choice and self.emp_dept_filter.findText(current_choice) >= 0:
+                    self.emp_dept_filter.setCurrentText(current_choice)
+                self.emp_dept_filter.blockSignals(False)
+
+        # Department / Group filter
+        selected_dept = self.emp_dept_filter.currentText() if hasattr(self, "emp_dept_filter") else ""
+        filtered_emps = []
+        for e in all_emps:
+            if search_text:
+                haystack = " ".join([str(e["employee_code"] or ""), e["name"], e["department"] or "", e["designation"] or "", e["phone"] or "", e["email"] or ""]).lower()
+                if search_text not in haystack:
+                    continue
+            if selected_dept and not selected_dept.startswith("🏢 All"):
+                e_dept = (e["department"] or "General").strip().lower()
+                if selected_dept.lower() in ("general", "unassigned", "default"):
+                    if e_dept not in ("general", "unassigned", "default", ""):
+                        continue
+                elif e_dept != selected_dept.lower():
+                    continue
+            filtered_emps.append(e)
+
+        # Sort mode: Serial Number / ID, Department / Group, or Name (A-Z)
+        sort_mode = self.emp_sort_combo.currentText() if hasattr(self, "emp_sort_combo") else ""
+        if "Department" in sort_mode:
+            filtered_emps.sort(key=lambda x: ((x["department"] or "General").lower(), int(x["id"] or 0)))
+        elif "Name" in sort_mode:
+            filtered_emps.sort(key=lambda x: str(x["name"] or "").lower())
+        else:
+            filtered_emps.sort(key=lambda x: int(x["id"] or 0))
+
         selected_eid = self.selected_id(self.emp_table)
         restore_row = -1
 
         self.emp_table.setRowCount(0)
-        
-        groups = self.db.employee_groups()
-        group_names = [g["name"].strip() for g in groups if g["name"].strip()]
-        default_depts = ["General", "Housekeeping", "Trainer / Fitness", "Management", "Sales", "Others"]
-        
-        emp_depts = []
+
         for e in filtered_emps:
-            d = (e["department"] or "").strip()
-            if d and d not in group_names and d not in default_depts and d not in emp_depts:
-                emp_depts.append(d)
-                
-        all_section_names = []
-        for d in group_names + default_depts + emp_depts:
-            if d and d not in all_section_names:
-                all_section_names.append(d)
-        has_unassigned = any(not (e["department"] or "").strip() for e in filtered_emps)
-        if has_unassigned or not all_section_names:
-            if "General" not in all_section_names:
-                all_section_names.insert(0, "General")
-            
-        is_dark_mode = self.current_theme().lower() in ("night", "dark")
-        
-        for sec_name in all_section_names:
-            sec_lower = sec_name.lower()
-            if sec_lower in ("general", "unassigned", "default"):
-                sec_emps = [e for e in filtered_emps if not (e["department"] or "").strip() or (e["department"] or "").strip().lower() == sec_lower]
-            else:
-                sec_emps = [e for e in filtered_emps if (e["department"] or "").strip().lower() == sec_lower]
-            sec_emps = sorted(sec_emps, key=lambda x: int(x["id"] or 0))
-                
-            if not sec_emps and (search_text or sec_lower not in [g.lower() for g in group_names]):
-                continue
-                
-            sec_r = self.emp_table.rowCount()
-            self.emp_table.insertRow(sec_r)
-            self.emp_table.setSpan(sec_r, 0, 1, 8)
-            self.emp_table.setRowHeight(sec_r, 36)
-            
-            count_text = f"({len(sec_emps)} {'employee' if len(sec_emps) == 1 else 'employees'})"
-            header_item = QTableWidgetItem(f"   📁  {sec_name.upper()}   {count_text}")
-            header_item.setData(Qt.ItemDataRole.UserRole, "__section_header__")
-            header_item.setData(Qt.ItemDataRole.UserRole + 1, sec_name)
-            header_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            
-            font = header_item.font()
-            font.setBold(True)
-            font.setPointSize(max(font.pointSize(), 9))
-            header_item.setFont(font)
-            if is_dark_mode:
-                header_item.setBackground(QColor(30, 41, 59))
-                header_item.setForeground(QColor(129, 140, 248))
-            else:
-                header_item.setBackground(QColor(241, 245, 249))
-                header_item.setForeground(QColor(79, 70, 229))
-            self.emp_table.setItem(sec_r, 0, header_item)
-            
-            for e in sec_emps:
-                r = self.emp_table.rowCount()
-                self.emp_table.insertRow(r)
-                self.emp_table.setRowHeight(r, 40)
-                vals = [
-                    e["id"],
-                    e["employee_code"] or "",
-                    e["name"],
-                    e["department"] or "General",
-                    e["designation"] or "—",
-                    e["phone"] or "—",
-                    e["email"] or "—",
-                    "Active" if e["active"] else "Inactive"
-                ]
-                self.set_row_items(self.emp_table, r, vals, status_cols={7})
-                first_item = self.emp_table.item(r, 0)
-                if first_item:
-                    first_item.setData(Qt.ItemDataRole.UserRole, e["id"])
-                    first_item.setData(Qt.ItemDataRole.UserRole + 1, e["department"] or "")
-                    first_item.setData(Qt.ItemDataRole.UserRole + 2, e["display_order"] if "display_order" in e.keys() else 0)
-                if selected_eid is not None and e["id"] == selected_eid:
-                    restore_row = r
-                    
+            r = self.emp_table.rowCount()
+            self.emp_table.insertRow(r)
+            self.emp_table.setRowHeight(r, 40)
+            vals = [
+                e["id"],
+                e["employee_code"] or "",
+                e["name"],
+                e["department"] or "General",
+                e["designation"] or "—",
+                e["phone"] or "—",
+                e["email"] or "—",
+                "Active" if e["active"] else "Inactive"
+            ]
+            self.set_row_items(self.emp_table, r, vals, status_cols={7})
+            first_item = self.emp_table.item(r, 0)
+            if first_item:
+                first_item.setData(Qt.ItemDataRole.UserRole, e["id"])
+                first_item.setData(Qt.ItemDataRole.UserRole + 1, e["department"] or "")
+                first_item.setData(Qt.ItemDataRole.UserRole + 2, e["display_order"] if "display_order" in e.keys() else 0)
+            if selected_eid is not None and e["id"] == selected_eid:
+                restore_row = r
+
         if restore_row >= 0:
             self.emp_table.selectRow(restore_row)
-            
+
         if hasattr(self, "emp_count_badge"):
-            self.emp_count_badge.setText(f"Total: {len(filtered_emps)}")
+            dept_suffix = f" · {selected_dept}" if (selected_dept and not selected_dept.startswith("🏢 All")) else ""
+            self.emp_count_badge.setText(f"Showing: {len(filtered_emps)} / Total: {len(all_emps)}{dept_suffix}")
         self.refresh_task_filter(); self.refresh_report_employees()
 
     def handle_employee_dropped(self, source_emp_id, source_row, target_row):
@@ -9923,13 +9936,9 @@ class MainWindow(QMainWindow):
         if not eid:
             return error(self, "Select an employee first.")
         r = self.emp_table.currentRow()
-        if r <= 1:
+        if r <= 0:
             return
         target_r = r - 1
-        target_item = self.emp_table.item(target_r, 0)
-        if target_item and target_item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
-            if target_r > 0:
-                target_r -= 1
         self.handle_employee_dropped(eid, r, target_r)
 
     def move_employee_down(self):
@@ -9942,10 +9951,6 @@ class MainWindow(QMainWindow):
         if r < 0 or r >= self.emp_table.rowCount() - 1:
             return
         target_r = r + 1
-        target_item = self.emp_table.item(target_r, 0)
-        if target_item and target_item.data(Qt.ItemDataRole.UserRole) == "__section_header__":
-            if target_r < self.emp_table.rowCount() - 1:
-                target_r += 1
         self.handle_employee_dropped(eid, r, target_r)
 
     def move_employee_to_group(self, emp_id, group_name):

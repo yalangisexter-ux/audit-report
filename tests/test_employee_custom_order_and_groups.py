@@ -168,6 +168,8 @@ def test_handle_employee_dropped_reorders_and_moves_group(temp_db, qapp):
             self.is_admin_or_dev = True
             self.emp_table = app.EmployeeTableWidget(0, 8, self)
             self.emp_search = app.QLineEdit()
+            self.emp_dept_filter = app.QComboBox()
+            self.emp_sort_combo = app.QComboBox()
             self.refreshed = False
         handle_employee_dropped = app.MainWindow.handle_employee_dropped
         refresh_employees = app.MainWindow.refresh_employees
@@ -182,13 +184,28 @@ def test_handle_employee_dropped_reorders_and_moves_group(temp_db, qapp):
     win = DummyMainWindow(temp_db)
     win.refresh_employees()
 
-    # Check rows: should have Technical header, 2 tech employees, Housekeeping header, 1 cleaner employee
-    assert win.emp_table.rowCount() == 5  # 2 headers + 3 employees
+    # Clean rows without fake folder headers: exactly 3 employees
+    assert win.emp_table.rowCount() == 3
+
+    # Department filter dropdown allows viewing only employees in that department
+    win.emp_dept_filter.setCurrentText("Technical")
+    win.refresh_employees()
+    assert win.emp_table.rowCount() == 2
+    assert win.emp_table.item(0, 2).text() == "Tech Lead"
+
+    win.emp_dept_filter.setCurrentText("Housekeeping")
+    win.refresh_employees()
+    assert win.emp_table.rowCount() == 1
+    assert win.emp_table.item(0, 2).text() == "Cleaner"
+
+    # Reset to all
+    win.emp_dept_filter.setCurrentText("🏢 All Departments / Groups")
+    win.refresh_employees()
+    assert win.emp_table.rowCount() == 3
 
     # Move Tech Junior (E2) into Housekeeping
     e2 = temp_db.conn.execute("SELECT id FROM employees WHERE employee_code='E2'").fetchone()["id"]
-    # Target row is Housekeeping section header (row 3)
-    win.handle_employee_dropped(e2, 2, 3)
+    win.handle_employee_dropped(e2, 1, 2)
 
     # Check database
     e2_updated = temp_db.conn.execute("SELECT * FROM employees WHERE id=?", (e2,)).fetchone()
@@ -213,6 +230,8 @@ def test_employees_sorted_by_serial_number_and_drag_drop_disabled(temp_db, qapp)
             self.is_admin_or_dev = True
             self.emp_table = app.EmployeeTableWidget(0, 8, self)
             self.emp_search = app.QLineEdit()
+            self.emp_dept_filter = app.QComboBox()
+            self.emp_sort_combo = app.QComboBox()
         handle_employee_dropped = app.MainWindow.handle_employee_dropped
         refresh_employees = app.MainWindow.refresh_employees
         set_row_items = app.MainWindow.set_row_items
@@ -226,11 +245,11 @@ def test_employees_sorted_by_serial_number_and_drag_drop_disabled(temp_db, qapp)
     win = DummyMainWindow(temp_db)
     win.refresh_employees()
 
-    # The rows under General header must be ordered by serial number (1, 2, 3), not alphabetical (Adam, Ben, Zoe)
-    assert win.emp_table.rowCount() == 4  # 1 header + 3 employees
-    assert win.emp_table.item(1, 0).text() == "1"
-    assert win.emp_table.item(1, 2).text() == "Zoe Senior"
-    assert win.emp_table.item(2, 0).text() == "2"
-    assert win.emp_table.item(2, 2).text() == "Adam Junior"
-    assert win.emp_table.item(3, 0).text() == "3"
-    assert win.emp_table.item(3, 2).text() == "Ben Mid"
+    # Clean rows without fake folder headers: ordered by serial number / ID (1, 2, 3), not alphabetical (Adam, Ben, Zoe)
+    assert win.emp_table.rowCount() == 3  # exactly 3 employees, zero folder header rows
+    assert win.emp_table.item(0, 0).text() == "1"
+    assert win.emp_table.item(0, 2).text() == "Zoe Senior"
+    assert win.emp_table.item(1, 0).text() == "2"
+    assert win.emp_table.item(1, 2).text() == "Adam Junior"
+    assert win.emp_table.item(2, 0).text() == "3"
+    assert win.emp_table.item(2, 2).text() == "Ben Mid"

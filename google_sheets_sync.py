@@ -189,9 +189,15 @@ def sync_database_from_workbook_bytes(db, xlsx_bytes: bytes) -> dict:
 
 
 def sync_from_live_google_sheet(db) -> dict:
-    """Download the live Google Spreadsheet and sync all data into SQLite."""
-    xlsx_bytes = fetch_google_sheet_bytes()
-    return sync_database_from_workbook_bytes(db, xlsx_bytes)
+    """Download the live Google Spreadsheet and sync all data into SQLite.
+    Gracefully handles offline environments without unhandled exceptions."""
+    try:
+        xlsx_bytes = fetch_google_sheet_bytes()
+        if xlsx_bytes and len(xlsx_bytes) > 500:
+            return sync_database_from_workbook_bytes(db, xlsx_bytes)
+    except Exception as exc:
+        log.info("Live Google Sheet download skipped or offline: %s", exc)
+    return {}
 
 
 def save_master_database_snapshot(db, custom_path=None) -> str:
@@ -325,15 +331,16 @@ def save_master_database_snapshot(db, custom_path=None) -> str:
 def continuous_auto_sync(db) -> dict:
     """Silent background continuous sync with Google Sheets.
     Offline-first: updates local DB immediately; when internet connects,
-    silently merges and appends without conflicts and without deleting any data."""
+    silently merges and appends without conflicts and without deleting any data.
+    Both Developer (admin) and Customer (Taruna) get the latest synced master data."""
     if db is None:
         return {"status": "error", "message": "Database unavailable"}
 
     active_user = getattr(db, "active_user", None)
+    is_dev = False
     try:
         from app import is_developer_test_user
-        if is_developer_test_user(active_user):
-            return {"status": "test_mode", "message": "Developer test mode active: master sync disabled to protect customer data."}
+        is_dev = is_developer_test_user(active_user)
     except Exception:
         pass
 
@@ -347,13 +354,14 @@ def continuous_auto_sync(db) -> dict:
             if response.status == 200:
                 xlsx_bytes = response.read()
                 if len(xlsx_bytes) > 1000:
-                    stats = sync_database_from_workbook_bytes(db, xls_bytes=xlsx_bytes)
+                    # Developer always gets synced data of Taruna / Admin into local view
+                    stats = sync_database_from_workbook_bytes(db, xlsx_bytes=xlsx_bytes)
                     # Keep local master snapshot updated
                     try:
                         save_master_database_snapshot(db)
                     except Exception:
                         pass
-                    return {"status": "synced", "updated": sum(stats.values()), "stats": stats}
+                    return {"status": "synced", "updated": sum(stats.values()), "stats": stats, "is_dev": is_dev}
     except Exception as exc:
         logging.getLogger("google_sheets_sync").info("Continuous sync offline notice: %s", exc)
 
