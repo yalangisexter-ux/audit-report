@@ -136,8 +136,22 @@ jobs:
             npx wrangler d1 migrations apply rsc-employee-chat-livescreen-sharing --remote --config wrangler.toml
             $env:CHAT_JWT_SECRET | npx wrangler secret put CHAT_JWT_SECRET --config wrangler.toml
             $env:CHAT_BOOTSTRAP_TOKEN | npx wrangler secret put CHAT_BOOTSTRAP_TOKEN --config wrangler.toml
-            $deployLog = npm run deploy 2>&1
-            $deployLog | ForEach-Object { Write-Host $_ }
+            $deployLog = @()
+            $deployExitCode = 1
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              Write-Host "Deploying Live Chat Worker (attempt $attempt of 3)..."
+              $deployLog = npm run deploy 2>&1
+              $deployExitCode = $LASTEXITCODE
+              $deployLog | ForEach-Object { Write-Host $_ }
+              if ($deployExitCode -eq 0) { break }
+              if ($attempt -lt 3) {
+                Write-Host "Worker deployment failed with exit code $deployExitCode; retrying in 10 seconds."
+                Start-Sleep -Seconds 10
+              }
+            }
+            if ($deployExitCode -ne 0) {
+              throw "Live Chat Worker deployment failed after 3 attempts (last exit code $deployExitCode)."
+            }
             $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-employee-chat[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
             if ($null -eq $workerUrl) {
               try {
