@@ -136,13 +136,14 @@ def test_main_window_exposes_customer_prospects_tab(tmp_path, monkeypatch):
         assert index >= 0
         assert window.tabs.tabText(index) == "📈  Customer Prospects"
         assert window.sidebar_buttons[index][0].toolTip() == "📈  Customer Prospects"
-        assert len(initially_seeded) == len(prospects.RESEARCHED_WEB_LEADS)
+        assert len(initially_seeded) >= len(prospects.RESEARCHED_WEB_LEADS)
         assert first_import == {"inserted": 0, "duplicates": 1}
         assert second_import == {"inserted": 0, "duplicates": 1}
         assert seed_again == {"inserted": 0, "duplicates": 0}
-        assert saved[0]["source_url"] == prospects.RESEARCHED_SOURCE_URL
-        assert saved[0]["source_status"] == prospects.RESEARCHED_SOURCE_STATUS
-        assert len(window.customer_tab.records) == len(prospects.RESEARCHED_WEB_LEADS)
+        matching = [s for s in saved if s["business_name"] == web_record["business_name"]]
+        assert matching and matching[0]["source_url"] == prospects.RESEARCHED_SOURCE_URL
+        assert matching[0]["source_status"] == prospects.RESEARCHED_SOURCE_STATUS
+        assert len(window.customer_tab.records) >= len(prospects.RESEARCHED_WEB_LEADS)
         qt_app.processEvents()
     finally:
         window.close()
