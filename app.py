@@ -1359,7 +1359,7 @@ class Database:
           business_name TEXT NOT NULL,
           business_category TEXT DEFAULT '',
           state TEXT DEFAULT '', city TEXT DEFAULT '', area TEXT DEFAULT '',
-          contact_person TEXT DEFAULT '', phone TEXT DEFAULT '', address TEXT DEFAULT '',
+          contact_person TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', address TEXT DEFAULT '',
           website TEXT DEFAULT '', maps TEXT DEFAULT '',
           followup_date TEXT DEFAULT '', call_time TEXT DEFAULT '',
           connection TEXT DEFAULT '', verified TEXT DEFAULT '', response TEXT DEFAULT '',
@@ -1405,6 +1405,10 @@ class Database:
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
         )
         employee_columns = apply_column_migrations("employees", employee_migrations)
+        prospect_migrations = (
+            ("email", "TEXT DEFAULT ''"),
+        )
+        apply_column_migrations("customer_prospects", prospect_migrations)
         # Preserve employee names from older database schemas.
         if "employee_name" in employee_columns:
             c.execute("""

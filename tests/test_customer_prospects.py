@@ -208,3 +208,93 @@ def test_export_csv_pdf_doc_generate_files(tmp_path, monkeypatch):
     assert "NR Nutrition and Supplements" in (tmp_path / "test_out.doc").read_text(encoding="utf-8")
 
     tab.close()
+
+def test_extract_deep_page_details_and_hybrid_classification():
+    html_gym_products = """
+    <html>
+    <head><title>Spartan Iron Gym & Nutrition Bar</title></head>
+    <body>
+      <h1>Spartan Iron Fitness</h1>
+      <p>Workout in our gym and visit our supplement counter for authentic Whey Protein and Creatine!</p>
+      <address>Plot 45, Jubilee Hills Road 36, Hyderabad, Telangana 500033</address>
+      <a href="tel:+919849012345">Call Gym</a>
+      <a href="mailto:contact@spartanirongym.in">Email Us</a>
+      <a href="https://maps.google.com/?q=Spartan+Iron+Gym">Google Maps</a>
+    </body>
+    </html>
+    """
+    details = prospects.extract_deep_page_details(html_gym_products, "https://spartanirongym.in")
+    assert any("9849012345" in p.replace(" ", "") for p in details["phones"])
+    assert "contact@spartanirongym.in" in details["emails"]
+    assert "Hyderabad" in details["address"]
+    assert "500033" in details["address"]
+    assert "maps.google.com" in details["maps"]
+    assert details["kind"] == "Gym + Store"
+
+    html_pure_store = """
+    <html>
+    <body>
+      <h1>NutriWorld Supplements</h1>
+      <p>Best sports nutrition, protein powder and vitamins.</p>
+      <a href="tel:080-25251234">Phone</a>
+      <a href="mailto:sales@nutriworld.in">Sales</a>
+    </body>
+    </html>
+    """
+    details_store = prospects.extract_deep_page_details(html_pure_store, "https://nutriworld.in")
+    assert details_store["kind"] == "Store"
+    assert "sales@nutriworld.in" in details_store["emails"]
+
+    html_pure_gym = """
+    <html>
+    <body>
+      <h1>Elite Crossfit & Fitness Center</h1>
+      <p>Cardio, HIIT, and personal training.</p>
+    </body>
+    </html>
+    """
+    details_gym = prospects.extract_deep_page_details(html_pure_gym, "https://elitecrossfit.in")
+    assert details_gym["kind"] == "Gym"
+
+
+def test_customer_prospects_filter_options_for_stores_gyms_and_hybrids(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        tab.records = [
+            {"kind": "Store", "business_name": "Alpha Nutrition Store", "state": "Delhi", "business_category": "Sports Nutrition / Supplement Store"},
+            {"kind": "Gym", "business_name": "Titan Gym & Fitness", "state": "Delhi", "business_category": "Fitness Centre / Gym"},
+            {"kind": "Gym + Store", "business_name": "Iron Beast Gym Pro Shop", "state": "Delhi", "business_category": "Gym with Nutrition & Supplement Counter / Pro-Shop"},
+        ]
+        tab._fill_leads_table()
+
+        # All types shows 3
+        tab.kind_filter.setCurrentText("All types")
+        tab.apply_filters()
+        assert sum(not tab.leads_table.isRowHidden(i) for i in range(3)) == 3
+
+        # Pure Product Selling Stores shows row 0 only
+        tab.kind_filter.setCurrentText("Pure Product Selling Stores")
+        tab.apply_filters()
+        assert not tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert tab.leads_table.isRowHidden(2)
+
+        # Gym shows row 1 only
+        tab.kind_filter.setCurrentText("Gym")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(0)
+        assert not tab.leads_table.isRowHidden(1)
+        assert tab.leads_table.isRowHidden(2)
+
+        # Gyms which sell products also shows row 2 only
+        tab.kind_filter.setCurrentText("Gyms which sell products also")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+    finally:
+        tab.close()
