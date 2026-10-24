@@ -442,64 +442,117 @@ class WebScraperWorker(QThread):
         self.query_term = query_term or "supplement store nutrition"
 
     def run(self):
+        """Search multiple public search engines; results are unverified candidates."""
         found = []
-        try:
-            self.progress.emit(f"Searching web for supplement stores in {self.region or 'All India'}...", 20)
-            clean_region = self.region if self.region != "All States / UTs" else ""
-            search_query = f"{self.query_term} {clean_region} India".strip()
-            
-            # Use Bing search query with browser headers
-            url = f"https://www.bing.com/search?q={urllib.parse.quote(search_query)}"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                html = resp.read().decode('utf-8', errors='ignore')
-            
-            self.progress.emit("Analyzing search listings & applying negative filters...", 60)
-            titles = re.findall(r'<h2[^>]*><a[^>]*href="([^"]*)"[^>]*>(.*?)</a></h2>', html)
-            
-            for url_match, raw_title in titles:
-                title = re.sub(r'<[^>]+>', '', raw_title).strip()
-                # Clean title suffixes
-                for suffix in ("- Facebook", "- Instagram", "- Justdial", "| IndiaMART", "| Google"):
-                    if suffix in title:
-                        title = title.split(suffix)[0].strip()
-                
-                # Check negative filter: ❌ No pharmacy, medical, chemist, herbal, herbalife, healthkart
-                if NEGATIVE_FILTER_PATTERN.search(title):
-                    continue
-                
-                # Filter noise
-                if len(title) < 4 or any(w in title.lower() for w in ("wikipedia", "youtube", "login", "sign in")):
-                    continue
-                    
-                target_state = self.region if self.region != "All States / UTs" else "All-India"
-                maps_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(f'{title} {target_state}')}"
-                found.append({
-                    "kind": "Store",
-                    "business_name": title,
-                    "business_category": "Sports Nutrition / Supplement Store",
-                    "state": target_state,
-                    "city": "",
-                    "area": "",
-                    "phone": "",
-                    "address": f"{title}, {target_state}",
-                    "maps": maps_url,
-                    "website": url_match,
-                    "source_name": "Web Search Scraper",
-                    "source_url": url_match,
-                    "source_type": "Web Discovered",
-                    "source_status": "Web Discovered - Needs Call Verification",
-                    "verified": "No",
-                })
-            
-            self.progress.emit(f"Done! Found {len(found)} candidate store(s).", 100)
-            self.finished.emit(found, "")
-        except Exception as exc:
-            self.finished.emit([], str(exc))
+        seen_urls = set()
+        errors = []
+        clean_region = self.region if self.region != "All States / UTs" else ""
+        base_query = f"{self.query_term} {clean_region} India".strip()
 
+        # Google dorking here means ordinary public search operators only.
+        # Do not target exposed credentials, private records, or restricted systems.
+        queries = [
+            base_query,
+            f'site:justdial.com "{self.query_term}" {clean_region} India'.strip(),
+            f'intitle:contact "{self.query_term}" {clean_region} India'.strip(),
+        ]
+        engines = [
+            ("Bing", "https://www.bing.com/search?q={query}"),
+            ("DuckDuckGo", "https://html.duckduckgo.com/html/?q={query}"),
+            ("Google", "https://www.google.com/search?q={query}&num=20"),
+        ]
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            "Accept-Language": "en-IN,en;q=0.9",
+        }
+
+        try:
+            total = len(engines) * len(queries)
+            completed = 0
+            for engine_name, engine_template in engines:
+                for query in queries:
+                    completed += 1
+                    self.progress.emit(
+                        f"Searching {engine_name} ({completed}/{total}): {query[:90]}",
+                        min(90, int(completed * 90 / total)),
+                    )
+                    search_url = engine_template.format(query=urllib.parse.quote(query))
+                    try:
+                        request = urllib.request.Request(search_url, headers=headers)
+                        with urllib.request.urlopen(request, timeout=12) as response:
+                            html = response.read(2_500_000).decode("utf-8", errors="ignore")
+                    except Exception as exc:
+                        errors.append(f"{engine_name}: {exc}")
+                        continue
+
+                    # Search result markup differs by engine. Extract links and text
+                    # conservatively, ignoring engine-internal/navigation links.
+                    anchors = re.findall(
+                        r'<a\\b[^>]*href=["\\']([^"\\']+)["\\'][^>]*>(.*?)</a>',
+                        html, flags=re.IGNORECASE | re.DOTALL
+                    )
+                    for href, raw_title in anchors:
+                        title = re.sub(r"<[^>]+>", " ", raw_title)
+                        title = re.sub(r"\\s+", " ", title).strip()
+                        title = (title.replace("&amp;", "&").replace("&quot;", '"')
+                                      .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">"))
+                        href = href.replace("&amp;", "&")
+                        if href.startswith("//"):
+                            href = "https:" + href
+                        if "duckduckgo.com/l/?" in href:
+                            parsed = urllib.parse.urlparse(href)
+                            href = urllib.parse.parse_qs(parsed.query).get("uddg", [href])[0]
+                        parsed_url = urllib.parse.urlparse(href)
+                        host = (parsed_url.netloc or "").lower()
+                        if parsed_url.scheme not in {"http", "https"}:
+                            continue
+                        if any(domain in host for domain in (
+                            "bing.com", "google.com", "duckduckgo.com", "microsoft.com"
+                        )):
+                            continue
+                        if not title or len(title) < 4 or len(title) > 240:
+                            continue
+                        if NEGATIVE_FILTER_PATTERN.search(title):
+                            continue
+                        if any(word in title.casefold() for word in (
+                            "wikipedia", "youtube", "sign in", "log in", "privacy policy"
+                        )):
+                            continue
+                        normalized_url = urllib.parse.urlunparse(parsed_url._replace(fragment=""))
+                        if normalized_url in seen_urls:
+                            continue
+                        seen_urls.add(normalized_url)
+                        target_state = clean_region or "All-India"
+                        maps_url = (
+                            "https://www.google.com/maps/search/?api=1&query="
+                            + urllib.parse.quote(f"{title} {target_state}")
+                        )
+                        found.append({
+                            "kind": "Store",
+                            "business_name": title,
+                            "business_category": "Sports Nutrition / Supplement Store",
+                            "state": target_state,
+                            "city": "",
+                            "area": "",
+                            "phone": "",
+                            "address": f"{title}, {target_state}",
+                            "maps": maps_url,
+                            "website": normalized_url,
+                            "source_name": f"{engine_name} public search",
+                            "source_url": normalized_url,
+                            "source_type": "Web Discovered",
+                            "source_status": "Search result only - verify business details and phone before use",
+                            "verified": "No",
+                        })
+
+            status = (
+                f"Completed multi-engine search. Found {len(found)} unique candidate(s); "
+                f"{len(errors)} search request(s) failed or were blocked. Results need verification."
+            )
+            self.progress.emit(status, 100)
+            self.finished.emit(found, "; ".join(errors[:3]))
+        except Exception as exc:
+            self.finished.emit(found, str(exc))
 
 class WebScraperDialog(QDialog):
     """Dialog for fetching/scraping new stores from Google & the web."""
