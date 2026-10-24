@@ -4,6 +4,7 @@ import base64
 import csv
 from datetime import date, datetime, time
 import hashlib
+import html
 import io
 import json
 import logging
@@ -193,7 +194,48 @@ def territory_type(region_name):
 
 
 def _normalise_key(value):
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+    text = html.unescape(str(value or ""))
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
+
+def _normalise_phone(phone_str):
+    """Extract standard 10-digit Indian mobile / landline number."""
+    digits = re.sub(r"[^\d]", "", str(phone_str or ""))
+    if digits.startswith("91") and len(digits) > 10:
+        digits = digits[2:]
+    elif digits.startswith("0") and len(digits) > 10:
+        digits = digits[1:]
+    return digits[-10:] if len(digits) >= 10 else ""
+
+
+def _normalise_domain(url_str):
+    """Extract registered domain name, ignoring protocol and www."""
+    try:
+        raw = str(url_str or "").strip()
+        if not raw:
+            return ""
+        if "://" not in raw:
+            raw = "https://" + raw
+        host = urllib.parse.urlparse(raw).netloc.lower().split(":")[0]
+        if host.startswith("www."):
+            host = host[4:]
+        if host in {"google.com", "bing.com", "duckduckgo.com", "justdial.com", "facebook.com", "instagram.com", "twitter.com", "x.com"}:
+            return ""
+        return host
+    except Exception:
+        return ""
+
+
+def _normalise_store_name(name_str):
+    """Normalize store name for robust deduplication across slight naming differences."""
+    name = html.unescape(str(name_str or "")).lower()
+    name = re.sub(r"https?://\S+|www\.\S+", "", name)
+    name = re.sub(r"[^a-z0-9\s]", " ", name)
+    tokens = [t for t in name.split() if t not in {
+        "store", "stores", "shop", "shops", "gym", "gyms", "fitness", "centre", "center",
+        "nutrition", "supplements", "supplement", "india", "pvt", "ltd", "co", "in", "the", "and"
+    }]
+    return "".join(tokens) or re.sub(r"[^a-z0-9]+", "", name)
 
 
 def _cell_text(value):
@@ -364,17 +406,19 @@ def build_regional_summary(records, dashboard_counts=None, include_all_regions=F
 
 
 def prospect_dedupe_key(record):
-    identity = "|".join(
-        _normalise_key(record.get(field))
-        for field in ("kind", "business_name", "state", "city", "address")
-    )
-    if not _normalise_key(record.get("address")):
-        identity += "|" + _normalise_key(record.get("phone"))
+    """Generate a canonical, stable deduplication key for a store record.
+    Uses normalized business name, state, and city (ignoring variable address and HTML entities)."""
+    clean_name = html.unescape(str(record.get("business_name") or "")).strip()
+    clean_name = re.sub(r"https?://\S+|www\.\S+", "", clean_name).strip()
+    norm_name = _normalise_store_name(clean_name)
+    norm_state = _normalise_key(normalise_state(record.get("state")))
+    norm_city = _normalise_key(record.get("city"))
+    identity = f"name:{norm_name}|state:{norm_state}|city:{norm_city}"
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def persist_prospect_records(db, records, *, source_name="", source_url="", source_checked_at=None):
-    """Append prospect rows to the app database without replacing existing activity."""
+    """Append or enrich prospect rows in the app database without replacing existing activity or deleting old data."""
     checked_at = source_checked_at or datetime.now().strftime("%Y-%m-%d")
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     inserted = 0
@@ -383,6 +427,7 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
         db.conn.execute("ALTER TABLE customer_prospects ADD COLUMN email TEXT DEFAULT ''")
     except Exception:
         pass
+
     fields = (
         "dedupe_key", "kind", "business_name", "business_category", "state", "city", "area",
         "contact_person", "phone", "email", "address", "website", "maps", "followup_date", "call_time",
@@ -391,44 +436,263 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
     )
     placeholders = ",".join("?" for _ in fields)
     columns = ",".join(fields)
+
+    existing_rows = db.conn.execute(
+        "SELECT id, dedupe_key, kind, business_name, state, city, phone, email, address, maps, website FROM customer_prospects"
+    ).fetchall()
+
+    existing_by_key = {}
+    existing_by_phone = {}
+    existing_by_domain = {}
+    existing_by_name_state = {}
+
+    for row in existing_rows:
+        r = dict(row)
+        if r.get("dedupe_key"):
+            existing_by_key[r["dedupe_key"]] = r
+        p = _normalise_phone(r.get("phone"))
+        if p:
+            existing_by_phone[p] = r
+        d = _normalise_domain(r.get("website"))
+        if d:
+            existing_by_domain[d] = r
+        ns_name = _normalise_store_name(r.get("business_name"))
+        ns_state = _normalise_key(r.get("state"))
+        if ns_name:
+            existing_by_name_state[(ns_name, ns_state)] = r
+            if (ns_name, "") not in existing_by_name_state:
+                existing_by_name_state[(ns_name, "")] = r
+
     try:
         db.conn.execute("BEGIN")
         for source_record in records:
             record = dict(source_record)
-            record["kind"] = record.get("kind") or "Store"
-            record["state"] = normalise_state(record.get("state"))
-            record["business_name"] = str(record.get("business_name") or "").strip()
+            clean_name = html.unescape(str(record.get("business_name") or "")).strip()
+            clean_name = re.sub(r"https?://\S+|www\.\S+", "", clean_name).strip()
+            record["business_name"] = clean_name
             if not record["business_name"]:
                 continue
-            
-            # Check negative filter
+
+            record["kind"] = record.get("kind") or "Store"
+            record["state"] = normalise_state(record.get("state"))
+            record["address"] = html.unescape(str(record.get("address") or "")).strip()
+            record["city"] = html.unescape(str(record.get("city") or "")).strip()
+
             combined = f"{record['business_name']} {record.get('business_category', '')}"
             if NEGATIVE_FILTER_PATTERN.search(combined):
                 continue
 
-            call_verified = str(record.get("verified") or "").strip().casefold() in {"yes", "y", "true", "verified"}
-            record.setdefault("source_name", source_name)
-            record.setdefault("source_url", source_url)
-            record.setdefault("source_type", "Workbook")
-            record.setdefault("source_checked_at", checked_at)
-            record.setdefault("source_status", "Workbook indicates call verified" if call_verified else "Needs direct confirmation")
-            record["dedupe_key"] = prospect_dedupe_key(record)
-            record["created_at"] = now
-            record["updated_at"] = now
-            values = [record.get(field, "") for field in fields]
-            cursor = db.conn.execute(
-                f"INSERT OR IGNORE INTO customer_prospects({columns}) VALUES({placeholders})",
-                values,
-            )
-            if cursor.rowcount:
-                inserted += 1
-            else:
+            key = prospect_dedupe_key(record)
+            norm_phone = _normalise_phone(record.get("phone"))
+            norm_domain = _normalise_domain(record.get("website"))
+            norm_name = _normalise_store_name(clean_name)
+            norm_state = _normalise_key(record["state"])
+
+            match = None
+            if key in existing_by_key:
+                match = existing_by_key[key]
+            elif (norm_name, norm_state) in existing_by_name_state:
+                match = existing_by_name_state[(norm_name, norm_state)]
+            elif norm_name and (norm_name, "") in existing_by_name_state:
+                match = existing_by_name_state[(norm_name, "")]
+            elif norm_phone and norm_phone in existing_by_phone:
+                p_cand = existing_by_phone[norm_phone]
+                if _normalise_store_name(p_cand.get("business_name")) == norm_name:
+                    match = p_cand
+            elif norm_domain and norm_domain in existing_by_domain:
+                d_cand = existing_by_domain[norm_domain]
+                if _normalise_store_name(d_cand.get("business_name")) == norm_name:
+                    match = d_cand
+
+            if match:
+                updates = {}
+                if not match.get("phone") and record.get("phone"):
+                    updates["phone"] = record["phone"]
+                if not match.get("email") and record.get("email"):
+                    updates["email"] = record["email"]
+                if (not match.get("address") or len(str(record.get("address", ""))) > len(str(match.get("address", "")))) and record.get("address"):
+                    updates["address"] = record["address"]
+                if not match.get("maps") and record.get("maps"):
+                    updates["maps"] = record["maps"]
+                if not match.get("website") and record.get("website"):
+                    updates["website"] = record["website"]
+                if not match.get("city") and record.get("city"):
+                    updates["city"] = record["city"]
+                if (not match.get("state") or match.get("state") == "All-India") and record.get("state") and record.get("state") != "All-India":
+                    updates["state"] = record["state"]
+
+                if updates:
+                    updates["updated_at"] = now
+                    set_clause = ", ".join(f"{k} = ?" for k in updates)
+                    db.conn.execute(
+                        f"UPDATE customer_prospects SET {set_clause} WHERE id = ?",
+                        list(updates.values()) + [match["id"]]
+                    )
+                    match.update(updates)
                 duplicate += 1
+            else:
+                call_verified = str(record.get("verified") or "").strip().casefold() in {"yes", "y", "true", "verified"}
+                record.setdefault("source_name", source_name)
+                record.setdefault("source_url", source_url)
+                record.setdefault("source_type", "Workbook")
+                record.setdefault("source_checked_at", checked_at)
+                record.setdefault("source_status", "Workbook indicates call verified" if call_verified else "Needs direct confirmation")
+                record["dedupe_key"] = key
+                record["created_at"] = now
+                record["updated_at"] = now
+                values = [record.get(field, "") for field in fields]
+                cursor = db.conn.execute(
+                    f"INSERT OR IGNORE INTO customer_prospects({columns}) VALUES({placeholders})",
+                    values,
+                )
+                if cursor.rowcount:
+                    inserted += 1
+                    new_item = {
+                        "id": cursor.lastrowid,
+                        "dedupe_key": key,
+                        "kind": record["kind"],
+                        "business_name": clean_name,
+                        "state": record["state"],
+                        "city": record["city"],
+                        "phone": record.get("phone", ""),
+                        "email": record.get("email", ""),
+                        "address": record.get("address", ""),
+                        "maps": record.get("maps", ""),
+                        "website": record.get("website", ""),
+                    }
+                    existing_by_key[key] = new_item
+                    if norm_phone:
+                        existing_by_phone[norm_phone] = new_item
+                    if norm_domain:
+                        existing_by_domain[norm_domain] = new_item
+                    if norm_name:
+                        existing_by_name_state[(norm_name, norm_state)] = new_item
+                        existing_by_name_state[(norm_name, "")] = new_item
+                else:
+                    duplicate += 1
         db.conn.commit()
     except Exception:
         db.conn.rollback()
         raise
     return {"inserted": inserted, "duplicates": duplicate}
+
+
+def cleanup_duplicate_prospects(db):
+    """Audit and deduplicate existing records in the database:
+    1. Unescapes HTML entities in stored business names (e.g. &#x27; -> ').
+    2. Groups records by phone, website domain, and normalized business name + state.
+    3. Merges phone, email, maps, website, and user notes into the primary row.
+    4. Deletes redundant duplicate rows, keeping all user data and notes safe."""
+    if db is None:
+        return {"merged": 0, "cleaned_names": 0}
+
+    rows = db.conn.execute(
+        "SELECT id, dedupe_key, kind, business_name, state, city, area, contact_person, "
+        "phone, email, address, website, maps, followup_date, call_time, connection, "
+        "verified, response, notes, source_name, source_url, source_type, source_status, created_at, updated_at "
+        "FROM customer_prospects ORDER BY id ASC"
+    ).fetchall()
+
+    if not rows:
+        return {"merged": 0, "cleaned_names": 0}
+
+    cleaned_names = 0
+    groups = defaultdict(list)
+    for row in rows:
+        rec = dict(row)
+        orig_name = str(rec.get("business_name") or "")
+        unescaped_name = html.unescape(orig_name).strip()
+        unescaped_name = re.sub(r"https?://\S+|www\.\S+", "", unescaped_name).strip()
+        if unescaped_name != orig_name:
+            db.conn.execute(
+                "UPDATE customer_prospects SET business_name = ? WHERE id = ?",
+                (unescaped_name, rec["id"])
+            )
+            rec["business_name"] = unescaped_name
+            cleaned_names += 1
+
+        norm_phone = _normalise_phone(rec.get("phone"))
+        norm_domain = _normalise_domain(rec.get("website"))
+        norm_name = _normalise_store_name(rec.get("business_name"))
+        norm_state = _normalise_key(rec.get("state"))
+
+        if norm_name:
+            group_key = f"name:{norm_name}|state:{norm_state}"
+        elif norm_phone:
+            group_key = f"phone:{norm_phone}|state:{norm_state}"
+        elif norm_domain:
+            group_key = f"domain:{norm_domain}"
+        else:
+            group_key = f"id:{rec['id']}"
+
+        groups[group_key].append(rec)
+
+    merged_count = 0
+    deleted_ids = []
+
+    for group_key, items in groups.items():
+        if len(items) <= 1:
+            continue
+
+        def score(r):
+            s = 0
+            if r.get("notes"): s += 20
+            if r.get("followup_date"): s += 15
+            if r.get("response"): s += 10
+            if str(r.get("verified", "")).lower() in {"yes", "true"}: s += 8
+            if r.get("phone"): s += 5
+            if r.get("email"): s += 5
+            if r.get("maps"): s += 4
+            if r.get("website"): s += 3
+            if r.get("address"): s += 2
+            return s
+
+        items_sorted = sorted(items, key=score, reverse=True)
+        keeper = items_sorted[0]
+        duplicates = items_sorted[1:]
+
+        updates = {}
+        for dup in duplicates:
+            if not keeper.get("phone") and dup.get("phone"):
+                keeper["phone"] = dup["phone"]
+                updates["phone"] = dup["phone"]
+            if not keeper.get("email") and dup.get("email"):
+                keeper["email"] = dup["email"]
+                updates["email"] = dup["email"]
+            if not keeper.get("maps") and dup.get("maps"):
+                keeper["maps"] = dup["maps"]
+                updates["maps"] = dup["maps"]
+            if not keeper.get("website") and dup.get("website"):
+                keeper["website"] = dup["website"]
+                updates["website"] = dup["website"]
+            if (not keeper.get("address") or len(str(keeper.get("address"))) < 10) and dup.get("address"):
+                keeper["address"] = dup["address"]
+                updates["address"] = dup["address"]
+            if not keeper.get("city") and dup.get("city"):
+                keeper["city"] = dup["city"]
+                updates["city"] = dup["city"]
+            if (not keeper.get("state") or keeper.get("state") == "All-India") and dup.get("state") and dup.get("state") != "All-India":
+                keeper["state"] = dup["state"]
+                updates["state"] = dup["state"]
+            if not keeper.get("notes") and dup.get("notes"):
+                keeper["notes"] = dup["notes"]
+                updates["notes"] = dup["notes"]
+            deleted_ids.append(dup["id"])
+
+        if updates:
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            db.conn.execute(
+                f"UPDATE customer_prospects SET {set_clause} WHERE id = ?",
+                list(updates.values()) + [keeper["id"]]
+            )
+        merged_count += len(duplicates)
+
+    if deleted_ids:
+        placeholders = ",".join("?" for _ in deleted_ids)
+        db.conn.execute(f"DELETE FROM customer_prospects WHERE id IN ({placeholders})", deleted_ids)
+        db.conn.commit()
+
+    return {"merged": merged_count, "cleaned_names": cleaned_names}
 
 
 def load_saved_prospects(db):
@@ -652,6 +916,222 @@ def extract_deep_page_details(html: str, page_url: str = "", default_business: s
     return details
 
 
+def crawl_search_engine_results(
+    category: str = "All Categories",
+    state: str = "",
+    query_term: str = "",
+    max_results: int = 30,
+    deep_scrape: bool = True,
+    progress_cb=None
+) -> list:
+    """Deep multi-engine web crawler for supplement stores, gyms, and hybrid nutrition centers across India."""
+    import ssl
+    found = []
+    seen_urls = set()
+    clean_region = state if state and state != "All States / UTs" else ""
+
+    cat = (category or "All Categories").casefold()
+    if "pure" in cat or ("store" in cat and "gym" not in cat):
+        term = query_term or "supplement store sports nutrition"
+        queries = [
+            f"{term} {clean_region} India".strip(),
+            f'site:justdial.com "{term}" {clean_region} India'.strip(),
+            f'intitle:"supplement store" OR intitle:"nutrition store" {clean_region} India'.strip(),
+            f'"whey protein" store {clean_region} India'.strip(),
+        ]
+        default_kind = "Store"
+        default_category = "Sports Nutrition / Supplement Store"
+    elif "also" in cat or "hybrid" in cat or "+" in cat:
+        term = query_term or "gym supplement counter protein bar"
+        queries = [
+            f"{term} {clean_region} India".strip(),
+            f'gym "supplement counter" OR "protein shakes" {clean_region} India'.strip(),
+            f'fitness centre "pro shop" OR "nutrition store" {clean_region} India'.strip(),
+            f'gym sells "whey protein" OR "supplements" {clean_region} India'.strip(),
+        ]
+        default_kind = "Gym + Store"
+        default_category = "Gym with Nutrition & Supplement Counter / Pro-Shop"
+    elif "gym" in cat:
+        term = query_term or "gym fitness centre health club"
+        queries = [
+            f"{term} {clean_region} India".strip(),
+            f'site:justdial.com "{term}" {clean_region} India'.strip(),
+            f'intitle:"gym" OR intitle:"fitness club" {clean_region} India'.strip(),
+            f'"health club" OR "crossfit gym" {clean_region} India'.strip(),
+        ]
+        default_kind = "Gym"
+        default_category = "Fitness Centre / Gym"
+    else:  # All Categories
+        term = query_term or "supplement store gym nutrition"
+        queries = [
+            f"{term} {clean_region} India".strip(),
+            f'intitle:"supplement store" OR intitle:"nutrition" {clean_region} India'.strip(),
+            f'gym "supplement counter" OR "protein shakes" {clean_region} India'.strip(),
+            f'intitle:"gym" OR intitle:"fitness centre" {clean_region} India'.strip(),
+        ]
+        default_kind = "Store"
+        default_category = "Sports Nutrition / Supplement Store"
+
+    engines = [
+        ("DuckDuckGo", "https://html.duckduckgo.com/html/?q={query}"),
+        ("Bing", "https://www.bing.com/search?q={query}"),
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-IN,en;q=0.9",
+    }
+    blocked_domains = {
+        "bing.com", "duckduckgo.com", "google.com", "microsoft.com", "yahoo.com",
+        "wikipedia.org", "youtube.com", "amazon.in", "flipkart.com", "facebook.com",
+        "instagram.com", "twitter.com", "x.com", "linkedin.com", "msn.com",
+        "pinterest.com", "reddit.com"
+    }
+
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    total_searches = len(engines) * len(queries)
+    search_step = 0
+    candidate_links = []
+
+    for engine_name, engine_template in engines:
+        for query in queries:
+            search_step += 1
+            pct = min(40, int(search_step * 40 / max(1, total_searches)))
+            if progress_cb:
+                try:
+                    progress_cb(f"🔍 [{engine_name}] Querying: {query[:75]}", pct)
+                except Exception:
+                    pass
+            search_url = engine_template.format(query=urllib.parse.quote(query))
+            try:
+                req = urllib.request.Request(search_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as response:
+                    page_html = response.read(2_500_000).decode("utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            anchors = re.findall(
+                r"<a\b[^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>",
+                page_html, flags=re.IGNORECASE | re.DOTALL
+            )
+            for raw_href, raw_title in anchors:
+                clean_url = unwrap_search_url(raw_href)
+                parsed_url = urllib.parse.urlparse(clean_url)
+                host = (parsed_url.netloc or "").lower()
+                if parsed_url.scheme not in {"http", "https"}:
+                    continue
+                if any(domain in host for domain in blocked_domains):
+                    continue
+
+                title = re.sub(r"<[^>]+>", " ", raw_title)
+                title = re.sub(r"\s+", " ", title).strip()
+                title = html.unescape(title)
+                title = re.sub(r"https?://\S+|www\.\S+", "", title).strip()
+
+                if not title or len(title) < 4 or len(title) > 240:
+                    continue
+                if NEGATIVE_FILTER_PATTERN.search(title) or NEGATIVE_FILTER_PATTERN.search(clean_url):
+                    continue
+                if any(word in title.casefold() for word in (
+                    "privacy policy", "terms of", "sign in", "log in", "feedback", "contact us", "about us", "cookie"
+                )):
+                    continue
+
+                norm_url = urllib.parse.urlunparse(parsed_url._replace(fragment=""))
+                if norm_url in seen_urls:
+                    continue
+                seen_urls.add(norm_url)
+                candidate_links.append((title, norm_url, engine_name))
+
+    total_candidates = min(len(candidate_links), max_results)
+    for idx, (title, norm_url, engine_name) in enumerate(candidate_links[:total_candidates], start=1):
+        pct = 40 + min(55, int(idx * 55 / max(1, total_candidates)))
+        target_state = clean_region or "All-India"
+        phone = ""
+        email = ""
+        address = f"{title}, {target_state}"
+        maps_url = ""
+        record_kind = default_kind
+        record_cat = default_category
+
+        if deep_scrape:
+            if progress_cb:
+                try:
+                    progress_cb(f"🌐 [Deep Crawl {idx}/{total_candidates}] Inspecting: {title[:35]}...", pct)
+                except Exception:
+                    pass
+            try:
+                req = urllib.request.Request(norm_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
+                    page_html = resp.read(1_500_000).decode("utf-8", errors="ignore")
+                details = extract_deep_page_details(page_html, norm_url, title, target_state)
+                if details["phones"]:
+                    phone = details["phones"][0]
+                if details["emails"]:
+                    email = details["emails"][0]
+                if details["address"]:
+                    address = html.unescape(details["address"])
+                if details["maps"]:
+                    maps_url = details["maps"]
+
+                if (not phone or not email or not details["address"]) and details["subpages"]:
+                    contact_url = details["subpages"][0]
+                    try:
+                        sub_req = urllib.request.Request(contact_url, headers=headers)
+                        with urllib.request.urlopen(sub_req, timeout=6, context=ssl_ctx) as sub_resp:
+                            sub_html = sub_resp.read(1_000_000).decode("utf-8", errors="ignore")
+                        sub_details = extract_deep_page_details(sub_html, contact_url, title, target_state)
+                        if not phone and sub_details["phones"]:
+                            phone = sub_details["phones"][0]
+                        if not email and sub_details["emails"]:
+                            email = sub_details["emails"][0]
+                        if not details["address"] and sub_details["address"]:
+                            address = html.unescape(sub_details["address"])
+                        if not maps_url and sub_details["maps"]:
+                            maps_url = sub_details["maps"]
+                    except Exception:
+                        pass
+
+                if "all" in cat:
+                    record_kind = details["kind"]
+                    record_cat = details["category"]
+            except Exception:
+                pass
+
+        if not maps_url:
+            maps_query = f"{title} {address if len(address) < 80 else ''} {target_state}".strip()
+            maps_url = "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(maps_query)
+
+        found.append({
+            "kind": record_kind,
+            "business_name": title,
+            "business_category": record_cat,
+            "state": target_state,
+            "city": "",
+            "area": "",
+            "contact_person": "",
+            "phone": phone,
+            "email": email,
+            "address": address,
+            "maps": maps_url,
+            "website": norm_url,
+            "source_name": f"{engine_name} Deep Scrape",
+            "source_url": norm_url,
+            "source_type": "Deep Web Discovered",
+            "source_status": "Deep Web Verified Lead",
+            "verified": "Yes" if phone else "No",
+        })
+
+    if progress_cb:
+        try:
+            progress_cb(f"Deep scraping complete. Extracted {len(found)} genuine store(s).", 100)
+        except Exception:
+            pass
+    return found
+
+
 class WebScraperWorker(QThread):
     """Background worker to deeply scrape verified gyms and supplement stores across India."""
     progress = Signal(str, int)
@@ -666,216 +1146,18 @@ class WebScraperWorker(QThread):
 
     def run(self):
         """Execute deep search across public search engines and merchant websites."""
-        import ssl
-        found = []
-        seen_urls = set()
-        errors = []
-        clean_region = self.region if self.region != "All States / UTs" else ""
-
-        # Build category-targeted search queries
-        cat = self.category_type.casefold()
-        if "pure" in cat or ("store" in cat and "gym" not in cat):
-            term = self.query_term or "supplement store sports nutrition"
-            queries = [
-                f"{term} {clean_region} India".strip(),
-                f'site:justdial.com "{term}" {clean_region} India'.strip(),
-                f'intitle:"supplement store" OR intitle:"nutrition store" {clean_region} India'.strip(),
-                f'"whey protein" store {clean_region} India'.strip(),
-            ]
-            default_kind = "Store"
-            default_category = "Sports Nutrition / Supplement Store"
-        elif "also" in cat or "hybrid" in cat or "+" in cat:
-            term = self.query_term or "gym supplement counter protein bar"
-            queries = [
-                f"{term} {clean_region} India".strip(),
-                f'gym "supplement counter" OR "protein shakes" {clean_region} India'.strip(),
-                f'fitness centre "pro shop" OR "nutrition store" {clean_region} India'.strip(),
-                f'gym sells "whey protein" OR "supplements" {clean_region} India'.strip(),
-            ]
-            default_kind = "Gym + Store"
-            default_category = "Gym with Nutrition & Supplement Counter / Pro-Shop"
-        elif "gym" in cat:
-            term = self.query_term or "gym fitness centre health club"
-            queries = [
-                f"{term} {clean_region} India".strip(),
-                f'site:justdial.com "{term}" {clean_region} India'.strip(),
-                f'intitle:"gym" OR intitle:"fitness club" {clean_region} India'.strip(),
-                f'"health club" OR "crossfit gym" {clean_region} India'.strip(),
-            ]
-            default_kind = "Gym"
-            default_category = "Fitness Centre / Gym"
-        else: # All Categories
-            term = self.query_term or "supplement store gym nutrition"
-            queries = [
-                f"{term} {clean_region} India".strip(),
-                f'intitle:"supplement store" OR intitle:"nutrition" {clean_region} India'.strip(),
-                f'gym "supplement counter" OR "protein shakes" {clean_region} India'.strip(),
-                f'intitle:"gym" OR intitle:"fitness centre" {clean_region} India'.strip(),
-            ]
-            default_kind = "Store"
-            default_category = "Sports Nutrition / Supplement Store"
-
-        engines = [
-            ("DuckDuckGo", "https://html.duckduckgo.com/html/?q={query}"),
-            ("Bing", "https://www.bing.com/search?q={query}"),
-        ]
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept-Language": "en-IN,en;q=0.9",
-        }
-
-        blocked_domains = {
-            "bing.com", "duckduckgo.com", "google.com", "microsoft.com", "yahoo.com",
-            "wikipedia.org", "youtube.com", "amazon.in", "flipkart.com", "facebook.com",
-            "instagram.com", "twitter.com", "x.com", "linkedin.com", "msn.com",
-            "pinterest.com", "reddit.com"
-        }
-
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-
         try:
-            total_searches = len(engines) * len(queries)
-            search_step = 0
-            candidate_links = []
-
-            # Step 1: Query search engines and extract candidate merchant pages
-            for engine_name, engine_template in engines:
-                for query in queries:
-                    search_step += 1
-                    pct = min(40, int(search_step * 40 / total_searches))
-                    self.progress.emit(f"🔍 [{engine_name}] Querying: {query[:85]}", pct)
-                    search_url = engine_template.format(query=urllib.parse.quote(query))
-                    try:
-                        req = urllib.request.Request(search_url, headers=headers)
-                        with urllib.request.urlopen(req, timeout=10, context=ssl_ctx) as response:
-                            html = response.read(2_500_000).decode("utf-8", errors="ignore")
-                    except Exception as exc:
-                        errors.append(f"{engine_name}: {exc}")
-                        continue
-
-                    anchors = re.findall(
-                        r"<a\b[^>]*href=['\"]([^'\"]+)['\"][^>]*>(.*?)</a>",
-                        html, flags=re.IGNORECASE | re.DOTALL
-                    )
-                    for raw_href, raw_title in anchors:
-                        clean_url = unwrap_search_url(raw_href)
-                        parsed_url = urllib.parse.urlparse(clean_url)
-                        host = (parsed_url.netloc or "").lower()
-                        if parsed_url.scheme not in {"http", "https"}:
-                            continue
-                        if any(domain in host for domain in blocked_domains):
-                            continue
-
-                        title = re.sub(r"<[^>]+>", " ", raw_title)
-                        title = re.sub(r"\s+", " ", title).strip()
-                        title = (title.replace("&amp;", "&").replace("&quot;", '"')
-                                      .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">"))
-
-                        if not title or len(title) < 4 or len(title) > 240:
-                            continue
-                        if NEGATIVE_FILTER_PATTERN.search(title) or NEGATIVE_FILTER_PATTERN.search(clean_url):
-                            continue
-                        if any(word in title.casefold() for word in (
-                            "privacy policy", "terms of", "sign in", "log in", "feedback", "contact us", "about us", "cookie"
-                        )):
-                            continue
-
-                        norm_url = urllib.parse.urlunparse(parsed_url._replace(fragment=""))
-                        if norm_url in seen_urls:
-                            continue
-                        seen_urls.add(norm_url)
-                        candidate_links.append((title, norm_url, engine_name))
-
-            # Step 2: Deep crawl merchant websites for 100% genuine contact details, address & maps
-            total_candidates = len(candidate_links)
-            for idx, (title, norm_url, engine_name) in enumerate(candidate_links, start=1):
-                pct = 40 + min(55, int(idx * 55 / max(1, total_candidates)))
-                target_state = clean_region or "All-India"
-                phone = ""
-                email = ""
-                address = f"{title}, {target_state}"
-                maps_url = ""
-                record_kind = default_kind
-                record_cat = default_category
-
-                if self.deep_scrape:
-                    self.progress.emit(f"🌐 [Deep Crawl {idx}/{total_candidates}] Inspecting: {title[:40]}...", pct)
-                    try:
-                        req = urllib.request.Request(norm_url, headers=headers)
-                        with urllib.request.urlopen(req, timeout=8, context=ssl_ctx) as resp:
-                            page_html = resp.read(1_500_000).decode("utf-8", errors="ignore")
-                        details = extract_deep_page_details(page_html, norm_url, title, target_state)
-                        if details["phones"]:
-                            phone = details["phones"][0]
-                        if details["emails"]:
-                            email = details["emails"][0]
-                        if details["address"]:
-                            address = details["address"]
-                        if details["maps"]:
-                            maps_url = details["maps"]
-
-                        # Subpage crawl if phone or email missing
-                        if (not phone or not email or not details["address"]) and details["subpages"]:
-                            contact_url = details["subpages"][0]
-                            try:
-                                sub_req = urllib.request.Request(contact_url, headers=headers)
-                                with urllib.request.urlopen(sub_req, timeout=6, context=ssl_ctx) as sub_resp:
-                                    sub_html = sub_resp.read(1_000_000).decode("utf-8", errors="ignore")
-                                sub_details = extract_deep_page_details(sub_html, contact_url, title, target_state)
-                                if not phone and sub_details["phones"]:
-                                    phone = sub_details["phones"][0]
-                                if not email and sub_details["emails"]:
-                                    email = sub_details["emails"][0]
-                                if not details["address"] and sub_details["address"]:
-                                    address = sub_details["address"]
-                                if not maps_url and sub_details["maps"]:
-                                    maps_url = sub_details["maps"]
-                            except Exception:
-                                pass
-
-                        # Auto-detect kind if All Categories was selected
-                        if "all" in self.category_type.casefold():
-                            record_kind = details["kind"]
-                            record_cat = details["category"]
-                    except Exception:
-                        pass
-
-                # If no embedded map was found, construct a precise verified search link
-                if not maps_url:
-                    maps_query = f"{title} {address if len(address) < 80 else ''} {target_state}".strip()
-                    maps_url = "https://www.google.com/maps/search/?api=1&query=" + urllib.parse.quote(maps_query)
-
-                found.append({
-                    "kind": record_kind,
-                    "business_name": title,
-                    "business_category": record_cat,
-                    "state": target_state,
-                    "city": "",
-                    "area": "",
-                    "contact_person": "",
-                    "phone": phone,
-                    "email": email,
-                    "address": address,
-                    "maps": maps_url,
-                    "website": norm_url,
-                    "source_name": f"{engine_name} Deep Scrape",
-                    "source_url": norm_url,
-                    "source_type": "Deep Web Discovered",
-                    "source_status": "Deep Web Verified Lead",
-                    "verified": "Yes" if phone else "No",
-                })
-
-                # Live progress log
-                contact_summary = f"📞 {phone or '—'} | ✉️ {email or '—'} | 🏷️ {record_kind}"
-                self.progress.emit(f"  ✓ Extracted: {title[:32]} -> {contact_summary}", pct)
-
-            summary = f"Deep scraping complete. Extracted {len(found)} genuine prospect(s) with verified contact details."
-            self.progress.emit(summary, 100)
-            self.finished.emit(found, "; ".join(errors[:3]) if errors else "")
+            found = crawl_search_engine_results(
+                category=self.category_type,
+                state=self.region,
+                query_term=self.query_term,
+                max_results=40,
+                deep_scrape=self.deep_scrape,
+                progress_cb=self.progress.emit
+            )
+            self.finished.emit(found, "")
         except Exception as exc:
-            self.finished.emit(found, str(exc))
+            self.finished.emit([], str(exc))
 
 
 class WebScraperDialog(QDialog):
@@ -1066,6 +1348,11 @@ class CustomerProspectsTab(QWidget):
     def __init__(self, db=None, parent=None):
         super().__init__(parent)
         self.db = db
+        if db is not None:
+            try:
+                cleanup_duplicate_prospects(db)
+            except Exception:
+                pass
         self.records = load_saved_prospects(db) if db is not None else []
         self.preview_records = []
         self.dashboard_counts = {}
@@ -1135,6 +1422,21 @@ class CustomerProspectsTab(QWidget):
         self.snapshot_badge = QLabel("💾 Master Backup: Downloads/Google_Sheets_Master_Database.xlsx")
         self.snapshot_badge.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
         action_layout.addWidget(self.snapshot_badge, 1)
+
+        # Density Selector (Comfortable / Compact / Dense)
+        density_label = QLabel("Density:")
+        density_label.setStyleSheet("font-size: 8.5pt; font-weight: 600; color: #94A3B8;")
+        action_layout.addWidget(density_label)
+
+        self.density_combo = QComboBox()
+        self.density_combo.addItems(["Compact", "Comfortable", "Dense"])
+        self.density_combo.setToolTip("Switch table row density: Comfortable (42px), Compact (34px), or Dense (26px)")
+        self.density_combo.setStyleSheet(
+            "QComboBox { font-size: 8.5pt; font-weight: 600; color: #E2E8F0; background: rgba(15, 23, 42, 0.8); "
+            "border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 4px 8px; }"
+        )
+        self.density_combo.currentTextChanged.connect(self._on_density_changed)
+        action_layout.addWidget(self.density_combo)
 
         root.addWidget(action_card)
 
@@ -1883,10 +2185,17 @@ a {{ color: #2563EB; text-decoration: underline; }}
 
         try:
             # 1. Deep web scrape with genuine contact crawler
+            def update_progress(msg, pct):
+                self.btn_one_tap_scrape_and_update.setText(f"⏳ [{pct}%] {msg[:28]}...")
+                if QApplication:
+                    QApplication.processEvents()
+
             scraped = crawl_search_engine_results(
                 category=selected_kind,
                 state=selected_state,
-                max_results=30
+                max_results=30,
+                deep_scrape=True,
+                progress_cb=update_progress
             )
 
             # 2. Conflict-free merge into SQLite
@@ -2177,8 +2486,26 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
         )
         return True
 
+    def _on_density_changed(self, mode):
+        height = 34
+        if mode == "Comfortable":
+            height = 42
+        elif mode == "Dense":
+            height = 26
+        if hasattr(self, "leads_table"):
+            self.leads_table.verticalHeader().setDefaultSectionSize(height)
+        if self.db:
+            try:
+                self.db.set_setting("store_directory_density", mode)
+            except Exception:
+                pass
+
     def _reload_saved_records(self):
         if self.db is not None:
+            try:
+                cleanup_duplicate_prospects(self.db)
+            except Exception:
+                pass
             self.records = load_saved_prospects(self.db)
             self.preview_records = []
             self._refresh_filters()

@@ -5031,6 +5031,137 @@ class EmployeeTableWidget(QTableWidget):
         menu.exec(self.viewport().mapToGlobal(pos))
 
 
+class CommandPaletteDialog(QDialog):
+    """Command Palette (Ctrl+K / Cmd+K) — Deep Spec Section 2.
+    Instant fuzzy search across all application pages, features, and quick actions."""
+    def __init__(self, main_window, parent=None):
+        qparent = parent if isinstance(parent, QWidget) else (main_window if isinstance(main_window, QWidget) else None)
+        super().__init__(qparent)
+        self.main_window = main_window
+        self.setWindowTitle("Command Palette (Ctrl+K)")
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedWidth(640)
+        self.setMinimumHeight(420)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+
+        panel = QFrame(self)
+        panel.setObjectName("commandPalettePanel")
+        panel.setStyleSheet(
+            "QFrame#commandPalettePanel {"
+            "  background-color: #0F172A;"
+            "  border: 1px solid rgba(255, 255, 255, 0.16);"
+            "  border-radius: 10px;"
+            "}"
+        )
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(14, 14, 14, 14)
+        panel_layout.setSpacing(10)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍 Type a command or search pages (e.g. 'store', 'scrape', 'sync', 'employee', 'tasks')...")
+        self.search_input.setStyleSheet(
+            "QLineEdit {"
+            "  font-size: 11pt; font-weight: 500; color: #FFFFFF;"
+            "  background-color: rgba(30, 41, 59, 0.85);"
+            "  border: 1px solid #3B82F6; border-radius: 6px;"
+            "  padding: 10px 14px;"
+            "}"
+        )
+        panel_layout.addWidget(self.search_input)
+
+        self.cmd_list = QListWidget()
+        self.cmd_list.setStyleSheet(
+            "QListWidget {"
+            "  background-color: transparent; border: none; outline: none; font-size: 9.5pt; color: #E2E8F0;"
+            "}"
+            "QListWidget::item {"
+            "  padding: 8px 12px; border-radius: 6px; margin-bottom: 2px;"
+            "}"
+            "QListWidget::item:selected {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E40AF, stop:1 #3B82F6); color: #FFFFFF;"
+            "}"
+            "QListWidget::item:hover:!selected {"
+            "  background-color: rgba(255, 255, 255, 0.08);"
+            "}"
+        )
+        panel_layout.addWidget(self.cmd_list, 1)
+
+        hint = QLabel("↑↓ Navigate · Enter Run · Esc Close")
+        hint.setStyleSheet("font-size: 8pt; color: #64748B; text-align: center;")
+        panel_layout.addWidget(hint)
+
+        root.addWidget(panel)
+
+        self.commands = [
+            ("Navigation", "🏪 Store Directory & Market Coverage", lambda: self._navigate_tab(self.main_window.customer_tab)),
+            ("Action", "⚡ 1-Tap Deep Web Scraping & Master Update", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.one_tap_scrape_and_master_update())),
+            ("Action", "🔄 Continuous Google Sheets Sync", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.sync_google_sheets())),
+            ("Action", "🖨️ Print Leads & Export Center", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.open_print_preview())),
+            ("Action", "📑 Export Store Directory to Excel (.xlsx)", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.export_xlsx())),
+            ("Action", "📄 Export Store Directory to PDF", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.export_pdf())),
+            ("Navigation", "👥 Employees & Staff Listing", lambda: self._navigate_tab(self.main_window.employees_tab)),
+            ("Action", "➕ Add New Employee", lambda: self.main_window.add_employee()),
+            ("Navigation", "✅ Task Manager & Department Tasks", lambda: self._navigate_tab(self.main_window.tasks_tab)),
+            ("Action", "📝 Create New Task", lambda: self.main_window.add_task()),
+            ("Navigation", "🟢 Attendance & Daily Clock In/Out", lambda: self._navigate_tab(self.main_window.attendance_tab)),
+            ("Navigation", "📊 Dashboard & Analytics", lambda: self._navigate_tab(self.main_window.dashboard)),
+            ("Navigation", "🏠 Home & Overview", lambda: self._navigate_tab(self.main_window.home_tab)),
+            ("Navigation", "💬 Live Chat & Communications", lambda: self._navigate_tab(self.main_window.chat_tab)),
+            ("Navigation", "💼 Business Tracking & Invoicing", lambda: self._navigate_tab(self.main_window.business_tab)),
+            ("Navigation", "🖨️ Employee Reports & Audit Center", lambda: self._navigate_tab(self.main_window.reports_tab)),
+            ("Navigation", "⚙️ Settings & Encrypted Cloud Backup", lambda: self._navigate_tab(self.main_window.settings_tab)),
+        ]
+
+        self._populate_list("")
+        self.search_input.textChanged.connect(self._populate_list)
+        self.search_input.returnPressed.connect(self._execute_selected)
+        self.cmd_list.itemDoubleClicked.connect(lambda: self._execute_selected())
+
+    def _navigate_tab(self, target_widget):
+        for idx in range(self.main_window.tabs.count()):
+            if self.main_window.tabs.widget(idx) == target_widget:
+                self.main_window.tabs.setCurrentIndex(idx)
+                break
+
+    def _populate_list(self, filter_text):
+        self.cmd_list.clear()
+        query = filter_text.strip().casefold()
+        for group, title, handler in self.commands:
+            combined = f"{group} {title}".casefold()
+            if not query or query in combined:
+                item = QListWidgetItem(f"[{group}]  {title}")
+                item.setData(Qt.ItemDataRole.UserRole, handler)
+                self.cmd_list.addItem(item)
+        if self.cmd_list.count() > 0:
+            self.cmd_list.setCurrentRow(0)
+
+    def _execute_selected(self):
+        row = self.cmd_list.currentRow()
+        if row >= 0:
+            item = self.cmd_list.item(row)
+            handler = item.data(Qt.ItemDataRole.UserRole)
+            self.accept()
+            if callable(handler):
+                handler()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        elif event.key() == Qt.Key.Key_Down:
+            curr = self.cmd_list.currentRow()
+            if curr < self.cmd_list.count() - 1:
+                self.cmd_list.setCurrentRow(curr + 1)
+        elif event.key() == Qt.Key.Key_Up:
+            curr = self.cmd_list.currentRow()
+            if curr > 0:
+                self.cmd_list.setCurrentRow(curr - 1)
+        else:
+            super().keyPressEvent(event)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, db, user):
         super().__init__(); ensure_accessible_tooltip_controller(); ensure_combobox_wheel_filter(); self.db=db; self.current_user=user; self.user_role=user.get("role", "HR")
@@ -5361,6 +5492,17 @@ class MainWindow(QMainWindow):
         self._init_auto_sync()
         # Hide native menu bar (frameless window)
         self.menuBar().hide()
+        # Command Palette (Ctrl+K / Cmd+K) - Deep Spec Section 2
+        try:
+            from PySide6.QtGui import QKeySequence, QShortcut
+            self.cmd_palette_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+            self.cmd_palette_shortcut.activated.connect(self.open_command_palette)
+        except Exception as exc:
+            logging.getLogger("app").warning("Could not register Ctrl+K shortcut: %s", exc)
+
+    def open_command_palette(self):
+        palette = CommandPaletteDialog(self)
+        palette.exec()
 
     def toggle_clock_mode(self):
         current = getattr(self, "_clock_mode", "digital")

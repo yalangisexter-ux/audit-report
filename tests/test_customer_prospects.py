@@ -406,3 +406,174 @@ def test_store_directory_exclude_filters(tmp_path, monkeypatch):
         assert not tab.leads_table.isRowHidden(0)
     finally:
         tab.close()
+
+
+def test_crawl_search_engine_results_defined_and_callable():
+    assert hasattr(prospects, "crawl_search_engine_results")
+    assert callable(prospects.crawl_search_engine_results)
+
+    # Calling with empty search in mock/offline mode returns a list
+    res = prospects.crawl_search_engine_results(
+        category="Pure Product Selling Stores",
+        state="Goa",
+        query_term="nonexistent_mock_query_xyz_123",
+        max_results=5,
+        deep_scrape=False
+    )
+    assert isinstance(res, list)
+
+
+def test_deduplication_and_enrichment_prevents_duplicate_entries(tmp_path, monkeypatch):
+    import app
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "dedupe_test.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    initial_count = len(prospects.load_saved_prospects(db))
+
+    # 1. Insert initial store with missing phone and maps
+    initial_records = [
+        {
+            "kind": "Store",
+            "business_name": "Fitnessstack: India&#x27;s Nutrition Store",
+            "state": "Karnataka",
+            "city": "Bengaluru",
+            "phone": "",
+            "email": "",
+            "address": "Indiranagar, Bangalore",
+            "website": "https://fitnessstack.com",
+            "maps": "",
+            "notes": "User custom lead note - do not overwrite",
+        }
+    ]
+    res1 = prospects.persist_prospect_records(db, initial_records)
+    assert res1["inserted"] == 1
+    assert res1["duplicates"] == 0
+
+    saved = prospects.load_saved_prospects(db)
+    assert len(saved) == initial_count + 1
+    matching = [s for s in saved if s["business_name"] == "Fitnessstack: India's Nutrition Store"]
+    assert len(matching) == 1
+    assert matching[0]["phone"] == ""
+
+    # 2. Re-crawl or scrape same store with slightly different address format, unescaped name, and newly discovered phone/maps
+    incoming_crawl = [
+        {
+            "kind": "Store",
+            "business_name": "Fitnessstack: India's Nutrition Store",
+            "state": "Karnataka",
+            "city": "Bengaluru",
+            "phone": "+91 98765 43210",
+            "email": "contact@fitnessstack.com",
+            "address": "100 Feet Road, Indiranagar, Bengaluru, Karnataka 560038",
+            "website": "https://www.fitnessstack.com/shop",
+            "maps": "https://maps.google.com/?q=fitnessstack",
+            "notes": "Scraper raw notes",
+        }
+    ]
+    res2 = prospects.persist_prospect_records(db, incoming_crawl)
+    assert res2["inserted"] == 0
+    assert res2["duplicates"] == 1
+
+    # Database count increased by exactly 1 overall (NO DUPLICATES ADDED!)
+    saved_after = prospects.load_saved_prospects(db)
+    assert len(saved_after) == initial_count + 1
+
+    # Missing fields were enriched from the crawl
+    matching_after = [s for s in saved_after if s["business_name"] == "Fitnessstack: India's Nutrition Store"]
+    assert len(matching_after) == 1
+    enriched = matching_after[0]
+    assert enriched["phone"] == "+91 98765 43210"
+    assert enriched["email"] == "contact@fitnessstack.com"
+    assert "100 Feet Road" in enriched["address"]
+    assert enriched["maps"] == "https://maps.google.com/?q=fitnessstack"
+    # User's custom note was preserved!
+    assert enriched["notes"] == "User custom lead note - do not overwrite"
+
+
+def test_cleanup_duplicate_prospects_merges_existing_duplicates(tmp_path, monkeypatch):
+    import app
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "cleanup_test.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    initial_count = len(prospects.load_saved_prospects(db))
+
+    # Insert two duplicates directly into SQLite simulating old corrupted state
+    db.conn.execute(
+        "INSERT INTO customer_prospects(dedupe_key, business_name, state, city, phone, email, notes, created_at, updated_at) "
+        "VALUES ('key1', 'HyugaLife: India&#x27;s Best Supplement Store', 'Maharashtra', 'Mumbai', '', '', 'Important Client', '2026-10-01', '2026-10-01')"
+    )
+    db.conn.execute(
+        "INSERT INTO customer_prospects(dedupe_key, business_name, state, city, phone, email, website, created_at, updated_at) "
+        "VALUES ('key2', 'HyugaLife: India''s Best Supplement Store', 'Maharashtra', 'Mumbai', '9811122233', 'info@hyugalife.com', 'https://hyugalife.com', '2026-10-02', '2026-10-02')"
+    )
+    db.conn.commit()
+
+    assert len(prospects.load_saved_prospects(db)) == initial_count + 2
+
+    # Run cleanup
+    cleanup_res = prospects.cleanup_duplicate_prospects(db)
+    assert cleanup_res["merged"] >= 1
+
+    # Now exactly 1 consolidated record remains
+    remaining = prospects.load_saved_prospects(db)
+    assert len(remaining) == initial_count + 1
+    matching = [r for r in remaining if "HyugaLife" in r["business_name"]]
+    assert len(matching) == 1
+    r = matching[0]
+    assert "India's" in r["business_name"]
+    assert r["phone"] == "9811122233"
+    assert r["email"] == "info@hyugalife.com"
+    assert r["notes"] == "Important Client"
+
+
+def test_density_mode_switcher_and_command_palette(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    import app
+
+    qt_app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "ui_spec_test.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+
+    tab = prospects.CustomerProspectsTab(db=db)
+    try:
+        assert hasattr(tab, "density_combo")
+        # Test Compact
+        tab._on_density_changed("Compact")
+        assert tab.leads_table.verticalHeader().defaultSectionSize() == 34
+
+        # Test Comfortable
+        tab._on_density_changed("Comfortable")
+        assert tab.leads_table.verticalHeader().defaultSectionSize() == 42
+
+        # Test Dense
+        tab._on_density_changed("Dense")
+        assert tab.leads_table.verticalHeader().defaultSectionSize() == 26
+
+        # Test Command Palette Dialog
+        class MockMainWindow:
+            def __init__(self):
+                self.tabs = tab.tabs if hasattr(tab, "tabs") else None
+                self.customer_tab = tab
+                self.employees_tab = None
+                self.tasks_tab = None
+                self.attendance_tab = None
+                self.dashboard = None
+                self.home_tab = None
+                self.chat_tab = None
+                self.business_tab = None
+                self.reports_tab = None
+                self.settings_tab = None
+
+        mock_win = MockMainWindow()
+        palette = app.CommandPaletteDialog(mock_win, parent=tab)
+        try:
+            assert palette.cmd_list.count() > 0
+            # Filter for 'store'
+            palette.search_input.setText("store")
+            assert palette.cmd_list.count() >= 1
+        finally:
+            palette.close()
+    finally:
+        tab.close()
