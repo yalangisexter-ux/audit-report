@@ -7523,10 +7523,40 @@ class MainWindow(QMainWindow):
         self.close()
 
     def _update_failed(self, message):
+        """Fail safely when update checks fail, especially on damaged legacy installs."""
         if getattr(self, "_update_progress", None):
             self._update_progress.close()
             self._update_progress = None
-        error(self, f"Could not check for or install updates:\n{message}")
+        self._update_worker = None
+        self._update_thread = None
+        if hasattr(self, "update_button"):
+            self.update_button.setText("⬇  Check for updates")
+            self.update_button.setEnabled(True)
+
+        details = str(message or "Unknown update error")
+        # A missing PyInstaller runtime file is an incomplete installation, not
+        # customer database content. Avoid a misleading traceback-style popup;
+        # tell the operator how to recover without touching local SQLite data.
+        if "base_library.zip" in details.lower() or "no such file or directory" in details.lower():
+            QMessageBox.warning(
+                self,
+                "Installation needs repair",
+                "This installation is missing a required application runtime file, "
+                "so the update could not continue. Your local employee database is "
+                "stored separately and should not be deleted. Close the application "
+                "and run the latest verified Raw Strength Employee Audit Manager "
+                "installer to repair/replace the application files. Do not delete "
+                "%LOCALAPPDATA%\\EmployeeAuditManager."
+            )
+            logging.getLogger("updater").warning("Legacy installation runtime is incomplete: %s", details)
+            return
+        # Keep background/automatic failures non-blocking; manual checks still
+        # receive a concise message they can act on.
+        if getattr(self, "_update_progress", None) is not None:
+            return
+        logging.getLogger("updater").warning("Update check failed: %s", details)
+        if hasattr(self, "statusBar") and callable(self.statusBar):
+            self.statusBar().showMessage("Update check failed; the application remains available.", 10000)
 
     def _finish_update_check(self):
         if getattr(self, "_update_progress", None):
