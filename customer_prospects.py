@@ -973,43 +973,60 @@ class CustomerProspectsTab(QWidget):
                 self._refresh_views()
 
     def load_master_india_stores(self):
-        """One-click import of the pre-compiled 3,823 authentic supplement stores across India."""
+        """Load master store records from the configured live Google Sheet, not developer-local files."""
         if self.db is None:
             QMessageBox.warning(self, "Database Unavailable", "Database is not available.")
             return
 
-        master_candidates = [
-            Path(r"C:\Users\DELL\Downloads\Google_Sheets_Master_Database.xlsx"),
-            Path(r"C:\Users\DELL\Documents\Codex\2026-10-24\inr\work\google_sheets_master_database.xlsx"),
-            Path(r"C:\Users\DELL\Documents\Codex\2026-10-24\inr\work\onedrive-reference\customer_database_reference.xlsx")
-        ]
-        chosen = None
-        for c in master_candidates:
-            if c.is_file() and c.stat().st_size > 0:
-                chosen = c
-                break
-
-        if not chosen:
-            QMessageBox.warning(self, "Master File Not Found", "Could not locate master store workbook.")
-            return
-
+        temp_path = None
         try:
-            records, stats = parse_database_workbook(chosen)
+            # No customer-PC dependency on a developer Downloads/Codex/OneDrive path.
+            workbook_bytes = google_sheets_sync.fetch_google_sheet_bytes()
+            if not workbook_bytes:
+                raise ValueError("Google Sheets returned an empty workbook.")
+
+            import tempfile
+            with tempfile.NamedTemporaryFile(prefix="rawstrength-master-", suffix=".xlsx", delete=False) as temp_file:
+                temp_file.write(workbook_bytes)
+                temp_path = Path(temp_file.name)
+
+            records, _stats = parse_database_workbook(temp_path)
+            if not records:
+                raise ValueError(
+                    "The Google master sheet was downloaded, but no store records were recognized. "
+                    "Check the worksheet data and supported column headers."
+                )
+
             result = persist_prospect_records(
                 self.db,
                 records,
-                source_name="Master All-India Stores",
-                source_url=REFERENCE_DATABASE_URL,
+                source_name="Google Sheets Master",
+                source_url=GOOGLE_SHEET_URL,
                 source_checked_at=date.today().isoformat()
             )
             self._reload_saved_records()
             QMessageBox.information(
                 self,
                 "Master Stores Loaded",
-                f"Successfully loaded All-India Stores!\n\n• Clean Stores Imported: {result['inserted']:,}\n• Existing Stores Kept: {result['duplicates']:,}\n• Total In App: {len(self.records):,}"
+                f"Loaded master stores from Google Sheets!\n\n"
+                f"• Source rows recognized: {len(records):,}\n"
+                f"• New stores imported: {result['inserted']:,}\n"
+                f"• Existing stores preserved: {result['duplicates']:,}\n"
+                f"• Total in app: {len(self.records):,}"
             )
         except Exception as exc:
-            QMessageBox.critical(self, "Import Error", f"Failed to load master stores: {exc}")
+            QMessageBox.warning(
+                self,
+                "Google Master Sheet Error",
+                f"Could not load master stores from Google Sheets:\n{exc}\n\n"
+                f"Confirm the sheet is shared for viewing/export and try again: {GOOGLE_SHEET_URL}"
+            )
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    logging.warning("Could not remove temporary Google master workbook: %s", temp_path)
 
     def sync_google_sheets(self):
         """Live 1-click sync with central Google Spreadsheet."""
