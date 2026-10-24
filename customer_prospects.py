@@ -156,9 +156,22 @@ STATE_NAMES = {
     "dnhdd": "Dadra and Nagar Haveli and Daman and Diu",
     "dadraandnagarhavelianddamandiu": "Dadra and Nagar Haveli and Daman and Diu",
     "dadraandnagarhavelianddamananddiu": "Dadra and Nagar Haveli and Daman and Diu",
+    "dadranagarhavelianddamandiu": "Dadra and Nagar Haveli and Daman and Diu",
+    "dadranagarhavelianddamananddiu": "Dadra and Nagar Haveli and Daman and Diu",
+    "dadranagarhaveli": "Dadra and Nagar Haveli and Daman and Diu",
+    "damandiu": "Dadra and Nagar Haveli and Daman and Diu",
+    "daman": "Dadra and Nagar Haveli and Daman and Diu",
+    "diu": "Dadra and Nagar Haveli and Daman and Diu",
+    "dnh": "Dadra and Nagar Haveli and Daman and Diu",
+    "dandnh": "Dadra and Nagar Haveli and Daman and Diu",
     "delhi": "Delhi",
     "delhincr": "Delhi",
     "jammuandkashmir": "Jammu and Kashmir",
+    "jammukashmir": "Jammu and Kashmir",
+    "jammu": "Jammu and Kashmir",
+    "kashmir": "Jammu and Kashmir",
+    "jk": "Jammu and Kashmir",
+    "jandk": "Jammu and Kashmir",
     "ladakh": "Ladakh",
     "lakshadweep": "Lakshadweep",
     "puducherry": "Puducherry",
@@ -253,6 +266,7 @@ def _cell_text(value):
 
 def normalise_state(value, fallback=""):
     raw = _cell_text(value) or _cell_text(fallback)
+    raw = raw.replace("&", " and ")
     key = _normalise_key(raw)
     if key in STATE_NAMES:
         return STATE_NAMES[key]
@@ -2464,7 +2478,7 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
 </style>
 </head>
 <body>
-<h2>Raw Strength Calisthenics — Customer Prospects & Store Directory</h2>
+<h2>Raw Strength Calisthenics — Store Directory</h2>
 <p>Filter: <b>{kind_label}</b> · State: <b>{state_label}</b> | Stores: <b>{len(records):,}</b> | Generated: <b>{datetime.now().strftime('%Y-%m-%d %H:%M')}</b></p>
 <table>
 <thead>

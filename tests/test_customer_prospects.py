@@ -645,3 +645,28 @@ def test_unified_excludes_dropdown_print_dropdown_and_scroll_area(tmp_path, monk
         assert not tab.leads_table.isRowHidden(2)
     finally:
         tab.close()
+
+
+def test_normalise_state_handles_ampersands_and_union_territories():
+    assert prospects.normalise_state("Jammu & Kashmir") == "Jammu and Kashmir"
+    assert prospects.normalise_state("Dadra & Nagar Haveli And Daman & Diu") == "Dadra and Nagar Haveli and Daman and Diu"
+    assert prospects.normalise_state("J&K") == "Jammu and Kashmir"
+    assert prospects.normalise_state("JK") == "Jammu and Kashmir"
+    assert prospects.normalise_state("Andaman & Nicobar Islands") == "Andaman and Nicobar Islands"
+
+    assert prospects.territory_type(prospects.normalise_state("Jammu & Kashmir")) == "Union Territory"
+    assert prospects.territory_type(prospects.normalise_state("Dadra & Nagar Haveli And Daman & Diu")) == "Union Territory"
+    assert prospects.territory_type(prospects.normalise_state("Andaman & Nicobar Islands")) == "Island Territory"
+    assert prospects.territory_type("Karnataka") == "State"
+
+
+def test_startup_splash_screen_initialization_in_offscreen_mode(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import app
+    splash = app.StartupSplashScreen()
+    assert splash.is_headless() is True
+    splash.show_splash()
+    splash.set_status("Loading, please wait...", 25)
+    assert splash.status_lbl.text() == "Loading, please wait..."
+    splash.hide_splash()
+    splash.finish()

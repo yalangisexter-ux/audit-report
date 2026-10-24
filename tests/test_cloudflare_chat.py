@@ -36,7 +36,8 @@ def test_websocket_url_uses_wss_and_encodes_ticket():
 
 
 def test_chat_migration_creates_private_group_and_message_tables():
-    migration = Path("cloudflare-chat/migrations/0001_initial.sql").read_text(encoding="utf-8")
+    migration_path = Path(__file__).resolve().parent.parent / "cloudflare-chat" / "migrations" / "0001_initial.sql"
+    migration = migration_path.read_text(encoding="utf-8")
     connection = sqlite3.connect(":memory:")
     connection.execute("PRAGMA foreign_keys=ON")
     connection.executescript(migration)

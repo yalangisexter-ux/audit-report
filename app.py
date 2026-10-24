@@ -1416,6 +1416,11 @@ class Database:
             ("email", "TEXT DEFAULT ''"),
         )
         apply_column_migrations("customer_prospects", prospect_migrations)
+        try:
+            c.execute("UPDATE customer_prospects SET state = 'Jammu and Kashmir' WHERE state IN ('Jammu & Kashmir', 'Jammu and Kashmir (UT)', 'J&K', 'JK')")
+            c.execute("UPDATE customer_prospects SET state = 'Dadra and Nagar Haveli and Daman and Diu' WHERE state IN ('Dadra & Nagar Haveli And Daman & Diu', 'Dadra and Nagar Haveli', 'Daman and Diu', 'DNH & DD')")
+        except Exception:
+            pass
         # Preserve employee names from older database schemas.
         if "employee_name" in employee_columns:
             c.execute("""
@@ -13021,6 +13026,161 @@ def resource_path(relative_path):
     return str(base_path / relative_path)
 
 
+class StartupSplashScreen(QWidget):
+    """Modern frameless loading splash screen for Raw Strength Calisthenics."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.SplashScreen
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(520, 300)
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geo = screen.availableGeometry()
+            self.move(
+                screen_geo.center().x() - self.width() // 2,
+                screen_geo.center().y() - self.height() // 2,
+            )
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(10, 10, 10, 10)
+
+        card = QFrame()
+        card.setObjectName("splashCard")
+        card.setStyleSheet("""
+            QFrame#splashCard {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #0B1120, stop:0.5 #0F172A, stop:1 #020617);
+                border: 1.5px solid #0284C7;
+                border-radius: 18px;
+            }
+        """)
+
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(28)
+        shadow.setColor(QColor(2, 132, 199, 120))
+        shadow.setOffset(0, 4)
+        card.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(28, 24, 28, 22)
+        layout.setSpacing(10)
+
+        top_layout = QHBoxLayout()
+        top_layout.setSpacing(16)
+
+        logo_lbl = QLabel()
+        logo_lbl.setPixmap(brand_mark_pixmap(64))
+        logo_lbl.setFixedSize(64, 64)
+        logo_lbl.setStyleSheet("background: transparent; border: none;")
+        top_layout.addWidget(logo_lbl)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(3)
+
+        title_lbl = QLabel("RAW STRENGTH CALISTHENICS")
+        title_lbl.setStyleSheet("color: #F8FAFC; font-size: 14pt; font-weight: 800; letter-spacing: 1px; background: transparent; border: none;")
+        title_col.addWidget(title_lbl)
+
+        subtitle_lbl = QLabel("Employee Audit & Operations Manager")
+        subtitle_lbl.setStyleSheet("color: #38BDF8; font-size: 9.5pt; font-weight: 600; background: transparent; border: none;")
+        title_col.addWidget(subtitle_lbl)
+
+        ver_lbl = QLabel(f"v{APP_VERSION} · Enterprise Cloud Edition")
+        ver_lbl.setStyleSheet("color: #64748B; font-size: 8pt; font-weight: 500; background: transparent; border: none;")
+        title_col.addWidget(ver_lbl)
+
+        top_layout.addLayout(title_col)
+        top_layout.addStretch()
+
+        layout.addLayout(top_layout)
+        layout.addSpacing(6)
+
+        self.status_lbl = QLabel("Loading, please wait...")
+        self.status_lbl.setStyleSheet("color: #E2E8F0; font-size: 10pt; font-weight: 500; background: transparent; border: none;")
+        layout.addWidget(self.status_lbl)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(8)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(15)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: #1E293B;
+                border: 1px solid #334155;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #0284C7, stop:0.5 #38BDF8, stop:1 #00E5FF);
+                border-radius: 3px;
+            }
+        """)
+        layout.addWidget(self.progress_bar)
+
+        layout.addSpacing(4)
+
+        bot_layout = QHBoxLayout()
+        hint_lbl = QLabel("⚡ Continuous Offline Sync · 36 Indian Territories")
+        hint_lbl.setStyleSheet("color: #475569; font-size: 7.5pt; background: transparent; border: none;")
+        bot_layout.addWidget(hint_lbl)
+        bot_layout.addStretch()
+
+        self.pct_lbl = QLabel("15%")
+        self.pct_lbl.setStyleSheet("color: #38BDF8; font-size: 8pt; font-weight: 700; background: transparent; border: none;")
+        bot_layout.addWidget(self.pct_lbl)
+
+        layout.addLayout(bot_layout)
+        root_layout.addWidget(card)
+
+    def is_headless(self):
+        return os.environ.get("QT_QPA_PLATFORM") == "offscreen" or (
+            os.environ.get("CI") == "true" and os.environ.get("DISPLAY") is None
+        )
+
+    def show_splash(self):
+        if self.is_headless():
+            return
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        QApplication.processEvents()
+
+    def set_status(self, text: str, progress: int = None):
+        if self.is_headless():
+            return
+        self.status_lbl.setText(str(text))
+        if progress is not None:
+            val = max(0, min(100, int(progress)))
+            self.progress_bar.setValue(val)
+            self.pct_lbl.setText(f"{val}%")
+        QApplication.processEvents()
+
+    def hide_splash(self):
+        if self.is_headless():
+            return
+        self.hide()
+        QApplication.processEvents()
+
+    def close_splash(self):
+        if self.is_headless():
+            return
+        self.close()
+        QApplication.processEvents()
+
+    def finish(self, main_window=None):
+        if self.is_headless():
+            return
+        self.close()
+        QApplication.processEvents()
+
+
 def main():
     app=QApplication(sys.argv); app.setStyle("Fusion"); ensure_combobox_wheel_filter(app)
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
@@ -13029,9 +13189,16 @@ def main():
     app_font.setStyleHint(QFont.StyleHint.SansSerif)
     app.setFont(app_font)
     app.setWindowIcon(QIcon(brand_mark_pixmap(128)))
+
+    splash = StartupSplashScreen()
+    splash.show_splash()
+    splash.set_status("Loading, please wait...", 15)
+
     try:
+        splash.set_status("Initializing secure local database...", 30)
         db=Database()
         seed_initial_audit(db)
+        splash.set_status("Configuring workspace themes & preferences...", 45)
         # Migrate to OneText Modern SaaS theme (flagship dark bento UI) by default
         if db.get_setting("onetext_saas_ui_v1307") != "1":
             db.set_setting("ui_theme", "night")
@@ -13048,11 +13215,14 @@ def main():
             db.set_setting("cyber_hud_theme_v1325", "1")
         apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
+        splash.close_splash()
         if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
             logging.getLogger("startup").exception(f"Startup failed: {exc}")
         else:
             QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
+
+    splash.set_status("Verifying user accounts & cloud sync...", 60)
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
         if hasattr(db, "github_sync") and db.github_sync.is_configured:
             try:
@@ -13070,9 +13240,13 @@ def main():
                 logging.getLogger("startup").debug(f"Initial cloud pull skipped: {e}")
 
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
+        splash.hide_splash()
         setup_dialog = AccountSetupDialog(db)
         if setup_dialog.exec() != QDialog.Accepted:
+            splash.close_splash()
             return 0
+        splash.show_splash()
+
     resume_user = None
     resume_tab = 0
     resume_path = APP_DIR / "update_resume.json"
@@ -13093,16 +13267,28 @@ def main():
             resume_path.unlink(missing_ok=True)
         except Exception:
             pass
+
     if resume_user is None:
+        splash.hide_splash()
         login=LoginDialog(db)
-        if login.exec()!=QDialog.Accepted: return 0
+        if login.exec()!=QDialog.Accepted:
+            splash.close_splash()
+            return 0
         active_user = login.user
+        splash.show_splash()
     else:
         active_user = resume_user
+
+    splash.set_status("Loading workspace & Store Directory, please wait...", 80)
     if db.get_setting("initial_audit_2026_10_09_imported") == "1" and db.get_setting("initial_audit_notice_shown") != "1":
         info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
-    win=MainWindow(db, active_user); win.apply_theme(); win.show()
+
+    win=MainWindow(db, active_user); win.apply_theme()
+    splash.set_status("Ready! Starting workspace...", 100)
+    win.show()
+    splash.finish(win)
+
     if resume_user is not None and resume_tab < win.tabs.count():
         win.tabs.setCurrentIndex(resume_tab)
     return app.exec()
