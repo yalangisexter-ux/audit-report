@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re, math, threading, logging
+import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re, math, threading, logging, traceback
 from html import escape as html_escape
 from pathlib import Path
 from datetime import datetime, date
@@ -668,6 +668,26 @@ def valid_hhmm(value):
         return True
     except (TypeError, ValueError):
         return False
+
+
+ATTENDANCE_DETAIL_STATUSES = (
+    "Late Check-in",
+    "Late Check-out",
+    "On Time",
+    "Balanced Hours",
+    "Overtime",
+    "Short Hours",
+    "Early Departure",
+)
+ATTENDANCE_STATUS_OPTIONS = ("Unmarked", "Present", "Absent", "Leave", *ATTENDANCE_DETAIL_STATUSES)
+ATTENDANCE_PRESENT_STATUSES = frozenset(("Present", *ATTENDANCE_DETAIL_STATUSES))
+
+
+def is_present_attendance_status(status):
+    """Return whether an attendance status represents a worked day."""
+    return str(status or "").strip().casefold() in {
+        value.casefold() for value in ATTENDANCE_PRESENT_STATUSES
+    }
 
 
 def calculate_net_working_hours(check_in, check_out, break_minutes=0):
@@ -9479,7 +9499,7 @@ class MainWindow(QMainWindow):
             check = QCheckBox("Apply")
             wrap = QWidget(); row = QHBoxLayout(wrap); row.setContentsMargins(0,0,0,0); row.addWidget(check); row.addWidget(widget,1)
             form.addRow(label, wrap); fields[label] = (check, widget)
-        status = QComboBox(); status.addItems(["Unmarked","Present","Absent","Leave"]); field_row("Attendance status", status)
+        status = QComboBox(); status.addItems(ATTENDANCE_STATUS_OPTIONS); field_row("Attendance status", status)
         check_in = QLineEdit(); check_in.setPlaceholderText("HH:MM (blank clears)"); field_row("Check-in", check_in)
         check_out = QLineEdit(); check_out.setPlaceholderText("HH:MM (blank clears)"); field_row("Check-out", check_out)
         note = QLineEdit(); note.setPlaceholderText("Attendance note"); field_row("Note", note)
@@ -9512,7 +9532,7 @@ class MainWindow(QMainWindow):
                     raise ValueError(f"Employee ID {employee_id}: check-out requires a check-in.")
                 current_status = changes.get("attendance_status", old["attendance_status"] if old else "Unmarked")
                 current_note = changes.get("attendance_note", old["attendance_note"] if old else "")
-                if current_in or current_out:
+                if (current_in or current_out) and not is_present_attendance_status(current_status):
                     current_status = "Present"
                 if current_status in ("Absent","Leave","Unmarked"):
                     current_in = current_out = ""
@@ -9547,6 +9567,44 @@ class MainWindow(QMainWindow):
         item = self.att_table.item(rows[0].row(), 0)
         return item.data(Qt.UserRole) if item else None
 
+    def _attendance_visible_time(self, employee_id, work_date, column):
+        """Read an attendance time currently shown in the row, including an unsaved edit."""
+        if not hasattr(self, "att_table"):
+            return ""
+        for row in range(self.att_table.rowCount()):
+            employee_item = self.att_table.item(row, 0)
+            date_item = self.att_table.item(row, 1)
+            if not employee_item or str(employee_item.data(Qt.UserRole)) != str(employee_id):
+                continue
+            if not date_item or date_item.text() != work_date:
+                continue
+            cell = self.att_table.cellWidget(row, column)
+            editor = cell.findChild(QLineEdit) if cell else None
+            return editor.text().strip() if editor else ""
+        return ""
+
+    def _update_attendance_row_display(self, employee_id, work_date, check_in, check_out, status, break_minutes=0):
+        """Update computed attendance cells without tearing down the active time editor."""
+        for row in range(self.att_table.rowCount()):
+            employee_item = self.att_table.item(row, 0)
+            date_item = self.att_table.item(row, 1)
+            if not employee_item or str(employee_item.data(Qt.UserRole)) != str(employee_id):
+                continue
+            if not date_item or date_item.text() != work_date:
+                continue
+            status_cell = self.att_table.cellWidget(row, 2)
+            status_combo = status_cell.findChild(QComboBox) if status_cell else None
+            if status_combo and status_combo.currentText() != status:
+                status_combo.blockSignals(True)
+                status_combo.setCurrentText(status)
+                status_combo.blockSignals(False)
+            hours_item = self.att_table.item(row, 5)
+            if hours_item:
+                net_hours = calculate_net_working_hours(check_in, check_out, break_minutes)
+                hours_item.setText(net_hours)
+                hours_item.setToolTip(f"Net work hours: {net_hours or 'not available'}")
+            break
+
     def set_attendance_status(self, status):
         eid=self.attendance_selected_employee()
         if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
@@ -9574,7 +9632,11 @@ class MainWindow(QMainWindow):
             return error(self, "Enter check-in time in 24-hour HH:MM format, for example 09:30.")
         # Overnight shifts are valid (for example, 22:00 to 06:00); validate
         # format here and let net-hours calculation handle the date boundary.
-        self.db.upsert_attendance(eid,d,check_in=time,status="Present")
+        old = self.db.conn.execute(
+            "SELECT attendance_status FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)
+        ).fetchone()
+        next_status = old["attendance_status"] if old and is_present_attendance_status(old["attendance_status"]) else "Present"
+        self.db.upsert_attendance(eid,d,check_in=time,status=next_status)
         self.db.log("Attendance check-in",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
     def check_out(self):
@@ -9587,12 +9649,22 @@ class MainWindow(QMainWindow):
         time = time.strip()
         if not valid_hhmm(time):
             return error(self, "Enter check-out time in 24-hour HH:MM format, for example 18:00.")
-        existing = self.db.conn.execute("SELECT check_in FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)).fetchone()
-        if not existing or not str(existing["check_in"] or "").strip():
+        existing = self.db.conn.execute(
+            "SELECT check_in, attendance_status FROM attendance WHERE employee_id=? AND work_date=?", (eid, d)
+        ).fetchone()
+        check_in = str(existing["check_in"] or "").strip() if existing else ""
+        if not check_in:
+            # A user can enter Check-in and Check-out back-to-back. Preserve the
+            # visible row value if the editor has not committed it yet.
+            visible_check_in = self._attendance_visible_time(eid, d, 3)
+            if valid_hhmm(visible_check_in):
+                check_in = visible_check_in
+        if not check_in:
             return error(self, "Record a valid check-in before recording check-out.")
-        if not valid_hhmm(existing["check_in"]):
+        if not valid_hhmm(check_in):
             return error(self, "The saved check-in time is invalid. Use Edit Times to correct it.")
-        self.db.upsert_attendance(eid,d,check_out=time,status="Present")
+        next_status = existing["attendance_status"] if existing and is_present_attendance_status(existing["attendance_status"]) else "Present"
+        self.db.upsert_attendance(eid,d,check_in=check_in,check_out=time,status=next_status)
         self.db.log("Attendance check-out",f"employee={eid}, date={d}, time={time}"); self.refresh_all()
 
     def edit_attendance_times(self):
@@ -9615,7 +9687,8 @@ class MainWindow(QMainWindow):
         if ci and co and datetime.strptime(co, "%H:%M") < datetime.strptime(ci, "%H:%M"):
             # Overnight shifts are supported.
             pass
-        self.db.upsert_attendance(eid, d, check_in=ci, check_out=co, status="Present")
+        next_status = old["attendance_status"] if old and is_present_attendance_status(old["attendance_status"]) else "Present"
+        self.db.upsert_attendance(eid, d, check_in=ci, check_out=co, status=next_status)
         self.db.log("Attendance times edited", f"employee={eid}, date={d}, in={ci}, out={co}")
         self.refresh_all()
 
@@ -9753,7 +9826,7 @@ class MainWindow(QMainWindow):
         working_days=self.count_working_days(start,as_of_date)
         leave_days=sum(1 for a in att_rows if a["attendance_status"]=="Leave" and is_scheduled_workday(a["work_date"]))
         attendance_eligible_days=max(0,working_days-leave_days)
-        present=sum(1 for a in att_rows if is_scheduled_workday(a["work_date"]) and (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])))
+        present=sum(1 for a in att_rows if is_scheduled_workday(a["work_date"]) and (is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"]=="Unmarked" and a["check_in"])))
         attendance_score=(present/attendance_eligible_days*100) if attendance_eligible_days else None
         if task_score is not None and attendance_score is not None: score=round(task_score*0.7+attendance_score*0.3)
         elif task_score is not None: score=round(task_score)
@@ -9781,7 +9854,7 @@ class MainWindow(QMainWindow):
         status = old["attendance_status"] if old else "Unmarked"
         note = old["attendance_note"] if old else ""
         if field == "status":
-            if value not in ("Unmarked", "Present", "Absent", "Leave"):
+            if value not in ATTENDANCE_STATUS_OPTIONS:
                 return
             status = value
             if value in ("Absent", "Leave", "Unmarked"):
@@ -9793,17 +9866,23 @@ class MainWindow(QMainWindow):
                 return
             check_in = value
             if value:
-                status = "Present"
-            elif status == "Present":
+                if not is_present_attendance_status(status):
+                    status = "Present"
+            elif not check_out and is_present_attendance_status(status):
                 status = "Unmarked"
         elif field == "check_out":
+            if not check_in:
+                visible_check_in = self._attendance_visible_time(employee_id, work_date, 3)
+                if valid_hhmm(visible_check_in):
+                    check_in = visible_check_in
             if value and not check_in:
                 error(self, "Enter Check-in before Check-out.")
                 self.refresh_attendance()
                 return
             check_out = value
             if value:
-                status = "Present"
+                if not is_present_attendance_status(status):
+                    status = "Present"
         elif field == "note":
             note = value
         else:
@@ -9817,7 +9896,15 @@ class MainWindow(QMainWindow):
             "Attendance updated",
             f"{employee['name']}: {field}={value or '(cleared)'} on {work_date}"
         )
-        self.refresh_attendance()
+        if field == "status":
+            self.refresh_attendance()
+        else:
+            self._update_attendance_row_display(
+                employee_id, work_date, check_in, check_out, status,
+                old["break_minutes"] if old else 0,
+            )
+            self.refresh_attendance_summary()
+            self.refresh_dashboard()
 
     def refresh_attendance(self):
         if not hasattr(self,"att_table"): return
@@ -9892,16 +9979,16 @@ class MainWindow(QMainWindow):
             status_combo = QComboBox()
             status_combo.setObjectName("attendanceStatusCombo")
             status_combo.setProperty("in_table_cell", True)
-            status_combo.addItems(["Unmarked", "Present", "Absent", "Leave", "Holiday"])
-            status_combo.setCurrentText(status if status in ("Unmarked", "Present", "Absent", "Leave", "Holiday") else "Unmarked")
-            status_combo.setMinimumWidth(110)
+            status_combo.addItems([*ATTENDANCE_STATUS_OPTIONS, "Holiday"])
+            status_combo.setCurrentText(status if status in (*ATTENDANCE_STATUS_OPTIONS, "Holiday") else "Unmarked")
+            status_combo.setMinimumWidth(140)
             status_combo.setFixedHeight(28)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
             arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() in ("night", "ocean") else "assets/chevron_down_slate.png").replace("\\", "/")
             if is_dark_mode:
-                if status == "Present":
+                if is_present_attendance_status(status):
                     st_bg, st_fg, st_border = "rgba(16, 185, 129, 0.14)", "#34D399", "rgba(16, 185, 129, 0.35)"
                 elif status == "Absent":
                     st_bg, st_fg, st_border = "rgba(239, 68, 68, 0.14)", "#F87171", "rgba(239, 68, 68, 0.35)"
@@ -10003,7 +10090,7 @@ class MainWindow(QMainWindow):
             working=self.count_working_days(effective_start,end) if effective_start<=end else 0
             month_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],effective_start.isoformat(),end.isoformat())).fetchall() if effective_start<=end else []
             non_holiday_rows=[a for a in month_rows if not self.db.is_holiday(a["work_date"])]
-            present=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"]))
+            present=sum(1 for a in non_holiday_rows if is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"]=="Unmarked" and a["check_in"]))
             absent=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Absent")
             leave=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Leave")
             def _is_working_weekday_holiday(h_item):
@@ -10014,7 +10101,7 @@ class MainWindow(QMainWindow):
             holidays=sum(1 for h in self.db.holidays_between(effective_start.isoformat(),end.isoformat()) if _is_working_weekday_holiday(h)) if effective_start<=end else 0
             since_end=min(selected,date.today())
             since_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],start.isoformat(),since_end.isoformat())).fetchall()
-            since=sum(1 for a in since_rows if not self.db.is_holiday(a["work_date"]) and (a["attendance_status"]=="Present" or (a["attendance_status"]=="Unmarked" and a["check_in"])))
+            since=sum(1 for a in since_rows if not self.db.is_holiday(a["work_date"]) and (is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"]=="Unmarked" and a["check_in"])))
             vals=[e["name"],start.isoformat(),working,present,absent,leave,holidays,since]
             r=self.attendance_summary_table.rowCount(); self.attendance_summary_table.insertRow(r)
             for c,v in enumerate(vals):
@@ -10043,8 +10130,9 @@ class MainWindow(QMainWindow):
             check_in = record["check_in"] if record and record["check_in"] else "—"
             normalized_status = status.casefold()
             has_check_in = bool(record and str(record["check_in"] or "").strip())
-            if normalized_status == "present" or (normalized_status == "unmarked" and has_check_in):
-                status = "Present"
+            if is_present_attendance_status(status) or (normalized_status == "unmarked" and has_check_in):
+                if normalized_status == "unmarked":
+                    status = "Present"
                 present += 1
                 if has_check_in:
                     checked_in += 1
@@ -10339,7 +10427,7 @@ class MainWindow(QMainWindow):
                 e=item["employee"]; cells=tab.add_row().cells
                 vals=[value(item) for _label,value in fields]
                 for c,v in zip(cells,vals): c.text=str(v)
-            present=sum(x["status"]=="Present" for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
+            present=sum(is_present_attendance_status(x["status"]) for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
             if opts.get("attendance_summary",True): doc.add_paragraph(f"Summary: Present {present}  |  Absent {absent}  |  Leave {leave}  |  Employees {len(rows)}")
         elif report_type=="Employee Productivity":
             data=self.report_data(report_date,employee_id)
@@ -10750,7 +10838,7 @@ class MainWindow(QMainWindow):
                     if opts.get("attendance_remarks",True): row.append(item["note"] or "N/A")
                     w.writerow(row)
                 if opts.get("attendance_summary",True):
-                    present=sum(x["status"]=="Present" for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
+                    present=sum(is_present_attendance_status(x["status"]) for x in rows); absent=sum(x["status"]=="Absent" for x in rows); leave=sum(x["status"]=="Leave" for x in rows)
                     summary=[report_date,"SUMMARY"]
                     if opts.get("attendance_identity",True): summary += ["",""]
                     if opts.get("attendance_status",True): summary.append(f"Present {present} | Absent {absent} | Leave {leave} | Employees {len(rows)}")
@@ -10901,7 +10989,7 @@ class MainWindow(QMainWindow):
         elif kind=="Employee Attendance":
             rows=self._attendance_report_rows(d,eid); lines=[self._report_title(kind),f"Date: {d}",""]
             if opts.get("attendance_summary",True):
-                lines.append(f'Present {sum(x["status"]=="Present" for x in rows)} | Absent {sum(x["status"]=="Absent" for x in rows)} | Leave {sum(x["status"]=="Leave" for x in rows)} | Employees {len(rows)}')
+                lines.append(f'Present {sum(is_present_attendance_status(x["status"]) for x in rows)} | Absent {sum(x["status"]=="Absent" for x in rows)} | Leave {sum(x["status"]=="Leave" for x in rows)} | Employees {len(rows)}')
             for item in rows:
                 employee=item["employee"]; parts=[employee["name"]]
                 if opts.get("attendance_identity",True): parts += [employee["employee_code"] or "N/A",employee["department"] or "N/A"]
@@ -11955,7 +12043,10 @@ def main():
             db.set_setting("cyber_hud_theme_v1325", "1")
         apply_app_theme(app, db.get_setting("ui_theme", "night") or "night")
     except Exception as exc:
-        QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
+        if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+            logging.getLogger("startup").exception(f"Startup failed: {exc}")
+        else:
+            QMessageBox.critical(None, APP_NAME, f"Startup failed:\n{exc}")
         return 1
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
         if hasattr(db, "github_sync") and db.github_sync.is_configured:

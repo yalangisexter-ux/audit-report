@@ -1,0 +1,77 @@
+from datetime import date, datetime
+
+import app
+
+
+def make_attendance_window(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "attendance.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    today = date.today().isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.set_setting("working_weekdays", "0,1,2,3,4,5,6")
+    cursor = db.conn.execute(
+        "INSERT INTO employees(employee_code,name,joining_date,active,created_at) VALUES(?,?,?,?,?)",
+        ("EMP-ATT", "Attendance Check", today, 1, timestamp),
+    )
+    db.conn.commit()
+    window = app.MainWindow(db, {"username": "Preview", "role": "Admin"})
+    window.att_date.setDate(app.QDate.currentDate())
+    window.refresh_attendance()
+    window.att_table.selectRow(0)
+    return qt_app, db, window, cursor.lastrowid, today
+
+
+def test_inline_checkout_saves_visible_unsaved_checkin(monkeypatch, tmp_path):
+    qt_app, db, window, employee_id, today = make_attendance_window(monkeypatch, tmp_path)
+    try:
+        check_in_cell = window.att_table.cellWidget(0, 3)
+        check_out_cell = window.att_table.cellWidget(0, 4)
+        check_in_editor = check_in_cell.findChild(app.QLineEdit)
+        check_out_editor = check_out_cell.findChild(app.QLineEdit)
+        check_in_editor.setText("09:55")
+        check_out_editor.setText("18:00")
+
+        window.save_attendance_inline(employee_id, today, "check_out", "18:00")
+
+        saved = db.conn.execute(
+            "SELECT check_in, check_out, attendance_status FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, today),
+        ).fetchone()
+        assert tuple(saved) == ("09:55", "18:00", "Present")
+        assert window.att_table.item(0, 5).text() == "8.08"
+        qt_app.processEvents()
+    finally:
+        window.close()
+        db.conn.close()
+
+
+def test_toolbar_checkout_uses_visible_checkin_and_extended_statuses(monkeypatch, tmp_path):
+    qt_app, db, window, employee_id, today = make_attendance_window(monkeypatch, tmp_path)
+    try:
+        check_in_editor = window.att_table.cellWidget(0, 3).findChild(app.QLineEdit)
+        check_in_editor.setText("09:55")
+        monkeypatch.setattr(app.QInputDialog, "getText", lambda *args, **kwargs: ("18:00", True))
+
+        window.check_out()
+
+        status_cell = window.att_table.cellWidget(0, 2)
+        status_combo = status_cell.findChild(app.QComboBox)
+        assert all(status_combo.findText(option) >= 0 for option in app.ATTENDANCE_DETAIL_STATUSES)
+        status_combo.setCurrentText("Overtime")
+        qt_app.processEvents()
+
+        saved = db.conn.execute(
+            "SELECT check_in, check_out, attendance_status FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, today),
+        ).fetchone()
+        assert tuple(saved) == ("09:55", "18:00", "Overtime")
+        assert app.is_present_attendance_status(saved["attendance_status"])
+        assert window.employee_productivity(db.employee(employee_id), date.today())["present"] == 1
+        assert window.attendance_summary_table.item(0, 3).text() == "1"
+        assert window._attendance_report_rows(today)[0]["status"] == "Overtime"
+    finally:
+        window.close()
+        db.conn.close()

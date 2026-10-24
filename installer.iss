@@ -1,7 +1,7 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
 #define AppVersionEnv GetEnv("APP_VERSION")
 #if AppVersionEnv == ""
-	#define MyAppVersion "1.3.27"
+	#define MyAppVersion "1.3.28"
 #else
 	#define MyAppVersion AppVersionEnv
 #endif
@@ -34,6 +34,7 @@ RestartApplications=no
 [Files]
 Source: "dist\\RawStrengthEmployeeAuditManager\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "update_recovery.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\\Raw Strength Employee Audit Manager"; Filename: "{app}\\{#MyAppExeName}"
@@ -46,6 +47,101 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Filename: "{app}\\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait
 
 [Code]
+var
+	InstallDirectory: String;
+	PendingBackupDirectory: String;
+	StableBackupDirectory: String;
+	RecoveryScriptPath: String;
+	TransactionBackupReady: Boolean;
+	TransactionInstallSucceeded: Boolean;
+
+function RecoveryPowerShellPath: String;
+begin
+	Result := ExpandConstant('{sys}\\WindowsPowerShell\\v1.0\\powershell.exe');
+end;
+
+function RunRecoveryScript(const Mode: String; const ExtraArguments: String; var ResultCode: Integer): Boolean;
+var
+	Arguments: String;
+begin
+	Arguments := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(RecoveryScriptPath) +
+		' -Mode ' + Mode + ' -InstallDir ' + AddQuotes(InstallDirectory) +
+		' -BackupDir ' + AddQuotes(PendingBackupDirectory) +
+		' -StableBackupDir ' + AddQuotes(StableBackupDirectory) + ExtraArguments;
+	Result := Exec(RecoveryPowerShellPath, Arguments, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+	ResultCode: Integer;
+	ExtraArguments: String;
+begin
+	if CurStep = ssInstall then
+	begin
+		InstallDirectory := ExpandConstant('{app}');
+		PendingBackupDirectory := InstallDirectory + '.rollback-pending';
+		StableBackupDirectory := InstallDirectory + '.rollback';
+		RecoveryScriptPath := ExpandConstant('{tmp}\\update_recovery.ps1');
+		TransactionBackupReady := False;
+		TransactionInstallSucceeded := False;
+		if not FileExists(InstallDirectory + '\\RawStrengthEmployeeAuditManager.exe') then
+			Exit;
+
+		ExtractTemporaryFile('update_recovery.ps1');
+		if not RunRecoveryScript('backup', '', ResultCode) or (ResultCode <> 0) then
+		begin
+			RaiseException('Could not protect the existing installation before updating. The current app was left in place.');
+		end;
+		TransactionBackupReady := True;
+	end
+	else if CurStep = ssPostInstall then
+	begin
+		RecoveryScriptPath := ExpandConstant('{tmp}\\update_recovery.ps1');
+		ExtractTemporaryFile('update_recovery.ps1');
+		ExtraArguments := ' -ExpectedVersion ' + AddQuotes('{#MyAppVersion}') +
+			' -DataDir ' + AddQuotes(ExpandConstant('{localappdata}\\EmployeeAuditManager'));
+		if not RunRecoveryScript('launch-check', ExtraArguments, ResultCode) or (ResultCode <> 0) then
+		begin
+			if TransactionBackupReady then
+			begin
+				if RunRecoveryScript('restore', '', ResultCode) and (ResultCode = 0) then
+					TransactionBackupReady := False
+				else
+					RaiseException('The updated app did not start correctly, and automatic rollback could not finish. The previous app copy is retained at: ' + PendingBackupDirectory);
+			end
+			else
+			begin
+				RunRecoveryScript('remove-new', '', ResultCode);
+				RaiseException('The updated app did not start correctly. The incomplete installation was removed.');
+			end;
+			RaiseException('The updated app did not pass its startup check. The existing version has been restored.');
+		end;
+	end
+	else if CurStep = ssDone then
+	begin
+		TransactionInstallSucceeded := True;
+	end;
+end;
+
+procedure DeinitializeSetup;
+var
+	ResultCode: Integer;
+begin
+	if TransactionBackupReady then
+	begin
+		if TransactionInstallSucceeded then
+		begin
+			if not RunRecoveryScript('promote', '', ResultCode) or (ResultCode <> 0) then
+				Log('Previous-version backup remains at ' + PendingBackupDirectory + ' because it could not be promoted.');
+		end
+		else if not RunRecoveryScript('restore', '', ResultCode) or (ResultCode <> 0) then
+		begin
+			MsgBox('Update failed and automatic rollback could not finish. The previous app copy is retained at:' + #13#10 + PendingBackupDirectory,
+				mbError, MB_OK);
+		end;
+	end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
 	ResultCode: Integer;
