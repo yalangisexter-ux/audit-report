@@ -3118,7 +3118,9 @@ class TaskDialog(QDialog):
         else:
             first_eid = self.employee.currentData()
             initial_dept = self.emp_dept_map.get(first_eid, "")
-        self.department.setEditText(initial_dept or "General")
+        self.department.setEditText(initial_dept)
+        # Keep an employee with no department genuinely unassigned. "General" is
+        # a real department choice, not a silent fallback that changes task data.
 
         def _on_task_dept_changed(idx):
             if self.department.itemText(idx) == "➕ Add Custom Department...":
