@@ -1885,6 +1885,25 @@ class CustomerProspectsTab(QWidget):
         if self.db is None:
             QMessageBox.warning(self, "Database Unavailable", "App database is unavailable for sync.")
             return
+        active_user = getattr(self.db, "active_user", None)
+        try:
+            from app import is_developer_test_user
+            if is_developer_test_user(active_user):
+                try:
+                    stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
+                    self._reload_saved_records()
+                    msg = (
+                        "View Live Google Sheets Data (Developer Test Mode)\n\n"
+                        "Data pulled from live Google Sheets into your local view successfully.\n\n"
+                        "Note: Live master push is paused while signed in as developer 'admin'. "
+                        "Local test changes (adds/deletes) will NOT sync to master to protect customer data."
+                    )
+                    QMessageBox.information(self, "Google Sheets Sync (Test Mode)", msg)
+                except Exception as exc:
+                    QMessageBox.warning(self, "Google Sheets Sync Notice", f"Could not connect to live Google Sheet:\n{exc}")
+                return
+        except Exception:
+            pass
         try:
             stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
             self._reload_saved_records()
@@ -2216,7 +2235,23 @@ a {{ color: #2563EB; text-decoration: underline; }}
             snapshot_path = google_sheets_sync.save_master_database_snapshot(self.db)
 
             # 4. Continuous auto-sync to live Google Sheets (offline-first conflict resolution)
-            sync_res = google_sheets_sync.continuous_auto_sync(self.db)
+            active_user = getattr(self.db, "active_user", None)
+            is_dev = False
+            try:
+                from app import is_developer_test_user
+                is_dev = is_developer_test_user(active_user)
+            except Exception:
+                pass
+
+            if is_dev:
+                self.sync_status_badge.setText("🧪 Developer Test Mode: Sync Disabled (Local Only)")
+                self.sync_status_badge.setStyleSheet(
+                    "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
+                    "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
+                )
+                sync_res = {"status": "test_mode"}
+            else:
+                sync_res = google_sheets_sync.continuous_auto_sync(self.db)
             if sync_res.get("status") == "synced":
                 self.sync_status_badge.setText(f"🟢 Continuous Sync: Active ({len(self.records):,} Stores) · Conflict-Free")
                 self.sync_status_badge.setStyleSheet(
@@ -2256,6 +2291,19 @@ a {{ color: #2563EB; text-decoration: underline; }}
         """Background continuous sync running every 60s without user prompts or interruption."""
         if self.db is None:
             return
+        active_user = getattr(self.db, "active_user", None)
+        try:
+            from app import is_developer_test_user
+            if is_developer_test_user(active_user):
+                if hasattr(self, "sync_status_badge"):
+                    self.sync_status_badge.setText("🧪 Developer Test Mode: Sync Disabled (Local Only)")
+                    self.sync_status_badge.setStyleSheet(
+                        "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
+                        "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
+                    )
+                return
+        except Exception:
+            pass
         try:
             res = google_sheets_sync.continuous_auto_sync(self.db)
             if res.get("status") == "synced":

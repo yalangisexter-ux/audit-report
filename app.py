@@ -1129,6 +1129,7 @@ class Database:
             self.conn = sqlite3.connect(DB_PATH, factory=SyncableSQLiteConnection)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys=ON")
+            self.active_user = None
             self.setup()
             self._recover_legacy_developer_mode()
             try:
@@ -1262,7 +1263,13 @@ class Database:
             credential_store=self._store_sync_device_credentials,
             worker_url=worker_url if worker_url else None,
         )
-        self.conn.set_commit_callback(self.github_sync.mark_pending)
+        def _safe_commit_callback():
+            if is_developer_test_user(getattr(self, "active_user", None)):
+                # Developer test mode: do NOT mark pending for cloud sync
+                return
+            if hasattr(self, "github_sync") and hasattr(self.github_sync, "mark_pending"):
+                self.github_sync.mark_pending()
+        self.conn.set_commit_callback(_safe_commit_callback)
 
     def _store_sync_device_credentials(self, credentials):
         protected = protect_sync_token(json.dumps(credentials, separators=(",", ":")))
@@ -1532,9 +1539,42 @@ class Database:
                 self.conn.execute("PRAGMA foreign_keys=ON")
         except Exception as e:
             logging.getLogger("db").debug(f"auth_users migration notice: {e}")
+
+        # Ensure distinct developer testing user ('admin') and master customer user ('taruna')
+        try:
+            admin_row = self.conn.execute("SELECT * FROM auth_users WHERE username='admin' COLLATE NOCASE").fetchone()
+            taruna_row = self.conn.execute("SELECT * FROM auth_users WHERE username='taruna' COLLATE NOCASE").fetchone()
+
+            if admin_row:
+                if not admin_row["display_name"] or admin_row["display_name"] in ("Administrator", "admin"):
+                    self.conn.execute(
+                        "UPDATE auth_users SET display_name='admin (Developer - Test Mode)', role='Developer', updated_at=? WHERE id=?",
+                        (now_text(), admin_row["id"])
+                    )
+
+            if not taruna_row and admin_row:
+                self.conn.execute(
+                    """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
+                       security_question, answer_salt, answer_hash, active, created_at, updated_at)
+                       VALUES('taruna', 'Admin / Taruna (Customer Master)', 'Admin', ?, ?, ?, ?, ?, 1, ?, ?)""",
+                    (admin_row["password_salt"], admin_row["password_hash"], admin_row["security_question"],
+                     admin_row["answer_salt"], admin_row["answer_hash"], now_text(), now_text())
+                )
+            elif taruna_row:
+                if "Admin" not in str(taruna_row["display_name"]):
+                    self.conn.execute(
+                        "UPDATE auth_users SET display_name='Admin / Taruna (Customer Master)', role='Admin', updated_at=? WHERE id=?",
+                        (now_text(), taruna_row["id"])
+                    )
+        except Exception as e:
+            logging.getLogger("db").debug(f"User provisioning notice: {e}")
+
         # Do not create a known/default credential. Authentication is handled by
         # the first-run Admin account and per-user password/recovery records.
         self.conn.commit()
+
+    def set_active_user(self, user):
+        self.active_user = user
 
     def get_setting(self, key, default=""):
         r = self.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
@@ -1754,6 +1794,50 @@ def is_privileged_user(user_or_role) -> bool:
     if role:
         return role in ("admin", "developer")
     return username in ("admin", "developer", "dev")
+
+
+def is_developer_test_user(user_or_role) -> bool:
+    """Return True if user is the developer / testing user ('admin').
+
+    The developer user 'admin' can view and edit data locally for testing,
+    but testing changes (adds, edits, deletes) must NOT be synced to the live
+    customer master database or Google Sheets.
+    """
+    if not user_or_role:
+        return False
+    if isinstance(user_or_role, dict):
+        uname = str(user_or_role.get("username", "")).strip().lower()
+        role = str(user_or_role.get("role", "")).strip().lower()
+        dname = str(user_or_role.get("display_name", "")).strip().lower()
+    else:
+        uname = str(user_or_role or "").strip().lower()
+        role = ""
+        dname = ""
+    # Explicit master/customer user is never treated as developer test user
+    if "taruna" in uname or "taruna" in dname:
+        return False
+    if uname == "admin":
+        return True
+    if role == "developer":
+        return True
+    return False
+
+
+def is_master_customer_user(user_or_role) -> bool:
+    """Return True if user is the master customer user ('Admin / Taruna').
+
+    This user is the master customer whose data is synchronized to the central Google Sheet
+    and encrypted cloud database.
+    """
+    if not user_or_role:
+        return False
+    if isinstance(user_or_role, dict):
+        uname = str(user_or_role.get("username", "")).strip().lower()
+        dname = str(user_or_role.get("display_name", "")).strip().lower()
+    else:
+        uname = str(user_or_role or "").strip().lower()
+        dname = ""
+    return "taruna" in uname or "taruna" in dname or "master" in dname
 
 
 def _ensure_local_task_columns(conn: sqlite3.Connection):
@@ -2727,10 +2811,41 @@ class LoginDialog(QDialog):
         subtitle.setProperty("pageSubtitle", True)
         layout.addWidget(subtitle)
 
+        # Quick Account selection chips for Customer Master vs Developer Test
+        quick_layout = QHBoxLayout()
+        quick_layout.setSpacing(8)
+        lbl_quick = QLabel("Quick Account:")
+        lbl_quick.setStyleSheet("font-size: 8.5pt; color: #94A3B8; font-weight: 600;")
+        btn_taruna = QPushButton("👑 Admin / Taruna (Customer Master)")
+        btn_taruna.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_taruna.setToolTip("Sign in as Customer Master (live synchronization enabled)")
+        btn_taruna.setStyleSheet(
+            "QPushButton { background: rgba(59, 130, 246, 0.22); color: #93C5FD; "
+            "border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 6px; padding: 4px 10px; font-size: 8.5pt; font-weight: 600; } "
+            "QPushButton:hover { background: rgba(59, 130, 246, 0.40); color: #FFFFFF; }"
+        )
+        btn_taruna.clicked.connect(lambda: (self.username.setText("taruna"), self.password.setFocus()))
+
+        btn_admin = QPushButton("🧪 admin (Developer Test)")
+        btn_admin.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_admin.setToolTip("Sign in as Developer for testing (cloud sync disabled to protect live customer data)")
+        btn_admin.setStyleSheet(
+            "QPushButton { background: rgba(245, 158, 11, 0.22); color: #FCD34D; "
+            "border: 1px solid rgba(245, 158, 11, 0.45); border-radius: 6px; padding: 4px 10px; font-size: 8.5pt; font-weight: 600; } "
+            "QPushButton:hover { background: rgba(245, 158, 11, 0.40); color: #FFFFFF; }"
+        )
+        btn_admin.clicked.connect(lambda: (self.username.setText("admin"), self.password.setFocus()))
+
+        quick_layout.addWidget(lbl_quick)
+        quick_layout.addWidget(btn_taruna)
+        quick_layout.addWidget(btn_admin)
+        quick_layout.addStretch(1)
+        layout.addLayout(quick_layout)
+
         form = QFormLayout()
         form.setSpacing(12)
         self.username = QLineEdit()
-        self.username.setPlaceholderText("Enter username")
+        self.username.setPlaceholderText("Enter username (e.g. taruna or admin)")
         self.username.setMinimumHeight(36)
         pw_container = password_field("Enter password")
         self.password = pw_container.field
@@ -2763,8 +2878,21 @@ class LoginDialog(QDialog):
         self.password.returnPressed.connect(self.check)
 
     def check(self):
-        username = self.username.text().strip()
-        row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)).fetchone()
+        raw_username = self.username.text().strip()
+        uname = raw_username.lower()
+        if uname in ("admin / taruna", "admin/taruna", "taruna"):
+            target_username = "taruna"
+        elif uname == "admin":
+            target_username = "admin"
+        else:
+            target_username = raw_username
+
+        row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (target_username,)).fetchone()
+        if not row:
+            row = self.db.conn.execute(
+                "SELECT * FROM auth_users WHERE (username=? OR display_name LIKE ?) COLLATE NOCASE AND active=1",
+                (raw_username, f"%{raw_username}%")
+            ).fetchone()
         if not row:
             return error(self, "Invalid username or password.")
         _, digest = hash_pin(self.password.text(), row["password_salt"])
@@ -3634,6 +3762,11 @@ class TaskDialog(QDialog):
             v = v_in.text().strip()
             if k or v:
                 custom_pairs.append((k, v))
+        # Tag developer testing tasks so they are identified and excluded from master sheet sync
+        if is_developer_test_user(getattr(self.db, "active_user", None)):
+            if not any(k.lower() in ("created_by", "creator", "test_mode") for k, _ in custom_pairs):
+                custom_pairs.append(("created_by", "admin"))
+                custom_pairs.append(("test_mode", "true"))
         custom_vals_str = serialize_custom_values(custom_pairs)
 
         return (
@@ -5485,7 +5618,16 @@ class MainWindow(QMainWindow):
         self.apply_global_control_polish()
         self.apply_hover_messages()
         self.apply_interaction_animations()
-        self.statusBar().showMessage(f"  Signed in: {user.get('display_name') or user.get('username')}  •  Role: {self.user_role}  •  Local database (offline)  •  Raw Strength Calisthenics")
+        if hasattr(self.db, "set_active_user"):
+            self.db.set_active_user(user)
+        if is_developer_test_user(user):
+            self.statusBar().showMessage(
+                f"  Signed in: admin (Developer)  •  🧪 Local Test Mode (Master Sync PAUSED - Changes stay local)  •  Raw Strength Calisthenics"
+            )
+        else:
+            self.statusBar().showMessage(
+                f"  Signed in: {user.get('display_name') or user.get('username')}  •  👑 Master Customer Mode (Live Sync ACTIVE)  •  Role: {self.user_role}  •  Raw Strength Calisthenics"
+            )
         self.refresh_all()
         # Check for update in background and display home banner if a newer release exists
         QTimer.singleShot(2500, self._check_updates_silently)
@@ -9127,6 +9269,9 @@ class MainWindow(QMainWindow):
 
     def _init_auto_sync(self):
         self._auto_sync_running = False
+        if is_developer_test_user(getattr(self, "current_user", None)):
+            logging.getLogger("auto_sync").info("Auto-sync background timer disabled: Developer test user ('admin') is active.")
+            return
         self._auto_sync_timer = QTimer(self)
         self._auto_sync_timer.setInterval(30000)
         self._auto_sync_timer.timeout.connect(self._background_auto_sync)
@@ -9142,6 +9287,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(1500, self._background_auto_sync)
 
     def schedule_auto_sync(self, delay_ms=2500, immediate=False):
+        if is_developer_test_user(getattr(self, "current_user", None)):
+            logging.getLogger("auto_sync").info("Auto-sync push skipped: Developer test user ('admin') is active. Test data will not be pushed to master.")
+            return
         sync = getattr(self.db, "github_sync", None)
         if sync is None or not sync.is_configured:
             return
@@ -9152,6 +9300,8 @@ class MainWindow(QMainWindow):
                 self._debounce_sync_timer.start(delay_ms)
 
     def _background_auto_sync(self):
+        if is_developer_test_user(getattr(self, "current_user", None)):
+            return
         sync = getattr(self.db, "github_sync", None)
         if sync is None or not sync.is_configured or sync.is_busy:
             return
@@ -9203,6 +9353,18 @@ class MainWindow(QMainWindow):
                 pass
 
     def sync_github_database_now(self):
+        if is_developer_test_user(self.current_user):
+            QMessageBox.information(
+                self,
+                "Developer Test Mode (Local Testing Only)",
+                "You are signed in as developer 'admin'.\n\n"
+                "Cloud synchronization to the master customer database is paused to prevent "
+                "testing additions, modifications, or deletions from altering live customer data.\n\n"
+                "• All your local edits and tests remain safe in your local database.\n"
+                "• Master customer data is protected.\n"
+                "• To synchronize live customer master data, sign in as 'Admin / Taruna'."
+            )
+            return
         if not self.db.github_sync.is_configured:
             url, ok = QInputDialog.getText(
                 self, "Configure Cloud Sync",
@@ -11971,6 +12133,25 @@ class MainWindow(QMainWindow):
         else: webbrowser.open(EXPORT_DIR.as_uri())
 
     def sync_google_sheets_action(self):
+        if is_developer_test_user(self.current_user):
+            try:
+                import google_sheets_sync
+                stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
+                self.refresh_employees()
+                self.refresh_tasks()
+                self.refresh_attendance()
+                if hasattr(self, "customer_tab") and hasattr(self.customer_tab, "_reload_saved_records"):
+                    self.customer_tab._reload_saved_records()
+                msg = (
+                    "View Live Google Sheets Data (Developer Test Mode)\n\n"
+                    "Data pulled from live Google Sheets into your local view successfully.\n\n"
+                    "Note: Master Sheet push is paused while signed in as developer 'admin'. "
+                    "Local test changes (adds/deletes) will NOT sync to master to protect customer data."
+                )
+                QMessageBox.information(self, "Google Sheets Sync (Test Mode)", msg)
+            except Exception as exc:
+                QMessageBox.warning(self, "Google Sheets Sync", f"Could not sync with Google Sheets:\n{exc}")
+            return
         try:
             import google_sheets_sync
             stats = google_sheets_sync.sync_from_live_google_sheet(self.db)

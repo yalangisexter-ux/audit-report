@@ -241,7 +241,14 @@ def save_master_database_snapshot(db, custom_path=None) -> str:
     
     if db is not None:
         try:
-            cursor = db.conn.execute("SELECT id, employee_id, task_date, title, details, due_time, status, progress, proof_url, proof_note, manager_note, custom_values, updated_at FROM tasks ORDER BY task_date DESC, id DESC")
+            # Exclude developer test records if any are tagged
+            cursor = db.conn.execute("""
+                SELECT id, employee_id, task_date, title, details, due_time, status, progress, proof_url, proof_note, manager_note, custom_values, updated_at
+                FROM tasks
+                WHERE COALESCE(custom_values, '') NOT LIKE '%created_by%'
+                  AND COALESCE(custom_values, '') NOT LIKE '%test_mode%'
+                ORDER BY task_date DESC, id DESC
+            """)
             for row in cursor.fetchall():
                 ws_tasks.append(list(row))
         except Exception:
@@ -293,12 +300,21 @@ def save_master_database_snapshot(db, custom_path=None) -> str:
             sheet.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 50)
 
     # Determine target file path
+    active_user = getattr(db, "active_user", None)
+    is_dev = False
+    try:
+        from app import is_developer_test_user
+        is_dev = is_developer_test_user(active_user)
+    except Exception:
+        pass
+
     if custom_path:
         out_path = Path(custom_path)
     else:
         downloads_dir = Path.home() / "Downloads"
         downloads_dir.mkdir(parents=True, exist_ok=True)
-        out_path = downloads_dir / "Google_Sheets_Master_Database.xlsx"
+        fname = "Google_Sheets_Test_admin_Snapshot.xlsx" if is_dev else "Google_Sheets_Master_Database.xlsx"
+        out_path = downloads_dir / fname
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(str(out_path))
@@ -312,6 +328,14 @@ def continuous_auto_sync(db) -> dict:
     silently merges and appends without conflicts and without deleting any data."""
     if db is None:
         return {"status": "error", "message": "Database unavailable"}
+
+    active_user = getattr(db, "active_user", None)
+    try:
+        from app import is_developer_test_user
+        if is_developer_test_user(active_user):
+            return {"status": "test_mode", "message": "Developer test mode active: master sync disabled to protect customer data."}
+    except Exception:
+        pass
 
     try:
         # Check connectivity by fetching sheet bytes with 5s timeout
