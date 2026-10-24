@@ -10,7 +10,7 @@ import re
 import urllib.request
 import urllib.parse
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPalette, QTextDocument
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
@@ -792,6 +792,10 @@ class CustomerProspectsTab(QWidget):
         self.btn_csv.setToolTip("Export to OneDrive format CSV")
         self.btn_csv.clicked.connect(self.export_csv)
 
+        self.btn_xlsx = QPushButton("📗 Excel")
+        self.btn_xlsx.setToolTip("Export currently filtered stores to Excel (.xlsx)")
+        self.btn_xlsx.clicked.connect(self.export_xlsx)
+
         self.btn_doc = QPushButton("📝 Word")
         self.btn_doc.setToolTip("Export to Microsoft Word (.doc)")
         self.btn_doc.clicked.connect(self.export_doc)
@@ -799,6 +803,7 @@ class CustomerProspectsTab(QWidget):
         toolbar.addWidget(self.btn_print)
         toolbar.addWidget(self.btn_pdf)
         toolbar.addWidget(self.btn_csv)
+        toolbar.addWidget(self.btn_xlsx)
         toolbar.addWidget(self.btn_doc)
         layout.addLayout(toolbar)
 
@@ -986,6 +991,77 @@ class CustomerProspectsTab(QWidget):
             QMessageBox.information(self, "Export Successful", f"Exported {len(records):,} stores to:\n{path}")
         except Exception as exc:
             QMessageBox.critical(self, "Export Failed", f"Could not write CSV:\n{exc}")
+
+    def export_xlsx(self):
+        """Export currently filtered records to a formatted Excel workbook."""
+        records = self._get_visible_records()
+        if not records:
+            QMessageBox.warning(self, "No Records", "No store records to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Store Directory to Excel",
+            str(Path.home() / "stores_directory.xlsx"),
+            "Excel Workbook (*.xlsx)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+
+        headers = [
+            ("Store type", "kind"),
+            ("Business name", "business_name"),
+            ("Category", "business_category"),
+            ("State / UT", "state"),
+            ("District", "district"),
+            ("City", "city"),
+            ("Area", "area"),
+            ("Contact person", "contact_person"),
+            ("Phone numbers", "phone"),
+            ("Email addresses", "email"),
+            ("Full address", "address"),
+            ("Website", "website"),
+            ("Google Maps", "maps"),
+            ("Verified by call", "verified"),
+            ("Verification status", "source_status"),
+            ("Source", "source_name"),
+            ("Source type", "source_type"),
+            ("Source URL", "source_url"),
+            ("Last checked", "source_checked_at"),
+            ("Response", "response"),
+        ]
+        try:
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "Store Directory"
+            sheet.append([label for label, _key in headers])
+            for record in records:
+                sheet.append([str(record.get(key) or "") for _label, key in headers])
+
+            from openpyxl.styles import Alignment, Font, PatternFill
+            from openpyxl.utils import get_column_letter
+
+            for cell in sheet[1]:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(fill_type="solid", fgColor="1E293B")
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+            for row in sheet.iter_rows(min_row=2):
+                for cell in row:
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+            for column_cells in sheet.columns:
+                column_letter = get_column_letter(column_cells[0].column)
+                max_length = max((len(str(cell.value or "")) for cell in column_cells[:1001]), default=10)
+                sheet.column_dimensions[column_letter].width = min(max(max_length + 2, 12), 42)
+            sheet.freeze_panes = "A2"
+            sheet.auto_filter.ref = sheet.dimensions
+            workbook.save(path)
+            QMessageBox.information(
+                self, "Export Successful",
+                f"Exported {len(records):,} stores to Excel:\n{path}"
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", f"Could not create Excel workbook:\n{exc}")
 
     def export_pdf(self):
         """Export currently filtered records to a formatted landscape PDF report."""
