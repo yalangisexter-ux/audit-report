@@ -328,11 +328,14 @@ def save_master_database_snapshot(db, custom_path=None) -> str:
     return str(out_path)
 
 
-def continuous_auto_sync(db) -> dict:
-    """Silent background continuous sync with Google Sheets.
-    Offline-first: updates local DB immediately; when internet connects,
-    silently merges and appends without conflicts and without deleting any data.
-    Both Developer (admin) and Customer (Taruna) get the latest synced master data."""
+def continuous_auto_sync(db, developer_authorized: bool = False) -> dict:
+    """Sync the customer master from Google Sheets.
+
+    The customer account 'Admin' syncs without a developer password. The lowercase
+    developer account 'admin' is blocked from background sync and may enter the
+    explicit password-gated path, which passes developer_authorized=True. The
+    authorization is per call and is never persisted.
+    """
     if db is None:
         return {"status": "error", "message": "Database unavailable"}
 
@@ -344,10 +347,10 @@ def continuous_auto_sync(db) -> dict:
     except Exception:
         pass
 
-    # Developer test accounts must never run live Google Sheets sync.
-    # Keep this guard before any network request or database/snapshot mutation.
-    if is_dev:
-        return {"status": "test_mode", "message": "Developer test mode active. Google Sheets sync is paused."}
+    # Never allow background sync for developer/testing sessions. A valid password
+    # may authorize only the explicit user-triggered sync operation.
+    if is_dev and not developer_authorized:
+        return {"status": "test_mode", "message": "Developer test mode active. Enter the developer password to sync."}
 
     try:
         # Check connectivity by fetching sheet bytes with 5s timeout
