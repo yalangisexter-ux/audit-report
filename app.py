@@ -680,7 +680,17 @@ ATTENDANCE_DETAIL_STATUSES = (
     "Short Hours",
     "Early Departure",
 )
-ATTENDANCE_STATUS_OPTIONS = ("Unmarked", "Present", "Absent", "Leave", *ATTENDANCE_DETAIL_STATUSES)
+ATTENDANCE_STATUS_OPTIONS = ("Unmarked", "Present", "Absent", "Leave")
+ATTENDANCE_REMARK_OPTIONS = (
+    "",
+    "Late Check-in",
+    "Late Check-out",
+    "On Time",
+    "Balanced Hours",
+    "Overtime",
+    "Short Hours",
+    "Early Departure",
+)
 ATTENDANCE_PRESENT_STATUSES = frozenset(("Present", *ATTENDANCE_DETAIL_STATUSES))
 
 
@@ -1504,6 +1514,18 @@ class Database:
             "UPDATE attendance SET attendance_status='Present' "
             "WHERE COALESCE(check_in, '') <> '' "
             "AND COALESCE(attendance_status, 'Unmarked') = 'Unmarked'"
+        )
+        c.execute(
+            '''UPDATE attendance
+               SET attendance_note = CASE
+                   WHEN attendance_note IS NULL OR attendance_note = '' THEN attendance_status
+                   ELSE attendance_status || '; ' || attendance_note
+               END,
+               attendance_status = 'Present'
+               WHERE attendance_status IN (
+                   'Late Check-in', 'Late Check-out', 'On Time', 'Balanced Hours',
+                   'Overtime', 'Short Hours', 'Early Departure'
+               )'''
         )
         if not self.get_setting("working_weekdays"):
             self.set_setting("working_weekdays", "0,1,2,3,4")
@@ -5240,6 +5262,9 @@ class CommandPaletteDialog(QDialog):
             ("Action", "🖨️ Print Leads & Export Center", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.open_print_preview())),
             ("Action", "📑 Export Store Directory to Excel (.xlsx)", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.export_xlsx())),
             ("Action", "📄 Export Store Directory to PDF", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.export_pdf())),
+            ("Action", "🖨️ Print Regional Dashboard & Preview", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.open_regional_print_preview())),
+            ("Action", "📑 Export Regional Dashboard to Excel (.xlsx)", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.export_regional_xlsx())),
+            ("Action", "📄 Export Regional Dashboard to PDF", lambda: (self._navigate_tab(self.main_window.customer_tab), self.main_window.customer_tab.export_regional_pdf())),
             ("Navigation", "👥 Employees & Staff Listing", lambda: self._navigate_tab(self.main_window.employees_tab)),
             ("Action", "➕ Add New Employee", lambda: self.main_window.add_employee()),
             ("Navigation", "✅ Task Manager & Department Tasks", lambda: self._navigate_tab(self.main_window.tasks_tab)),
@@ -7794,6 +7819,24 @@ class MainWindow(QMainWindow):
                     os.startfile(str(installer_path))
             else:
                 subprocess.Popen([str(installer_path), "/SILENT", "/NORESTART"], close_fds=True)
+            # Detached watchdog to guarantee the app reopens automatically
+            try:
+                exe_target = str(Path(sys.executable).resolve())
+                watchdog_cmd = (
+                    f"$setup = Get-Process -Name 'RawStrengthEmployeeAuditManager-Setup' -ErrorAction SilentlyContinue; "
+                    f"if ($setup) {{ $setup.WaitForExit(180000) }}; "
+                    f"Start-Sleep -Seconds 2; "
+                    f"if (-not (Get-Process -Name 'RawStrengthEmployeeAuditManager' -ErrorAction SilentlyContinue)) {{ "
+                    f"  Start-Process -FilePath '{exe_target}' "
+                    f"}}"
+                )
+                subprocess.Popen(
+                    ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", watchdog_cmd],
+                    close_fds=True,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                )
+            except Exception:
+                pass
         except Exception as exc:
             if getattr(self, "_update_progress", None):
                 self._update_progress.close()
@@ -8584,7 +8627,7 @@ class MainWindow(QMainWindow):
             ("Check In", self.check_in, "attCheckInBtn"),
             ("Check Out", self.check_out, "attCheckOutBtn"),
             ("Edit Times", self.edit_attendance_times, "attEditTimesBtn"),
-            ("Note", self.attendance_note, "attNoteBtn"),
+            ("Remarks", self.attendance_note, "attRemarksBtn"),
         ]
         for label, slot, obj_name in time_actions:
             b = QPushButton(label)
@@ -8630,7 +8673,7 @@ class MainWindow(QMainWindow):
         self.holiday_banner.setStyleSheet("QLabel { background: rgba(255, 255, 255, 0.03); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 7px 14px; font-size: 8.5pt; font-weight: 500; }")
         att_roster_layout.addWidget(self.holiday_banner)
 
-        self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Note"])
+        self.att_table=QTableWidget(0,7); self.att_table.setHorizontalHeaderLabels(["Employee","Date","Attendance status","Check-in","Check-out","Net hours","Remarks"])
         att_header = self.att_table.horizontalHeader()
         att_header.setSectionResizeMode(QHeaderView.Interactive)
         att_header.setMinimumSectionSize(90)
@@ -10482,7 +10525,7 @@ class MainWindow(QMainWindow):
         status = QComboBox(); status.addItems(ATTENDANCE_STATUS_OPTIONS); field_row("Attendance status", status)
         check_in = QLineEdit(); check_in.setPlaceholderText("HH:MM (blank clears)"); field_row("Check-in", check_in)
         check_out = QLineEdit(); check_out.setPlaceholderText("HH:MM (blank clears)"); field_row("Check-out", check_out)
-        note = QLineEdit(); note.setPlaceholderText("Attendance note"); field_row("Note", note)
+        remarks_combo = QComboBox(); remarks_combo.setEditable(True); remarks_combo.addItems(ATTENDANCE_REMARK_OPTIONS); field_row("Remarks", remarks_combo)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
         if dialog.exec() != QDialog.Accepted: return
@@ -10490,7 +10533,10 @@ class MainWindow(QMainWindow):
         if fields["Attendance status"][0].isChecked(): changes["attendance_status"] = status.currentText()
         if fields["Check-in"][0].isChecked(): changes["check_in"] = check_in.text().strip()
         if fields["Check-out"][0].isChecked(): changes["check_out"] = check_out.text().strip()
-        if fields["Note"][0].isChecked(): changes["attendance_note"] = note.text().strip()
+        if "Remarks" in fields and fields["Remarks"][0].isChecked():
+            changes["attendance_note"] = remarks_combo.currentText().strip()
+        elif "Note" in fields and fields["Note"][0].isChecked():
+            changes["attendance_note"] = note.text().strip()
         if not changes: return info(self, "No fields were selected to update.")
         for field in ("check_in","check_out"):
             value = changes.get(field, "")
@@ -10677,10 +10723,29 @@ class MainWindow(QMainWindow):
         if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         old=self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?",(eid,d)).fetchone()
-        note,ok=QInputDialog.getText(self,"Attendance note","Note / correction reason:",text=old["attendance_note"] if old else "")
-        if ok:
+        current_note = old["attendance_note"] if old else ""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Attendance Remarks")
+        dialog.setMinimumWidth(380)
+        vbox = QVBoxLayout(dialog)
+        vbox.setSpacing(10)
+        vbox.addWidget(QLabel(f"Select preset or type remarks for {d}:"))
+        combo = QComboBox()
+        combo.setEditable(True)
+        for opt in ATTENDANCE_REMARK_OPTIONS:
+            combo.addItem(opt)
+        if current_note and current_note not in ATTENDANCE_REMARK_OPTIONS:
+            combo.addItem(current_note)
+        combo.setEditText(current_note)
+        vbox.addWidget(combo)
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dialog.accept)
+        btn_box.rejected.connect(dialog.reject)
+        vbox.addWidget(btn_box)
+        if dialog.exec() == QDialog.Accepted:
+            note = combo.currentText().strip()
             self.db.upsert_attendance(eid,d,note=note)
-            self.db.log("Attendance note updated",f"employee={eid}, date={d}, note={note}"); self.refresh_all()
+            self.db.log("Attendance remarks updated",f"employee={eid}, date={d}, remarks={note}"); self.refresh_all()
 
     def declare_holiday(self):
         if not self.is_admin_or_dev:
@@ -10863,7 +10928,7 @@ class MainWindow(QMainWindow):
             if value:
                 if not is_present_attendance_status(status):
                     status = "Present"
-        elif field == "note":
+        elif field in ("note", "remarks"):
             note = value
         else:
             return
@@ -11005,7 +11070,6 @@ class MainWindow(QMainWindow):
             for column, value, field in (
                 (3, ci, "check_in"),
                 (4, co, "check_out"),
-                (6, a["attendance_note"] if a else "", "note"),
             ):
                 editor = QLineEdit(str(value or ""))
                 editor.setObjectName("attendanceFieldEditor")
@@ -11013,15 +11077,9 @@ class MainWindow(QMainWindow):
                 editor.setMinimumWidth(0)
                 editor.setFixedHeight(28)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-                if field in ("check_in", "check_out"):
-                    editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                else:
-                    editor.setAlignment(Qt.AlignmentFlag.AlignLeft)
-                editor.setPlaceholderText("HH:MM" if field in ("check_in", "check_out") else "Add note")
-                editor.setToolTip(
-                    "Enter time as HH:MM (24-hour format)" if field in ("check_in", "check_out")
-                    else "Enter an attendance note"
-                )
+                editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                editor.setPlaceholderText("HH:MM")
+                editor.setToolTip("Enter time as HH:MM (24-hour format)")
                 editor.setEnabled(not bool(holiday))
                 if is_dark_mode:
                     editor.setStyleSheet(
@@ -11044,6 +11102,51 @@ class MainWindow(QMainWindow):
                     self.save_attendance_inline(employee_id, work_date, field_name, input_widget.text())
                 )
                 attach_editor(column, editor)
+
+            # Column 6: Dedicated Remarks editor (editable combo with presets like Late Check-in, Late Check-out, On Time)
+            current_rem = str(a["attendance_note"] if a else "").strip()
+            rem_combo = QComboBox()
+            rem_combo.setObjectName("attendanceRemarksCombo")
+            rem_combo.setProperty("in_table_cell", True)
+            rem_combo.setEditable(True)
+            for opt in ATTENDANCE_REMARK_OPTIONS:
+                rem_combo.addItem(opt)
+            if current_rem and current_rem not in ATTENDANCE_REMARK_OPTIONS:
+                rem_combo.addItem(current_rem)
+            rem_combo.setEditText(current_rem)
+            rem_combo.setMinimumWidth(150)
+            rem_combo.setFixedHeight(28)
+            rem_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            rem_combo.setEnabled(not bool(holiday))
+            rem_combo.setToolTip("Remarks: Choose preset (Late Check-in, Late Check-out, On Time, etc.) or type custom remarks")
+            if is_dark_mode:
+                rem_combo.setStyleSheet(
+                    f"QComboBox {{ background-color: rgba(255, 255, 255, 0.04); color: #F8FAFC; border: 1px solid rgba(255, 255, 255, 0.10); "
+                    f"border-radius: 6px; padding: 2px 22px 2px 8px; font-size: 8.5pt; font-weight: 500; }} "
+                    f"QComboBox:hover {{ border-color: #00D2FF; }} "
+                    f"QComboBox:focus {{ border: 1.5px solid #00D2FF; }} "
+                    f"QComboBox QAbstractItemView {{ background-color: #1E293B; color: #F8FAFC; selection-background-color: #0284C7; }} "
+                    f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 20px; border-left: 1px solid rgba(255, 255, 255, 0.10); border-top-right-radius: 5px; border-bottom-right-radius: 5px; }} "
+                    f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 9px; height: 9px; }}"
+                )
+            else:
+                rem_combo.setStyleSheet(
+                    f"QComboBox {{ background-color: {c_bg}; color: {c_fg}; border: 1px solid {c_border}; "
+                    f"border-radius: 7px; padding: 2px 24px 2px 8px; font-size: 9pt; font-weight: 500; }} "
+                    f"QComboBox:hover {{ border-color: {c_accent}; }} "
+                    f"QComboBox:focus {{ border: 1.5px solid {c_accent}; }} "
+                    f"QComboBox QAbstractItemView {{ background-color: #FFFFFF; color: #0F172A; selection-background-color: #3B82F6; selection-color: #FFFFFF; }} "
+                    f"QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: top right; width: 22px; border-left: 1px solid {c_border}; border-top-right-radius: 6px; border-bottom-right-radius: 6px; }} "
+                    f"QComboBox::down-arrow {{ image: url({arrow_icon}); width: 10px; height: 10px; }}"
+                )
+            rem_combo.activated.connect(
+                lambda idx, cb=rem_combo, eid=e["id"], wd=d: self.save_attendance_inline(eid, wd, "note", cb.currentText())
+            )
+            if rem_combo.lineEdit():
+                rem_combo.lineEdit().editingFinished.connect(
+                    lambda cb=rem_combo, eid=e["id"], wd=d: self.save_attendance_inline(eid, wd, "note", cb.currentText())
+                )
+            attach_editor(6, rem_combo)
 
             hours_item = QTableWidgetItem(hours)
             hours_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter)

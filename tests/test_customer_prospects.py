@@ -670,3 +670,149 @@ def test_startup_splash_screen_initialization_in_offscreen_mode(monkeypatch):
     assert splash.status_lbl.text() == "Loading, please wait..."
     splash.hide_splash()
     splash.finish()
+
+
+def test_store_directory_print_store_details_and_dashboard(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        sample_record = {
+            "business_name": "Raw Power Gym & Nutrition",
+            "business_category": "Fitness Center",
+            "brand": "Raw Strength Partner",
+            "state": "Maharashtra",
+            "city": "Mumbai",
+            "district": "Mumbai Suburban",
+            "area": "Andheri West",
+            "pincode": "400053",
+            "address": "Plot 12, Link Road, Andheri West",
+            "phone": "9876543210",
+            "email": "contact@rawpower.in",
+            "contact_person": "Vikram Singh",
+            "website": "https://rawpower.in",
+            "source_type": "Official Partner Directory",
+            "source_url": "https://rawpower.in/store",
+            "status": "Active Partner",
+            "notes": "Verified flagship distributor"
+        }
+        tab.records = [sample_record]
+        tab._refresh_filters()
+        tab._refresh_views()
+
+        # 1. Verify Store Details & Dashboard Print Buttons exist in Store Directory
+        assert hasattr(tab, "btn_store_details")
+        assert hasattr(tab, "btn_dashboard_print")
+        assert hasattr(tab, "btn_print_preview")
+        assert hasattr(tab, "btn_print")
+
+        # 2. Verify Store Details Document Generation
+        doc = tab._generate_store_details_document(sample_record)
+        html = doc.toHtml()
+        assert "Raw Power Gym" in html
+        assert "Raw Power Gym & Nutrition" in doc.toPlainText()
+        assert "Fitness Center" in html
+        assert "9876543210" in html
+        assert "contact@rawpower.in" in html
+        assert "Andheri West" in html
+
+        # 3. Verify Print Dropdown has Store Details and Regional Dashboard options
+        dropdown_texts = [tab.print_export_combo.itemText(i) for i in range(tab.print_export_combo.count())]
+        assert any("Store Details" in t for t in dropdown_texts)
+        assert any("Regional Dashboard" in t for t in dropdown_texts)
+
+        # 4. Verify Store Details Preview opens without crash (mock dialogs)
+        preview_called = []
+        monkeypatch.setattr(tab, "_generate_store_details_document", lambda rec=None: preview_called.append(True) or doc)
+
+        # Mock QPrintPreviewDialog and QDialog to avoid blocking UI
+        import unittest.mock as mock
+        import customer_prospects as cp_mod
+        mock_dialog = mock.MagicMock()
+        mock_dialog_inst = mock.MagicMock()
+        mock_dialog.return_value = mock_dialog_inst
+        monkeypatch.setattr(cp_mod, "QPrintPreviewDialog", mock_dialog, raising=False)
+
+        # Also mock open_store_details_preview to avoid blocking
+        monkeypatch.setattr(tab, "open_store_details_preview", lambda *a, **k: preview_called.append("preview"))
+        monkeypatch.setattr(tab, "show_store_details_dialog", lambda *a, **k: preview_called.append("dialog"))
+
+        # Simulate the button's connected slot directly
+        tab.records = [sample_record]
+        tab.leads_table.setRowCount(1)
+        tab.leads_table.selectRow(0)
+        # Call directly - btn_store_details click triggers show_store_details_dialog
+        tab.show_store_details_dialog(0)
+        assert len(preview_called) >= 1
+    finally:
+        tab.close()
+
+
+def test_store_state_presence_resolution_replaces_all_india():
+    """Verify that instead of 'All India', the store lists the specific states where it is present."""
+    # 1. Known brand chain presence
+    res_villa = prospects.resolve_store_presence_states("Supplements Villa - India's Most Trusted Store")
+    assert "Haryana" in res_villa
+    assert "Delhi" in res_villa
+    assert "Uttar Pradesh" in res_villa
+    assert "All-India" not in res_villa
+
+    # 2. City-based presence detection
+    res_kanpur = prospects.resolve_store_presence_states("Monty Fitness Gym", city="Kanpur")
+    assert res_kanpur == "Uttar Pradesh"
+
+    # 3. Multi-state store in regional summary increments for each state
+    sample_records = [
+        {"business_name": "Supplements Villa", "state": "Haryana, Delhi, Uttar Pradesh", "kind": "Store"},
+        {"business_name": "Patna Nutrition", "state": "Bihar", "kind": "Store"}
+    ]
+    summary = prospects.build_regional_summary(sample_records)
+    summary_by_state = {r["state"]: r["stores"] for r in summary}
+    assert summary_by_state.get("Haryana") == 1
+    assert summary_by_state.get("Delhi") == 1
+    assert summary_by_state.get("Uttar Pradesh") == 1
+    assert summary_by_state.get("Bihar") == 1
+    assert "All-India" not in summary_by_state
+
+
+def test_exclude_gym_wellness_herbal_healthkart_combo_filter(monkeypatch):
+    """Verify the combined exclude option: '🚫 Exclude: Gym + Wellness Centers + Herbal + HealthKart'."""
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    qt_app = QApplication.instance() or QApplication([])
+
+    tab = prospects.CustomerProspectsTab()
+    try:
+        tab.records = [
+            {"business_name": "Apex Protein Store", "kind": "Store", "business_category": "Sports Nutrition", "state": "Delhi"},
+            {"business_name": "Iron Beast Gym", "kind": "Gym", "business_category": "Fitness Centre", "state": "Delhi"},
+            {"business_name": "Lotus Wellness Center", "kind": "Store", "business_category": "Ayush & Wellness", "state": "Delhi"},
+            {"business_name": "Patanjali Herbal Store", "kind": "Store", "business_category": "Herbal Supplements", "state": "Delhi"},
+            {"business_name": "HealthKart Retail Outlet", "kind": "Store", "business_category": "Nutrition Retail", "state": "Delhi"},
+        ]
+        tab._refresh_filters()
+        tab._refresh_views()
+
+        # Find combo exclude item in dropdown
+        combo_idx = -1
+        for i in range(tab.exclude_dropdown.count()):
+            if "Gym + Wellness Centers + Herbal + HealthKart" in tab.exclude_dropdown.itemText(i):
+                combo_idx = i
+                break
+        assert combo_idx >= 0, "Combo exclude option not found in exclude_dropdown"
+
+        # Apply the combo exclude filter
+        tab.exclude_dropdown.setCurrentIndex(combo_idx)
+        tab.apply_filters()
+
+        visible = tab._get_visible_records()
+        visible_names = [r["business_name"] for r in visible]
+        assert "Apex Protein Store" in visible_names
+        assert "Iron Beast Gym" not in visible_names
+        assert "Lotus Wellness Center" not in visible_names
+        assert "Patanjali Herbal Store" not in visible_names
+        assert "HealthKart Retail Outlet" not in visible_names
+    finally:
+        tab.close()

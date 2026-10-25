@@ -57,21 +57,30 @@ def test_toolbar_checkout_uses_visible_checkin_and_extended_statuses(monkeypatch
 
         window.check_out()
 
+        # Status combo only contains attendance statuses: Present, Absent, Leave, Unmarked
         status_cell = window.att_table.cellWidget(0, 2)
         status_combo = status_cell.findChild(app.QComboBox)
-        assert all(status_combo.findText(option) >= 0 for option in app.ATTENDANCE_DETAIL_STATUSES)
-        status_combo.setCurrentText("Overtime")
+        for opt in ("Present", "Absent", "Leave", "Unmarked"):
+            assert status_combo.findText(opt) >= 0
+        # Dedicated remarks combo contains presets: Late Check-in, Late Check-out, Overtime, etc.
+        remarks_cell = window.att_table.cellWidget(0, 6)
+        remarks_combo = remarks_cell.findChild(app.QComboBox)
+        assert all(remarks_combo.findText(option) >= 0 for option in app.ATTENDANCE_DETAIL_STATUSES)
+        remarks_combo.setCurrentText("Overtime")
+        window.save_attendance_inline(employee_id, today, "remarks", "Overtime")
         qt_app.processEvents()
 
         saved = db.conn.execute(
-            "SELECT check_in, check_out, attendance_status FROM attendance WHERE employee_id=? AND work_date=?",
+            "SELECT check_in, check_out, attendance_status, attendance_note FROM attendance WHERE employee_id=? AND work_date=?",
             (employee_id, today),
         ).fetchone()
-        assert tuple(saved) == ("09:55", "18:00", "Overtime")
+        assert tuple(saved[:3]) == ("09:55", "18:00", "Present")
+        assert saved[3] == "Overtime"
         assert app.is_present_attendance_status(saved["attendance_status"])
         assert window.employee_productivity(db.employee(employee_id), date.today())["present"] == 1
         assert window.attendance_summary_table.item(0, 3).text() == "1"
-        assert window._attendance_report_rows(today)[0]["status"] == "Overtime"
+        assert window._attendance_report_rows(today)[0]["status"] == "Present"
+        assert window._attendance_report_rows(today)[0]["note"] == "Overtime"
     finally:
         window.close()
         db.conn.close()
