@@ -2123,7 +2123,7 @@ class CustomerProspectsTab(QWidget):
         self.kind_filter.addItems(["All types", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
         # Store Directory opens on product-selling stores by default. Existing filter
         # choices are preserved so users can still inspect other record types.
-        self.kind_filter.setCurrentText("Pure Product Selling Stores")
+        self.kind_filter.setCurrentText("All types")
         self.kind_filter.setToolTip("Filter by store / gym category")
         self.kind_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.kind_filter, 1)
@@ -2246,7 +2246,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.leads_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.leads_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.leads_table.setWordWrap(True)
+        self.leads_table.setWordWrap(False)
         self.leads_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.leads_table.verticalHeader().setVisible(False)
         self.leads_table.setAlternatingRowColors(True)
@@ -4018,7 +4018,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 self.leads_table.setItem(row_index, column_index, item)
         self.leads_table.setUpdatesEnabled(True)
         # Expand row heights so full street addresses are readable in the directory.
-        self.leads_table.resizeRowsToContents()
+        self.leads_table.verticalHeader().setDefaultSectionSize(38)
 
     def open_source_link(self, row, column):
         key = self.LEAD_COLUMNS[column][1]
@@ -4217,30 +4217,17 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 # rows, including rows awaiting address enrichment.
                 matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
             elif kind == "Pure Product Selling Stores":
-                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
-                # This specific filter is strict: only product-evidenced stores with
-                # a full postal address and an actionable Maps link are shown.
+                matches_kind = (
+                    rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+                    and rec_kind not in ("Gym", "Gym + Store")
+                )
                 if matches_kind:
-                    address_value = str(record.get("address") or "").strip()
-                    maps_value = str(record.get("maps") or "").strip()
                     evidence_blob = " ".join(
                         str(record.get(field) or "")
                         for field in ("business_name", "business_category", "source_status", "notes")
                     )
-                    product_evidence = re.search(
-                        r"\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\b",
-                        evidence_blob, re.I
-                    )
-                    full_address = len(address_value) >= 20 and bool(re.search(r"\b\d{6}\b", address_value))
-                    has_maps_link = maps_value.startswith((
-                        "https://www.google.com/maps/",
-                        "https://maps.google.com/",
-                        "https://maps.app.goo.gl/",
-                    ))
-                    matches_kind = bool(
-                        product_evidence and full_address and has_maps_link
-                        and not NEGATIVE_FILTER_PATTERN.search(evidence_blob + " " + address_value)
-                    )
+                    if NEGATIVE_FILTER_PATTERN.search(evidence_blob):
+                        matches_kind = False
             elif kind in ("Gym", "Gyms"):
                 matches_kind = rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store"
             elif kind in ("Gyms which sell products also", "Gym + Store", "Gyms which sell products"):
