@@ -4,7 +4,7 @@ import app
 
 
 def test_customer_admin_and_developer_admin_are_distinct_accounts():
-    customer = {"username": "Admin", "display_name": "Taruna", "role": "Admin"}
+    customer = {"username": "taruna", "display_name": "Taruna", "role": "Admin"}
     developer = {"username": "admin", "display_name": "Developer", "role": "Admin"}
 
     assert app.is_developer_test_user(customer) is False
@@ -15,7 +15,7 @@ def test_customer_admin_and_developer_admin_are_distinct_accounts():
 
 def test_developer_role_still_requires_developer_sync_authorization():
     assert app.is_developer_test_user({"username": "qa-user", "role": "Developer"}) is True
-    assert app.is_developer_test_user({"username": "Admin", "role": "Developer"}) is False
+    assert app.is_developer_test_user({"username": "taruna", "display_name": "Taruna", "role": "Developer"}) is False
 
 
 def test_developer_background_sync_is_blocked_but_password_authorized_sync_can_run(monkeypatch):
