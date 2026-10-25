@@ -265,6 +265,8 @@ def test_customer_prospects_filter_options_for_stores_gyms_and_hybrids(tmp_path,
 
     qt_app = QApplication.instance() or QApplication([])
     tab = prospects.CustomerProspectsTab()
+        # These tests exercise secondary filters/search, not the strict default retailer view.
+        tab.kind_filter.setCurrentText("All types")
     try:
         tab.records = [
             {"kind": "Store", "business_name": "Alpha Nutrition Store", "state": "Delhi", "business_category": "Sports Nutrition / Supplement Store"},
@@ -355,6 +357,8 @@ def test_store_directory_exclude_filters(tmp_path, monkeypatch):
 
     qt_app = QApplication.instance() or QApplication([])
     tab = prospects.CustomerProspectsTab()
+        # These tests exercise secondary filters/search, not the strict default retailer view.
+        tab.kind_filter.setCurrentText("All types")
     try:
         sample_records = [
             {"kind": "Store", "business_name": "Pro Nutrition Hub", "state": "Haryana", "city": "Gurgaon", "business_category": "Sports Nutrition"},
@@ -584,6 +588,8 @@ def test_unified_excludes_dropdown_print_dropdown_and_scroll_area(tmp_path, monk
 
     qt_app = QApplication.instance() or QApplication([])
     tab = prospects.CustomerProspectsTab()
+        # These tests exercise secondary filters/search, not the strict default retailer view.
+        tab.kind_filter.setCurrentText("All types")
     try:
         # 1. Verify vertical scroll area exists and wraps the page
         assert hasattr(tab, "leads_scroll_area")
@@ -784,6 +790,8 @@ def test_exclude_gym_wellness_herbal_healthkart_combo_filter(monkeypatch):
     qt_app = QApplication.instance() or QApplication([])
 
     tab = prospects.CustomerProspectsTab()
+        # These tests exercise secondary filters/search, not the strict default retailer view.
+        tab.kind_filter.setCurrentText("All types")
     try:
         tab.records = [
             {"business_name": "Apex Protein Store", "kind": "Store", "business_category": "Sports Nutrition", "state": "Delhi"},
@@ -867,6 +875,8 @@ def test_v1348_view_switcher_scrollbar_deep_search_and_print(monkeypatch):
 
     qt_app = QApplication.instance() or QApplication([])
     tab = prospects.CustomerProspectsTab()
+        # These tests exercise secondary filters/search, not the strict default retailer view.
+        tab.kind_filter.setCurrentText("All types")
     try:
         # 1. View Switcher Dropdown exists and synchronizes with pages
         assert hasattr(tab, "view_selector")
