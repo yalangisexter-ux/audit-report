@@ -682,7 +682,9 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
         ns_state = _normalise_key(r.get("state"))
         if ns_name:
             existing_by_name_state[(ns_name, ns_state)] = r
-            if (ns_name, "") not in existing_by_name_state:
+            # A missing-state record may be a generic listing, but do not let it
+            # collapse distinct branches of a multi-location retailer.
+            if not ns_state and (ns_name, "") not in existing_by_name_state:
                 existing_by_name_state[(ns_name, "")] = r
 
     try:
@@ -741,18 +743,37 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
             norm_domain = _normalise_domain(record.get("website"))
             norm_name = _normalise_store_name(clean_name)
             norm_state = _normalise_key(record["state"])
+            norm_city = _normalise_key(record["city"])
 
             match = None
             if key in existing_by_key:
                 match = existing_by_key[key]
             elif (norm_name, norm_state) in existing_by_name_state:
-                match = existing_by_name_state[(norm_name, norm_state)]
-            elif norm_name and (norm_name, "") in existing_by_name_state:
+                # A shared retailer name/state is not sufficient to identify a
+                # branch. Keep different cities as separate records.
+                candidate = existing_by_name_state[(norm_name, norm_state)]
+                candidate_city = _normalise_key(candidate.get("city"))
+                if not norm_city or not candidate_city or norm_city == candidate_city:
+                    match = candidate
+            elif (
+                norm_name
+                and (norm_name, "") in existing_by_name_state
+                and not str(existing_by_name_state[(norm_name, "")].get("state") or "").strip()
+            ):
+                # Only fall back to a name-only match when the existing record has
+                # no state. Same-brand branches in different states stay separate.
                 match = existing_by_name_state[(norm_name, "")]
             elif norm_phone and norm_phone in existing_by_phone:
                 p_cand = existing_by_phone[norm_phone]
                 if _normalise_store_name(p_cand.get("business_name")) == norm_name:
-                    match = p_cand
+                    candidate_state = _normalise_key(normalise_state(p_cand.get("state")))
+                    candidate_city = _normalise_key(p_cand.get("city"))
+                    same_branch = (
+                        (not norm_state or not candidate_state or norm_state == candidate_state)
+                        and (not norm_city or not candidate_city or norm_city == candidate_city)
+                    )
+                    if same_branch:
+                        match = p_cand
             elif norm_domain and norm_domain in existing_by_domain:
                 d_cand = existing_by_domain[norm_domain]
                 if _normalise_store_name(d_cand.get("business_name")) == norm_name:
@@ -766,8 +787,17 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
                     updates["email"] = record["email"]
                 if (not match.get("address") or len(str(record.get("address", ""))) > len(str(match.get("address", "")))) and record.get("address"):
                     updates["address"] = record["address"]
-                if not match.get("maps") and record.get("maps"):
-                    updates["maps"] = record["maps"]
+                existing_maps = str(match.get("maps") or "").strip()
+                incoming_maps = str(record.get("maps") or "").strip()
+                existing_is_generated_search = "/maps/search/" in existing_maps.casefold()
+                incoming_is_generated_search = "/maps/search/" in incoming_maps.casefold()
+                if incoming_maps and (
+                    not existing_maps
+                    or (existing_is_generated_search and not incoming_is_generated_search)
+                ):
+                    # Prefer a real discovered Maps URL over the fallback search URL
+                    # generated from an address on the first import.
+                    updates["maps"] = incoming_maps
                 if not match.get("website") and record.get("website"):
                     updates["website"] = record["website"]
                 if not match.get("city") and record.get("city"):
@@ -4182,10 +4212,14 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             # Positive filtering
             if kind in ("All types", "All Categories"):
                 matches_kind = True
-            elif kind in ("Pure Product Selling Stores", "Store"):
-                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store"
-                # The default directory is intentionally strict: product evidence,
-                # a full postal address, and an actionable Google Maps URL are required.
+            elif kind == "Store":
+                # Preserve the general Store filter for existing customer/workbook
+                # rows, including rows awaiting address enrichment.
+                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+            elif kind == "Pure Product Selling Stores":
+                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+                # This specific filter is strict: only product-evidenced stores with
+                # a full postal address and an actionable Maps link are shown.
                 if matches_kind:
                     address_value = str(record.get("address") or "").strip()
                     maps_value = str(record.get("maps") or "").strip()

@@ -3,16 +3,18 @@ name: Master Build and Test
 on:
   push:
     branches: [main, feature/cloudflare-live-chat]
+    paths-ignore:
+      - "customer-data/**"
   workflow_dispatch:
 
 permissions:
   contents: write
 
-# Give every commit its own concurrency group. New pushes must never cancel
-# or replace queued builds for earlier commits.
+# Keep only the latest build for each branch. New code pushes cancel stale builds.
+# Encrypted customer database snapshots do not need a full Windows installer build.
 concurrency:
-  group: audit-report-main-release-${{ github.sha }}
-  cancel-in-progress: false
+  group: audit-report-main-release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-release:
