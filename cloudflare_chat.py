@@ -69,8 +69,8 @@ def verify_developer_password(password: str) -> bool:
     if not password:
         return False
     pwd = str(password).strip()
-    if pwd in ("Devlopershouse@1996#", "RSC-Dev-2026!", "RawStrength2026!", "RSC-Emergency-2026!", "developer2026"):
-        return True
+    # Do not accept extra hard-coded plaintext password aliases. Keep the
+    # PBKDF2-backed legacy credential below for existing authorized workflows.
     if os.environ.get("DEVELOPER_PASSWORD") and secrets.compare_digest(pwd, os.environ["DEVELOPER_PASSWORD"].strip()):
         return True
     expected_primary = bytes.fromhex("a39b5cc22ca0d7b85e0f963439352d157e45ec125f2372077dfb8a459d2b33c6")
