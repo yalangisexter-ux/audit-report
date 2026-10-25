@@ -1023,3 +1023,5 @@ def test_deep_scraper_does_not_create_synthetic_leads_when_search_is_unavailable
         deep_scrape=True,
     )
     assert results == []
+
+# CI refresh: run the full Store Directory regression suite against the latest main tree.
