@@ -1025,3 +1025,206 @@ def test_deep_scraper_does_not_create_synthetic_leads_when_search_is_unavailable
     assert results == []
 
 # CI refresh: run the full Store Directory regression suite against the latest main tree.
+
+
+def test_store_eligibility_genuine_product_selling_and_gym_exclusion():
+    """Verify that verified entries represent genuine businesses selling products and service-only gyms are excluded."""
+    # 1. Product-selling store with calisthenics & workout gear
+    store_record = {
+        "business_name": "Calisthenics Beast Equipment",
+        "kind": "Store",
+        "business_category": "Calisthenics workout gear & accessories",
+        "address": "Shop 4, Ground Floor, 100 Feet Road, Indiranagar, Bengaluru, Karnataka 560038",
+        "maps": "https://www.google.com/maps/place/Calisthenics+Beast/@12.9716,77.5946,17z",
+        "website": "https://calisthenicsbeast.in",
+        "phone": "+91 98765 12345",
+    }
+    ev_store = prospects.evaluate_store_verification(store_record)
+    assert ev_store["verification_status"] == "Verified"
+    assert "Calisthenics" in ev_store["product_categories"]
+    assert ev_store["postal_code"] == "560038"
+    assert ev_store["country"] == "India"
+    assert ev_store["store_type"] == "Physical & Online Retailer"
+
+    # 2. Gym offering only training services (no product sales)
+    service_gym = {
+        "business_name": "Pure Cardio & Yoga Studio",
+        "kind": "Gym",
+        "business_category": "Fitness Training & Group Classes",
+        "address": "2nd Floor, MG Road, Pune, Maharashtra 411001",
+        "maps": "https://www.google.com/maps/place/Yoga+Studio/@18.5204,73.8567,17z",
+        "phone": "9822011223",
+    }
+    ev_gym = prospects.evaluate_store_verification(service_gym)
+    assert ev_gym["verification_status"] != "Verified"
+    assert ev_gym["store_type"] == "Gym (Training/Membership)"
+
+    # 3. Gym that ALSO sells products (qualifying hybrid)
+    hybrid_gym = {
+        "business_name": "Iron Temple Gym & Nutrition Counter",
+        "kind": "Gym + Store",
+        "business_category": "Gym with protein counter and calisthenics accessories",
+        "address": "SCO 45, Sector 17, Chandigarh 160017",
+        "maps": "https://www.google.com/maps/place/Iron+Temple/@30.7333,76.7794,17z",
+        "website": "https://irontemple.in",
+        "phone": "+91 98140 99887",
+    }
+    ev_hybrid = prospects.evaluate_store_verification(hybrid_gym)
+    assert ev_hybrid["verification_status"] == "Verified"
+    assert ev_hybrid["store_type"] == "Gym with Product Sales"
+
+
+def test_master_csv_reference_format_order_and_quality_fields(tmp_path, monkeypatch):
+    """Verify CSV export strictly preserves master reference column order, followed by verified quality fields."""
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    qt_app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: None)
+
+    tab = prospects.CustomerProspectsTab()
+    tab.records = [
+        {
+            "state": "Himachal Pradesh",
+            "city": "Shimla",
+            "area": "BCS market",
+            "business_category": "vitamin and supplements stores",
+            "business_name": "NR Nutrition and Supplements",
+            "phone": "88898 50001",
+            "address": "3rd Floor of Building, Jeevan Deep Niwas, BCS Market, New Shimla 171009",
+            "maps": "https://www.google.com/maps/place/NR+Nutrition/@31.0851,77.1722,17z",
+            "website": "https://instagram.com/nr_nutrition",
+            "kind": "Store",
+            "product_evidence": "https://instagram.com/nr_nutrition",
+            "product_catalog": "https://nrnutrition.in/catalog",
+            "postal_code": "171009",
+            "country": "India",
+            "store_type": "Physical & Online Retailer",
+            "verification_status": "Verified",
+            "last_verified": "2026-10-25",
+        }
+    ]
+    tab._fill_leads_table()
+
+    csv_out = str(tmp_path / "master_verified_stores.csv")
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args, **kwargs: (csv_out, "CSV"))
+    tab.export_csv()
+
+    assert (tmp_path / "master_verified_stores.csv").is_file()
+    import csv
+    with open(csv_out, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        header = next(reader)
+        row = next(reader)
+
+    # 1. Master reference file column order strictly preserved first:
+    expected_master_prefix = [
+        "state", "city", "area", "business category", "business name",
+        "Mobile number", "Full address", "Google Maps link", "Website/social-media link"
+    ]
+    assert header[:9] == expected_master_prefix
+
+    # 2. Quality fields follow seamlessly:
+    expected_quality_suffix = [
+        "Store ID", "Store type", "Product categories", "Product-selling evidence",
+        "PIN/postal code", "Country", "Email address", "Product catalog",
+        "Verification status", "Source URL", "Last verified"
+    ]
+    for field in expected_quality_suffix:
+        assert field in header
+
+    # 3. Verified values match
+    assert row[0] == "Himachal Pradesh"
+    assert row[1] == "Shimla"
+    assert row[4] == "NR Nutrition and Supplements"
+    assert row[5] == "88898 50001"
+    assert "171009" in row[6]
+    assert "https://www.google.com/maps/place/" in row[7]
+
+    tab.close()
+
+
+def test_data_integrity_duplicate_merging_and_metric_reporting():
+    """Verify duplicate detection by identity/phone/domain and transparent reporting metrics."""
+    records = [
+        {
+            "business_name": "FitLife Nutrition",
+            "state": "Delhi",
+            "city": "New Delhi",
+            "phone": "9811122233",
+            "address": "12 Main Market, South Ex Part 1, New Delhi 110049",
+            "maps": "https://maps.google.com/place/fitlife",
+            "website": "https://fitlifenutrition.in",
+            "kind": "Store",
+        },
+        # Duplicate with slight spacing in phone and lowercase website
+        {
+            "business_name": "FitLife Nutrition",
+            "state": "Delhi",
+            "city": "New Delhi",
+            "phone": "+91 98111 22233",
+            "address": "12 Main Market, South Extension Part 1, New Delhi 110049",
+            "maps": "https://maps.google.com/place/fitlife",
+            "website": "https://fitlifenutrition.in/",
+            "kind": "Store",
+        },
+        # Incomplete record lacking PIN and direct catalog
+        {
+            "business_name": "Candidate Gym Store",
+            "state": "Punjab",
+            "city": "Amritsar",
+            "phone": "9876500000",
+            "address": "Near Mall Road",
+            "maps": "",
+            "website": "",
+            "kind": "Store",
+        }
+    ]
+
+    # Clean in-memory DB
+    import sqlite3
+    from customer_prospects import persist_prospect_records, load_saved_prospects
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    class MockDB:
+        def __init__(self, c):
+            self.conn = c
+
+    mdb = MockDB(conn)
+    conn.execute("""
+        CREATE TABLE customer_prospects(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dedupe_key TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'Store',
+            business_name TEXT NOT NULL,
+            business_category TEXT DEFAULT '',
+            state TEXT DEFAULT '', city TEXT DEFAULT '', area TEXT DEFAULT '',
+            contact_person TEXT DEFAULT '', phone TEXT DEFAULT '', email TEXT DEFAULT '', address TEXT DEFAULT '',
+            website TEXT DEFAULT '', maps TEXT DEFAULT '',
+            followup_date TEXT DEFAULT '', call_time TEXT DEFAULT '',
+            connection TEXT DEFAULT '', verified TEXT DEFAULT '', response TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            source_name TEXT NOT NULL DEFAULT '', source_url TEXT DEFAULT '',
+            source_type TEXT NOT NULL DEFAULT 'Workbook',
+            source_checked_at TEXT DEFAULT '', source_sheet TEXT DEFAULT '', source_row INTEGER,
+            source_status TEXT NOT NULL DEFAULT 'Needs direct confirmation',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+    """)
+
+    persist_prospect_records(mdb, records)
+    loaded = load_saved_prospects(mdb)
+
+    # 2 unique stores saved, 1 duplicate enriched
+    assert len(loaded) == 2
+    unique_keys = {prospects.prospect_dedupe_key(r) for r in loaded}
+    assert len(unique_keys) == 2
+
+    # Verify separate categorization of verified vs incomplete
+    verified_count = sum(1 for r in loaded if r.get("verification_status") == "Verified")
+    incomplete_count = sum(1 for r in loaded if r.get("verification_status") != "Verified")
+    assert verified_count == 1
+    assert incomplete_count == 1
+
+    conn.close()

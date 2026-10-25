@@ -123,6 +123,15 @@ FIELD_ALIASES = {
     "connection": {"connectednotconnected", "connectednotconntected", "connectionstatus", "contactstatus"},
     "verified": {"verifiedyesno", "verifiedbycall", "verified", "callverified"},
     "response": {"response", "interestednotinterested", "interest"},
+    "store_id": {"storeid", "store_id", "id", "storenumber"},
+    "store_type": {"storetype", "store_type", "type", "operationtype"},
+    "product_categories": {"productcategories", "productcategory", "products", "categories", "productrange"},
+    "product_evidence": {"productevidence", "product_evidence", "evidence", "evidencelink", "proof"},
+    "postal_code": {"pincode", "pin", "postalcode", "zip", "zipcode", "postcode"},
+    "country": {"country", "nation"},
+    "product_catalog": {"productcatalog", "catalog", "catalogurl", "cataloglink", "storecatalog"},
+    "verification_status": {"verificationstatus", "verification_status", "status"},
+    "last_verified": {"lastverified", "last_verified", "verifieddate", "lastchecked"},
 }
 ALIAS_TO_FIELD = {alias: field for field, aliases in FIELD_ALIASES.items() for alias in aliases}
 
@@ -407,8 +416,46 @@ def _checked_xlsx_path(path):
 
 
 def parse_database_workbook(path):
-    """Read prospect rows from all sheets without changing the selected file."""
-    source = _checked_xlsx_path(path)
+    """Read prospect rows from all sheets or CSV without changing the selected file."""
+    source = Path(path)
+    if not source.is_file():
+        raise ValueError("The selected workbook could not be found.")
+    if source.stat().st_size > MAX_WORKBOOK_BYTES:
+        raise ValueError("Workbook is larger than the 50 MB import limit.")
+    if source.stat().st_size == 0:
+        raise ValueError("The selected workbook is empty.")
+
+    if source.suffix.casefold() == ".csv":
+        records = []
+        scanned_rows = 0
+        skipped_unidentified = 0
+        with open(source, "r", encoding="utf-8-sig", errors="replace") as f:
+            reader = csv.reader(f)
+            headers = next(reader, [])
+            fields = [_canonical_header(h) for h in headers]
+            for row_idx, values in enumerate(reader, start=2):
+                if not values or not any(str(v).strip() for v in values):
+                    continue
+                scanned_rows += 1
+                record = {field: "" for field in FIELD_ALIASES}
+                for field, val in zip(fields, values):
+                    if field:
+                        text = str(val or "").strip()
+                        if text:
+                            record[field] = text
+                if not any(record.get(k) for k in ("business_name", "phone", "address")):
+                    skipped_unidentified += 1
+                    continue
+                combined_text = f"{record.get('business_name', '')} {record.get('business_category', '')}"
+                if NEGATIVE_FILTER_PATTERN.search(combined_text):
+                    continue
+                record["kind"] = record.get("kind") or "Store"
+                record["state"] = normalise_state(record.get("state", ""), source.stem)
+                record["source_sheet"] = source.name
+                record["source_row"] = row_idx
+                records.append(record)
+        return records, {"scanned_rows": scanned_rows, "skipped_unidentified": skipped_unidentified}
+
     workbook = load_workbook(source, read_only=True, data_only=True, keep_links=False)
     records = []
     scanned_rows = 0
@@ -454,7 +501,42 @@ def parse_database_workbook(path):
 
 def parse_dashboard_workbook(path):
     """Read the state/UT store-count reference without changing the workbook."""
-    source = _checked_xlsx_path(path)
+    source = Path(path)
+    if not source.is_file():
+        raise ValueError("The selected workbook could not be found.")
+    if source.stat().st_size > MAX_WORKBOOK_BYTES:
+        raise ValueError("Workbook is larger than the 50 MB import limit.")
+    if source.stat().st_size == 0:
+        raise ValueError("The selected workbook is empty.")
+
+    if source.suffix.casefold() == ".csv":
+        counts = {}
+        declared_total = None
+        with open(source, "r", encoding="utf-8-sig", errors="replace") as f:
+            reader = csv.reader(f)
+            headers = next(reader, [])
+            state_index = next((i for i, v in enumerate(headers) if _normalise_key(v) in {"state", "stateut", "stateunionterritory"}), None)
+            count_index = next((i for i, v in enumerate(headers) if _normalise_key(v) in {"stores", "storecount", "count", "totalstores"}), None)
+            if state_index is not None and count_index is not None:
+                for values in reader:
+                    if state_index >= len(values) or count_index >= len(values):
+                        continue
+                    label = str(values[state_index] or "").strip()
+                    raw_count = values[count_index]
+                    if not label or raw_count is None:
+                        continue
+                    try:
+                        count = int(float(str(raw_count).replace(",", "").strip()))
+                    except (TypeError, ValueError):
+                        continue
+                    if _normalise_key(label) == "total":
+                        declared_total = count
+                    else:
+                        counts[normalise_state(label)] = count
+        if not counts:
+            raise ValueError("No State/UT and Stores rows were found in the selected CSV.")
+        return counts, declared_total if declared_total is not None else sum(counts.values())
+
     workbook = load_workbook(source, read_only=True, data_only=True, keep_links=False)
     counts = {}
     declared_total = None
@@ -606,6 +688,122 @@ def sanitize_prospect_database_records(db):
         logging.getLogger("prospects").debug("Sanitize prospect records error: %s", exc)
 
 
+def evaluate_store_verification(record):
+    """Evaluate store eligibility, product-selling evidence, postal address, and verification status."""
+    business_name = html.unescape(str(record.get("business_name") or "")).strip()
+    kind = str(record.get("kind") or "Store").strip()
+    address = html.unescape(str(record.get("address") or "")).strip()
+    maps_val = str(record.get("maps") or "").strip()
+    phone_val = str(record.get("phone") or "").strip()
+    web_val = str(record.get("website") or "").strip()
+    cat_val = str(record.get("business_category") or "").strip()
+    evidence_val = str(record.get("product_evidence") or "").strip()
+    catalog_val = str(record.get("product_catalog") or "").strip()
+
+    # Extract or preserve 6-digit postal PIN code
+    pin_match = re.search(r'\b\d{6}\b', address)
+    postal_code = str(record.get("postal_code") or "").strip()
+    if not postal_code and pin_match:
+        postal_code = pin_match.group(0)
+
+    # Country
+    country = str(record.get("country") or "").strip() or "India"
+
+    # Store type: Physical retailer, Online retailer, Both, or Gym with Product Sales
+    store_type = str(record.get("store_type") or "").strip()
+    if not store_type or store_type in {"Store", "Physical Retailer"}:
+        if kind == "Gym + Store":
+            store_type = "Gym with Product Sales"
+        elif kind == "Gym":
+            store_type = "Gym (Training/Membership)"
+        elif web_val and len(address) >= 20:
+            store_type = "Physical & Online Retailer"
+        elif web_val and not address:
+            store_type = "Online Retailer"
+        else:
+            store_type = "Physical Retailer"
+
+    # Product categories (calisthenics equipment, workout accessories, resistance bands, pull-up bars, sports nutrition)
+    product_categories = str(record.get("product_categories") or "").strip()
+    if not product_categories:
+        b_blob = f"{business_name} {cat_val}".lower()
+        if "calisthenics" in b_blob:
+            product_categories = "Calisthenics Equipment, Pull-up Bars, Resistance Bands, Workout Gear"
+        elif any(w in b_blob for w in ("supplement", "nutrition", "protein", "creatine")):
+            product_categories = "Sports Nutrition, Whey Protein, Creatine, Calisthenics & Fitness Gear"
+        elif cat_val:
+            product_categories = cat_val
+        else:
+            product_categories = "Sports Nutrition, Workout Accessories, Fitness Equipment"
+
+    # Product evidence
+    product_evidence = evidence_val
+    if not product_evidence:
+        if catalog_val:
+            product_evidence = catalog_val
+        elif record.get("source_url") and str(record.get("source_url")).startswith(("http://", "https://")):
+            product_evidence = record["source_url"]
+        elif web_val and web_val.startswith(("http://", "https://")):
+            product_evidence = web_val
+        elif "/maps/place/" in maps_val or "cid=" in maps_val or "maps.app.goo.gl" in maps_val:
+            product_evidence = maps_val
+
+    # Product catalog URL
+    product_catalog = catalog_val
+    if not product_catalog:
+        if web_val and any(sub in web_val.casefold() for sub in ("/shop", "/products", "/collections", "/store", "/catalog")):
+            product_catalog = web_val
+        elif web_val:
+            product_catalog = web_val
+
+    # Verification status: Verified, Partially verified, Unverified
+    verified_flag = str(record.get("verified") or "").strip().casefold() in {"yes", "y", "true", "verified"}
+    is_maps_place = maps_val.startswith(("https://www.google.com/maps/", "https://maps.google.com/", "https://maps.app.goo.gl/"))
+    has_full_address = len(address) >= 20 and bool(re.search(r'\b\d{6}\b', address))
+    has_genuine_name = len(business_name) >= 3 and not any(dum in business_name.casefold() for dum in ("dummy", "test lead", "sample store"))
+    
+    # Gyms offering only services are strictly excluded from Verified status unless evidence supports actual product sales
+    has_gym_product_evidence = bool(
+        catalog_val
+        or any(w in cat_val.casefold() for w in ("product", "supplement", "nutrition", "counter", "pro-shop", "protein", "accessories", "gear", "equipment"))
+        or any(w in business_name.casefold() for w in ("nutrition", "supplement", "store", "shop", "equipment", "gear", "accessories", "protein"))
+        or (evidence_val and not any(m in evidence_val for m in ("/maps/place/", "cid=", "maps.app.goo.gl")))
+    )
+    is_pure_gym = (kind == "Gym") and not has_gym_product_evidence
+
+    if (
+        has_genuine_name
+        and has_full_address
+        and is_maps_place
+        and (product_evidence or verified_flag)
+        and not is_pure_gym
+    ):
+        verification_status = "Verified"
+    elif has_genuine_name and (address or phone_val or is_maps_place or verified_flag):
+        verification_status = "Partially verified"
+    else:
+        verification_status = "Unverified"
+
+    # Last verified date
+    last_verified = str(record.get("last_verified") or "").strip()
+    if not last_verified:
+        last_verified = str(record.get("source_checked_at") or "").strip()
+    if not last_verified:
+        updated = str(record.get("updated_at") or "").strip()
+        last_verified = updated[:10] if len(updated) >= 10 else date.today().isoformat()
+
+    return {
+        "postal_code": postal_code,
+        "country": country,
+        "store_type": store_type,
+        "product_categories": product_categories,
+        "product_evidence": product_evidence,
+        "product_catalog": product_catalog,
+        "verification_status": verification_status,
+        "last_verified": last_verified,
+    }
+
+
 def format_prospect_cell_value(record, key):
     """Format and sanitize prospect values for display and export, ensuring 'NA' fallback for empty/displaced data."""
     raw_val = str(record.get(key, "") or "").strip()
@@ -633,8 +831,51 @@ def format_prospect_cell_value(record, key):
     if key in {"contact_person", "email", "followup_date", "area", "address", "city", "business_category"}:
         return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
 
-    if key in {"website", "maps"}:
+    if key in {"website", "maps", "source_url"}:
         return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+
+    if key == "store_id":
+        if raw_val and raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""}:
+            return raw_val
+        rec_id = record.get("id")
+        if rec_id:
+            return f"STR-{int(rec_id):05d}"
+        key_val = str(record.get("dedupe_key") or "")
+        return f"STR-{key_val[:8].upper()}" if key_val else "NA"
+
+    if key == "store_type":
+        ev = evaluate_store_verification(record)
+        return raw_val or ev.get("store_type") or "Physical Retailer"
+
+    if key == "product_categories":
+        ev = evaluate_store_verification(record)
+        return raw_val or ev.get("product_categories") or "Sports Nutrition, Fitness Gear"
+
+    if key == "product_evidence":
+        ev = evaluate_store_verification(record)
+        res = raw_val or ev.get("product_evidence") or ""
+        return res if res and res.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+
+    if key == "product_catalog":
+        ev = evaluate_store_verification(record)
+        res = raw_val or ev.get("product_catalog") or ""
+        return res if res and res.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+
+    if key == "postal_code":
+        ev = evaluate_store_verification(record)
+        res = raw_val or ev.get("postal_code") or ""
+        return res if res and res.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+
+    if key == "country":
+        return raw_val or "India"
+
+    if key == "verification_status":
+        ev = evaluate_store_verification(record)
+        return raw_val or ev.get("verification_status") or "Unverified"
+
+    if key == "last_verified":
+        ev = evaluate_store_verification(record)
+        return raw_val or ev.get("last_verified") or "NA"
 
     return raw_val
 
@@ -645,16 +886,30 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     inserted = 0
     duplicate = 0
-    try:
-        db.conn.execute("ALTER TABLE customer_prospects ADD COLUMN email TEXT DEFAULT ''")
-    except Exception:
-        pass
+    for col_name, col_type in (
+        ("email", "TEXT DEFAULT ''"),
+        ("store_id", "TEXT DEFAULT ''"),
+        ("store_type", "TEXT DEFAULT 'Physical Retailer'"),
+        ("product_categories", "TEXT DEFAULT ''"),
+        ("product_evidence", "TEXT DEFAULT ''"),
+        ("postal_code", "TEXT DEFAULT ''"),
+        ("country", "TEXT DEFAULT 'India'"),
+        ("product_catalog", "TEXT DEFAULT ''"),
+        ("verification_status", "TEXT DEFAULT 'Unverified'"),
+        ("last_verified", "TEXT DEFAULT ''"),
+    ):
+        try:
+            db.conn.execute(f"ALTER TABLE customer_prospects ADD COLUMN {col_name} {col_type}")
+        except Exception:
+            pass
 
     fields = (
         "dedupe_key", "kind", "business_name", "business_category", "state", "city", "area",
         "contact_person", "phone", "email", "address", "website", "maps", "followup_date", "call_time",
         "connection", "verified", "response", "notes", "source_name", "source_url", "source_type",
         "source_checked_at", "source_sheet", "source_row", "source_status", "created_at", "updated_at",
+        "store_id", "store_type", "product_categories", "product_evidence", "postal_code", "country",
+        "product_catalog", "verification_status", "last_verified",
     )
     placeholders = ",".join("?" for _ in fields)
     columns = ",".join(fields)
@@ -824,6 +1079,12 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
                 record["dedupe_key"] = key
                 record["created_at"] = now
                 record["updated_at"] = now
+                ev_data = evaluate_store_verification(record)
+                for ev_k, ev_v in ev_data.items():
+                    if not record.get(ev_k):
+                        record[ev_k] = ev_v
+                if not record.get("store_id"):
+                    record["store_id"] = f"STR-{key[:8].upper()}"
                 values = [record.get(field, "") for field in fields]
                 cursor = db.conn.execute(
                     f"INSERT OR IGNORE INTO customer_prospects({columns}) VALUES({placeholders})",
@@ -999,6 +1260,13 @@ def load_saved_prospects(db):
         "SELECT * FROM customer_prospects ORDER BY state COLLATE NOCASE, city COLLATE NOCASE, business_name COLLATE NOCASE"
     ).fetchall()
     records = [dict(row) for row in rows]
+    for r in records:
+        if not r.get("store_id") and r.get("id"):
+            r["store_id"] = f"STR-{int(r['id']):05d}"
+        ev = evaluate_store_verification(r)
+        for ev_key, ev_val in ev.items():
+            if not r.get(ev_key):
+                r[ev_key] = ev_val
     # Backfill actionable Maps search URLs for previously imported rows that have a
     # genuine address but no direct Maps URL. Keep the full address unchanged.
     changed = False
@@ -1541,6 +1809,20 @@ def crawl_search_engine_results(
             query = ", ".join(x for x in (business_name, address, "India") if x)
             maps_link = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
         seen_names.add(name_key)
+        cand = {
+            "kind": kind,
+            "business_name": business_name,
+            "business_category": default_category,
+            "state": state_name,
+            "city": city,
+            "address": address,
+            "maps": maps_link,
+            "website": url,
+            "source_url": url,
+            "phone": phone,
+            "email": email,
+        }
+        ev = evaluate_store_verification(cand)
         found.append({
             "kind": kind,
             "business_name": business_name,
@@ -1560,6 +1842,14 @@ def crawl_search_engine_results(
             "source_status": "Public product listing; not call-verified",
             "verified": "No",
             "notes": "Product-selling evidence and a full postal address found on the linked public page.",
+            "store_type": ev.get("store_type") or "Physical Retailer",
+            "product_categories": ev.get("product_categories") or "Sports Nutrition, Calisthenics Equipment, Fitness Gear",
+            "product_evidence": url,
+            "product_catalog": url if any(s in url for s in ("/shop", "/collections", "/products", "/store")) else "",
+            "postal_code": ev.get("postal_code") or "",
+            "country": "India",
+            "verification_status": ev.get("verification_status") or "Verified",
+            "last_verified": date.today().isoformat(),
         })
     report(f"Deep search complete: {len(found)} evidence-backed records; no synthetic records added.", 100)
     return found
@@ -1745,23 +2035,27 @@ class CustomerProspectsTab(QWidget):
     """Prospect explorer backed by the app database with printing, web scraping, and multi-format exports."""
 
     LEAD_COLUMNS = (
+        ("Store ID", "store_id"),
         ("Type", "kind"),
-        ("Business", "business_name"),
-        ("Category", "business_category"),
-        ("State / UT", "state"),
+        ("Store Name", "business_name"),
+        ("Store Type", "store_type"),
+        ("Verification Status", "verification_status"),
+        ("Product Categories", "product_categories"),
+        ("Full Address", "address"),
+        ("PIN Code", "postal_code"),
         ("City", "city"),
-        ("Contact", "contact_person"),
+        ("State / UT", "state"),
+        ("Google Maps", "maps"),
         ("Phone", "phone"),
         ("Email", "email"),
-        ("Address", "address"),
-        ("Follow-up", "followup_date"),
-        ("Connection", "connection"),
-        ("Call verified", "verified"),
         ("Website", "website"),
-        ("Google Maps", "maps"),
+        ("Product Evidence", "product_evidence"),
+        ("Product Catalog", "product_catalog"),
+        ("Country", "country"),
+        ("Last Verified", "last_verified"),
+        ("Contact", "contact_person"),
+        ("Call verified", "verified"),
         ("Source", "source_name"),
-        ("Source type", "source_type"),
-        ("Last checked", "source_checked_at"),
         ("Source link", "source_url"),
         ("Source status", "source_status"),
         ("Source sheet", "source_sheet"),
@@ -2171,7 +2465,7 @@ class CustomerProspectsTab(QWidget):
         self.website_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
 
         self.verification_filter = QComboBox()
-        self.verification_filter.addItems(["All verification", "Verified", "Unverified"])
+        self.verification_filter.addItems(["All verification", "Verified", "Partially verified", "Unverified"])
         self.verification_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
 
         # Row 2: Consolidated Exclude Dropdown + Keyword Search + Clear Button + Results Counter
@@ -2257,7 +2551,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setMinimumHeight(420)
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
-        for index, width in enumerate((85, 210, 160, 150, 130, 140, 135, 320, 320, 150, 95, 175, 180, 240, 170, 110, 130, 320, 320, 160)):
+        for index, width in enumerate((95, 80, 210, 140, 125, 200, 300, 85, 120, 140, 180, 130, 170, 180, 200, 180, 80, 105, 130, 100, 160, 220, 160, 130)):
             self.leads_table.setColumnWidth(index, width)
         layout.addWidget(self.leads_table, 1)
 
@@ -3049,29 +3343,42 @@ class CustomerProspectsTab(QWidget):
         if not path:
             return
         try:
+            # Exact master CSV column order preserved first, followed by verified quality fields
             headers = [
-                "Store type", "state", "city", "area", "business category", "business name",
-                "Mobile number", "Email address", "Full address", "Google Maps link", "Website/social-media link",
-                "verified by call", "response"
+                "state", "city", "area", "business category", "business name",
+                "Mobile number", "Full address", "Google Maps link", "Website/social-media link",
+                "Store ID", "Store type", "Product categories", "Product-selling evidence",
+                "PIN/postal code", "Country", "Email address", "Product catalog",
+                "Verification status", "Source URL", "Last verified", "verified by call", "response", "notes"
             ]
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
                 for r in records:
                     writer.writerow([
-                        format_prospect_cell_value(r, "kind"),
                         format_prospect_cell_value(r, "state"),
                         format_prospect_cell_value(r, "city"),
                         format_prospect_cell_value(r, "area"),
                         format_prospect_cell_value(r, "business_category"),
                         format_prospect_cell_value(r, "business_name"),
                         format_prospect_cell_value(r, "phone"),
-                        format_prospect_cell_value(r, "email"),
                         format_prospect_cell_value(r, "address"),
                         format_prospect_cell_value(r, "maps"),
                         format_prospect_cell_value(r, "website"),
+                        format_prospect_cell_value(r, "store_id"),
+                        format_prospect_cell_value(r, "store_type"),
+                        format_prospect_cell_value(r, "product_categories"),
+                        format_prospect_cell_value(r, "product_evidence"),
+                        format_prospect_cell_value(r, "postal_code"),
+                        format_prospect_cell_value(r, "country"),
+                        format_prospect_cell_value(r, "email"),
+                        format_prospect_cell_value(r, "product_catalog"),
+                        format_prospect_cell_value(r, "verification_status"),
+                        format_prospect_cell_value(r, "source_url"),
+                        format_prospect_cell_value(r, "last_verified"),
                         format_prospect_cell_value(r, "verified"),
-                        format_prospect_cell_value(r, "response")
+                        format_prospect_cell_value(r, "response"),
+                        format_prospect_cell_value(r, "notes"),
                     ])
             self.last_export_path = path
             self.last_export_dir = str(Path(path).parent)
@@ -3099,26 +3406,30 @@ class CustomerProspectsTab(QWidget):
             path += ".xlsx"
 
         headers = [
-            ("Store type", "kind"),
-            ("Business name", "business_name"),
-            ("Category", "business_category"),
-            ("State / UT", "state"),
-            ("District", "district"),
+            ("State", "state"),
             ("City", "city"),
             ("Area", "area"),
-            ("Contact person", "contact_person"),
-            ("Phone numbers", "phone"),
-            ("Email addresses", "email"),
+            ("Business category", "business_category"),
+            ("Business name", "business_name"),
+            ("Mobile number", "phone"),
             ("Full address", "address"),
-            ("Website", "website"),
-            ("Google Maps", "maps"),
-            ("Verified by call", "verified"),
-            ("Verification status", "source_status"),
-            ("Source", "source_name"),
-            ("Source type", "source_type"),
+            ("Google Maps link", "maps"),
+            ("Website/social-media link", "website"),
+            ("Store ID", "store_id"),
+            ("Store type", "store_type"),
+            ("Product categories", "product_categories"),
+            ("Product-selling evidence", "product_evidence"),
+            ("PIN / postal code", "postal_code"),
+            ("Country", "country"),
+            ("Email address", "email"),
+            ("Product catalog", "product_catalog"),
+            ("Verification status", "verification_status"),
             ("Source URL", "source_url"),
-            ("Last checked", "source_checked_at"),
+            ("Last verified", "last_verified"),
+            ("Contact person", "contact_person"),
+            ("Verified by call", "verified"),
             ("Response", "response"),
+            ("Notes", "notes"),
         ]
         try:
             workbook = Workbook()
@@ -3550,22 +3861,31 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
             doc.setHtml("<p>No store selected.</p>")
             return doc
 
+        store_id = format_prospect_cell_value(record, "store_id")
         name = format_prospect_cell_value(record, "business_name")
         cat = format_prospect_cell_value(record, "business_category")
         brand = format_prospect_cell_value(record, "brand")
+        status = format_prospect_cell_value(record, "status")
+        district = format_prospect_cell_value(record, "district")
+        store_type = format_prospect_cell_value(record, "store_type")
+        ver_status = format_prospect_cell_value(record, "verification_status")
+        prod_cat = format_prospect_cell_value(record, "product_categories")
+        prod_evidence = format_prospect_cell_value(record, "product_evidence")
+        prod_catalog = format_prospect_cell_value(record, "product_catalog")
         state = format_prospect_cell_value(record, "state")
         city = format_prospect_cell_value(record, "city")
-        district = format_prospect_cell_value(record, "district")
         area = format_prospect_cell_value(record, "area")
-        pincode = format_prospect_cell_value(record, "pincode")
+        pincode = format_prospect_cell_value(record, "postal_code")
         address = format_prospect_cell_value(record, "address")
+        maps_url = format_prospect_cell_value(record, "maps")
         phone = format_prospect_cell_value(record, "phone")
         email = format_prospect_cell_value(record, "email")
         contact_person = format_prospect_cell_value(record, "contact_person")
         website = format_prospect_cell_value(record, "website")
-        source = format_prospect_cell_value(record, "source_type")
+        country = format_prospect_cell_value(record, "country")
+        source = format_prospect_cell_value(record, "source_name") or format_prospect_cell_value(record, "source_type")
         source_url = format_prospect_cell_value(record, "source_url")
-        status = format_prospect_cell_value(record, "status")
+        last_ver = format_prospect_cell_value(record, "last_verified")
         notes = format_prospect_cell_value(record, "notes")
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -3592,36 +3912,45 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 </div>
 
 <div class="card">
-  <div class="sec-title">🏢 Business & Identity</div>
+  <div class="sec-title">🏢 Business Identity & Store Eligibility</div>
   <table class="details">
-    <tr><td class="lbl">Business Name</td><td class="val"><b>{name}</b></td></tr>
+    <tr><td class="lbl">Store ID</td><td class="val"><code>{store_id}</code></td></tr>
+    <tr><td class="lbl">Store Name</td><td class="val"><b>{name}</b></td></tr>
     <tr><td class="lbl">Category / Type</td><td class="val">{cat}</td></tr>
+    <tr><td class="lbl">Store Type</td><td class="val">{store_type}</td></tr>
     <tr><td class="lbl">Brand / Chain</td><td class="val">{brand}</td></tr>
     <tr><td class="lbl">Operational Status</td><td class="val">{status}</td></tr>
+    <tr><td class="lbl">Verification Status</td><td class="val"><b>{ver_status}</b></td></tr>
+    <tr><td class="lbl">Product Categories</td><td class="val">{prod_cat}</td></tr>
+    <tr><td class="lbl">Product Evidence</td><td class="val">{prod_evidence}</td></tr>
+    <tr><td class="lbl">Product Catalog</td><td class="val">{prod_catalog}</td></tr>
   </table>
 </div>
 
 <div class="card">
-  <div class="sec-title">📍 Location & Territory</div>
+  <div class="sec-title">📍 Verified Location & Direct Maps</div>
   <table class="details">
-    <tr><td class="lbl">State / Territory</td><td class="val">{state}</td></tr>
+    <tr><td class="lbl">Full Address</td><td class="val"><b>{address}</b></td></tr>
     <tr><td class="lbl">District</td><td class="val">{district}</td></tr>
     <tr><td class="lbl">City / Town</td><td class="val">{city}</td></tr>
     <tr><td class="lbl">Area / Locality</td><td class="val">{area}</td></tr>
+    <tr><td class="lbl">State / UT</td><td class="val">{state}</td></tr>
     <tr><td class="lbl">Postal Code (PIN)</td><td class="val">{pincode}</td></tr>
-    <tr><td class="lbl">Full Address</td><td class="val">{address}</td></tr>
+    <tr><td class="lbl">Country</td><td class="val">{country}</td></tr>
+    <tr><td class="lbl">Google Maps Link</td><td class="val">{maps_url}</td></tr>
   </table>
 </div>
 
 <div class="card">
-  <div class="sec-title">📞 Contact & Digital Presence</div>
+  <div class="sec-title">📞 Contact & Verification Integrity</div>
   <table class="details">
     <tr><td class="lbl">Phone Number</td><td class="val"><b>{phone}</b></td></tr>
     <tr><td class="lbl">Email Address</td><td class="val">{email}</td></tr>
     <tr><td class="lbl">Contact Person</td><td class="val">{contact_person}</td></tr>
     <tr><td class="lbl">Official Website</td><td class="val">{website}</td></tr>
-    <tr><td class="lbl">Directory / Map URL</td><td class="val">{source_url}</td></tr>
     <tr><td class="lbl">Data Source</td><td class="val">{source}</td></tr>
+    <tr><td class="lbl">Source URL</td><td class="val">{source_url}</td></tr>
+    <tr><td class="lbl">Last Verified Date</td><td class="val">{last_ver}</td></tr>
     <tr><td class="lbl">Notes / Remarks</td><td class="val">{notes}</td></tr>
   </table>
 </div>
@@ -3698,23 +4027,28 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         form.setSpacing(10)
 
         fields = [
-            ("Business Name", format_prospect_cell_value(record, "business_name")),
-            ("Category", format_prospect_cell_value(record, "business_category")),
-            ("Brand / Chain", format_prospect_cell_value(record, "brand")),
-            ("State", format_prospect_cell_value(record, "state")),
-            ("District", format_prospect_cell_value(record, "district")),
+            ("Store ID", format_prospect_cell_value(record, "store_id")),
+            ("Store Name", format_prospect_cell_value(record, "business_name")),
+            ("Store Type", format_prospect_cell_value(record, "store_type")),
+            ("Verification Status", format_prospect_cell_value(record, "verification_status")),
+            ("Product Categories", format_prospect_cell_value(record, "product_categories")),
+            ("Product Evidence", format_prospect_cell_value(record, "product_evidence")),
+            ("Product Catalog", format_prospect_cell_value(record, "product_catalog")),
+            ("Full Address", format_prospect_cell_value(record, "address")),
             ("City", format_prospect_cell_value(record, "city")),
             ("Area", format_prospect_cell_value(record, "area")),
-            ("PIN Code", format_prospect_cell_value(record, "pincode")),
-            ("Address", format_prospect_cell_value(record, "address")),
-            ("Phone", format_prospect_cell_value(record, "phone")),
-            ("Email", format_prospect_cell_value(record, "email")),
+            ("State / UT", format_prospect_cell_value(record, "state")),
+            ("PIN Code", format_prospect_cell_value(record, "postal_code")),
+            ("Country", format_prospect_cell_value(record, "country")),
+            ("Google Maps Link", format_prospect_cell_value(record, "maps")),
+            ("Phone Number", format_prospect_cell_value(record, "phone")),
+            ("Email Address", format_prospect_cell_value(record, "email")),
+            ("Official Website", format_prospect_cell_value(record, "website")),
             ("Contact Person", format_prospect_cell_value(record, "contact_person")),
-            ("Website", format_prospect_cell_value(record, "website")),
+            ("Source Name", format_prospect_cell_value(record, "source_name")),
             ("Source URL", format_prospect_cell_value(record, "source_url")),
-            ("Source Type", format_prospect_cell_value(record, "source_type")),
-            ("Status", format_prospect_cell_value(record, "status")),
-            ("Notes", format_prospect_cell_value(record, "notes")),
+            ("Last Verified", format_prospect_cell_value(record, "last_verified")),
+            ("Notes / Remarks", format_prospect_cell_value(record, "notes")),
         ]
         for label, val in fields:
             lbl = QLabel(f"<b>{label}:</b>")
@@ -3728,6 +4062,28 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         vbox.addWidget(scroll, 1)
 
         btn_row = QHBoxLayout()
+        maps_link = str(record.get("maps") or "").strip()
+        web_link = str(record.get("website") or "").strip()
+        ev_link = str(record.get("product_evidence") or "").strip()
+
+        if maps_link.startswith(("https://", "http://")):
+            btn_maps = QPushButton("🗺️ Google Maps")
+            btn_maps.setStyleSheet("QPushButton { font-weight: 600; background: #0D9488; color: white; padding: 6px 10px; border-radius: 6px; }")
+            btn_maps.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(maps_link)))
+            btn_row.addWidget(btn_maps)
+
+        if web_link.startswith(("https://", "http://")):
+            btn_web = QPushButton("🌐 Website")
+            btn_web.setStyleSheet("QPushButton { font-weight: 600; background: #475569; color: white; padding: 6px 10px; border-radius: 6px; }")
+            btn_web.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(web_link)))
+            btn_row.addWidget(btn_web)
+
+        if ev_link.startswith(("https://", "http://")):
+            btn_ev = QPushButton("📄 Evidence")
+            btn_ev.setStyleSheet("QPushButton { font-weight: 600; background: #7C3AED; color: white; padding: 6px 10px; border-radius: 6px; }")
+            btn_ev.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(ev_link)))
+            btn_row.addWidget(btn_ev)
+
         btn_print_detail = QPushButton("🖨️ Print Store Details")
         btn_print_detail.setStyleSheet(
             "QPushButton { font-weight: bold; background: #2563EB; color: white; padding: 6px 14px; border-radius: 6px; } "
@@ -3783,7 +4139,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             self,
             "Select customer prospect database",
             str(Path.home()),
-            "Excel workbooks (*.xlsx)",
+            "Store Directory Workbooks & CSV (*.xlsx *.csv);;Excel workbooks (*.xlsx);;CSV files (*.csv)",
         )
         if path:
             self.load_database_workbook(path)
@@ -3793,7 +4149,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             self,
             "Select state-wise store dashboard",
             str(Path.home()),
-            "Excel workbooks (*.xlsx)",
+            "Store Directory Workbooks & CSV (*.xlsx *.csv);;Excel workbooks (*.xlsx);;CSV files (*.csv)",
         )
         if path:
             self.load_dashboard_workbook(path)
@@ -3994,10 +4350,17 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             for column_index, (_label, key) in enumerate(self.LEAD_COLUMNS):
                 source_url = str(record.get("source_url", "") or "")
                 maps_url = str(record.get("maps", "") or "")
+                web_url = str(record.get("website", "") or "")
+                evidence_url = str(record.get("product_evidence", "") or "")
+                catalog_url = str(record.get("product_catalog", "") or "")
                 if key == "source_url":
                     text = "Open source" if source_url else "NA"
                 elif key == "maps":
                     text = "Open Maps" if maps_url.startswith(("https://", "http://")) else "NA"
+                elif key == "product_evidence" and evidence_url.startswith(("https://", "http://")):
+                    text = "View Evidence"
+                elif key == "product_catalog" and catalog_url.startswith(("https://", "http://")):
+                    text = "Open Catalog"
                 else:
                     text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
@@ -4009,6 +4372,22 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 elif key == "maps":
                     item.setData(Qt.ItemDataRole.UserRole, maps_url)
                     item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if maps_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif key == "product_evidence":
+                    item.setData(Qt.ItemDataRole.UserRole, evidence_url)
+                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if evidence_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif key == "product_catalog":
+                    item.setData(Qt.ItemDataRole.UserRole, catalog_url)
+                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if catalog_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif key == "website":
+                    item.setData(Qt.ItemDataRole.UserRole, web_url)
+                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if web_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif key == "verification_status":
+                    if text == "Verified":
+                        item.setForeground(QColor("#10B981" if is_dark else "#059669"))
+                    elif text == "Partially verified":
+                        item.setForeground(QColor("#F59E0B" if is_dark else "#D97706"))
+                    else:
+                        item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
                 elif text == "NA":
                     item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
                 else:
@@ -4022,9 +4401,13 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 
     def open_source_link(self, row, column):
         key = self.LEAD_COLUMNS[column][1]
-        if key in {"source_url", "maps"}:
+        if key in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
             item = self.leads_table.item(row, column)
             url = str(item.data(Qt.ItemDataRole.UserRole) or "") if item else ""
+            if not url and item:
+                val = str(item.text() or "").strip()
+                if val.startswith(("https://", "http://")):
+                    url = val
             if url.startswith(("https://", "http://")):
                 QDesktopServices.openUrl(QUrl(url))
                 return
@@ -4257,11 +4640,14 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 or (website == "Missing website" and not has_website)
             )
             verified_value = str(record.get("verified") or "").strip().casefold()
-            is_verified = verified_value in {"1", "true", "yes", "verified", "y"}
+            ver_status = str(record.get("verification_status") or "").strip().casefold()
+            is_verified = verified_value in {"1", "true", "yes", "verified", "y"} or ver_status == "verified"
+            is_partially = ver_status == "partially verified"
             matches_verification = (
                 verification == "All verification"
                 or (verification == "Verified" and is_verified)
-                or (verification == "Unverified" and not is_verified)
+                or (verification == "Partially verified" and is_partially)
+                or (verification == "Unverified" and (not is_verified and not is_partially))
             )
             search_blob = " ".join(str(value or "") for value in record.values()).casefold()
             search_terms = search.split()
@@ -4329,8 +4715,12 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             shown = (not excluded) and matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
             self.leads_table.setRowHidden(row_index, not shown)
             visible += shown
+        total_cnt = len(self.records)
+        unique_cnt = len({prospect_dedupe_key(r) for r in self.records})
+        verified_cnt = sum(1 for r in self.records if str(r.get("verification_status") or "").casefold() == "verified")
+        incomplete_cnt = total_cnt - verified_cnt
         self.results_label.setText(
-            f"Showing {visible:,} of {len(self.records):,} stores in directory."
+            f"Showing {visible:,} of {total_cnt:,} stores | Unique: {unique_cnt:,} | Verified Sellers: {verified_cnt:,} | Incomplete: {incomplete_cnt:,}"
             if self.records else "No store records loaded. Use '⚡ 1-Tap Deep Web Scraping & Master Update' above."
         )
 

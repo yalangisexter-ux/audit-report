@@ -1424,6 +1424,15 @@ class Database:
         employee_columns = apply_column_migrations("employees", employee_migrations)
         prospect_migrations = (
             ("email", "TEXT DEFAULT ''"),
+            ("store_id", "TEXT DEFAULT ''"),
+            ("store_type", "TEXT DEFAULT 'Physical Retailer'"),
+            ("product_categories", "TEXT DEFAULT ''"),
+            ("product_evidence", "TEXT DEFAULT ''"),
+            ("postal_code", "TEXT DEFAULT ''"),
+            ("country", "TEXT DEFAULT 'India'"),
+            ("product_catalog", "TEXT DEFAULT ''"),
+            ("verification_status", "TEXT DEFAULT 'Unverified'"),
+            ("last_verified", "TEXT DEFAULT ''"),
         )
         apply_column_migrations("customer_prospects", prospect_migrations)
         try:
