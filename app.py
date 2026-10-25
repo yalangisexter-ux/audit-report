@@ -1824,26 +1824,25 @@ def is_privileged_user(user_or_role) -> bool:
 
 
 def is_developer_test_user(user_or_role) -> bool:
-    """Return True if user is the developer / testing user ('admin').
+    """Return True only for the lowercase developer account 'admin' or a Developer role.
 
-    The developer user 'admin' can view and edit data locally for testing,
-    but testing changes (adds, edits, deletes) must NOT be synced to the live
-    customer master database or Google Sheets.
+    Username matching is intentionally case-sensitive: customer username 'Admin'
+    is the master-data owner and must not be treated as the developer/test account.
     """
     if not user_or_role:
         return False
     if isinstance(user_or_role, dict):
-        uname = str(user_or_role.get("username", "")).strip().lower()
-        role = str(user_or_role.get("role", "")).strip().lower()
-        dname = str(user_or_role.get("display_name", "")).strip().lower()
+        raw_username = str(user_or_role.get("username", "")).strip()
+        role = str(user_or_role.get("role", "")).strip().casefold()
+        display_name = str(user_or_role.get("display_name", "")).strip().casefold()
     else:
-        uname = str(user_or_role or "").strip().lower()
+        raw_username = str(user_or_role or "").strip()
         role = ""
-        dname = ""
-    # Explicit master/customer user is never treated as developer test user
-    if "taruna" in uname or "taruna" in dname:
+        display_name = ""
+    # Explicit customer/master identity takes precedence over display-role labels.
+    if raw_username == "Admin" or "taruna" in raw_username.casefold() or "taruna" in display_name:
         return False
-    if uname == "admin":
+    if raw_username == "admin":
         return True
     if role == "developer":
         return True
@@ -1851,20 +1850,18 @@ def is_developer_test_user(user_or_role) -> bool:
 
 
 def is_master_customer_user(user_or_role) -> bool:
-    """Return True if user is the master customer user ('Admin / Taruna').
-
-    This user is the master customer whose data is synchronized to the central Google Sheet
-    and encrypted cloud database.
-    """
+    """Return True for the exact customer username 'Admin' or the named master customer."""
     if not user_or_role:
         return False
     if isinstance(user_or_role, dict):
-        uname = str(user_or_role.get("username", "")).strip().lower()
-        dname = str(user_or_role.get("display_name", "")).strip().lower()
+        raw_username = str(user_or_role.get("username", "")).strip()
+        uname = raw_username.casefold()
+        dname = str(user_or_role.get("display_name", "")).strip().casefold()
     else:
-        uname = str(user_or_role or "").strip().lower()
+        raw_username = str(user_or_role or "").strip()
+        uname = raw_username.casefold()
         dname = ""
-    return "taruna" in uname or "taruna" in dname or "master" in dname
+    return raw_username == "Admin" or "taruna" in uname or "taruna" in dname or "master" in dname
 
 
 def _ensure_local_task_columns(conn: sqlite3.Connection):
