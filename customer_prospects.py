@@ -4171,6 +4171,29 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 matches_kind = True
             elif kind in ("Pure Product Selling Stores", "Store"):
                 matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store"
+                # The default directory is intentionally strict: product evidence,
+                # a full postal address, and an actionable Google Maps URL are required.
+                if matches_kind:
+                    address_value = str(record.get("address") or "").strip()
+                    maps_value = str(record.get("maps") or "").strip()
+                    evidence_blob = " ".join(
+                        str(record.get(field) or "")
+                        for field in ("business_name", "business_category", "source_status", "notes")
+                    )
+                    product_evidence = re.search(
+                        r"\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\b",
+                        evidence_blob, re.I
+                    )
+                    full_address = len(address_value) >= 20 and bool(re.search(r"\b\d{6}\b", address_value))
+                    has_maps_link = maps_value.startswith((
+                        "https://www.google.com/maps/",
+                        "https://maps.google.com/",
+                        "https://maps.app.goo.gl/",
+                    ))
+                    matches_kind = bool(
+                        product_evidence and full_address and has_maps_link
+                        and not NEGATIVE_FILTER_PATTERN.search(evidence_blob + " " + address_value)
+                    )
             elif kind in ("Gym", "Gyms"):
                 matches_kind = rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store"
             elif kind in ("Gyms which sell products also", "Gym + Store", "Gyms which sell products"):
