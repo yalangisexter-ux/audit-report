@@ -107,7 +107,7 @@ def test_successful_database_commits_stay_local_until_manual_push(tmp_path):
     sync.close()
 
 
-def test_worker_push_overwrites_legacy_snapshot_with_standard_key(tmp_path, monkeypatch):
+def test_worker_push_refuses_to_overwrite_undecryptable_remote_snapshot(tmp_path, monkeypatch):
     database_path = tmp_path / "customer.db"
     connection = sqlite3.connect(database_path)
     connection.execute("CREATE TABLE entries(value TEXT)")
@@ -119,24 +119,30 @@ def test_worker_push_overwrites_legacy_snapshot_with_standard_key(tmp_path, monk
         database_path, "example/repository", "b" * 32,
         worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
     )
-    # A legacy snapshot encrypted with an older/different secret must be safely overwritten
-    # rather than locking the user into a permanent decryption failure.
+    # Protect the only remote copy: a mismatched key must stop the upload.
     existing = encrypt_snapshot_bytes(b"existing customer snapshot", "different-legacy-secret")
     monkeypatch.setattr(sync, "_pull_encrypted_snapshot", lambda **kwargs: existing)
     requests = []
 
     def fake_request(method, endpoint, **kwargs):
         requests.append((method, endpoint, kwargs))
-        if endpoint == "/push":
-            return {"success": True}
-        raise AssertionError("Unexpected worker endpoint")
+        raise AssertionError("An undecryptable remote snapshot must never be overwritten")
 
     monkeypatch.setattr(sync, "_worker_request", fake_request)
-    sync._sync_once()
+    with pytest.raises(RuntimeError, match="Upload was stopped to protect remote customer data"):
+        sync._sync_once()
 
-    assert requests[0][1] == "/push"
-    assert sync.status == "Synced"
+    assert not any(endpoint == "/push" for _, endpoint, _ in requests)
+    assert sync.status != "Synced"
     sync.close()
+
+
+def test_database_sync_implementation_is_bundled_not_downloaded_at_runtime():
+    source_path = Path(__file__).resolve().parents[1] / "database_sync.py"
+    source = source_path.read_text(encoding="utf-8")
+    assert "def _load():" not in source
+    assert "raw.githubusercontent.com/yalangisexter-ux/audit-report" not in source
+    assert "def download_latest_snapshot(" in source
 
 
 def test_push_uses_worker_and_keeps_installation_scoped_path(tmp_path, monkeypatch):
