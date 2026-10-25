@@ -1824,10 +1824,10 @@ def is_privileged_user(user_or_role) -> bool:
 
 
 def is_developer_test_user(user_or_role) -> bool:
-    """Return True only for the lowercase developer account 'admin' or a Developer role.
+    """Recognize the lowercase 'admin' developer account without misclassifying Taruna.
 
-    Username matching is intentionally case-sensitive: customer username 'Admin'
-    is the master-data owner and must not be treated as the developer/test account.
+    The customer's role label is 'Admin'; that label alone does not grant developer
+    privileges. A lowercase username 'admin' is the developer/tester identity.
     """
     if not user_or_role:
         return False
@@ -1839,7 +1839,7 @@ def is_developer_test_user(user_or_role) -> bool:
         raw_username = str(user_or_role or "").strip()
         role = ""
         display_name = ""
-    # Explicit customer/master identity takes precedence over display-role labels.
+    # Taruna's customer identity takes precedence over the generic Admin role label.
     if raw_username == "Admin" or "taruna" in raw_username.casefold() or "taruna" in display_name:
         return False
     if raw_username == "admin":
@@ -1850,7 +1850,7 @@ def is_developer_test_user(user_or_role) -> bool:
 
 
 def is_master_customer_user(user_or_role) -> bool:
-    """Return True for the exact customer username 'Admin' or the named master customer."""
+    """Return True for Taruna's customer identity or the legacy exact username 'Admin'."""
     if not user_or_role:
         return False
     if isinstance(user_or_role, dict):
