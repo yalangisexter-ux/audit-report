@@ -969,7 +969,7 @@ def load_saved_prospects(db):
             if record.get("id") is not None:
                 try:
                     db.conn.execute(
-                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='')",
+                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-'))",
                         (maps_url, record["id"]),
                     )
                     changed = True
