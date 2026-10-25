@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea, QListWidget, QListWidgetItem,
     QCalendarWidget, QAbstractSpinBox, QDateTimeEdit, QSpacerItem
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QFontMetrics, QIcon, QPixmap, QPalette, QImage, QPainterPath
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage, QPainterPath
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -6463,17 +6463,12 @@ class MainWindow(QMainWindow):
                 continue
             label.setWordWrap(True)
             label.setMargin(max(2, label.margin()))
+            # QLabel calculates height-for-width when wrapping is enabled. Keep the
+            # vertical policy flexible so layouts can show all lines instead of clipping.
             if label.minimumHeight() != label.maximumHeight():
-                metrics = label.fontMetrics()
-                available_width = max(100, label.width() - label.contentsMargins().left() - label.contentsMargins().right() - 6)
-                text = label.text()
-                if text:
-                    bounds = metrics.boundingRect(
-                        0, 0, available_width, 10000,
-                        Qt.TextFlag.TextWordWrap, text
-                    )
-                    needed_height = max(metrics.height() + 4, bounds.height() + 4)
-                    label.setMinimumHeight(needed_height)
+                policy = label.sizePolicy()
+                policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
+                label.setSizePolicy(policy)
         for table in self.findChildren(QTableWidget):
             table.setWordWrap(True)
             table.setTextElideMode(Qt.TextElideMode.ElideNone)
