@@ -692,6 +692,23 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
             record["address"] = html.unescape(str(record.get("address") or "")).strip()
             record["city"] = html.unescape(str(record.get("city") or "")).strip()
 
+            # Keep the directory actionable when a merchant publishes a full address
+            # but omits a direct Maps URL. This opens a Google Maps search for the
+            # exact business/address; it does not fabricate a pin or coordinates.
+            maps_value = str(record.get("maps") or "").strip()
+            invalid_maps = maps_value.casefold() in {"", "na", "n/a", "none", "null", "-"}
+            address_value = record["address"]
+            if invalid_maps and address_value and address_value.casefold() not in {"na", "n/a", "none", "null", "-"}:
+                map_query = ", ".join(
+                    part for part in (
+                        record["business_name"], address_value, record["city"],
+                        record["state"], "India"
+                    ) if str(part or "").strip()
+                )
+                record["maps"] = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": map_query})
+            else:
+                record["maps"] = maps_value
+
             p_raw = str(record.get("phone") or "").strip()
             a_raw = str(record.get("area") or "").strip()
             p_digits = re.sub(r'\D', '', p_raw)
@@ -1919,6 +1936,9 @@ class CustomerProspectsTab(QWidget):
 
         self.kind_filter = QComboBox()
         self.kind_filter.addItems(["All types", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
+        # Store Directory opens on product-selling stores by default. Existing filter
+        # choices are preserved so users can still inspect other record types.
+        self.kind_filter.setCurrentText("Pure Product Selling Stores")
         self.kind_filter.setToolTip("Filter by store / gym category")
         self.kind_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.kind_filter, 1)
@@ -2041,7 +2061,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.leads_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.leads_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.leads_table.setWordWrap(False)
+        self.leads_table.setWordWrap(True)
         self.leads_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.leads_table.verticalHeader().setVisible(False)
         self.leads_table.setAlternatingRowColors(True)
@@ -3184,7 +3204,9 @@ a {{ color: #2563EB; text-decoration: underline; }}
                     QLineEdit.EchoMode.Password
                 )
                 if ok and verify_developer_password(pwd):
-                    sync_res = google_sheets_sync.continuous_auto_sync(self.db)
+                    # This one-time interactive action is explicitly password-gated.
+                    # Background developer sync remains blocked.
+                    sync_res = google_sheets_sync.continuous_auto_sync(self.db, developer_authorized=True)
                 else:
                     self.sync_status_badge.setText("🧪 Developer Test Mode: Saved Locally (Live Master Protected)")
                     self.sync_status_badge.setStyleSheet(
@@ -3802,8 +3824,11 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         for row_index, record in enumerate(self.records):
             for column_index, (_label, key) in enumerate(self.LEAD_COLUMNS):
                 source_url = str(record.get("source_url", "") or "")
+                maps_url = str(record.get("maps", "") or "")
                 if key == "source_url":
                     text = "Open source" if source_url else "NA"
+                elif key == "maps":
+                    text = "Open Maps" if maps_url.startswith(("https://", "http://")) else "NA"
                 else:
                     text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
@@ -3812,6 +3837,9 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 if key == "source_url":
                     item.setData(Qt.ItemDataRole.UserRole, source_url)
                     item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if source_url else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif key == "maps":
+                    item.setData(Qt.ItemDataRole.UserRole, maps_url)
+                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if maps_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
                 elif text == "NA":
                     item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
                 else:
@@ -3820,9 +3848,12 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                     item.setToolTip(text)
                 self.leads_table.setItem(row_index, column_index, item)
         self.leads_table.setUpdatesEnabled(True)
+        # Expand row heights so full street addresses are readable in the directory.
+        self.leads_table.resizeRowsToContents()
 
     def open_source_link(self, row, column):
-        if self.LEAD_COLUMNS[column][1] == "source_url":
+        key = self.LEAD_COLUMNS[column][1]
+        if key in {"source_url", "maps"}:
             item = self.leads_table.item(row, column)
             url = str(item.data(Qt.ItemDataRole.UserRole) or "") if item else ""
             if url.startswith(("https://", "http://")):
