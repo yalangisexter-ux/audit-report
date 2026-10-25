@@ -967,15 +967,20 @@ def load_saved_prospects(db):
     for record in records:
         maps_value = str(record.get("maps") or "").strip()
         address_value = str(record.get("address") or "").strip()
+        is_google_maps_url = maps_value.startswith((
+            "https://www.google.com/maps/",
+            "https://maps.google.com/",
+            "https://maps.app.goo.gl/",
+        ))
         if (
-            not maps_value or maps_value.casefold() in {"na", "n/a", "none", "null", "-"}
+            not is_google_maps_url
         ) and address_value and address_value.casefold() not in {"na", "n/a", "none", "null", "-"}:
             maps_url = google_maps_search_url(record)
             record["maps"] = maps_url
             if record.get("id") is not None:
                 try:
                     db.conn.execute(
-                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-'))",
+                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-') OR (LOWER(TRIM(maps)) NOT LIKE 'https://www.google.com/maps/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.google.com/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.app.goo.gl/%'))",
                         (maps_url, record["id"]),
                     )
                     changed = True
