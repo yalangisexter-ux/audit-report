@@ -490,7 +490,7 @@ def test_deduplication_and_enrichment_prevents_duplicate_entries(tmp_path, monke
     assert enriched["email"] == "contact@fitnessstack.com"
     assert "100 Feet Road" in enriched["address"]
     assert enriched["maps"].startswith("https://www.google.com/maps/search/?")
-        assert "Fitnessstack" in enriched["maps"]
+    assert "Fitnessstack" in enriched["maps"]
     # User's custom note was preserved!
     assert enriched["notes"] == "User custom lead note - do not overwrite"
 
