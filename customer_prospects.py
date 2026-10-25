@@ -941,6 +941,21 @@ def cleanup_duplicate_prospects(db):
     return {"merged": merged_count, "cleaned_names": cleaned_names}
 
 
+def google_maps_search_url(record):
+    """Build a Google Maps search URL from the store name and its full address."""
+    parts = (
+        str(record.get("business_name") or "").strip(),
+        str(record.get("address") or "").strip(),
+        str(record.get("city") or "").strip(),
+        str(record.get("state") or "").strip(),
+        "India",
+    )
+    query = ", ".join(part for part in parts if part)
+    if not str(record.get("business_name") or "").strip() or not str(record.get("address") or "").strip():
+        return ""
+    return "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
+
+
 def load_saved_prospects(db):
     rows = db.conn.execute(
         "SELECT * FROM customer_prospects ORDER BY state COLLATE NOCASE, city COLLATE NOCASE, business_name COLLATE NOCASE"
@@ -955,16 +970,7 @@ def load_saved_prospects(db):
         if (
             not maps_value or maps_value.casefold() in {"na", "n/a", "none", "null", "-"}
         ) and address_value and address_value.casefold() not in {"na", "n/a", "none", "null", "-"}:
-            query = ", ".join(
-                part for part in (
-                    str(record.get("business_name") or "").strip(),
-                    address_value,
-                    str(record.get("city") or "").strip(),
-                    str(record.get("state") or "").strip(),
-                    "India",
-                ) if part
-            )
-            maps_url = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
+            maps_url = google_maps_search_url(record)
             record["maps"] = maps_url
             if record.get("id") is not None:
                 try:
@@ -1037,26 +1043,26 @@ def unwrap_search_url(href: str) -> str:
 
 
 def seed_official_web_prospects(db):
-    """One-time, idempotent local seed of bundled All-India stores and brand-listed retailer leads."""
-    setting = "customer_prospects_official_web_seed_20261024_v3"
+    """Seed only retailer rows published by the brand; remove only the old bundled seed."""
+    setting = "customer_prospects_official_web_seed_20261025_v4"
     if db.get_setting(setting) == "1":
         return {"inserted": 0, "duplicates": 0}
 
-    records = []
-    # 1. Bundled All-India Stores Seed (3,973 authentic stores across 36 States/UTs)
-    seed_path = resource_path("assets/india_stores_seed.json")
-    if seed_path.is_file():
-        try:
-            with open(seed_path, "r", encoding="utf-8") as f:
-                seed_data = json.load(f)
-            if isinstance(seed_data, list) and seed_data:
-                records.extend(seed_data)
-        except Exception as exc:
-            logging.getLogger("prospects").warning("Could not read bundled store seed: %s", exc)
+    # The former 3,973-row bundled file was not individually source-verified.
+    # Remove only rows imported under that exact legacy seed identity; preserve
+    # customer-entered, workbook-imported, and independently researched records.
+    try:
+        db.conn.execute(
+            "DELETE FROM customer_prospects WHERE source_name = ? OR source_url = ?",
+            ("Bundled All-India Store Directory", REFERENCE_DATABASE_URL),
+        )
+        db.conn.commit()
+    except Exception as exc:
+        logging.getLogger("prospects").warning("Could not clean legacy bundled store seed: %s", exc)
 
-    # 2. Researched web leads
-    records.extend([
-        {
+    records = []
+    for lead in RESEARCHED_WEB_LEADS:
+        record = {
             **lead,
             "kind": "Store",
             "business_category": "Sports nutrition retailer",
@@ -1066,14 +1072,14 @@ def seed_official_web_prospects(db):
             "source_checked_at": RESEARCH_DATE,
             "source_status": RESEARCHED_SOURCE_STATUS,
         }
-        for lead in RESEARCHED_WEB_LEADS
-    ])
+        record["maps"] = google_maps_search_url(record)
+        records.append(record)
 
     result = persist_prospect_records(
         db,
         records,
-        source_name="Bundled All-India Store Directory",
-        source_url=REFERENCE_DATABASE_URL,
+        source_name=RESEARCHED_SOURCE_NAME,
+        source_url=RESEARCHED_SOURCE_URL,
         source_checked_at=RESEARCH_DATE,
     )
     db.set_setting(setting, "1")
