@@ -992,7 +992,9 @@ def test_official_retailer_rows_have_full_addresses_and_actionable_maps_links():
         assert len(lead["address"].strip()) >= 12
         maps_url = prospects.google_maps_search_url(lead)
         assert maps_url.startswith("https://www.google.com/maps/search/?")
-        assert "address" in maps_url
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(maps_url).query)["query"][0]
+        assert lead["address"] in query
 
 
 def test_deep_scraper_does_not_create_synthetic_leads_when_search_is_unavailable(monkeypatch):
