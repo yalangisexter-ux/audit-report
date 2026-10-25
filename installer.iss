@@ -1,7 +1,7 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
 #define AppVersionEnv GetEnv("APP_VERSION")
 #if AppVersionEnv == ""
-	#define MyAppVersion "1.3.49"
+	#define MyAppVersion "1.3.50"
 #else
 	#define MyAppVersion AppVersionEnv
 #endif
@@ -44,7 +44,7 @@ Name: "{autodesktop}\\Raw Strength Employee Audit Manager"; Filename: "{app}\\{#
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait
+Filename: "{app}\\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifdoesntexist
 
 [Code]
 var
@@ -132,8 +132,8 @@ begin
 	else if CurStep = ssDone then
 	begin
 		TransactionInstallSucceeded := True;
-		if WizardSilent then
-			Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+		// Always relaunch after a successful install/update so the user returns to the app.
+		Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 	end;
 end;
 
