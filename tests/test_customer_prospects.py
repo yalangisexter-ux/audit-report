@@ -982,3 +982,31 @@ def test_existing_store_with_full_address_gets_google_maps_search_link(tmp_path)
         assert saved == record["maps"]
     finally:
         conn.close()
+
+
+def test_official_retailer_rows_have_full_addresses_and_actionable_maps_links():
+    assert prospects.RESEARCHED_SOURCE_URL.startswith("https://")
+    assert prospects.RESEARCHED_WEB_LEADS
+    for lead in prospects.RESEARCHED_WEB_LEADS:
+        assert lead["business_name"].strip()
+        assert len(lead["address"].strip()) >= 12
+        maps_url = prospects.google_maps_search_url(lead)
+        assert maps_url.startswith("https://www.google.com/maps/search/?")
+        assert "address" in maps_url
+
+
+def test_deep_scraper_does_not_create_synthetic_leads_when_search_is_unavailable(monkeypatch):
+    import urllib.request
+
+    def offline(*_args, **_kwargs):
+        raise OSError("offline test")
+
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    results = prospects.crawl_search_engine_results(
+        category="Pure Product Selling Stores",
+        state="",
+        query_term="sports nutrition supplement store",
+        max_results=5,
+        deep_scrape=True,
+    )
+    assert results == []
