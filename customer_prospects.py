@@ -1053,8 +1053,8 @@ def seed_official_web_prospects(db):
     # customer-entered, workbook-imported, and independently researched records.
     try:
         db.conn.execute(
-            "DELETE FROM customer_prospects WHERE source_name = ? OR source_url = ?",
-            ("Bundled All-India Store Directory", REFERENCE_DATABASE_URL),
+            "DELETE FROM customer_prospects WHERE source_name IN (?, ?)",
+            ("Bundled All-India Store Directory", "Bundled Store Directory"),
         )
         db.conn.commit()
     except Exception as exc:
