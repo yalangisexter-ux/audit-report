@@ -945,7 +945,42 @@ def load_saved_prospects(db):
     rows = db.conn.execute(
         "SELECT * FROM customer_prospects ORDER BY state COLLATE NOCASE, city COLLATE NOCASE, business_name COLLATE NOCASE"
     ).fetchall()
-    return [dict(row) for row in rows]
+    records = [dict(row) for row in rows]
+    # Backfill actionable Maps search URLs for previously imported rows that have a
+    # genuine address but no direct Maps URL. Keep the full address unchanged.
+    changed = False
+    for record in records:
+        maps_value = str(record.get("maps") or "").strip()
+        address_value = str(record.get("address") or "").strip()
+        if (
+            not maps_value or maps_value.casefold() in {"na", "n/a", "none", "null", "-"}
+        ) and address_value and address_value.casefold() not in {"na", "n/a", "none", "null", "-"}:
+            query = ", ".join(
+                part for part in (
+                    str(record.get("business_name") or "").strip(),
+                    address_value,
+                    str(record.get("city") or "").strip(),
+                    str(record.get("state") or "").strip(),
+                    "India",
+                ) if part
+            )
+            maps_url = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
+            record["maps"] = maps_url
+            if record.get("id") is not None:
+                try:
+                    db.conn.execute(
+                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='')",
+                        (maps_url, record["id"]),
+                    )
+                    changed = True
+                except Exception:
+                    pass
+    if changed:
+        try:
+            db.conn.commit()
+        except Exception:
+            pass
+    return records
 
 
 def resource_path(relative_path: str) -> Path:
