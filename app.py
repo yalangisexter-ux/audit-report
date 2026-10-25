@@ -9351,21 +9351,21 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(1500, self._background_auto_sync)
 
-    def schedule_auto_sync(self, delay_ms=2500, immediate=False):
-        if is_developer_test_user(getattr(self, "current_user", None)):
-            logging.getLogger("auto_sync").info("Auto-sync push skipped: Developer test user ('admin') is active. Test data will not be pushed to master.")
+    def schedule_auto_sync(self, delay_ms=2500, immediate=False, developer_authorized=False):
+        if is_developer_test_user(getattr(self, "current_user", None)) and not developer_authorized:
+            logging.getLogger("auto_sync").info("Developer auto-sync skipped without per-action password authorization.")
             return
         sync = getattr(self.db, "github_sync", None)
         if sync is None or not sync.is_configured:
             return
         if immediate:
-            self._background_auto_sync()
+            self._background_auto_sync(developer_authorized=developer_authorized)
         else:
-            if hasattr(self, "_debounce_sync_timer"):
+            if hasattr(self, "_debounce_sync_timer") and not developer_authorized:
                 self._debounce_sync_timer.start(delay_ms)
 
-    def _background_auto_sync(self):
-        if is_developer_test_user(getattr(self, "current_user", None)):
+    def _background_auto_sync(self, developer_authorized=False):
+        if is_developer_test_user(getattr(self, "current_user", None)) and not developer_authorized:
             return
         sync = getattr(self.db, "github_sync", None)
         if sync is None or not sync.is_configured or sync.is_busy:
@@ -9418,18 +9418,20 @@ class MainWindow(QMainWindow):
                 pass
 
     def sync_github_database_now(self):
+        developer_authorized = False
         if is_developer_test_user(self.current_user):
-            QMessageBox.information(
-                self,
-                "Developer Test Mode (Local Testing Only)",
-                "You are signed in as developer 'admin'.\n\n"
-                "Cloud synchronization to the master customer database is paused to prevent "
-                "testing additions, modifications, or deletions from altering live customer data.\n\n"
-                "• All your local edits and tests remain safe in your local database.\n"
-                "• Master customer data is protected.\n"
-                "• To synchronize live customer master data, sign in as 'Admin / Taruna'."
+            password, ok = QInputDialog.getText(
+                self, "Developer authorization",
+                "Signed in as developer 'admin'. Enter the developer password to sync test data:",
+                QLineEdit.EchoMode.Password,
             )
-            return
+            if not ok or not password:
+                return
+            if not verify_developer_password(password):
+                return error(self, "Developer authorization failed. No data was synchronized.")
+            developer_authorized = True
+        # Customer username 'Admin' uses the master-data path without a developer
+        # password. Lowercase developer 'admin' is authorized only for this action.
         if not self.db.github_sync.is_configured:
             url, ok = QInputDialog.getText(
                 self, "Configure Cloud Sync",
@@ -9443,20 +9445,23 @@ class MainWindow(QMainWindow):
                 self._refresh_github_sync_status()
             else:
                 return error(self, "Secure database sync is not configured. Please set the Sync Worker URL.")
-        self.schedule_auto_sync(immediate=True)
+        self.schedule_auto_sync(immediate=True, developer_authorized=developer_authorized)
         self._refresh_github_sync_status()
-        info(self, "Centralized sync triggered.\n\nYour data is being continuously synchronized with encrypted cloud storage in the background.")
+        info(self, "Centralized sync triggered.\n\nYour data is being synchronized with encrypted cloud storage in the background.")
 
     def pull_latest_github_database(self):
-        """Developer-gated pull with validation, local backup, and account/settings preservation."""
-        password, ok = QInputDialog.getText(
-            self, "Developer authorization", "Enter developer password to pull latest data:",
-            QLineEdit.EchoMode.Password,
-        )
-        if not ok or not password:
-            return
-        if not verify_developer_password(password):
-            return error(self, "Developer authorization failed.")
+        """Pull latest cloud data; customer Admin needs no developer password, lowercase admin does."""
+        password = None
+        developer_session = is_developer_test_user(self.current_user)
+        if developer_session:
+            password, ok = QInputDialog.getText(
+                self, "Developer authorization", "Enter developer password to pull latest data:",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok or not password:
+                return
+            if not verify_developer_password(password):
+                return error(self, "Developer authorization failed.")
         sync = self.db.github_sync
         if not sync.is_configured:
             url, ok = QInputDialog.getText(
@@ -9490,6 +9495,11 @@ class MainWindow(QMainWindow):
                 raw = sync.download_latest_snapshot(candidate_secret=password, prefer_latest=True)
             except Exception as dl_err:
                 if "Snapshot decryption failed" in str(dl_err):
+                    if not developer_session:
+                        raise RuntimeError(
+                            "The cloud snapshot could not be decrypted with this installation's configured key. "
+                            "Customer sync does not require a password; contact the developer to correct the sync-key configuration."
+                        ) from dl_err
                     custom_key, ok = QInputDialog.getText(
                         self, "Snapshot Decryption Passphrase",
                         "The remote snapshot could not be decrypted with default credentials.\n"
