@@ -607,8 +607,8 @@ class GitHubDatabaseSync:
         if not encryption_secret:
             raise RuntimeError("No compatible local encryption secret is available; no remote data was changed.")
 
-        # Check existing remote snapshot if present. If it was encrypted with an older
-        # key, log a warning and proceed so the new snapshot with the standard key can be pushed.
+        # Never overwrite a remote snapshot that cannot be decrypted with the
+        # configured key: it may contain the only copy of customer changes.
         self.set_status("Checking existing encrypted snapshot…")
         existing = self._pull_encrypted_snapshot()
         if existing is not None:
@@ -617,10 +617,11 @@ class GitHubDatabaseSync:
             try:
                 decrypt_snapshot_bytes(existing, encryption_secret)
             except Exception as exc:
-                logging.getLogger("database_sync").warning(
-                    "Existing remote snapshot could not be decrypted with current key (%s); overwriting with standard key.",
-                    exc,
-                )
+                raise RuntimeError(
+                    "The existing remote snapshot cannot be decrypted with the configured encryption key. "
+                    "Upload was stopped to protect remote customer data. Restore the correct encryption key "
+                    "or perform an explicit recovery before syncing again."
+                ) from exc
 
         self.set_status("Encrypting database snapshot…")
         encrypted = create_encrypted_database_snapshot(self.db_path, encryption_secret)
