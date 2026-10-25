@@ -12303,7 +12303,23 @@ class MainWindow(QMainWindow):
 
     def sync_google_sheets_action(self):
         if is_developer_test_user(self.current_user):
+            # Developer/test accounts must authenticate before any cloud read or write.
+            # Cancellation and failed authentication must not pull data into the test DB.
             try:
+                from cloudflare_chat import verify_developer_password
+                pwd, ok = QInputDialog.getText(
+                    self,
+                    "Developer Sync Authorization",
+                    "Enter the developer password to sync Google Sheets data.",
+                    QLineEdit.EchoMode.Password
+                )
+                if not ok or not verify_developer_password(pwd):
+                    QMessageBox.information(
+                        self,
+                        "Developer Sync Not Authorized",
+                        "No cloud data was pulled or pushed."
+                    )
+                    return
                 import google_sheets_sync
                 stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
                 self.refresh_employees()
@@ -12312,10 +12328,8 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "customer_tab") and hasattr(self.customer_tab, "_reload_saved_records"):
                     self.customer_tab._reload_saved_records()
                 msg = (
-                    "View Live Google Sheets Data (Developer Test Mode)\n\n"
-                    "Data pulled from live Google Sheets into your local view successfully.\n\n"
-                    "Note: Master Sheet push is paused while signed in as developer 'admin'. "
-                    "Local test changes (adds/deletes) will NOT sync to master to protect customer data."
+                    "Google Sheets data refreshed in Developer Test Mode.\n\n"
+                    "Local test changes remain isolated from the customer master."
                 )
                 QMessageBox.information(self, "Google Sheets Sync (Test Mode)", msg)
             except Exception as exc:
