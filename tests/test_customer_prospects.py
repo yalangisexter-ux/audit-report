@@ -857,3 +857,88 @@ def test_gaps_fix_cell_format_regional_source_counts_and_union_territories(monke
         assert display_map["Uttar Pradesh"]["web_leads"] == 1
     finally:
         tab.close()
+
+
+def test_v1348_view_switcher_scrollbar_deep_search_and_print(monkeypatch):
+    """Verify v1.3.48 features: view switcher dropdown, scrollbar policies, deep multi-token search, and print center."""
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        # 1. View Switcher Dropdown exists and synchronizes with pages
+        assert hasattr(tab, "view_selector")
+        assert tab.view_selector.count() == 2
+        assert "Store Directory" in tab.view_selector.itemText(0)
+        assert "Regional Dashboard" in tab.view_selector.itemText(1)
+
+        # Switching dropdown changes QTabWidget index
+        tab.view_selector.setCurrentIndex(1)
+        assert tab.pages.currentIndex() == 1
+
+        tab.view_selector.setCurrentIndex(0)
+        assert tab.pages.currentIndex() == 0
+
+        # Switching QTabWidget changes dropdown index
+        tab.pages.setCurrentIndex(1)
+        assert tab.view_selector.currentIndex() == 1
+
+        tab.pages.setCurrentIndex(0)
+        assert tab.view_selector.currentIndex() == 0
+
+        # 2. Scrollbar policies are ScrollBarAsNeeded
+        assert tab.leads_scroll_area.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        assert tab.regional_scroll_area.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        assert tab.outer_scroll_area.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+
+        # 3. Print buttons exist: top toolbar button + bottom card buttons
+        assert hasattr(tab, "btn_top_print")
+        assert hasattr(tab, "btn_print_preview")
+        assert hasattr(tab, "btn_print")
+        assert hasattr(tab, "btn_store_details")
+        assert hasattr(tab, "btn_dashboard_print")
+        assert hasattr(tab, "btn_pdf")
+        assert hasattr(tab, "btn_csv")
+        assert hasattr(tab, "btn_xlsx")
+        assert hasattr(tab, "btn_doc")
+        assert hasattr(tab, "btn_folder")
+
+        # 4. Deep multi-token search across multiple fields
+        tab.records = [
+            {"business_name": "Power Fuel Store", "state": "Delhi", "city": "Connaught Place", "kind": "Store", "phone": "9811122233"},
+            {"business_name": "Apex Nutrition", "state": "Maharashtra", "city": "Mumbai", "kind": "Store", "phone": "9822233344"},
+            {"business_name": "Gold Whey Delhi", "state": "Haryana", "city": "Gurgaon", "kind": "Store", "phone": "9833344455"}
+        ]
+        tab._refresh_filters()
+        tab._refresh_views()
+        assert tab.leads_table.rowCount() == 3
+
+        # Multi-term query "Power Delhi" matches "Power Fuel Store" in "Delhi"
+        tab.search_input.setText("Power Delhi")
+        tab.apply_filters()
+        assert not tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert tab.leads_table.isRowHidden(2)
+
+        # Multi-term query "Whey Gurgaon" matches "Gold Whey Delhi" in "Gurgaon"
+        tab.search_input.setText("Whey Gurgaon")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert not tab.leads_table.isRowHidden(2)
+
+        # Non-matching multi-term query
+        tab.search_input.setText("Power Mumbai")
+        tab.apply_filters()
+        assert tab.leads_table.isRowHidden(0)
+        assert tab.leads_table.isRowHidden(1)
+        assert tab.leads_table.isRowHidden(2)
+
+        # 5. Theme contrast and default row heights
+        tab.apply_theme("night")
+        assert tab.leads_table.verticalHeader().defaultSectionSize() == 38
+        assert tab.region_table.verticalHeader().defaultSectionSize() == 38
+    finally:
+        tab.close()

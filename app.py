@@ -9746,32 +9746,59 @@ class MainWindow(QMainWindow):
         item = QTableWidgetItem(text)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         key = text.lower()
-        # (bg, fg)
-        palette = {
-            "submitted": ("#DCFCE7", "#166534"),
-            "completed": ("#DCFCE7", "#166534"),
-            "active": ("#DCFCE7", "#166534"),
-            "present": ("#DCFCE7", "#166534"),
-            "provided": ("#DCFCE7", "#166534"),
-            "partially completed": ("#FEF3C7", "#92400E"),
-            "pending": ("#FEF3C7", "#92400E"),
-            "pending review": ("#FEF3C7", "#92400E"),
-            "in progress": ("#DBEAFE", "#1E40AF"),
-            "not started": ("#F1F5F9", "#475569"),
-            "unmarked": ("#F1F5F9", "#475569"),
-            "inactive": ("#F1F5F9", "#475569"),
-            "disabled": ("#F1F5F9", "#475569"),
-            "blocked": ("#FEE2E2", "#991B1B"),
-            "cancelled": ("#FEE2E2", "#991B1B"),
-            "absent": ("#FEE2E2", "#991B1B"),
-            "leave": ("#EDE9FE", "#5B21B6"),
-            "holiday": ("#E0E7FF", "#3730A3"),
-            "missing": ("#FEE2E2", "#991B1B"),
-            "high": ("#FEE2E2", "#991B1B"),
-            "normal": ("#F1F5F9", "#475569"),
-            "low": ("#DBEAFE", "#1E40AF"),
-        }
-        bg, fg = palette.get(key, ("#F1F5F9", "#475569"))
+        is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark", "ocean", "sunset")
+        if is_dark:
+            palette = {
+                "submitted": ("rgba(16, 185, 129, 0.25)", "#34D399"),
+                "completed": ("rgba(16, 185, 129, 0.25)", "#34D399"),
+                "active": ("rgba(16, 185, 129, 0.25)", "#34D399"),
+                "present": ("rgba(16, 185, 129, 0.25)", "#34D399"),
+                "provided": ("rgba(16, 185, 129, 0.25)", "#34D399"),
+                "partially completed": ("rgba(245, 158, 11, 0.25)", "#FBBF24"),
+                "pending": ("rgba(245, 158, 11, 0.25)", "#FBBF24"),
+                "pending review": ("rgba(245, 158, 11, 0.25)", "#FBBF24"),
+                "in progress": ("rgba(59, 130, 246, 0.25)", "#60A5FA"),
+                "not started": ("rgba(148, 163, 184, 0.20)", "#CBD5E1"),
+                "unmarked": ("rgba(148, 163, 184, 0.20)", "#CBD5E1"),
+                "inactive": ("rgba(148, 163, 184, 0.20)", "#94A3B8"),
+                "disabled": ("rgba(148, 163, 184, 0.20)", "#94A3B8"),
+                "blocked": ("rgba(239, 68, 68, 0.25)", "#F87171"),
+                "cancelled": ("rgba(239, 68, 68, 0.25)", "#F87171"),
+                "absent": ("rgba(239, 68, 68, 0.25)", "#F87171"),
+                "leave": ("rgba(168, 85, 247, 0.25)", "#C084FC"),
+                "holiday": ("rgba(99, 102, 241, 0.25)", "#A5B4FC"),
+                "missing": ("rgba(239, 68, 68, 0.25)", "#F87171"),
+                "high": ("rgba(239, 68, 68, 0.25)", "#F87171"),
+                "normal": ("rgba(148, 163, 184, 0.20)", "#CBD5E1"),
+                "low": ("rgba(59, 130, 246, 0.25)", "#60A5FA"),
+            }
+            bg, fg = palette.get(key, ("rgba(148, 163, 184, 0.20)", "#CBD5E1"))
+        else:
+            palette = {
+                "submitted": ("#DCFCE7", "#166534"),
+                "completed": ("#DCFCE7", "#166534"),
+                "active": ("#DCFCE7", "#166534"),
+                "present": ("#DCFCE7", "#166534"),
+                "provided": ("#DCFCE7", "#166534"),
+                "partially completed": ("#FEF3C7", "#92400E"),
+                "pending": ("#FEF3C7", "#92400E"),
+                "pending review": ("#FEF3C7", "#92400E"),
+                "in progress": ("#DBEAFE", "#1E40AF"),
+                "not started": ("#F1F5F9", "#475569"),
+                "unmarked": ("#F1F5F9", "#475569"),
+                "inactive": ("#F1F5F9", "#475569"),
+                "disabled": ("#F1F5F9", "#475569"),
+                "blocked": ("#FEE2E2", "#991B1B"),
+                "cancelled": ("#FEE2E2", "#991B1B"),
+                "absent": ("#FEE2E2", "#991B1B"),
+                "leave": ("#EDE9FE", "#5B21B6"),
+                "holiday": ("#E0E7FF", "#3730A3"),
+                "missing": ("#FEE2E2", "#991B1B"),
+                "high": ("#FEE2E2", "#991B1B"),
+                "normal": ("#F1F5F9", "#475569"),
+                "low": ("#DBEAFE", "#1E40AF"),
+            }
+            bg, fg = palette.get(key, ("#F1F5F9", "#475569"))
         item.setBackground(QColor(bg))
         item.setForeground(QColor(fg))
         font = item.font()
@@ -9793,6 +9820,8 @@ class MainWindow(QMainWindow):
                 item = self.status_item(text)
             else:
                 item = QTableWidgetItem(text)
+                is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark", "ocean", "sunset")
+                item.setForeground(QColor("#F8FAFC" if is_dark else "#0F172A"))
             h_item = table.horizontalHeaderItem(c)
             h_text = h_item.text().strip().lower() if h_item else ""
             is_center = (c in status_cols) or (c == 0) or (h_text in center_headers)
@@ -11027,7 +11056,7 @@ class MainWindow(QMainWindow):
             status_combo.addItems([*ATTENDANCE_STATUS_OPTIONS, "Holiday"])
             status_combo.setCurrentText(status if status in (*ATTENDANCE_STATUS_OPTIONS, "Holiday") else "Unmarked")
             status_combo.setMinimumWidth(140)
-            status_combo.setFixedHeight(28)
+            status_combo.setFixedHeight(32)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
@@ -11075,7 +11104,7 @@ class MainWindow(QMainWindow):
                 editor.setObjectName("attendanceFieldEditor")
                 editor.setProperty("in_table_cell", True)
                 editor.setMinimumWidth(0)
-                editor.setFixedHeight(28)
+                editor.setFixedHeight(32)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
                 editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 editor.setPlaceholderText("HH:MM")
@@ -11115,7 +11144,7 @@ class MainWindow(QMainWindow):
                 rem_combo.addItem(current_rem)
             rem_combo.setEditText(current_rem)
             rem_combo.setMinimumWidth(150)
-            rem_combo.setFixedHeight(28)
+            rem_combo.setFixedHeight(32)
             rem_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             rem_combo.setEnabled(not bool(holiday))
             rem_combo.setToolTip("Remarks: Choose preset (Late Check-in, Late Check-out, On Time, etc.) or type custom remarks")
