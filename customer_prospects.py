@@ -743,12 +743,18 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
             norm_domain = _normalise_domain(record.get("website"))
             norm_name = _normalise_store_name(clean_name)
             norm_state = _normalise_key(record["state"])
+            norm_city = _normalise_key(record["city"])
 
             match = None
             if key in existing_by_key:
                 match = existing_by_key[key]
             elif (norm_name, norm_state) in existing_by_name_state:
-                match = existing_by_name_state[(norm_name, norm_state)]
+                # A shared retailer name/state is not sufficient to identify a
+                # branch. Keep different cities as separate records.
+                candidate = existing_by_name_state[(norm_name, norm_state)]
+                candidate_city = _normalise_key(candidate.get("city"))
+                if not norm_city or not candidate_city or norm_city == candidate_city:
+                    match = candidate
             elif (
                 norm_name
                 and (norm_name, "") in existing_by_name_state
@@ -760,7 +766,14 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
             elif norm_phone and norm_phone in existing_by_phone:
                 p_cand = existing_by_phone[norm_phone]
                 if _normalise_store_name(p_cand.get("business_name")) == norm_name:
-                    match = p_cand
+                    candidate_state = _normalise_key(normalise_state(p_cand.get("state")))
+                    candidate_city = _normalise_key(p_cand.get("city"))
+                    same_branch = (
+                        (not norm_state or not candidate_state or norm_state == candidate_state)
+                        and (not norm_city or not candidate_city or norm_city == candidate_city)
+                    )
+                    if same_branch:
+                        match = p_cand
             elif norm_domain and norm_domain in existing_by_domain:
                 d_cand = existing_by_domain[norm_domain]
                 if _normalise_store_name(d_cand.get("business_name")) == norm_name:
