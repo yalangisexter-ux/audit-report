@@ -20,16 +20,87 @@ $ErrorActionPreference = 'Stop'
 $exeName = 'RawStrengthEmployeeAuditManager.exe'
 $exePath = Join-Path $InstallDir $exeName
 
+function Remove-DirectorySafely([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    try {
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $Path)) { return }
+    } catch {}
+
+    try {
+        Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            try { $_.Attributes = 'Normal' } catch {}
+        }
+        Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $Path)) { return }
+    } catch {}
+
+    try {
+        & cmd.exe /c "rmdir /s /q `"$Path`"" | Out-Null
+    } catch {}
+
+    if (Test-Path -LiteralPath $Path) {
+        Start-Sleep -Milliseconds 300
+        try {
+            $junkPath = Join-Path ([System.IO.Path]::GetTempPath()) ('RSC-orphan-' + [guid]::NewGuid().ToString('N'))
+            Move-Item -LiteralPath $Path -Destination $junkPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $junkPath -Recurse -Force -ErrorAction SilentlyContinue
+        } catch {}
+    }
+
+    if (Test-Path -LiteralPath $Path) {
+        throw "Could not remove directory: $Path"
+    }
+}
+
+function Stop-RunningAppProcesses {
+    Get-Process -Name 'RawStrengthEmployeeAuditManager' -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $_.Kill()
+            $_.WaitForExit(3000)
+        } catch {}
+    }
+}
+
+function Cleanup-StaleDirectories {
+    param(
+        [string]$InstallDir,
+        [string]$BackupDir,
+        [switch]$CleanBackupDir
+    )
+
+    if ($CleanBackupDir -and (Test-Path -LiteralPath $BackupDir)) {
+        Remove-DirectorySafely -Path $BackupDir
+    }
+
+    $parentDir = Split-Path -Parent $InstallDir
+    if (-not $parentDir -or -not (Test-Path -LiteralPath $parentDir)) { return }
+
+    $installLeaf = Split-Path -Leaf $InstallDir
+    $patterns = @(
+        "$installLeaf.rollback.new-*",
+        "$installLeaf.rollback.old-*",
+        "$installLeaf.failed-*",
+        "$installLeaf.restore-*"
+    )
+    foreach ($pat in $patterns) {
+        Get-ChildItem -LiteralPath $parentDir -Filter $pat -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Remove-DirectorySafely -Path $_.FullName
+        }
+    }
+}
+
 function Copy-VerifiedTree([string]$Source, [string]$Destination) {
     if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
         throw "Source directory is missing: $Source"
     }
     if (Test-Path -LiteralPath $Destination) {
-        throw "Destination already exists: $Destination"
+        Remove-DirectorySafely -Path $Destination
     }
 
-    $null = New-Item -ItemType Directory -Path $Destination
-    & robocopy.exe $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /XJ /NFL /NDL /NJH /NJS /NP | Out-Null
+    $null = New-Item -ItemType Directory -Path $Destination -Force
+    & robocopy.exe $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /XJ /NFL /NDL /NJH /NJS /NP | Out-Null
     $copyCode = $LASTEXITCODE
     if ($copyCode -ge 8) {
         throw "File copy failed with Robocopy exit code $copyCode."
@@ -65,6 +136,8 @@ function Get-ProductVersion([string]$Path) {
 try {
     switch ($Mode) {
         'backup' {
+            Stop-RunningAppProcesses
+            Cleanup-StaleDirectories -InstallDir $InstallDir -BackupDir $BackupDir -CleanBackupDir
             Copy-VerifiedTree -Source $InstallDir -Destination $BackupDir
             if (-not (Test-Path -LiteralPath (Join-Path $BackupDir $exeName) -PathType Leaf)) {
                 throw 'The backup does not contain the application executable.'
@@ -116,6 +189,7 @@ try {
         }
 
         'restore' {
+            Stop-RunningAppProcesses
             if (-not (Test-Path -LiteralPath (Join-Path $BackupDir $exeName) -PathType Leaf)) {
                 throw "The previous-version backup is missing or incomplete: $BackupDir"
             }
@@ -131,65 +205,79 @@ try {
             $movedCurrent = $false
             try {
                 if (Test-Path -LiteralPath $InstallDir) {
-                    Move-Item -LiteralPath $InstallDir -Destination $failedDir
+                    Move-Item -LiteralPath $InstallDir -Destination $failedDir -Force
                     $movedCurrent = $true
                 }
-                Move-Item -LiteralPath $restoreDir -Destination $InstallDir
+                Move-Item -LiteralPath $restoreDir -Destination $InstallDir -Force
             }
             catch {
                 if ($movedCurrent -and -not (Test-Path -LiteralPath $InstallDir) -and (Test-Path -LiteralPath $failedDir)) {
-                    Move-Item -LiteralPath $failedDir -Destination $InstallDir -ErrorAction SilentlyContinue
+                    Move-Item -LiteralPath $failedDir -Destination $InstallDir -Force -ErrorAction SilentlyContinue
                 }
                 throw
             }
-
-            if ($movedCurrent -and (Test-Path -LiteralPath $failedDir)) {
-                Remove-Item -LiteralPath $failedDir -Recurse -Force -ErrorAction SilentlyContinue
+            finally {
+                if ($movedCurrent -and (Test-Path -LiteralPath $failedDir)) {
+                    Remove-DirectorySafely -Path $failedDir
+                }
+                if (Test-Path -LiteralPath $restoreDir) {
+                    Remove-DirectorySafely -Path $restoreDir
+                }
             }
-            Remove-Item -LiteralPath $restoreDir -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+
+            Remove-DirectorySafely -Path $BackupDir
         }
 
         'promote' {
             if (-not (Test-Path -LiteralPath (Join-Path $BackupDir $exeName) -PathType Leaf)) {
-                throw "The verified previous-version backup is missing: $BackupDir"
+                Cleanup-StaleDirectories -InstallDir $InstallDir -BackupDir $BackupDir -CleanBackupDir
+                return
             }
 
-            $stableParent = Split-Path -Parent $StableBackupDir
-            $stableName = Split-Path -Leaf $StableBackupDir
-            $stableTemp = Join-Path $stableParent ($stableName + '.new-' + [guid]::NewGuid().ToString('N'))
-            Copy-VerifiedTree -Source $BackupDir -Destination $stableTemp
-            if (-not (Test-Path -LiteralPath (Join-Path $stableTemp $exeName) -PathType Leaf)) {
-                throw 'The promoted previous-version backup failed verification.'
-            }
+            Cleanup-StaleDirectories -InstallDir $InstallDir -BackupDir $BackupDir
 
             $oldStable = $StableBackupDir + '.old-' + [guid]::NewGuid().ToString('N')
             $movedOld = $false
             try {
                 if (Test-Path -LiteralPath $StableBackupDir) {
-                    Move-Item -LiteralPath $StableBackupDir -Destination $oldStable
+                    Move-Item -LiteralPath $StableBackupDir -Destination $oldStable -Force
                     $movedOld = $true
                 }
-                Move-Item -LiteralPath $stableTemp -Destination $StableBackupDir
+                Move-Item -LiteralPath $BackupDir -Destination $StableBackupDir -Force
             }
             catch {
-                if ($movedOld -and -not (Test-Path -LiteralPath $StableBackupDir) -and (Test-Path -LiteralPath $oldStable)) {
-                    Move-Item -LiteralPath $oldStable -Destination $StableBackupDir -ErrorAction SilentlyContinue
+                try {
+                    if (-not (Test-Path -LiteralPath $StableBackupDir)) {
+                        $null = New-Item -ItemType Directory -Path $StableBackupDir -Force
+                    }
+                    & robocopy.exe $BackupDir $StableBackupDir /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /XJ /NFL /NDL /NJH /NJS /NP | Out-Null
                 }
-                throw
+                catch {
+                    if ($movedOld -and -not (Test-Path -LiteralPath $StableBackupDir) -and (Test-Path -LiteralPath $oldStable)) {
+                        Move-Item -LiteralPath $oldStable -Destination $StableBackupDir -Force -ErrorAction SilentlyContinue
+                    }
+                    throw
+                }
             }
-
-            if ($movedOld) {
-                Remove-Item -LiteralPath $oldStable -Recurse -Force -ErrorAction SilentlyContinue
+            finally {
+                if ($movedOld -and (Test-Path -LiteralPath $oldStable)) {
+                    Remove-DirectorySafely -Path $oldStable
+                }
+                if (Test-Path -LiteralPath $BackupDir) {
+                    Remove-DirectorySafely -Path $BackupDir
+                }
             }
-            Remove-Item -LiteralPath $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
         }
 
         'remove-new' {
+            Stop-RunningAppProcesses
             if (Test-Path -LiteralPath $InstallDir) {
                 $failedDir = $InstallDir + '.failed-' + [guid]::NewGuid().ToString('N')
-                Move-Item -LiteralPath $InstallDir -Destination $failedDir
-                Remove-Item -LiteralPath $failedDir -Recurse -Force -ErrorAction SilentlyContinue
+                Move-Item -LiteralPath $InstallDir -Destination $failedDir -Force -ErrorAction SilentlyContinue
+                Remove-DirectorySafely -Path $failedDir
+                if (Test-Path -LiteralPath $InstallDir) {
+                    Remove-DirectorySafely -Path $InstallDir
+                }
             }
         }
     }
@@ -197,6 +285,11 @@ try {
     exit 0
 }
 catch {
-    [Console]::Error.WriteLine($_.Exception.Message)
+    $msg = $_.Exception.Message
+    [Console]::Error.WriteLine($msg)
+    try {
+        $logFile = Join-Path ([System.IO.Path]::GetTempPath()) 'update_recovery.log'
+        Add-Content -LiteralPath $logFile -Value ("[{0}] [Mode={1}] ERROR: {2}" -f (Get-Date -Format 's'), $Mode, $msg) -ErrorAction SilentlyContinue
+    } catch {}
     exit 1
 }

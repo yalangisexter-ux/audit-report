@@ -71,6 +71,13 @@ begin
 	Result := Exec(RecoveryPowerShellPath, Arguments, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
+procedure KillRunningAppProcess;
+var
+	ResultCode: Integer;
+begin
+	Exec('taskkill.exe', '/F /IM RawStrengthEmployeeAuditManager.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
 	ResultCode: Integer;
@@ -87,10 +94,15 @@ begin
 		if not FileExists(InstallDirectory + '\\RawStrengthEmployeeAuditManager.exe') then
 			Exit;
 
+		KillRunningAppProcess;
 		ExtractTemporaryFile('update_recovery.ps1');
 		if not RunRecoveryScript('backup', '', ResultCode) or (ResultCode <> 0) then
 		begin
-			RaiseException('Could not protect the existing installation before updating. The current app was left in place.');
+			Sleep(1000);
+			if not RunRecoveryScript('backup', '', ResultCode) or (ResultCode <> 0) then
+			begin
+				RaiseException('Could not protect the existing installation before updating. The current app was left in place.');
+			end;
 		end;
 		TransactionBackupReady := True;
 	end
@@ -147,6 +159,7 @@ var
 	ResultCode: Integer;
 begin
 	Result := '';
+	KillRunningAppProcess;
 	ExtractTemporaryFile('vc_redist.x64.exe');
 	if not Exec(ExpandConstant('{tmp}\\vc_redist.x64.exe'), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
 	begin

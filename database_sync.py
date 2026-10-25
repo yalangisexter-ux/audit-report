@@ -562,7 +562,7 @@ class GitHubDatabaseSync:
         raw = decrypt_snapshot_bytes(encrypted, encryption_secret)
 
         # Accept full SQLite snapshots (desktop) and JSON business manifests (mobile/APK).
-        if raw.startswith(b"SQLite format 3\\x00"):
+        if raw.startswith(b"SQLite format 3\x00"):
             with tempfile.NamedTemporaryFile(prefix="rsc_pull_validate_", suffix=".sqlite3", delete=False) as handle:
                 validation_path = Path(handle.name)
                 handle.write(raw)
@@ -581,7 +581,7 @@ class GitHubDatabaseSync:
                 validation_path.unlink(missing_ok=True)
             return raw
 
-        marker = b"\\n__RSC_JSON__\\n"
+        marker = b"\n__RSC_JSON__\n"
         if marker in raw:
             return raw
         try:
