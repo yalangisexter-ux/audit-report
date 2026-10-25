@@ -1479,6 +1479,11 @@ def crawl_search_engine_results(
                 if re.search(r"\b" + re.escape(token) + r"\b", address, re.I):
                     city = token
                     break
+        if not state_name:
+            for region_name in INDIA_REGIONS:
+                if re.search(r"\b" + re.escape(region_name) + r"\b", address, re.I):
+                    state_name = region_name
+                    break
         phone_match = phone_pattern.search(text_blob)
         phone = phone_match.group(0).strip() if phone_match else ""
         email_match = email_pattern.search(text_blob)
