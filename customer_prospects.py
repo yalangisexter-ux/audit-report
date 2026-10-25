@@ -1230,6 +1230,7 @@ def crawl_search_engine_results(
         re.IGNORECASE,
     )
     gym_terms = re.compile(r"\b(gym|fitness centre|fitness center|crossfit|personal training)\b", re.I)
+    retail_terms = re.compile(r"\b(buy now|add to cart|shop now|order online|store locator|retailer|supplement store|nutrition store|products|product catalogue|product catalog)\b", re.I)
     phone_pattern = re.compile(r"(?<!\w)(?:\+?91[\s().-]*)?(?:\d[\s().-]*){10,13}(?!\w)")
     email_pattern = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
     headers = {
@@ -1347,17 +1348,12 @@ def crawl_search_engine_results(
             links.append((href, label))
         return links
 
-    cat = (category or "All Categories").casefold()
-    store_only = "pure" in cat or ("store" in cat and "gym" not in cat) or cat in {"all categories", "all types"}
-    if store_only:
-        base_query = query_term.strip() or "sports nutrition supplement store whey protein creatine"
-        kind, default_category = "Store", "Sports nutrition / supplement retailer"
-    elif "also" in cat or "hybrid" in cat or "+" in cat:
-        base_query = query_term.strip() or "gym supplement shop protein counter"
-        kind, default_category = "Gym + Store", "Gym with a product-selling supplement counter"
-    else:
-        base_query = query_term.strip() or "sports nutrition supplement retailer"
-        kind, default_category = "Gym", "Fitness centre / gym"
+    # This directory is specifically for product-selling stores, not gyms.
+    # Keep existing category choices in the UI, but only store leads can enter this directory.
+    cat = (category or "Pure Product Selling Stores").casefold()
+    store_only = True
+    base_query = query_term.strip() or "sports nutrition supplement store whey protein creatine"
+    kind, default_category = "Store", "Sports nutrition / supplement retailer"
 
     region = str(state or "").strip()
     if region.casefold() in {"all states / uts", "all states", "all india"}:
@@ -1414,10 +1410,15 @@ def crawl_search_engine_results(
         address_text = " ".join(parser.address_parts).strip()
         if not text_blob or negative.search(title + " " + text_blob[:12000]):
             continue
-        if not product_terms.search(title + " " + text_blob[:20000]):
+        page_evidence = title + " " + text_blob[:20000]
+        if not product_terms.search(page_evidence):
             continue
-        if store_only and gym_terms.search(title) and not product_terms.search(title):
+        if not retail_terms.search(page_evidence):
             continue
+        # Exclude gyms and training studios even if they mention supplements in blogs.
+        if gym_terms.search(title) or gym_terms.search(text_blob[:1800]):
+            if not re.search(r"\b(supplement store|nutrition store|retailer|shop supplements|buy supplements|protein store)\b", page_evidence, re.I):
+                continue
 
         business_name = title.split("|")[0].split(" - ")[0].split(" — ")[0].strip()
         business_name = re.sub(r"\s+", " ", business_name).strip(" -|•")
@@ -1463,7 +1464,7 @@ def crawl_search_engine_results(
             continue
 
         parsed_url = urlparse(url)
-        city = region
+        city = ""
         state_name = region
         if not city:
             for token in ("Mumbai", "Delhi", "Bengaluru", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow", "Visakhapatnam", "Vijayawada", "Gurugram", "Faridabad", "Dehradun", "Patna", "Indore", "Bhopal", "Cuttack", "Bhubaneswar", "Kanpur", "Chandigarh"):
