@@ -1325,11 +1325,19 @@ def crawl_search_engine_results(
         # Search engine anchors are filtered to external result destinations only.
         for href, label in parser.links:
             href = unquote(href).strip()
-            if engine == "duckduckgo" and href.startswith("/l/?"):
-                query = parse_qs(urlparse(href).query)
+            parsed = urlparse(href)
+            host_before_decode = parsed.netloc.casefold()
+            if engine == "duckduckgo" and (
+                href.startswith("/l/?") or
+                (host_before_decode.endswith("duckduckgo.com") and parsed.path == "/l/")
+            ):
+                query = parse_qs(parsed.query)
                 href = (query.get("uddg") or [""])[0]
-            elif engine == "bing" and href.startswith("/ck/a"):
-                query = parse_qs(urlparse(href).query)
+            elif engine == "bing" and (
+                href.startswith("/ck/a") or
+                (host_before_decode.endswith("bing.com") and parsed.path.startswith("/ck/a"))
+            ):
+                query = parse_qs(parsed.query)
                 href = (query.get("u") or [""])[0]
                 if href.startswith("a1"):
                     import base64
