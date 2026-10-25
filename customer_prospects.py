@@ -1211,213 +1211,300 @@ def crawl_search_engine_results(
     deep_scrape: bool = True,
     progress_cb=None
 ) -> list:
-    """Multi-engine genuine web crawler combining live search endpoints, OpenStreetMap geocoding,
-    and live verified merchant directories for Indian states and union territories."""
-    import ssl
-    import urllib.request
-    import urllib.parse
+    """Discover real merchant pages, deeply inspect them, and keep only evidence-backed records.
+
+    Search results are leads, not proof of call verification. No synthetic businesses,
+    addresses, phone numbers, email addresses, or verification flags are generated.
+    """
+    from html.parser import HTMLParser
+    from urllib.parse import urljoin, urlparse, parse_qs, unquote
+    from urllib.request import Request, urlopen
     import json
     import re
-    import html
-    from datetime import date
+    import time
 
-    found = []
-    seen_names = set()
-    clean_region = state if state and state != "All States / UTs" else ""
-    cat_lower = (category or "All Categories").casefold()
-
-    if "pure" in cat_lower or ("store" in cat_lower and "gym" not in cat_lower):
-        default_kind = "Store"
-        default_cat = "Sports Nutrition / Supplement Store"
-        search_kw = query_term or "supplement store sports nutrition"
-    elif "also" in cat_lower or "hybrid" in cat_lower or "+" in cat_lower:
-        default_kind = "Gym + Store"
-        default_cat = "Gym with Nutrition & Supplement Counter / Pro-Shop"
-        search_kw = query_term or "gym supplement counter protein"
-    elif "gym" in cat_lower:
-        default_kind = "Gym"
-        default_cat = "Fitness Centre / Gym"
-        search_kw = query_term or "gym fitness centre health club"
-    else:
-        default_kind = "Store"
-        default_cat = "Sports Nutrition / Supplement Store"
-        search_kw = query_term or "gym supplement store sports nutrition"
-
-    ssl_ctx = ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = ssl.CERT_NONE
+    negative = NEGATIVE_FILTER_PATTERN
+    product_terms = re.compile(
+        r"\b(supplement|sports nutrition|whey protein|protein powder|creatine|pre[- ]workout|"
+        r"amino acid|bcaa|mass gainer|nutrition store|protein store|fitness supplement)\b",
+        re.IGNORECASE,
+    )
+    gym_terms = re.compile(r"\b(gym|fitness centre|fitness center|crossfit|personal training)\b", re.I)
+    phone_pattern = re.compile(r"(?<!\w)(?:\+?91[\s().-]*)?(?:\d[\s().-]*){10,13}(?!\w)")
+    email_pattern = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "Accept-Language": "en-IN,en;q=0.9",
     }
 
-    # 1. Live OpenStreetMap Nominatim Real-Time Query
-    if progress_cb:
+    class PageParser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.title_parts = []
+            self.text_parts = []
+            self.links = []
+            self.in_title = False
+            self.skip_depth = 0
+            self.address_depth = 0
+            self.address_parts = []
+            self.jsonld_parts = []
+            self.in_jsonld = False
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "title":
+                self.in_title = True
+            if tag in {"script", "style", "noscript", "svg"}:
+                self.skip_depth += 1
+                if tag == "script" and "ld+json" in str(attrs.get("type", "")).casefold():
+                    self.in_jsonld = True
+            if tag == "address":
+                self.address_depth += 1
+            if tag == "a" and attrs.get("href"):
+                self.links.append((attrs.get("href", ""), attrs.get("aria-label", "")))
+            if tag == "meta":
+                key = str(attrs.get("property") or attrs.get("name") or "").casefold()
+                value = str(attrs.get("content") or "").strip()
+                if value and key in {"og:title", "og:site_name", "description"}:
+                    self.text_parts.append(value)
+
+        def handle_endtag(self, tag):
+            if tag == "title":
+                self.in_title = False
+            if tag in {"script", "style", "noscript", "svg"} and self.skip_depth:
+                self.skip_depth -= 1
+                if tag == "script":
+                    self.in_jsonld = False
+            if tag == "address" and self.address_depth:
+                self.address_depth -= 1
+
+        def handle_data(self, data):
+            value = " ".join(str(data or "").split())
+            if not value:
+                return
+            if self.in_title:
+                self.title_parts.append(value)
+            if self.in_jsonld:
+                self.jsonld_parts.append(value)
+            elif not self.skip_depth:
+                self.text_parts.append(value)
+            if self.address_depth:
+                self.address_parts.append(value)
+
+    def report(message, percent):
+        if progress_cb:
+            try:
+                progress_cb(message, percent)
+            except Exception:
+                pass
+
+    def get_html(url, timeout=8):
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return ""
+        request = Request(url, headers=headers)
         try:
-            progress_cb("🔍 Connecting to live geospatial registry...", 15)
+            with urlopen(request, timeout=timeout) as response:
+                content_type = response.headers.get("Content-Type", "")
+                if "text/html" not in content_type.casefold() and "application/xhtml" not in content_type.casefold():
+                    return ""
+                raw = response.read(2_500_000)
+                charset = response.headers.get_content_charset() or "utf-8"
+                return raw.decode(charset, errors="replace")
         except Exception:
-            pass
+            return ""
 
-    osm_terms = ["gym", "fitness", "sports", "supplement"]
-    state_target = clean_region or "India"
-    for ot in osm_terms:
-        if len(found) >= max_results:
-            break
-        osm_q = f"{ot} {state_target} India".strip()
-        osm_url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(osm_q)}&format=json&addressdetails=1&limit=8"
+    def parse_search_results(page_html, engine):
+        parser = PageParser()
         try:
-            osm_req = urllib.request.Request(osm_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager/1.3.48 (contact@rawstrength.in)"})
-            with urllib.request.urlopen(osm_req, timeout=5, context=ssl_ctx) as resp:
-                items = json.loads(resp.read().decode("utf-8"))
-                for item in items:
-                    raw_name = item.get("name") or (item.get("display_name", "").split(",")[0].strip())
-                    clean_name = re.sub(r"<[^>]+>", "", raw_name).strip()
-                    if not clean_name or len(clean_name) < 4 or clean_name.casefold() in seen_names:
-                        continue
-                    if clean_name.casefold() in ("india", "gym", "store", "fitness"):
-                        continue
-                    addr = item.get("address", {})
-                    c_city = addr.get("city") or addr.get("town") or addr.get("suburb") or addr.get("state_district") or ""
-                    c_state = normalise_state(addr.get("state") or state_target)
-                    area_val = addr.get("suburb") or addr.get("neighbourhood") or addr.get("road") or ""
-                    full_addr = item.get("display_name", f"{clean_name}, {c_city}, {c_state}")
-                    lat = item.get("lat")
-                    lon = item.get("lon")
-                    maps_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}" if lat and lon else f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(clean_name + ' ' + c_city + ' ' + c_state)}"
-
-                    seen_names.add(clean_name.casefold())
-                    found.append({
-                        "kind": default_kind,
-                        "business_name": clean_name,
-                        "business_category": default_cat,
-                        "state": c_state,
-                        "city": c_city,
-                        "area": area_val,
-                        "phone": "",
-                        "email": "",
-                        "address": full_addr,
-                        "maps": maps_url,
-                        "website": maps_url,
-                        "source_name": "OpenStreetMap Live Scraper",
-                        "source_type": "Deep Web Discovered",
-                        "source_status": "Live Web Verified",
-                        "verified": "No",
-                        "notes": f"Live geocoded discovery at ({lat}, {lon})"
-                    })
-                    if len(found) >= max_results:
-                        break
+            parser.feed(page_html)
         except Exception:
-            pass
+            return []
+        links = []
+        # Search engine anchors are filtered to external result destinations only.
+        for href, label in parser.links:
+            href = unquote(href).strip()
+            if engine == "duckduckgo" and href.startswith("/l/?"):
+                query = parse_qs(urlparse(href).query)
+                href = (query.get("uddg") or [""])[0]
+            elif engine == "bing" and href.startswith("/ck/a"):
+                query = parse_qs(urlparse(href).query)
+                href = (query.get("u") or [""])[0]
+                if href.startswith("a1"):
+                    import base64
+                    try:
+                        href = base64.urlsafe_b64decode(href[2:] + "==").decode("utf-8", errors="ignore")
+                    except Exception:
+                        href = ""
+            parsed = urlparse(href)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                continue
+            host = parsed.netloc.casefold()
+            if any(x in host for x in ("duckduckgo.com", "bing.com", "google.com", "microsoft.com")):
+                continue
+            if any(href.rstrip("/") == existing[0].rstrip("/") for existing in links):
+                continue
+            links.append((href, label))
+        return links
 
-    # 2. Authentic State-Wise Live Discovery Directory Repository
-    if progress_cb:
-        try:
-            progress_cb("🌐 Querying live verified merchant index...", 40)
-        except Exception:
-            pass
+    cat = (category or "All Categories").casefold()
+    store_only = "pure" in cat or ("store" in cat and "gym" not in cat) or cat in {"all categories", "all types"}
+    if store_only:
+        base_query = query_term.strip() or "sports nutrition supplement store whey protein creatine"
+        kind, default_category = "Store", "Sports nutrition / supplement retailer"
+    elif "also" in cat or "hybrid" in cat or "+" in cat:
+        base_query = query_term.strip() or "gym supplement shop protein counter"
+        kind, default_category = "Gym + Store", "Gym with a product-selling supplement counter"
+    else:
+        base_query = query_term.strip() or "sports nutrition supplement retailer"
+        kind, default_category = "Gym", "Fitness centre / gym"
 
-    live_catalogue = [
-        # Bihar
-        {"name": "Patliputra Nutrition & Health Store", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Bihar", "city": "Patna", "area": "Boring Road", "phone": "98350 12845", "addr": "Shop 14, Grand Plaza, Boring Road, Patna, Bihar 800001"},
-        {"name": "Iron Bull Gym & Fitness Club", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Bihar", "city": "Patna", "area": "Kankarbagh", "phone": "94310 44521", "addr": "Plot 88, Main Road, Kankarbagh, Patna, Bihar 800020"},
-        {"name": "Mithila Supplements & Wellness", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Bihar", "city": "Darbhanga", "area": "Laheriasarai", "phone": "99342 77102", "addr": "Tower Chowk, Laheriasarai, Darbhanga, Bihar 846001"},
-        {"name": "Gold Coast Fitness Centre", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Bihar", "city": "Muzaffarpur", "area": "Mithanpura", "phone": "91223 88410", "addr": "Club Road, Mithanpura, Muzaffarpur, Bihar 842002"},
-        {"name": "Magadh Nutrition House", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Bihar", "city": "Gaya", "area": "Civil Lines", "phone": "98012 33451", "addr": "Kashinath More, Civil Lines, Gaya, Bihar 823001"},
-        {"name": "Titanium Gym & Spa", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Bihar", "city": "Bhagalpur", "area": "Tilka Manjhi", "phone": "94701 55219", "addr": "Near Chowk, Tilka Manjhi, Bhagalpur, Bihar 812001"},
-        {"name": "Champion Nutrition Hub", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Bihar", "city": "Purnia", "area": "Line Bazar", "phone": "99554 11203", "addr": "Opp. Sadar Hospital, Line Bazar, Purnia, Bihar 854301"},
-        {"name": "Gaurav Fitness World", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Bihar", "city": "Begusarai", "area": "Har-Har Mahadev Chowk", "phone": "94308 66291", "addr": "NH-31, Har-Har Mahadev Chowk, Begusarai, Bihar 851101"},
-        # Uttar Pradesh
-        {"name": "Awadh Nutrition & Protein Pro", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Uttar Pradesh", "city": "Lucknow", "area": "Hazratganj", "phone": "98390 11422", "addr": "Halwasiya Market, Hazratganj, Lucknow, UP 226001"},
-        {"name": "Velocity Fitness Studio", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Uttar Pradesh", "city": "Lucknow", "area": "Gomti Nagar", "phone": "94150 99318", "addr": "Vibhuti Khand, Gomti Nagar, Lucknow, UP 226010"},
-        {"name": "Varanasi Protein Point", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Uttar Pradesh", "city": "Varanasi", "area": "Sigra", "phone": "98381 77240", "addr": "Mahmoorganj Road, Sigra, Varanasi, UP 221010"},
-        {"name": "Ganga Edge Crossfit & Gym", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Uttar Pradesh", "city": "Varanasi", "area": "Lanka", "phone": "94500 22194", "addr": "Near BHU Gate, Lanka, Varanasi, UP 221005"},
-        {"name": "Noida Health & Muscle Store", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Uttar Pradesh", "city": "Noida", "area": "Sector 18", "phone": "98188 55410", "addr": "Ocean Complex, Sector 18, Noida, UP 201301"},
-        {"name": "Apex Fitness Arena", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Uttar Pradesh", "city": "Noida", "area": "Sector 62", "phone": "98100 44129", "addr": "C-Block, Sector 62, Noida, UP 201309"},
-        {"name": "Kanpur Protein Junction", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Uttar Pradesh", "city": "Kanpur", "area": "Swaroop Nagar", "phone": "98392 33100", "addr": "Khalasi Line, Swaroop Nagar, Kanpur, UP 208002"},
-        {"name": "Taj City Fitness & Gym", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Uttar Pradesh", "city": "Agra", "area": "Sanjay Place", "phone": "94122 88419", "addr": "Commercial Complex, Sanjay Place, Agra, UP 282002"},
-        # Maharashtra
-        {"name": "Mumbai Muscle & Nutrition Hub", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Maharashtra", "city": "Mumbai", "area": "Andheri West", "phone": "98200 44102", "addr": "Lokhandwala Complex, Andheri West, Mumbai, MH 400053"},
-        {"name": "Olympia Fitness Club", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Maharashtra", "city": "Mumbai", "area": "Bandra West", "phone": "98210 55891", "addr": "Hill Road, Bandra West, Mumbai, MH 400050"},
-        {"name": "Pune Nutrition Corner", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Maharashtra", "city": "Pune", "area": "Kothrud", "phone": "98500 11923", "addr": "Paud Road, Kothrud, Pune, Maharashtra 411038"},
-        {"name": "Pulse Strength & Calisthenics", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Maharashtra", "city": "Pune", "area": "Viman Nagar", "phone": "98811 77402", "addr": "Near Phoenix Mall, Viman Nagar, Pune, MH 411014"},
-        {"name": "Nagpur Health First Supplements", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Maharashtra", "city": "Nagpur", "area": "Dharampeth", "phone": "98222 33190", "addr": "West High Court Road, Dharampeth, Nagpur, MH 440010"},
-        {"name": "Nashik Powerhouse Gym", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Maharashtra", "city": "Nashik", "area": "College Road", "phone": "98230 44118", "addr": "Krishi Nagar, College Road, Nashik, MH 422005"},
-        # Punjab & Haryana & Delhi
-        {"name": "Majha Nutrition & Protein Point", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Punjab", "city": "Amritsar", "area": "Ranjit Avenue", "phone": "98140 22105", "addr": "B-Block, Ranjit Avenue, Amritsar, Punjab 143001"},
-        {"name": "Sher-E-Punjab Fitness Club", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Punjab", "city": "Ludhiana", "area": "Model Town", "phone": "98150 77319", "addr": "Tuition Market, Model Town, Ludhiana, Punjab 141002"},
-        {"name": "Ludhiana Supplement King", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Punjab", "city": "Ludhiana", "area": "Ferozepur Road", "phone": "98722 88401", "addr": "Gurdev Nagar, Ferozepur Road, Ludhiana, Punjab 141001"},
-        {"name": "Royal City Gym & Fitness", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Punjab", "city": "Patiala", "area": "Leela Bhawan", "phone": "98880 11942", "addr": "Near Bank Square, Leela Bhawan, Patiala, Punjab 147001"},
-        {"name": "Capital Nutrition Store", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Delhi", "city": "New Delhi", "area": "Connaught Place", "phone": "98111 22340", "addr": "Regal Building, Outer Circle, Connaught Place, New Delhi 110001"},
-        {"name": "Spartan Strength & Conditioning", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Delhi", "city": "Delhi", "area": "South Extension", "phone": "98101 99234", "addr": "Part 2, Main Market, South Extension, New Delhi 110049"},
-        {"name": "Gurugram Pro Nutrition Hub", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Haryana", "city": "Gurugram", "area": "Sector 29", "phone": "98180 33410", "addr": "Commercial Sector 29, Gurugram, Haryana 122002"},
-        {"name": "Faridabad Iron Gym", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Haryana", "city": "Faridabad", "area": "Sector 15", "phone": "98109 44812", "addr": "Main Market, Sector 15, Faridabad, Haryana 121007"},
-        # Karnataka & Tamil Nadu
-        {"name": "Bengaluru Supplement Studio", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Karnataka", "city": "Bengaluru", "area": "Indiranagar", "phone": "98450 11209", "addr": "100 Feet Road, Indiranagar, Bengaluru, KA 560038"},
-        {"name": "Koramangala Fitness Collective", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Karnataka", "city": "Bengaluru", "area": "Koramangala", "phone": "98440 88219", "addr": "5th Block, Koramangala, Bengaluru, KA 560095"},
-        {"name": "Whitefield Health & Nutrition", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Karnataka", "city": "Bengaluru", "area": "Whitefield", "phone": "98800 44921", "addr": "ITPL Main Road, Whitefield, Bengaluru, KA 560066"},
-        {"name": "Chennai Sports Nutrition Vault", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Tamil Nadu", "city": "Chennai", "area": "T Nagar", "phone": "98400 33120", "addr": "Pondy Bazaar, T Nagar, Chennai, TN 600017"},
-        {"name": "Marina Edge Fitness Hub", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Tamil Nadu", "city": "Chennai", "area": "Adyar", "phone": "98410 77412", "addr": "Lattice Bridge Road, Adyar, Chennai, TN 600020"},
-        {"name": "Coimbatore Health & Supplement", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Tamil Nadu", "city": "Coimbatore", "area": "RS Puram", "phone": "98422 11904", "addr": "DB Road, RS Puram, Coimbatore, TN 641002"},
-        # West Bengal & Gujarat & Rajasthan
-        {"name": "Kolkata Nutrition Station", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "West Bengal", "city": "Kolkata", "area": "Salt Lake", "phone": "98300 22910", "addr": "City Centre 1, Sector 1, Salt Lake, Kolkata, WB 700064"},
-        {"name": "Howrah Iron & Fitness Gym", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "West Bengal", "city": "Howrah", "area": "Shibpur", "phone": "98310 88402", "addr": "Grand Trunk Road, Shibpur, Howrah, WB 711102"},
-        {"name": "Ahmedabad Protein Lounge", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Gujarat", "city": "Ahmedabad", "area": "SG Highway", "phone": "98250 11420", "addr": "Titanium City Center, Satellite, Ahmedabad, GJ 380015"},
-        {"name": "Surat Fitness Club & Spa", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Gujarat", "city": "Surat", "area": "Vesu", "phone": "98241 77319", "addr": "VIP Road, Vesu, Surat, Gujarat 395007"},
-        {"name": "Jaipur Royal Nutrition", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Rajasthan", "city": "Jaipur", "area": "Malviya Nagar", "phone": "98290 33419", "addr": "Calgiri Road, Malviya Nagar, Jaipur, RJ 302017"},
-        {"name": "Desert Storm Gym & Fitness", "kind": "Gym + Store", "cat": "Gym with Nutrition & Supplement Counter / Pro-Shop", "state": "Rajasthan", "city": "Jodhpur", "area": "Shastri Nagar", "phone": "98280 88124", "addr": "Near Geeta Bhawan, Shastri Nagar, Jodhpur, RJ 342003"},
-        # Kerala & Odisha & Telangana
-        {"name": "Kochi Nutrition Hub", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Kerala", "city": "Kochi", "area": "Panampilly Nagar", "phone": "98470 11928", "addr": "Main Avenue, Panampilly Nagar, Kochi, Kerala 682036"},
-        {"name": "Calicut Fitness Center", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Kerala", "city": "Kozhikode", "area": "Mavoor Road", "phone": "98460 77410", "addr": "Near KSRTC Bus Stand, Mavoor Road, Kozhikode, KL 673004"},
-        {"name": "Bhubaneswar Protein Depot", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Odisha", "city": "Bhubaneswar", "area": "Saheed Nagar", "phone": "94370 22194", "addr": "Janpath Road, Saheed Nagar, Bhubaneswar, Odisha 751007"},
-        {"name": "Hyderabad Muscle Mart", "kind": "Store", "cat": "Sports Nutrition / Supplement Store", "state": "Telangana", "city": "Hyderabad", "area": "Madhapur", "phone": "98490 44102", "addr": "Hitech City Main Road, Madhapur, Hyderabad, TS 500081"},
-        {"name": "Secunderabad Iron Gym", "kind": "Gym", "cat": "Fitness Centre / Gym", "state": "Telangana", "city": "Secunderabad", "area": "Trimulgherry", "phone": "98480 88219", "addr": "RPS Road, Trimulgherry, Secunderabad, TS 500015"},
+    region = str(state or "").strip()
+    if region.casefold() in {"all states / uts", "all states", "all india"}:
+        region = ""
+    location = region or "India"
+    base_terms = [
+        base_query,
+        "sports nutrition retailer " + location,
+        "whey protein creatine supplement shop " + location,
+        "sports supplements store full address " + location,
+        "authorized sports nutrition retailer " + location,
     ]
+    if query_term.strip():
+        base_terms.insert(0, query_term.strip() + " " + location)
+    # Keep the query set bounded while still using multiple independent result pages.
+    queries = list(dict.fromkeys(" ".join(q.split()) for q in base_terms))[:6]
+    result_links = []
+    seen_urls = set()
+    for index, query in enumerate(queries):
+        report(f"Searching independent web index {index + 1}/{len(queries)}...", 10 + int(index * 35 / max(1, len(queries))))
+        encoded = urllib.parse.quote_plus(query)
+        for engine, url in (
+            ("duckduckgo", f"https://html.duckduckgo.com/html/?q={encoded}"),
+            ("bing", f"https://www.bing.com/search?q={encoded}&count=20"),
+        ):
+            html_doc = get_html(url)
+            if not html_doc:
+                continue
+            for href, _label in parse_search_results(html_doc, engine):
+                canonical = href.split("#", 1)[0].rstrip("/")
+                if canonical not in seen_urls:
+                    seen_urls.add(canonical)
+                    result_links.append(canonical)
+        # Be courteous to public search endpoints.
+        time.sleep(0.25)
 
-    for item in live_catalogue:
+    found = []
+    seen_names = set()
+    crawl_limit = max(60, min(180, max_results * 4))
+    for index, url in enumerate(result_links[:crawl_limit]):
         if len(found) >= max_results:
             break
-        # Match region
-        if clean_region and clean_region.casefold() not in item["state"].casefold():
+        report(f"Inspecting merchant page {index + 1}/{min(len(result_links), crawl_limit)}...", 45 + int(index * 50 / max(1, min(len(result_links), crawl_limit))))
+        page_html = get_html(url) if deep_scrape else ""
+        if not page_html:
             continue
-        # Match category
-        if "gym" in cat_lower and item["kind"] == "Store":
-            continue
-        if ("pure" in cat_lower or "store" in cat_lower) and "gym" not in cat_lower and item["kind"] == "Gym":
-            continue
-
-        c_name = item["name"]
-        if c_name.casefold() in seen_names:
-            continue
-        seen_names.add(c_name.casefold())
-
-        maps_q = urllib.parse.quote(f"{c_name} {item['city']} {item['state']}")
-        maps_link = f"https://www.google.com/maps/search/?api=1&query={maps_q}"
-
-        found.append({
-            "kind": item["kind"],
-            "business_name": c_name,
-            "business_category": item["cat"],
-            "state": item["state"],
-            "city": item["city"],
-            "area": item["area"],
-            "phone": item["phone"],
-            "email": f"info@{re.sub(r'[^a-z0-9]', '', c_name.lower()[:14])}.in",
-            "address": item["addr"],
-            "maps": maps_link,
-            "website": maps_link,
-            "source_name": "Deep Web Scraper",
-            "source_type": "Deep Web Discovered",
-            "source_status": "Verified Active Merchant",
-            "verified": "Yes",
-            "notes": f"Verified live discovery from Indian commercial registry on {date.today().isoformat()}"
-        })
-
-    if progress_cb:
+        parser = PageParser()
         try:
-            progress_cb(f"✅ Deep scraping complete! Discovered {len(found)} genuine store(s).", 100)
+            parser.feed(page_html)
         except Exception:
-            pass
+            continue
+        title = " ".join(parser.title_parts).strip()
+        text_blob = " ".join(parser.text_parts)
+        address_text = " ".join(parser.address_parts).strip()
+        if not text_blob or negative.search(title + " " + text_blob[:12000]):
+            continue
+        if not product_terms.search(title + " " + text_blob[:20000]):
+            continue
+        if store_only and gym_terms.search(title) and not product_terms.search(title):
+            continue
 
+        business_name = title.split("|")[0].split(" - ")[0].split(" — ")[0].strip()
+        business_name = re.sub(r"\s+", " ", business_name).strip(" -|•")
+        if not business_name or len(business_name) < 3:
+            business_name = urlparse(url).netloc.removeprefix("www.")
+        name_key = business_name.casefold()
+        if name_key in seen_names:
+            continue
+
+        address = address_text
+        # Parse schema.org JSON-LD to extract real PostalAddress values when available.
+        for raw_json in parser.jsonld_parts:
+            try:
+                payload = json.loads(raw_json)
+            except Exception:
+                continue
+            stack = payload if isinstance(payload, list) else [payload]
+            while stack:
+                obj = stack.pop()
+                if isinstance(obj, list):
+                    stack.extend(obj)
+                elif isinstance(obj, dict):
+                    typ = obj.get("@type", "")
+                    if isinstance(typ, list):
+                        typ = " ".join(typ)
+                    if any(t in str(typ).casefold() for t in ("localbusiness", "store", "organization", "sportsactivitylocation")):
+                        candidate = obj.get("address")
+                        if isinstance(candidate, dict):
+                            address = ", ".join(str(candidate.get(k) or "").strip() for k in (
+                                "streetAddress", "addressLocality", "addressRegion", "postalCode", "addressCountry"
+                            ) if str(candidate.get(k) or "").strip())
+                        elif isinstance(candidate, str):
+                            address = candidate.strip()
+                    stack.extend(v for v in obj.values() if isinstance(v, (dict, list)))
+        if not address:
+            # Accept explicit street address-like text, not merely a city or state.
+            match = re.search(r"(?i)(?:address\s*[:\-]?\s*)([^\n]{12,220}(?:\b\d{6}\b))", text_blob)
+            if match:
+                address = " ".join(match.group(1).split())
+        if len(address) < 12 or not re.search(r"\b\d{6}\b", address):
+            continue
+        if negative.search(address):
+            continue
+
+        parsed_url = urlparse(url)
+        city = region
+        state_name = region
+        if not city:
+            for token in ("Mumbai", "Delhi", "Bengaluru", "Bangalore", "Hyderabad", "Chennai", "Kolkata", "Pune", "Ahmedabad", "Jaipur", "Lucknow", "Visakhapatnam", "Vijayawada", "Gurugram", "Faridabad", "Dehradun", "Patna", "Indore", "Bhopal", "Cuttack", "Bhubaneswar", "Kanpur", "Chandigarh"):
+                if re.search(r"\b" + re.escape(token) + r"\b", address, re.I):
+                    city = token
+                    break
+        phone_match = phone_pattern.search(text_blob)
+        phone = phone_match.group(0).strip() if phone_match else ""
+        email_match = email_pattern.search(text_blob)
+        email = email_match.group(0).strip() if email_match else ""
+        maps_link = ""
+        for href, _label in parser.links:
+            absolute = urljoin(url, href)
+            if "google." in urlparse(absolute).netloc.casefold() and "maps" in absolute.casefold():
+                maps_link = absolute
+                break
+        if not maps_link:
+            query = ", ".join(x for x in (business_name, address, "India") if x)
+            maps_link = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
+        seen_names.add(name_key)
+        found.append({
+            "kind": kind,
+            "business_name": business_name,
+            "business_category": default_category,
+            "state": state_name,
+            "city": city,
+            "area": "",
+            "phone": phone,
+            "email": email,
+            "address": address,
+            "maps": maps_link,
+            "website": url,
+            "source_name": "Deep Web Scraper",
+            "source_url": url,
+            "source_type": "Public merchant page",
+            "source_checked_at": date.today().isoformat(),
+            "source_status": "Public product listing; not call-verified",
+            "verified": "No",
+            "notes": "Product-selling evidence and a full postal address found on the linked public page.",
+        })
+    report(f"Deep search complete: {len(found)} evidence-backed records; no synthetic records added.", 100)
     return found
 
 
