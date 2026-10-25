@@ -6457,18 +6457,12 @@ class MainWindow(QMainWindow):
         self._repair_text_layouts()
 
     def _repair_text_layouts(self):
-        """Prevent labels from clipping or vertically sinking text across the UI."""
+        """Allow content labels and table cells to wrap instead of clipping text."""
         for label in self.findChildren(QLabel):
-            if label.objectName() in {"brandLogo", "headerClock", "clockModeLabel"}:
+            # Keep intentionally fixed-height decorative/status labels unchanged.
+            if label.minimumHeight() == label.maximumHeight():
                 continue
             label.setWordWrap(True)
-            label.setMargin(max(2, label.margin()))
-            # QLabel calculates height-for-width when wrapping is enabled. Keep the
-            # vertical policy flexible so layouts can show all lines instead of clipping.
-            if label.minimumHeight() != label.maximumHeight():
-                policy = label.sizePolicy()
-                policy.setVerticalPolicy(QSizePolicy.Policy.Preferred)
-                label.setSizePolicy(policy)
         for table in self.findChildren(QTableWidget):
             table.setWordWrap(True)
             table.setTextElideMode(Qt.TextElideMode.ElideNone)
