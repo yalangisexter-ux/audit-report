@@ -1,7 +1,7 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
 #define AppVersionEnv GetEnv("APP_VERSION")
 #if AppVersionEnv == ""
-	#define MyAppVersion "1.3.46"
+	#define MyAppVersion "1.3.47"
 #else
 	#define MyAppVersion AppVersionEnv
 #endif
@@ -133,7 +133,8 @@ begin
 	begin
 		TransactionInstallSucceeded := True;
 		// Ensure the updated application is ALWAYS relaunched automatically
-		Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+		if WizardSilent then
+			Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 	end;
 end;
 

@@ -9856,7 +9856,7 @@ class MainWindow(QMainWindow):
                 haystack = " ".join([str(e["employee_code"] or ""), e["name"], e["department"] or "", e["designation"] or "", e["phone"] or "", e["email"] or ""]).lower()
                 if search_text not in haystack:
                     continue
-            if selected_dept and not selected_dept.startswith("🏢 All"):
+            if selected_dept and not (selected_dept.startswith("🏢 All") or "all department" in selected_dept.lower()):
                 e_dept = (e["department"] or "General").strip().lower()
                 if selected_dept.lower() in ("general", "unassigned", "default"):
                     if e_dept not in ("general", "unassigned", "default", ""):
@@ -11740,7 +11740,7 @@ class MainWindow(QMainWindow):
             holiday_name = self.db.get_holiday(report_date)
             if holiday_name and opts.get("attendance_summary", True):
                 story.append(para("DECLARED HOLIDAY:", holiday_name, "RSSection"))
-            present = sum(x["status"] == "Present" for x in rows)
+            present = sum(is_present_attendance_status(x["status"]) for x in rows)
             absent = sum(x["status"] == "Absent" for x in rows)
             leave = sum(x["status"] == "Leave" for x in rows)
             if opts.get("attendance_summary", True):

@@ -274,7 +274,7 @@ def resolve_store_presence_states(record_or_name, city="", address="", url=""):
     for c_key, s_val in CITY_TO_STATE_MAP.items():
         if re.search(r'\b' + re.escape(c_key) + r'\b', blob):
             return s_val
-    for s_item in INDIA_STATES:
+    for s_item in INDIA_REGIONS:
         if re.search(r'\b' + re.escape(s_item.casefold()) + r'\b', blob):
             return s_item
     return "Delhi, Maharashtra, Karnataka, Uttar Pradesh, Haryana"
@@ -566,9 +566,10 @@ def sanitize_prospect_database_records(db):
             s = str(row[4] or "").strip()
             p_digits = re.sub(r'\D', '', p)
             a_digits = re.sub(r'\D', '', a)
+            letter_cnt = len(re.findall(r'[a-zA-Z]', p))
             if len(a_digits) >= 10 and len(p_digits) < 6:
                 updates.append((a, "", r_id))
-            elif len(p_digits) < 6 or (c and p.lower() == c.lower()) or (s and p.lower() == s.lower()):
+            elif len(p_digits) < 6 or (c and p.lower() == c.lower()) or (s and p.lower() == s.lower()) or letter_cnt > 3 or p.lower() in ("nan", "none", "null", "n/a", "-"):
                 updates.append(("", a, r_id))
         if updates:
             db.conn.executemany(
@@ -600,20 +601,34 @@ def sanitize_prospect_database_records(db):
 def format_prospect_cell_value(record, key):
     """Format and sanitize prospect values for display and export, ensuring 'NA' fallback for empty/displaced data."""
     raw_val = str(record.get(key, "") or "").strip()
+    if not raw_val or raw_val.casefold() in {"nan", "none", "null", "n/a", "-", ""}:
+        if key == "state":
+            resolved = resolve_store_presence_states(record)
+            return resolved if resolved else "NA"
+        return "NA"
+
+    if key == "state":
+        if raw_val in {"All-India", "All India", "India", "All-india"}:
+            resolved = resolve_store_presence_states(record)
+            return resolved if resolved else "NA"
+        return raw_val
+
     if key == "phone":
         digits = re.sub(r'\D', '', raw_val)
         c_val = str(record.get("city", "") or "").strip().lower()
         s_val = str(record.get("state", "") or "").strip().lower()
-        if len(digits) < 6 or (c_val and raw_val.lower() == c_val) or (s_val and raw_val.lower() == s_val):
+        letter_count = len(re.findall(r'[a-zA-Z]', raw_val))
+        if len(digits) < 6 or (c_val and raw_val.lower() == c_val) or (s_val and raw_val.lower() == s_val) or letter_count > 3:
             return "NA"
         return raw_val
-    elif key in {"contact_person", "email", "followup_date", "area", "address", "city", "business_category"}:
-        return raw_val if raw_val and raw_val.upper() != "NONE" else "NA"
-    elif key == "website":
-        return raw_val if raw_val and raw_val not in {"-", "None", "NONE"} else "NA"
-    elif key == "maps":
-        return raw_val if raw_val and raw_val.upper() != "NONE" else "NA"
-    return raw_val if raw_val else "NA"
+
+    if key in {"contact_person", "email", "followup_date", "area", "address", "city", "business_category"}:
+        return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+
+    if key in {"website", "maps"}:
+        return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+
+    return raw_val
 
 
 def persist_prospect_records(db, records, *, source_name="", source_url="", source_checked_at=None):
@@ -1193,7 +1208,7 @@ def crawl_search_engine_results(
         osm_q = f"{ot} {state_target} India".strip()
         osm_url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(osm_q)}&format=json&addressdetails=1&limit=8"
         try:
-            osm_req = urllib.request.Request(osm_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager/1.3.46 (contact@rawstrength.in)"})
+            osm_req = urllib.request.Request(osm_url, headers={"User-Agent": "RawStrengthEmployeeAuditManager/1.3.47 (contact@rawstrength.in)"})
             with urllib.request.urlopen(osm_req, timeout=5, context=ssl_ctx) as resp:
                 items = json.loads(resp.read().decode("utf-8"))
                 for item in items:
@@ -1676,7 +1691,7 @@ class CustomerProspectsTab(QWidget):
         self.load_dashboard_button.clicked.connect(self.choose_dashboard_workbook)
         self.scrape_web_button = QPushButton("Scrape Web Stores")
         self.scrape_web_button.clicked.connect(self.open_web_scrape_dialog)
-        self.load_master_india_button = QPushButton("Load Master India")
+        self.load_master_india_button = QPushButton("Load Store Directory (All States)")
         self.load_master_india_button.clicked.connect(self.load_master_india_stores)
         self.sync_google_sheets_button = QPushButton("Sync Google Sheets")
         self.sync_google_sheets_button.clicked.connect(self.sync_google_sheets)
@@ -2230,11 +2245,18 @@ class CustomerProspectsTab(QWidget):
         rows = build_regional_summary(self.records, self.dashboard_counts, include_all_regions=True)
         source_counts = defaultdict(lambda: {"web": 0, "workbook": 0})
         for record in self.records:
-            state = normalise_state(record.get("state"))
-            if str(record.get("source_type") or "").casefold().startswith("official web"):
-                source_counts[state]["web"] += 1
-            else:
-                source_counts[state]["workbook"] += 1
+            raw_state = str(record.get("state") or "").strip()
+            if not raw_state:
+                continue
+            is_web = str(record.get("source_type") or "").casefold().startswith("official web")
+            st_list = [s.strip() for s in raw_state.split(",") if s.strip()]
+            for sub_st in st_list:
+                clean_st = normalise_state(sub_st)
+                if clean_st and clean_st in INDIA_REGIONS:
+                    if is_web:
+                        source_counts[clean_st]["web"] += 1
+                    else:
+                        source_counts[clean_st]["workbook"] += 1
         for row in rows:
             row["web_leads"] = source_counts[row["state"]]["web"]
             row["workbook_leads"] = source_counts[row["state"]]["workbook"]
@@ -2595,7 +2617,7 @@ class CustomerProspectsTab(QWidget):
             return
 
         records = []
-        source_label = "Bundled All-India Stores"
+        source_label = "Bundled Store Directory"
         source_link = REFERENCE_DATABASE_URL
 
         # 1. Primary: Bundled verified store seed asset (offline-first, zero network dependency)
@@ -2669,7 +2691,7 @@ class CustomerProspectsTab(QWidget):
         QMessageBox.information(
             self,
             "Master Stores Loaded",
-            f"Loaded All-India Sports Nutrition & Supplement Stores!\n\n"
+            f"Loaded Sports Nutrition & Supplement Store Directory!\n\n"
             f"• Source: {source_label}\n"
             f"• Stores Processed: {len(records):,}\n"
             f"• New Stores Added: {result['inserted']:,}\n"
@@ -3492,7 +3514,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             if sys.platform == "win32":
                 try:
                     import subprocess
-                    subprocess.Popen(["explorer.exe", f"/select,{str(target_file.resolve())}"])
+                    subprocess.Popen(f'explorer.exe /select,"{str(target_file.resolve())}"')
                     return
                 except Exception:
                     pass
@@ -3746,11 +3768,18 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         rows = build_regional_summary(self.records, self.dashboard_counts, include_all_regions=True)
         source_counts = defaultdict(lambda: {"web": 0, "workbook": 0})
         for record in self.records:
-            state = normalise_state(record.get("state"))
-            if str(record.get("source_type") or "").casefold().startswith("official web"):
-                source_counts[state]["web"] += 1
-            else:
-                source_counts[state]["workbook"] += 1
+            raw_state = str(record.get("state") or "").strip()
+            if not raw_state:
+                continue
+            is_web = str(record.get("source_type") or "").casefold().startswith("official web")
+            st_list = [s.strip() for s in raw_state.split(",") if s.strip()]
+            for sub_st in st_list:
+                clean_st = normalise_state(sub_st)
+                if clean_st and clean_st in INDIA_REGIONS:
+                    if is_web:
+                        source_counts[clean_st]["web"] += 1
+                    else:
+                        source_counts[clean_st]["workbook"] += 1
         for row in rows:
             row["web_leads"] = source_counts[row["state"]]["web"]
             row["workbook_leads"] = source_counts[row["state"]]["workbook"]
@@ -4016,7 +4045,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             visible += shown
         self.results_label.setText(
             f"Showing {visible:,} of {len(self.records):,} stores in directory."
-            if self.records else "No store records loaded. Use 'Load All-India Stores' or 'Scrape Web' above."
+            if self.records else "No store records loaded. Use '⚡ 1-Tap Deep Web Scraping & Master Update' above."
         )
 
     def apply_theme(self, theme_name="night"):

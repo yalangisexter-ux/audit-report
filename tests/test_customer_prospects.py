@@ -816,3 +816,44 @@ def test_exclude_gym_wellness_herbal_healthkart_combo_filter(monkeypatch):
         assert "HealthKart Retail Outlet" not in visible_names
     finally:
         tab.close()
+
+
+def test_gaps_fix_cell_format_regional_source_counts_and_union_territories(monkeypatch):
+    """Verify that cell formatting falls back cleanly to 'NA', multi-state regional source counts are decomposed, and UTs are resolved."""
+    # 1. format_prospect_cell_value handles NA fallback and displaced phone data
+    assert prospects.format_prospect_cell_value({"phone": "Near Metro Station"}, "phone") == "NA"
+    assert prospects.format_prospect_cell_value({"phone": "123"}, "phone") == "NA"
+    assert prospects.format_prospect_cell_value({"phone": "nan"}, "phone") == "NA"
+    assert prospects.format_prospect_cell_value({"phone": "9876543210"}, "phone") == "9876543210"
+    assert prospects.format_prospect_cell_value({"contact_person": "None"}, "contact_person") == "NA"
+    assert prospects.format_prospect_cell_value({"email": "nan"}, "email") == "NA"
+    assert prospects.format_prospect_cell_value({"website": "-"}, "website") == "NA"
+
+    # 2. format_prospect_cell_value resolves 'All-India' state to real states
+    rec_villa = {"business_name": "Supplements Villa", "state": "All-India"}
+    formatted_st = prospects.format_prospect_cell_value(rec_villa, "state")
+    assert "Haryana" in formatted_st and "Delhi" in formatted_st
+    assert "All-India" not in formatted_st
+
+    # 3. resolve_store_presence_states resolves Union Territories and Islands
+    res_chd = prospects.resolve_store_presence_states("Rock Fitness", city="Chandigarh")
+    assert res_chd == "Chandigarh"
+
+    # 4. Regional table decomposes multi-state source counts
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        tab.records = [
+            {"business_name": "Supplements Villa", "state": "Haryana, Delhi, Uttar Pradesh", "kind": "Store", "source_type": "Official Web Seed"},
+            {"business_name": "Local Store", "state": "Haryana", "kind": "Store", "source_type": "Imported Local Workbook"}
+        ]
+        tab._fill_regional_table()
+        display_map = {r["state"]: r for r in tab.last_regional_display_rows}
+        assert display_map["Haryana"]["web_leads"] == 1
+        assert display_map["Haryana"]["workbook_leads"] == 1
+        assert display_map["Delhi"]["web_leads"] == 1
+        assert display_map["Uttar Pradesh"]["web_leads"] == 1
+    finally:
+        tab.close()
