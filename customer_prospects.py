@@ -1553,7 +1553,7 @@ class WebScraperDialog(QDialog):
         layout.setSpacing(10)
 
         info = QLabel(
-            "<b>Deep Nationwide Web Scraping with 100% Genuine Business Details</b><br>"
+            "<b>Evidence-Based Deep Web Search for Product-Selling Stores</b><br>"
             "<span style='color: #64748B;'>Select business type (Gym, Pure Supplement Store, or Gym Selling Products). "
             "Deep crawler visits merchant and gym web domains, extracts authentic contact phone numbers, "
             "verified email addresses, physical postal addresses, and Google Maps location links.<br>"
@@ -2831,19 +2831,9 @@ class CustomerProspectsTab(QWidget):
         source_label = "Bundled Store Directory"
         source_link = REFERENCE_DATABASE_URL
 
-        # 1. Primary: Bundled verified store seed asset (offline-first, zero network dependency)
-        seed_path = resource_path("assets/india_stores_seed.json")
-        if seed_path.is_file():
-            try:
-                with open(seed_path, "r", encoding="utf-8") as f:
-                    seed_data = json.load(f)
-                if isinstance(seed_data, list) and seed_data:
-                    records = seed_data
-                    source_label = "Bundled Store Directory"
-            except Exception as exc:
-                logging.getLogger("prospects").warning("Failed reading bundled store seed: %s", exc)
-
-        # 2. Fallback / Merge: Local Master Excel file if present
+        # Do not re-import the legacy bundled seed: its individual store records
+        # were not source-verified. Use the actual customer master workbook/sheet instead.
+        # 1. Primary: Local Master Excel file if present
         if not records:
             master_candidates = [
                 Path(r"C:\Users\DELL\Downloads\Google_Sheets_Master_Database.xlsx"),
@@ -2861,7 +2851,7 @@ class CustomerProspectsTab(QWidget):
                     except Exception:
                         pass
 
-        # 3. Fallback: Live Google Sheets if online and populated
+        # 2. Fallback: Live Google Sheets if online and populated
         if not records:
             temp_path = None
             try:
@@ -2907,7 +2897,7 @@ class CustomerProspectsTab(QWidget):
             f"• Stores Processed: {len(records):,}\n"
             f"• New Stores Added: {result['inserted']:,}\n"
             f"• Existing Preserved: {result['duplicates']:,}\n"
-            f"• Total Directory Stores: {len(self.records):,}"
+            f"• Total Directory Records: {len(self.records):,}"
         )
 
     def sync_google_sheets(self):
@@ -2962,7 +2952,7 @@ class CustomerProspectsTab(QWidget):
                 QMessageBox.information(
                     self,
                     "Offline-First Master Active",
-                    "Your local master database is 100% active with all 3,973 store records.\n\n"
+                    "Your local master database is active with its saved records.\n\n"
                     "Offline changes are saved locally and will automatically synchronize with Google Sheets upon internet connection."
                 )
         except Exception as exc:
