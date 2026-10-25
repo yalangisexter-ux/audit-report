@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QToolButton, QMenu, QSizePolicy, QFrame, QListView, QAbstractScrollArea, QListWidget, QListWidgetItem,
     QCalendarWidget, QAbstractSpinBox, QDateTimeEdit, QSpacerItem
 )
-from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QIcon, QPixmap, QPalette, QImage, QPainterPath
+from PySide6.QtGui import QAction, QPainter, QColor, QPen, QBrush, QConicalGradient, QLinearGradient, QFont, QFontDatabase, QFontMetrics, QIcon, QPixmap, QPalette, QImage, QPainterPath
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
@@ -6454,6 +6454,30 @@ class MainWindow(QMainWindow):
                 """)
         self._refresh_theme_chrome(self.current_theme())
         self.polish_tables()
+        self._repair_text_layouts()
+
+    def _repair_text_layouts(self):
+        """Prevent labels from clipping or vertically sinking text across the UI."""
+        for label in self.findChildren(QLabel):
+            if label.objectName() in {"brandLogo", "headerClock", "clockModeLabel"}:
+                continue
+            label.setWordWrap(True)
+            label.setMargin(max(2, label.margin()))
+            if label.minimumHeight() != label.maximumHeight():
+                metrics = label.fontMetrics()
+                available_width = max(100, label.width() - label.contentsMargins().left() - label.contentsMargins().right() - 6)
+                text = label.text()
+                if text:
+                    bounds = metrics.boundingRect(
+                        0, 0, available_width, 10000,
+                        Qt.TextFlag.TextWordWrap, text
+                    )
+                    needed_height = max(metrics.height() + 4, bounds.height() + 4)
+                    label.setMinimumHeight(needed_height)
+        for table in self.findChildren(QTableWidget):
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideNone)
+            table.resizeRowsToContents()
 
     def toggle_maximize(self):
         if self.isMaximized():
@@ -6487,6 +6511,7 @@ class MainWindow(QMainWindow):
         # resize; repeat once on the event loop so first-show/maximize uses the
         # actual DPI-scaled client width.
         QTimer.singleShot(0, self._apply_responsive_layout)
+        QTimer.singleShot(0, self._repair_text_layouts)
         if hasattr(self, "title_label"):
             QTimer.singleShot(0, self.update_title_label)
         if hasattr(self, "sidebar_buttons"):
@@ -9581,8 +9606,8 @@ class MainWindow(QMainWindow):
             table.verticalHeader().setDefaultSectionSize(row_height)
             table.verticalHeader().setMinimumSectionSize(max(36, row_height - 6))
             table.setCornerButtonEnabled(False)
-            table.setWordWrap(False)
-            table.setTextElideMode(Qt.TextElideMode.ElideRight)
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideNone)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
