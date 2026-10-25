@@ -2841,24 +2841,18 @@ class CustomerProspectsTab(QWidget):
                 QLineEdit.EchoMode.Password
             )
             if not ok or not verify_developer_password(pwd):
-                # Download and sync live data of Taruna/admin into developer local view
-                try:
-                    stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
-                    self._reload_saved_records()
-                    if hasattr(self, "sync_status_badge"):
-                        self.sync_status_badge.setText("🧪 Developer Test Mode: Synced Locally (Live Push Disabled)")
-                        self.sync_status_badge.setStyleSheet(
-                            "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
-                            "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
-                        )
-                    QMessageBox.information(
-                        self,
-                        "Developer Local View Updated",
-                        "Latest synced data of Taruna / Admin has been synchronized into your local view!\n\n"
-                        "Live master push is protected. Your local test edits remain safe and private."
+                # No pull or push is allowed when the developer cancels or fails auth.
+                # This prevents an unauthenticated test session from synchronizing.
+                if hasattr(self, "sync_status_badge"):
+                    self.sync_status_badge.setText("🧪 Developer Test Mode: Sync not authorized (Local Only)")
+                    self.sync_status_badge.setStyleSheet(
+                        "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
+                        "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
                     )
-                except Exception as exc:
-                    logging.getLogger("prospects").info("Developer sync notice: %s", exc)
+                QMessageBox.information(
+                    self, "Developer Sync Not Authorized",
+                    "Enter the developer password to synchronize. No cloud data was pulled or pushed."
+                )
                 return
 
         # Automatic sync for Admin / Taruna (or authorized developer)
