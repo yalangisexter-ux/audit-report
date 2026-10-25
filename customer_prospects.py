@@ -2107,7 +2107,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setMinimumHeight(420)
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
-        for index, width in enumerate((85, 210, 160, 150, 130, 140, 135, 320, 110, 150, 95, 175, 180, 240, 170, 110, 130, 320, 320, 160)):
+        for index, width in enumerate((85, 210, 160, 150, 130, 140, 135, 320, 320, 150, 95, 175, 180, 240, 170, 110, 130, 320, 320, 160)):
             self.leads_table.setColumnWidth(index, width)
         layout.addWidget(self.leads_table, 1)
 
