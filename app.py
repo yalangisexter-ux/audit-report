@@ -1824,26 +1824,25 @@ def is_privileged_user(user_or_role) -> bool:
 
 
 def is_developer_test_user(user_or_role) -> bool:
-    """Return True if user is the developer / testing user ('admin').
+    """Recognize the lowercase 'admin' developer account without misclassifying Taruna.
 
-    The developer user 'admin' can view and edit data locally for testing,
-    but testing changes (adds, edits, deletes) must NOT be synced to the live
-    customer master database or Google Sheets.
+    The customer's role label is 'Admin'; that label alone does not grant developer
+    privileges. A lowercase username 'admin' is the developer/tester identity.
     """
     if not user_or_role:
         return False
     if isinstance(user_or_role, dict):
-        uname = str(user_or_role.get("username", "")).strip().lower()
-        role = str(user_or_role.get("role", "")).strip().lower()
-        dname = str(user_or_role.get("display_name", "")).strip().lower()
+        raw_username = str(user_or_role.get("username", "")).strip()
+        role = str(user_or_role.get("role", "")).strip().casefold()
+        display_name = str(user_or_role.get("display_name", "")).strip().casefold()
     else:
-        uname = str(user_or_role or "").strip().lower()
+        raw_username = str(user_or_role or "").strip()
         role = ""
-        dname = ""
-    # Explicit master/customer user is never treated as developer test user
-    if "taruna" in uname or "taruna" in dname:
+        display_name = ""
+    # Taruna's customer identity takes precedence over the generic Admin role label.
+    if raw_username == "Admin" or "taruna" in raw_username.casefold() or "taruna" in display_name:
         return False
-    if uname == "admin":
+    if raw_username == "admin":
         return True
     if role == "developer":
         return True
@@ -1851,20 +1850,18 @@ def is_developer_test_user(user_or_role) -> bool:
 
 
 def is_master_customer_user(user_or_role) -> bool:
-    """Return True if user is the master customer user ('Admin / Taruna').
-
-    This user is the master customer whose data is synchronized to the central Google Sheet
-    and encrypted cloud database.
-    """
+    """Return True for Taruna's customer identity or the legacy exact username 'Admin'."""
     if not user_or_role:
         return False
     if isinstance(user_or_role, dict):
-        uname = str(user_or_role.get("username", "")).strip().lower()
-        dname = str(user_or_role.get("display_name", "")).strip().lower()
+        raw_username = str(user_or_role.get("username", "")).strip()
+        uname = raw_username.casefold()
+        dname = str(user_or_role.get("display_name", "")).strip().casefold()
     else:
-        uname = str(user_or_role or "").strip().lower()
+        raw_username = str(user_or_role or "").strip()
+        uname = raw_username.casefold()
         dname = ""
-    return "taruna" in uname or "taruna" in dname or "master" in dname
+    return raw_username == "Admin" or "taruna" in uname or "taruna" in dname or "master" in dname
 
 
 def _ensure_local_task_columns(conn: sqlite3.Connection):
@@ -6457,6 +6454,19 @@ class MainWindow(QMainWindow):
                 """)
         self._refresh_theme_chrome(self.current_theme())
         self.polish_tables()
+        self._repair_text_layouts()
+
+    def _repair_text_layouts(self):
+        """Allow content labels and table cells to wrap instead of clipping text."""
+        for label in self.findChildren(QLabel):
+            # Keep intentionally fixed-height decorative/status labels unchanged.
+            if label.minimumHeight() == label.maximumHeight():
+                continue
+            label.setWordWrap(True)
+        for table in self.findChildren(QTableWidget):
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideNone)
+            table.resizeRowsToContents()
 
     def toggle_maximize(self):
         if self.isMaximized():
@@ -6490,6 +6500,7 @@ class MainWindow(QMainWindow):
         # resize; repeat once on the event loop so first-show/maximize uses the
         # actual DPI-scaled client width.
         QTimer.singleShot(0, self._apply_responsive_layout)
+        QTimer.singleShot(0, self._repair_text_layouts)
         if hasattr(self, "title_label"):
             QTimer.singleShot(0, self.update_title_label)
         if hasattr(self, "sidebar_buttons"):
@@ -9354,21 +9365,21 @@ class MainWindow(QMainWindow):
 
         QTimer.singleShot(1500, self._background_auto_sync)
 
-    def schedule_auto_sync(self, delay_ms=2500, immediate=False):
-        if is_developer_test_user(getattr(self, "current_user", None)):
-            logging.getLogger("auto_sync").info("Auto-sync push skipped: Developer test user ('admin') is active. Test data will not be pushed to master.")
+    def schedule_auto_sync(self, delay_ms=2500, immediate=False, developer_authorized=False):
+        if is_developer_test_user(getattr(self, "current_user", None)) and not developer_authorized:
+            logging.getLogger("auto_sync").info("Developer auto-sync skipped without per-action password authorization.")
             return
         sync = getattr(self.db, "github_sync", None)
         if sync is None or not sync.is_configured:
             return
         if immediate:
-            self._background_auto_sync()
+            self._background_auto_sync(developer_authorized=developer_authorized)
         else:
-            if hasattr(self, "_debounce_sync_timer"):
+            if hasattr(self, "_debounce_sync_timer") and not developer_authorized:
                 self._debounce_sync_timer.start(delay_ms)
 
-    def _background_auto_sync(self):
-        if is_developer_test_user(getattr(self, "current_user", None)):
+    def _background_auto_sync(self, developer_authorized=False):
+        if is_developer_test_user(getattr(self, "current_user", None)) and not developer_authorized:
             return
         sync = getattr(self.db, "github_sync", None)
         if sync is None or not sync.is_configured or sync.is_busy:
@@ -9421,18 +9432,20 @@ class MainWindow(QMainWindow):
                 pass
 
     def sync_github_database_now(self):
+        developer_authorized = False
         if is_developer_test_user(self.current_user):
-            QMessageBox.information(
-                self,
-                "Developer Test Mode (Local Testing Only)",
-                "You are signed in as developer 'admin'.\n\n"
-                "Cloud synchronization to the master customer database is paused to prevent "
-                "testing additions, modifications, or deletions from altering live customer data.\n\n"
-                "• All your local edits and tests remain safe in your local database.\n"
-                "• Master customer data is protected.\n"
-                "• To synchronize live customer master data, sign in as 'Admin / Taruna'."
+            password, ok = QInputDialog.getText(
+                self, "Developer authorization",
+                "Signed in as developer 'admin'. Enter the developer password to sync test data:",
+                QLineEdit.EchoMode.Password,
             )
-            return
+            if not ok or not password:
+                return
+            if not verify_developer_password(password):
+                return error(self, "Developer authorization failed. No data was synchronized.")
+            developer_authorized = True
+        # Customer username 'Admin' uses the master-data path without a developer
+        # password. Lowercase developer 'admin' is authorized only for this action.
         if not self.db.github_sync.is_configured:
             url, ok = QInputDialog.getText(
                 self, "Configure Cloud Sync",
@@ -9446,20 +9459,23 @@ class MainWindow(QMainWindow):
                 self._refresh_github_sync_status()
             else:
                 return error(self, "Secure database sync is not configured. Please set the Sync Worker URL.")
-        self.schedule_auto_sync(immediate=True)
+        self.schedule_auto_sync(immediate=True, developer_authorized=developer_authorized)
         self._refresh_github_sync_status()
-        info(self, "Centralized sync triggered.\n\nYour data is being continuously synchronized with encrypted cloud storage in the background.")
+        info(self, "Centralized sync triggered.\n\nYour data is being synchronized with encrypted cloud storage in the background.")
 
     def pull_latest_github_database(self):
-        """Developer-gated pull with validation, local backup, and account/settings preservation."""
-        password, ok = QInputDialog.getText(
-            self, "Developer authorization", "Enter developer password to pull latest data:",
-            QLineEdit.EchoMode.Password,
-        )
-        if not ok or not password:
-            return
-        if not verify_developer_password(password):
-            return error(self, "Developer authorization failed.")
+        """Pull latest cloud data; customer Admin needs no developer password, lowercase admin does."""
+        password = None
+        developer_session = is_developer_test_user(self.current_user)
+        if developer_session:
+            password, ok = QInputDialog.getText(
+                self, "Developer authorization", "Enter developer password to pull latest data:",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok or not password:
+                return
+            if not verify_developer_password(password):
+                return error(self, "Developer authorization failed.")
         sync = self.db.github_sync
         if not sync.is_configured:
             url, ok = QInputDialog.getText(
@@ -9493,6 +9509,11 @@ class MainWindow(QMainWindow):
                 raw = sync.download_latest_snapshot(candidate_secret=password, prefer_latest=True)
             except Exception as dl_err:
                 if "Snapshot decryption failed" in str(dl_err):
+                    if not developer_session:
+                        raise RuntimeError(
+                            "The cloud snapshot could not be decrypted with this installation's configured key. "
+                            "Customer sync does not require a password; contact the developer to correct the sync-key configuration."
+                        ) from dl_err
                     custom_key, ok = QInputDialog.getText(
                         self, "Snapshot Decryption Passphrase",
                         "The remote snapshot could not be decrypted with default credentials.\n"
@@ -9574,8 +9595,8 @@ class MainWindow(QMainWindow):
             table.verticalHeader().setDefaultSectionSize(row_height)
             table.verticalHeader().setMinimumSectionSize(max(36, row_height - 6))
             table.setCornerButtonEnabled(False)
-            table.setWordWrap(False)
-            table.setTextElideMode(Qt.TextElideMode.ElideRight)
+            table.setWordWrap(True)
+            table.setTextElideMode(Qt.TextElideMode.ElideNone)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -12276,7 +12297,23 @@ class MainWindow(QMainWindow):
 
     def sync_google_sheets_action(self):
         if is_developer_test_user(self.current_user):
+            # Developer/test accounts must authenticate before any cloud read or write.
+            # Cancellation and failed authentication must not pull data into the test DB.
             try:
+                from cloudflare_chat import verify_developer_password
+                pwd, ok = QInputDialog.getText(
+                    self,
+                    "Developer Sync Authorization",
+                    "Enter the developer password to sync Google Sheets data.",
+                    QLineEdit.EchoMode.Password
+                )
+                if not ok or not verify_developer_password(pwd):
+                    QMessageBox.information(
+                        self,
+                        "Developer Sync Not Authorized",
+                        "No cloud data was pulled or pushed."
+                    )
+                    return
                 import google_sheets_sync
                 stats = google_sheets_sync.sync_from_live_google_sheet(self.db)
                 self.refresh_employees()
@@ -12285,10 +12322,8 @@ class MainWindow(QMainWindow):
                 if hasattr(self, "customer_tab") and hasattr(self.customer_tab, "_reload_saved_records"):
                     self.customer_tab._reload_saved_records()
                 msg = (
-                    "View Live Google Sheets Data (Developer Test Mode)\n\n"
-                    "Data pulled from live Google Sheets into your local view successfully.\n\n"
-                    "Note: Master Sheet push is paused while signed in as developer 'admin'. "
-                    "Local test changes (adds/deletes) will NOT sync to master to protect customer data."
+                    "Google Sheets data refreshed in Developer Test Mode.\n\n"
+                    "Local test changes remain isolated from the customer master."
                 )
                 QMessageBox.information(self, "Google Sheets Sync (Test Mode)", msg)
             except Exception as exc:

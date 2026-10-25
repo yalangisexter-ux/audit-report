@@ -942,3 +942,73 @@ def test_v1348_view_switcher_scrollbar_deep_search_and_print(monkeypatch):
         assert tab.region_table.verticalHeader().defaultSectionSize() == 38
     finally:
         tab.close()
+
+
+def test_existing_store_with_full_address_gets_google_maps_search_link(tmp_path):
+    import sqlite3
+    from urllib.parse import parse_qs, urlparse
+
+    db_path = tmp_path / "prospects.db"
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """CREATE TABLE customer_prospects (
+            id INTEGER PRIMARY KEY,
+            state TEXT, city TEXT, business_name TEXT, address TEXT, maps TEXT
+        )"""
+    )
+    conn.execute(
+        "INSERT INTO customer_prospects (state, city, business_name, address, maps) VALUES (?, ?, ?, ?, ?)",
+        ("Andhra Pradesh", "Vijayawada", "Fit Fuel Supplements", "Shop 12, MG Road, Vijayawada 520010", "NA"),
+    )
+    conn.commit()
+
+    class DB:
+        def __init__(self, connection):
+            self.conn = connection
+
+    try:
+        records = prospects.load_saved_prospects(DB(conn))
+        assert len(records) == 1
+        record = records[0]
+        parsed = urlparse(record["maps"])
+        assert parsed.scheme == "https"
+        assert parsed.netloc == "www.google.com"
+        assert parsed.path == "/maps/search/"
+        query = parse_qs(parsed.query)["query"][0]
+        assert "Fit Fuel Supplements" in query
+        assert "Shop 12, MG Road, Vijayawada 520010" in query
+        saved = conn.execute("SELECT maps FROM customer_prospects WHERE id=1").fetchone()[0]
+        assert saved == record["maps"]
+    finally:
+        conn.close()
+
+
+def test_official_retailer_rows_have_full_addresses_and_actionable_maps_links():
+    assert prospects.RESEARCHED_SOURCE_URL.startswith("https://")
+    assert prospects.RESEARCHED_WEB_LEADS
+    for lead in prospects.RESEARCHED_WEB_LEADS:
+        assert lead["business_name"].strip()
+        assert len(lead["address"].strip()) >= 12
+        maps_url = prospects.google_maps_search_url(lead)
+        assert maps_url.startswith("https://www.google.com/maps/search/?")
+        from urllib.parse import parse_qs, urlparse
+        query = parse_qs(urlparse(maps_url).query)["query"][0]
+        assert lead["address"] in query
+
+
+def test_deep_scraper_does_not_create_synthetic_leads_when_search_is_unavailable(monkeypatch):
+    import urllib.request
+
+    def offline(*_args, **_kwargs):
+        raise OSError("offline test")
+
+    monkeypatch.setattr(urllib.request, "urlopen", offline)
+    results = prospects.crawl_search_engine_results(
+        category="Pure Product Selling Stores",
+        state="",
+        query_term="sports nutrition supplement store",
+        max_results=5,
+        deep_scrape=True,
+    )
+    assert results == []
