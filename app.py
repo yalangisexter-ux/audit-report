@@ -6106,7 +6106,34 @@ class MainWindow(QMainWindow):
         self._polish_all_input_controls(theme_name)
 
     def _refresh_dashboard_action_styles(self, theme_name=None):
-        colors = self._ui_chrome_palette(theme_name or self.current_theme())
+        t_name = (theme_name or self.current_theme()).lower()
+        colors = self._ui_chrome_palette(t_name)
+        is_dark = t_name in ("night", "dark")
+        kpi_bg = "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(17,25,50,0.92), stop:1 rgba(9,14,30,0.90))" if is_dark else ("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #F0F9FF, stop:1 #E0F2FE)" if t_name == "ocean" else ("qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #FFF7ED, stop:1 #FFEDD5)" if t_name == "sunset" else "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #FFFFFF, stop:1 #F8FAFC)"))
+        kpi_border = "rgba(56, 189, 248, 0.25)" if is_dark else ("#BAE6FD" if t_name == "ocean" else ("#FED7AA" if t_name == "sunset" else "rgba(203, 213, 225, 0.85)"))
+        val_col = "#FFFFFF" if is_dark else ("#0C4A6E" if t_name == "ocean" else ("#7C2D12" if t_name == "sunset" else "#0F172A"))
+
+        if hasattr(self, "kpi_cards"):
+            for card in self.kpi_cards:
+                base_acc = getattr(card, "_base_accent", "#4F46E5")
+                neon_acc = getattr(card, "_neon_accent", "#00E5FF")
+                act_acc = neon_acc if is_dark else base_acc
+                sub_col = "#CBD5E1" if is_dark else base_acc
+                card.setStyleSheet(
+                    f"QGroupBox#kpiCard {{ background: {kpi_bg}; "
+                    f"border: 1.5px solid {kpi_border}; border-top: 3.5px solid {act_acc}; border-radius: 14px; padding-top: 16px; margin-top: 8px; }} "
+                    f"QGroupBox#kpiCard:hover {{ border: 1.5px solid {act_acc}; border-top: 4px solid {act_acc}; }} "
+                    f"QGroupBox#kpiCard::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 2px 8px; "
+                    f"background: {act_acc}; color: #FFFFFF; border-radius: 5px; font-size: 8pt; font-weight: 800; letter-spacing: 0.5px; }}"
+                )
+                if hasattr(card, "_val_label"):
+                    card._val_label.setStyleSheet(f"font-size: 26pt; font-weight: 900; color: {act_acc if is_dark else val_col};")
+                if hasattr(card, "_sub_label"):
+                    card._sub_label.setStyleSheet(f"font-size: 8pt; font-weight: 700; color: {sub_col}; letter-spacing: 0.3px;")
+                if hasattr(card, "_sparkline"):
+                    card._sparkline.color = act_acc
+                    card._sparkline.update()
+
         for button in self.findChildren(QPushButton):
             if button.property("dashboardAction") != "true":
                 continue
@@ -6739,6 +6766,18 @@ class MainWindow(QMainWindow):
                 self.customer_tab.apply_theme(theme_name)
             except Exception:
                 pass
+        # Refresh all tables and data views so existing rows get the active theme colors
+        try:
+            if hasattr(self, "refresh_all"):
+                self.refresh_all()
+            if hasattr(self, "refresh_attendance"):
+                self.refresh_attendance()
+            if hasattr(self, "refresh_attendance_summary"):
+                self.refresh_attendance_summary()
+            if hasattr(self, "refresh_dashboard"):
+                self.refresh_dashboard()
+        except Exception:
+            pass
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = (
@@ -8010,6 +8049,12 @@ class MainWindow(QMainWindow):
             metric_col.addWidget(sub_label)
             layout.addLayout(metric_col, 1)
             spark = MiniSparkline(color=active_accent)
+            card._base_accent = accent
+            card._neon_accent = neon_accent
+            card._val_label = value
+            card._sub_label = sub_label
+            card._sparkline = spark
+            card._subtitle_desc = subtitle_desc
             layout.addWidget(spark)
             self.kpi_sparklines.append(spark)
             self.kpi_cards.append(card)
@@ -9782,7 +9827,7 @@ class MainWindow(QMainWindow):
         item = QTableWidgetItem(text)
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         key = text.lower()
-        is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark", "ocean", "sunset")
+        is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark")
         if is_dark:
             palette = {
                 "submitted": ("rgba(16, 185, 129, 0.25)", "#34D399"),
@@ -9856,8 +9901,9 @@ class MainWindow(QMainWindow):
                 item = self.status_item(text)
             else:
                 item = QTableWidgetItem(text)
-                is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark", "ocean", "sunset")
-                item.setForeground(QColor("#F8FAFC" if is_dark else "#0F172A"))
+                is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark")
+                pal = self._ui_chrome_palette(self.current_theme())
+                item.setForeground(QColor(pal.get("table_fg", "#F8FAFC" if is_dark else "#0F172A")))
             h_item = table.horizontalHeaderItem(c)
             h_text = h_item.text().strip().lower() if h_item else ""
             is_center = (c in status_cols) or (c == 0) or (h_text in center_headers)
@@ -11055,8 +11101,7 @@ class MainWindow(QMainWindow):
             self.att_table.setRowHeight(r, 52)
             name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-            if is_dark_mode:
-                name.setForeground(QColor("#FFFFFF"))
+            name.setForeground(QColor("#FFFFFF" if is_dark_mode else "#0F172A"))
             self.att_table.setItem(r,0,name)
             if selected_eid is not None and e["id"] == selected_eid:
                 restore_row = r
@@ -11069,8 +11114,7 @@ class MainWindow(QMainWindow):
             date_item = QTableWidgetItem(d)
             date_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignCenter)
             date_item.setToolTip(f"Attendance date: {d}")
-            if is_dark_mode:
-                date_item.setForeground(QColor("#94A3B8"))
+            date_item.setForeground(QColor("#94A3B8" if is_dark_mode else "#64748B"))
             self.att_table.setItem(r, 1, date_item)
 
             def attach_editor(column, editor):
@@ -11096,7 +11140,7 @@ class MainWindow(QMainWindow):
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             status_combo.setEnabled(not bool(holiday))
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
-            arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() in ("night", "ocean") else "assets/chevron_down_slate.png").replace("\\", "/")
+            arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() in ("night", "dark") else "assets/chevron_down_slate.png").replace("\\", "/")
             if is_dark_mode:
                 if is_present_attendance_status(status):
                     st_bg, st_fg, st_border = "rgba(16, 185, 129, 0.14)", "#34D399", "rgba(16, 185, 129, 0.35)"

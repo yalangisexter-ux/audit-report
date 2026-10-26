@@ -2126,21 +2126,14 @@ class CustomerProspectsTab(QWidget):
         # Prominent View Switcher Dropdown (Store Directory vs Regional Dashboard)
         view_nav_card = QFrame()
         view_nav_card.setObjectName("prospectViewNavCard")
-        view_nav_card.setStyleSheet(
-            "QFrame#prospectViewNavCard {"
-            "  background: rgba(30, 41, 59, 0.85);"
-            "  border: 1.5px solid rgba(59, 130, 246, 0.4);"
-            "  border-radius: 8px;"
-            "  padding: 6px 12px;"
-            "}"
-        )
+        self.view_nav_card = view_nav_card
         view_nav_layout = QHBoxLayout(view_nav_card)
         view_nav_layout.setContentsMargins(10, 6, 10, 6)
         view_nav_layout.setSpacing(12)
 
         view_icon_label = QLabel("👁️ Select View:")
         view_icon_label.setObjectName("prospectViewLabel")
-        view_icon_label.setStyleSheet("font-size: 10pt; font-weight: 800; color: #38BDF8;")
+        self.view_icon_label = view_icon_label
         view_nav_layout.addWidget(view_icon_label)
 
         self.view_selector = QComboBox()
@@ -2161,7 +2154,8 @@ class CustomerProspectsTab(QWidget):
         view_nav_layout.addWidget(self.view_selector, 0)
 
         view_nav_hint = QLabel("Use dropdown to switch views. All print and export options are at the bottom.")
-        view_nav_hint.setStyleSheet("font-size: 8.5pt; color: #CBD5E1; font-style: italic;")
+        view_nav_hint.setObjectName("prospectViewHint")
+        self.view_nav_hint = view_nav_hint
         view_nav_layout.addWidget(view_nav_hint, 1)
 
         root.addWidget(view_nav_card)
@@ -2169,14 +2163,7 @@ class CustomerProspectsTab(QWidget):
         # Single Unified Action Card: 1-Tap Deep Web Scraping & Continuous Master Sync
         action_card = QFrame()
         action_card.setObjectName("prospectActionCard")
-        action_card.setStyleSheet(
-            "QFrame#prospectActionCard {"
-            "  background: rgba(30, 41, 59, 0.7);"
-            "  border: 1px solid rgba(255, 255, 255, 0.08);"
-            "  border-radius: 8px;"
-            "  padding: 6px 12px;"
-            "}"
-        )
+        self.action_card = action_card
         action_layout = QHBoxLayout(action_card)
         action_layout.setContentsMargins(10, 8, 10, 8)
         action_layout.setSpacing(12)
@@ -2287,7 +2274,13 @@ class CustomerProspectsTab(QWidget):
         main_layout.addWidget(outer_scroll)
         self.outer_scroll_area = outer_scroll
 
-        self.apply_theme("night")
+        init_theme = "night"
+        if hasattr(self, "db") and self.db and hasattr(self.db, "get_setting"):
+            try:
+                init_theme = self.db.get_setting("ui_theme", "night") or "night"
+            except Exception:
+                pass
+        self.apply_theme(init_theme)
         self._refresh_views()
 
     def _on_view_selector_changed(self, index):
@@ -2571,30 +2564,20 @@ class CustomerProspectsTab(QWidget):
         # Dedicated Print Center & Export Section (at the very bottom / last - spacious & uncrowded)
         print_card = QFrame()
         print_card.setObjectName("storeDirectoryPrintCard")
-        print_card.setStyleSheet(
-            "QFrame#storeDirectoryPrintCard { "
-            "  background: rgba(15, 23, 42, 0.90); "
-            "  border: 1.5px solid rgba(59, 130, 246, 0.50); "
-            "  border-radius: 8px; padding: 8px 14px; "
-            "}"
-        )
+        self.print_card = print_card
         print_layout = QHBoxLayout(print_card)
         print_layout.setContentsMargins(10, 8, 10, 8)
         print_layout.setSpacing(10)
 
         print_title = QLabel("🖨️ Print Center & Export:")
-        print_title.setStyleSheet("font-size: 9.5pt; font-weight: 800; color: #38BDF8;")
+        print_title.setObjectName("storeDirectoryPrintTitle")
+        self.print_title = print_title
         print_layout.addWidget(print_title)
 
         print_layout.addWidget(self.print_export_combo, 0)
 
-        # Retain primary action buttons visible in toolbar
-        for btn in (self.btn_print_preview, self.btn_print, self.btn_folder):
-            btn.setStyleSheet(
-                "QPushButton { font-size: 8.5pt; font-weight: 700; background: #1E293B; "
-                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; color: #F8FAFC; min-height: 30px; } "
-                "QPushButton:hover { background: #2563EB; color: #FFFFFF; border-color: #60A5FA; }"
-            )
+        self.print_buttons = [self.btn_print_preview, self.btn_print, self.btn_folder]
+        for btn in self.print_buttons:
             print_layout.addWidget(btn)
 
         # Secondary / export buttons remain accessible via print_export_combo; retain handles on self for tests & API
@@ -2761,19 +2744,14 @@ class CustomerProspectsTab(QWidget):
         # Dedicated Regional Print Center & Export Section
         regional_print_card = QFrame()
         regional_print_card.setObjectName("regionalDashboardPrintCard")
-        regional_print_card.setStyleSheet(
-            "QFrame#regionalDashboardPrintCard { "
-            "  background: rgba(15, 23, 42, 0.75); "
-            "  border: 1px solid rgba(59, 130, 246, 0.35); "
-            "  border-radius: 8px; padding: 6px 12px; "
-            "}"
-        )
+        self.regional_print_card = regional_print_card
         reg_print_layout = QHBoxLayout(regional_print_card)
         reg_print_layout.setContentsMargins(10, 8, 10, 8)
         reg_print_layout.setSpacing(10)
 
         reg_print_title = QLabel("🖨️ Regional Print Center & Export:")
-        reg_print_title.setStyleSheet("font-size: 9pt; font-weight: 700; color: #93C5FD;")
+        reg_print_title.setObjectName("regionalDashboardPrintTitle")
+        self.reg_print_title = reg_print_title
         reg_print_layout.addWidget(reg_print_title)
 
         self.regional_print_combo = QComboBox()
@@ -2785,12 +2763,6 @@ class CustomerProspectsTab(QWidget):
         self.regional_print_combo.addItem("📊 Export Regional to CSV (.csv)")
         self.regional_print_combo.addItem("📂 Open Export Folder")
         self.regional_print_combo.currentIndexChanged.connect(self._on_regional_print_export_changed)
-        self.regional_print_combo.setStyleSheet(
-            "QComboBox { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-width: 195px; min-height: 30px; } "
-            "QComboBox::drop-down { border: none; } "
-            "QComboBox QAbstractItemView { background: #1E293B; color: #F8FAFC; selection-background-color: #2563EB; }"
-        )
         reg_print_layout.addWidget(self.regional_print_combo, 0)
 
         self.btn_regional_preview = QPushButton("🖨️ Print Preview")
@@ -2800,16 +2772,13 @@ class CustomerProspectsTab(QWidget):
         self.btn_regional_folder = QPushButton("📂 Open Folder")
         self.btn_regional_folder.clicked.connect(self.open_export_folder)
 
-        for btn in (self.btn_regional_preview, self.btn_regional_print, self.btn_regional_folder):
-            btn.setStyleSheet(
-                "QPushButton { font-size: 8.5pt; font-weight: 600; background: rgba(37, 99, 235, 0.2); "
-                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; color: #93C5FD; min-height: 30px; } "
-                "QPushButton:hover { background: #2563EB; color: #FFFFFF; }"
-            )
+        self.regional_print_buttons = [self.btn_regional_preview, self.btn_regional_print, self.btn_regional_folder]
+        for btn in self.regional_print_buttons:
             reg_print_layout.addWidget(btn)
 
         reg_print_note = QLabel("Replicates official Raw Strength Calisthenics Print Center")
-        reg_print_note.setStyleSheet("font-size: 8pt; color: #64748B; font-style: italic;")
+        reg_print_note.setObjectName("regionalDashboardPrintNote")
+        self.reg_print_note = reg_print_note
         reg_print_layout.addWidget(reg_print_note, 1)
 
         layout.addWidget(regional_print_card)
@@ -4040,6 +4009,13 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         name = format_prospect_cell_value(record, 'business_name')
         dialog.setWindowTitle(f"Store Details — {name}")
         dialog.resize(580, 520)
+        is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
+        theme = getattr(self, "_current_theme_name", "night")
+        dialog_bg = "#0F172A" if is_dark else "#FFFFFF"
+        dialog_fg = "#F8FAFC" if is_dark else "#0F172A"
+        label_fg = "#94A3B8" if is_dark else "#475569"
+        border_col = "rgba(59, 130, 246, 0.35)" if is_dark else "#CBD5E1"
+        dialog.setStyleSheet(f"QDialog {{ background-color: {dialog_bg}; color: {dialog_fg}; }}")
         vbox = QVBoxLayout(dialog)
         vbox.setContentsMargins(16, 16, 16, 16)
         vbox.setSpacing(12)
@@ -4077,11 +4053,11 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         ]
         for label, val in fields:
             lbl = QLabel(f"<b>{label}:</b>")
-            lbl.setStyleSheet("color: #94A3B8; font-size: 9pt;")
+            lbl.setStyleSheet(f"color: {label_fg}; font-size: 9pt;")
             val_lbl = QLabel(str(val))
             val_lbl.setWordWrap(True)
             val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            val_lbl.setStyleSheet("color: #F8FAFC; font-size: 9pt;")
+            val_lbl.setStyleSheet(f"color: {dialog_fg}; font-size: 9pt;")
             form.addRow(lbl, val_lbl)
         scroll.setWidget(container)
         vbox.addWidget(scroll, 1)
@@ -4382,33 +4358,26 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark", "ocean", "sunset"}
-                if key == "source_url":
-                    item.setData(Qt.ItemDataRole.UserRole, source_url)
-                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if source_url else QColor("#94A3B8" if is_dark else "#64748B"))
-                elif key == "maps":
-                    item.setData(Qt.ItemDataRole.UserRole, maps_url)
-                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if maps_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
-                elif key == "product_evidence":
-                    item.setData(Qt.ItemDataRole.UserRole, evidence_url)
-                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if evidence_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
-                elif key == "product_catalog":
-                    item.setData(Qt.ItemDataRole.UserRole, catalog_url)
-                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if catalog_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
-                elif key == "website":
-                    item.setData(Qt.ItemDataRole.UserRole, web_url)
-                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if web_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
+                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
+                theme = getattr(self, "_current_theme_name", "night")
+                link_color = "#38BDF8" if is_dark else ("#0284C7" if theme == "ocean" else ("#EA580C" if theme == "sunset" else "#2563EB"))
+                dim_color = "#94A3B8" if is_dark else "#64748B"
+                text_color = "#F8FAFC" if is_dark else "#0F172A"
+                if key in {"source_url", "maps", "product_evidence", "product_catalog", "website"}:
+                    url_val = maps_url if key == "maps" else (source_url if key == "source_url" else (evidence_url if key == "product_evidence" else (catalog_url if key == "product_catalog" else web_url)))
+                    item.setData(Qt.ItemDataRole.UserRole, url_val)
+                    item.setForeground(QColor(link_color) if text != "NA" else QColor(dim_color))
                 elif key == "verification_status":
                     if text == "Verified":
                         item.setForeground(QColor("#10B981" if is_dark else "#059669"))
                     elif text == "Partially verified":
                         item.setForeground(QColor("#F59E0B" if is_dark else "#D97706"))
                     else:
-                        item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
+                        item.setForeground(QColor(dim_color))
                 elif text == "NA":
-                    item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
+                    item.setForeground(QColor(dim_color))
                 else:
-                    item.setForeground(QColor("#F8FAFC" if is_dark else "#0F172A"))
+                    item.setForeground(QColor(text_color))
                 if text and text != "NA":
                     if key in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
                         item.setToolTip(f"Double-click to open in browser:\n{text}")
@@ -4480,7 +4449,9 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if key in {"web_leads", "workbook_leads", "stores", "gyms", "dashboard_stores", "variance", "territory_type"}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark", "ocean", "sunset"}
+                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
+                theme = getattr(self, "_current_theme_name", "night")
+                text_color = "#FFFFFF" if is_dark else "#0F172A"
                 if key == "territory_type":
                     tt = data.get("territory_type", "")
                     if tt == "State":
@@ -4490,11 +4461,11 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                     elif tt == "Island Territory":
                         item.setForeground(QColor("#34D399" if is_dark else "#059669"))
                     else:
-                        item.setForeground(QColor("#FFFFFF" if is_dark else "#0F172A"))
+                        item.setForeground(QColor(text_color))
                 elif key == "variance" and value is not None and value != 0:
                     item.setForeground(QColor("#FCA5A5" if is_dark else "#DC2626") if value > 0 else QColor("#FCD34D" if is_dark else "#D97706"))
                 else:
-                    item.setForeground(QColor("#FFFFFF" if is_dark else "#0F172A"))
+                    item.setForeground(QColor(text_color))
                 self.region_table.setItem(row_index, column_index, item)
 
         states_stores = sum(r["stores"] for r in rows if r.get("territory_type") == "State")
@@ -4746,20 +4717,146 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 
     def apply_theme(self, theme_name="night"):
         self._current_theme_name = (theme_name or "night").lower()
-        is_dark = self._current_theme_name in {"night", "dark"}
+        theme = self._current_theme_name
+        is_dark = theme in {"night", "dark"}
 
-        bg = "#0B1120" if is_dark else "#F8FAFC"
-        card_bg = "rgba(15, 23, 42, 0.90)" if is_dark else "#FFFFFF"
-        border = "rgba(59, 130, 246, 0.35)" if is_dark else "#CBD5E1"
-        title_fg = "#FFFFFF" if is_dark else "#0F172A"
-        text_fg = "#FFFFFF" if is_dark else "#0F172A"
-        secondary_fg = "#CBD5E1" if is_dark else "#334155"
-        input_bg = "#1E293B" if is_dark else "#FFFFFF"
-        input_border = "rgba(255, 255, 255, 0.20)" if is_dark else "#CBD5E1"
-        table_bg = "#0F172A" if is_dark else "#FFFFFF"
-        table_alt_bg = "#1E293B" if is_dark else "#F8FAFC"
-        header_bg = "#1E293B" if is_dark else "#F1F5F9"
-        header_fg = "#38BDF8" if is_dark else "#1E40AF"
+        if is_dark:
+            bg = "#0B1120"
+            card_bg = "rgba(15, 23, 42, 0.90)"
+            border = "rgba(59, 130, 246, 0.35)"
+            title_fg = "#FFFFFF"
+            text_fg = "#FFFFFF"
+            secondary_fg = "#CBD5E1"
+            input_bg = "#1E293B"
+            input_border = "rgba(255, 255, 255, 0.20)"
+            table_bg = "#0F172A"
+            table_alt_bg = "#1E293B"
+            header_bg = "#1E293B"
+            header_fg = "#38BDF8"
+            btn_bg = "#1E293B"
+            btn_fg = "#F8FAFC"
+            btn_border = "#3B82F6"
+            btn_hover = "#2563EB"
+            accent_title = "#38BDF8"
+        elif theme == "ocean":
+            bg = "#F0F9FF"
+            card_bg = "#FFFFFF"
+            border = "#BAE6FD"
+            title_fg = "#0C4A6E"
+            text_fg = "#0F172A"
+            secondary_fg = "#0369A1"
+            input_bg = "#FFFFFF"
+            input_border = "#BAE6FD"
+            table_bg = "#FFFFFF"
+            table_alt_bg = "#F0F9FF"
+            header_bg = "#E0F2FE"
+            header_fg = "#0284C7"
+            btn_bg = "#F0F9FF"
+            btn_fg = "#0C4A6E"
+            btn_border = "#0284C7"
+            btn_hover = "#BAE6FD"
+            accent_title = "#0284C7"
+        elif theme == "sunset":
+            bg = "#FFF7ED"
+            card_bg = "#FFFFFF"
+            border = "#FED7AA"
+            title_fg = "#7C2D12"
+            text_fg = "#0F172A"
+            secondary_fg = "#C2410C"
+            input_bg = "#FFFFFF"
+            input_border = "#FED7AA"
+            table_bg = "#FFFFFF"
+            table_alt_bg = "#FFF7ED"
+            header_bg = "#FFEDD5"
+            header_fg = "#EA580C"
+            btn_bg = "#FFF7ED"
+            btn_fg = "#7C2D12"
+            btn_border = "#EA580C"
+            btn_hover = "#FED7AA"
+            accent_title = "#EA580C"
+        else:  # day / light
+            bg = "#F8FAFC"
+            card_bg = "#FFFFFF"
+            border = "#CBD5E1"
+            title_fg = "#0F172A"
+            text_fg = "#0F172A"
+            secondary_fg = "#475569"
+            input_bg = "#FFFFFF"
+            input_border = "#CBD5E1"
+            table_bg = "#FFFFFF"
+            table_alt_bg = "#F8FAFC"
+            header_bg = "#F1F5F9"
+            header_fg = "#1E40AF"
+            btn_bg = "#FFFFFF"
+            btn_fg = "#0F172A"
+            btn_border = "#94A3B8"
+            btn_hover = "#F1F5F9"
+            accent_title = "#2563EB"
+
+        card_style = f"background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px;"
+        for card_attr in ("view_nav_card", "action_card", "print_card", "regional_print_card"):
+            widget = getattr(self, card_attr, None)
+            if widget is not None:
+                widget.setStyleSheet(f"QFrame {{ {card_style} }}")
+
+        btn_style = (
+            f"QPushButton {{ font-size: 8.5pt; font-weight: 700; background: {btn_bg}; color: {btn_fg}; "
+            f"border: 1.5px solid {btn_border}; border-radius: 6px; padding: 4px 12px; min-height: 30px; }} "
+            f"QPushButton:hover {{ background: {btn_hover}; color: {btn_fg}; border-color: {accent_title}; }}"
+        )
+        for b in getattr(self, "print_buttons", []):
+            b.setStyleSheet(btn_style)
+        for b in getattr(self, "regional_print_buttons", []):
+            b.setStyleSheet(btn_style)
+
+        if hasattr(self, "print_title"):
+            self.print_title.setStyleSheet(f"font-size: 9.5pt; font-weight: 800; color: {accent_title};")
+        if hasattr(self, "reg_print_title"):
+            self.reg_print_title.setStyleSheet(f"font-size: 9pt; font-weight: 700; color: {accent_title};")
+        if hasattr(self, "reg_print_note"):
+            self.reg_print_note.setStyleSheet(f"font-size: 8pt; color: {secondary_fg}; font-style: italic;")
+        if hasattr(self, "view_icon_label"):
+            self.view_icon_label.setStyleSheet(f"font-size: 10pt; font-weight: 800; color: {accent_title};")
+        if hasattr(self, "view_nav_hint"):
+            self.view_nav_hint.setStyleSheet(f"font-size: 8.5pt; color: {secondary_fg}; font-style: italic;")
+        if hasattr(self, "snapshot_badge"):
+            self.snapshot_badge.setStyleSheet(f"font-size: 8.5pt; color: {secondary_fg};")
+        if hasattr(self, "results_label"):
+            self.results_label.setStyleSheet(f"font-size: 8.5pt; font-weight: 600; color: {secondary_fg};")
+        if hasattr(self, "sync_status_badge"):
+            sync_bg = "rgba(16, 185, 129, 0.15)" if is_dark else "#ECFDF5"
+            sync_fg = "#34D399" if is_dark else "#059669"
+            sync_border = "rgba(16, 185, 129, 0.3)" if is_dark else "#A7F3D0"
+            self.sync_status_badge.setStyleSheet(
+                f"font-size: 8.5pt; font-weight: 700; color: {sync_fg}; background: {sync_bg}; "
+                f"border: 1px solid {sync_border}; border-radius: 5px; padding: 4px 10px;"
+            )
+
+        # Exclude controls
+        if hasattr(self, "exclude_dropdown"):
+            ex_bg = "rgba(239, 68, 68, 0.12)" if is_dark else "#FEF2F2"
+            ex_fg = "#FCA5A5" if is_dark else "#DC2626"
+            ex_border = "rgba(239, 68, 68, 0.35)" if is_dark else "#FECACA"
+            self.exclude_dropdown.setStyleSheet(
+                f"QComboBox {{ font-size: 8.5pt; font-weight: 600; color: {ex_fg}; background: {ex_bg}; "
+                f"border: 1px solid {ex_border}; border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 30px; }}"
+            )
+        if hasattr(self, "exclude_keyword"):
+            kw_bg = "#1E293B" if is_dark else "#FFFFFF"
+            kw_fg = "#F8FAFC" if is_dark else "#0F172A"
+            kw_border = "rgba(239, 68, 68, 0.3)" if is_dark else "#FECACA"
+            self.exclude_keyword.setStyleSheet(
+                f"QLineEdit {{ font-size: 8.5pt; color: {kw_fg}; background-color: {kw_bg}; border: 1px solid {kw_border}; border-radius: 6px; padding: 4px 8px; min-height: 30px; }}"
+            )
+        if hasattr(self, "btn_clear_excludes"):
+            cl_bg = "rgba(239, 68, 68, 0.18)" if is_dark else "#FEE2E2"
+            cl_fg = "#FCA5A5" if is_dark else "#DC2626"
+            cl_border = "rgba(239, 68, 68, 0.4)" if is_dark else "#FCA5A5"
+            self.btn_clear_excludes.setStyleSheet(
+                f"QPushButton {{ font-size: 8.5pt; font-weight: 600; background: {cl_bg}; "
+                f"border: 1px solid {cl_border}; border-radius: 6px; padding: 4px 10px; color: {cl_fg}; min-height: 30px; }} "
+                f"QPushButton:hover {{ background: rgba(239, 68, 68, 0.3); color: #FFFFFF; }}"
+            )
 
         self.setStyleSheet(f"""
             QWidget#customerProspectsContainer {{ background-color: {bg}; }}
@@ -4768,16 +4865,16 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             QLabel#prospectKpiValue {{ font-size: 17pt; font-weight: 800; }}
             QLabel#prospectKpiLabel {{ font-size: 8.5pt; font-weight: 600; color: {secondary_fg}; }}
             QLabel#prospectReconciliation {{ color: {secondary_fg}; }}
-            QLabel#prospectViewLabel {{ color: #38BDF8; font-weight: 800; font-size: 10pt; }}
+            QLabel#prospectViewLabel {{ color: {accent_title}; font-weight: 800; font-size: 10pt; }}
             QFrame#prospectActionCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#prospectKpiCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#storeDirectoryPrintCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#regionalDashboardPrintCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#prospectViewNavCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QLineEdit {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 24px; }}
-            QLineEdit:focus {{ border-color: #38BDF8; }}
+            QLineEdit:focus {{ border-color: {accent_title}; }}
             QComboBox {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 24px; }}
-            QComboBox:focus {{ border-color: #38BDF8; }}
+            QComboBox:focus {{ border-color: {accent_title}; }}
             QComboBox QAbstractItemView {{ background-color: {card_bg}; color: {text_fg}; selection-background-color: #2563EB; selection-color: #FFFFFF; border: 1px solid {border}; }}
             QTableWidget {{ background-color: {table_bg}; color: {text_fg}; gridline-color: rgba(255, 255, 255, 0.10); alternate-background-color: {table_alt_bg}; selection-background-color: #2563EB; selection-color: #FFFFFF; font-size: 9pt; border: 1px solid {border}; }}
             QTableWidget::item {{ color: {text_fg}; padding: 6px 8px; }}
@@ -4792,9 +4889,17 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
         """)
 
+        for card in self.findChildren(QFrame, "prospectKpiCard"):
+            card.setStyleSheet(f"QFrame#prospectKpiCard {{ {card_style} }}")
+        for lbl in self.findChildren(QLabel, "prospectKpiLabel"):
+            lbl.setStyleSheet(f"font-size: 8pt; font-weight: 600; color: {secondary_fg};")
+
         palette = self.leads_table.palette()
         palette.setColor(QPalette.ColorRole.Text, QColor(text_fg))
         palette.setColor(QPalette.ColorRole.Base, QColor(table_bg))
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(table_alt_bg))
         self.leads_table.setPalette(palette)
         self.region_table.setPalette(palette)
+
+        # Repaint both tables with active theme foregrounds
+        self._refresh_views()

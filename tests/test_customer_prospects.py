@@ -1301,3 +1301,48 @@ def test_exposed_links_in_store_directory_table():
         assert catalog_item.data(Qt.ItemDataRole.UserRole) == sample_catalog
     finally:
         tab.close()
+
+
+def test_theme_switching_text_contrast_and_visibility():
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        tab.records = [
+            {
+                'kind': 'Store',
+                'store_type': 'Physical and Online',
+                'business_name': 'Pro Fitness Hub',
+                'business_category': 'Fitness Equipment',
+                'state': 'Maharashtra',
+                'city': 'Mumbai',
+                'verification_status': 'Verified',
+            }
+        ]
+        
+        # Test 1: Night mode -> Dark background, light text (#F8FAFC)
+        tab.apply_theme('night')
+        name_item = tab.leads_table.item(0, 1)
+        assert name_item is not None
+        assert name_item.foreground().color().name().upper() == '#F8FAFC'
+        
+        # Test 2: Day mode -> Light background, dark text (#0F172A)
+        tab.apply_theme('day')
+        name_item = tab.leads_table.item(0, 1)
+        assert name_item is not None
+        assert name_item.foreground().color().name().upper() == '#0F172A'
+        
+        # Test 3: Ocean mode (light theme) -> Light background, dark text (#0F172A)
+        tab.apply_theme('ocean')
+        name_item = tab.leads_table.item(0, 1)
+        assert name_item is not None
+        assert name_item.foreground().color().name().upper() == '#0F172A'
+        
+        # Test 4: Sunset mode (light theme) -> Light background, dark text (#0F172A)
+        tab.apply_theme('sunset')
+        name_item = tab.leads_table.item(0, 1)
+        assert name_item is not None
+        assert name_item.foreground().color().name().upper() == '#0F172A'
+    finally:
+        tab.close()
