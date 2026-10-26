@@ -9786,7 +9786,7 @@ class MainWindow(QMainWindow):
 
     def apply_interaction_animations(self):
         """Add animated hover/click feedback for action buttons without interfering with table text rendering."""
-        accent = self._ui_chrome_palette(self.current_theme())["accent"]
+        accent = MainWindow._ui_chrome_palette(self.current_theme())["accent"] if hasattr(self, "current_theme") else "#00E5FF"
         # Query UI elements while isolating item views and charts from rasterizing effects
         _ = self.findChildren(QAbstractItemView)
         _ = self.findChildren(QProgressBar) + self.findChildren(ProductivityChart)
@@ -9902,7 +9902,7 @@ class MainWindow(QMainWindow):
             else:
                 item = QTableWidgetItem(text)
                 is_dark = hasattr(self, "current_theme") and self.current_theme().lower() in ("night", "dark")
-                pal = self._ui_chrome_palette(self.current_theme())
+                pal = MainWindow._ui_chrome_palette(self.current_theme()) if hasattr(self, "current_theme") else MainWindow._ui_chrome_palette("night")
                 item.setForeground(QColor(pal.get("table_fg", "#F8FAFC" if is_dark else "#0F172A")))
             h_item = table.horizontalHeaderItem(c)
             h_text = h_item.text().strip().lower() if h_item else ""
@@ -11088,7 +11088,7 @@ class MainWindow(QMainWindow):
             emps = [e for e in emps if e["id"] == filter_id]
         self.att_table.setRowCount(0)
         restore_row = -1
-        pal = self._ui_chrome_palette(self.current_theme())
+        pal = MainWindow._ui_chrome_palette(self.current_theme()) if hasattr(self, "current_theme") else MainWindow._ui_chrome_palette("night")
         c_bg = pal["dropdown_bg"]
         c_fg = pal["dropdown_fg"]
         c_border = pal["dropdown_border"]
