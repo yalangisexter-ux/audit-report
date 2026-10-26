@@ -5470,18 +5470,13 @@ class MainWindow(QMainWindow):
         self.sidebar.setObjectName("navigationSidebar")
         self.sidebar.setFixedWidth(224)
         self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setContentsMargins(8, 10, 8, 10)
+        self.sidebar_layout.setContentsMargins(6, 8, 6, 8)
         self.sidebar_layout.setSpacing(6)
         self.sidebar_toggle = QPushButton("☰  Collapse menu")
         self.sidebar_toggle.setObjectName("sidebarToggle")
         self.sidebar_toggle.setToolTip("Collapse or expand navigation")
-        self.sidebar_toggle.setMinimumHeight(38)
+        self.sidebar_toggle.setMinimumHeight(34)
         self.sidebar_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar_toggle.setStyleSheet(
-            "QPushButton#sidebarToggle { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(99, 102, 241, 0.35), stop:1 rgba(147, 51, 234, 0.35)); "
-            "color: #F8FAFC; border: 1px solid rgba(165, 180, 252, 0.40); border-radius: 10px; font-size: 9.5pt; font-weight: 700; padding: 7px 12px; } "
-            "QPushButton#sidebarToggle:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; border-color: #C4B5FD; }"
-        )
         self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
         self.sidebar_layout.addWidget(self.sidebar_toggle)
 
@@ -5635,18 +5630,33 @@ class MainWindow(QMainWindow):
             (self.chat_tab, "💬  Live Chat"),
             (self.settings_tab, "⚙️  Settings & Backup"),
         ]
+        self.sidebar_scroll = QScrollArea()
+        self.sidebar_scroll.setObjectName("sidebarScrollArea")
+        self.sidebar_scroll.setWidgetResizable(True)
+        self.sidebar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.sidebar_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.sidebar_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.sidebar_scroll.setStyleSheet("QScrollArea#sidebarScrollArea { border: 0; background: transparent; }")
+        sidebar_scroll_content = QWidget()
+        sidebar_scroll_content.setStyleSheet("background: transparent;")
+        self.sidebar_scroll_layout = QVBoxLayout(sidebar_scroll_content)
+        self.sidebar_scroll_layout.setContentsMargins(0, 2, 0, 2)
+        self.sidebar_scroll_layout.setSpacing(4)
+
         self.sidebar_buttons = []
         for index, (widget, title) in enumerate(tab_items):
             self.tabs.addTab(widget, title)
             button = QPushButton(title.replace("&", "&&"))
             button.setObjectName("sidebarNavButton")
             button.setCheckable(True)
-            button.setMinimumHeight(38)
+            button.setMinimumHeight(34)
             button.setToolTip(title)
             button.clicked.connect(lambda checked=False, tab_index=index: self.tabs.setCurrentIndex(tab_index))
-            self.sidebar_layout.addWidget(button)
+            self.sidebar_scroll_layout.addWidget(button)
             self.sidebar_buttons.append((button, title))
-        self.sidebar_layout.addStretch(1)
+        self.sidebar_scroll_layout.addStretch(1)
+        self.sidebar_scroll.setWidget(sidebar_scroll_content)
+        self.sidebar_layout.addWidget(self.sidebar_scroll, 1)
         # Navigation already exists in the persistent sidebar.
         self.header_logo_menu.clicked.connect(lambda: self.tabs.setCurrentIndex(0))
         self._tab_animation = None
@@ -5762,11 +5772,11 @@ class MainWindow(QMainWindow):
             "day": {
                 "surface": "#FFFFFF",
                 "surface_card": "#FFFFFF",
-                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
-                "sidebar_border": "rgba(0, 240, 255, 0.20)",
-                "nav": "#FFFFFF",
-                "nav_border": "#E2E8F0",
-                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #4F46E5,stop:1 #6366F1)",
+                "sidebar": "#F8FAFC",
+                "sidebar_border": "#E2E8F0",
+                "nav": "transparent",
+                "nav_border": "transparent",
+                "nav_active_grad": "#EEF2FF",
                 "border": "#E2E8F0",
                 "border_subtle": "rgba(226, 232, 240, 0.65)",
                 "text": "#0F172A",
@@ -5817,10 +5827,10 @@ class MainWindow(QMainWindow):
             "night": {
                 "surface": "#080C16",
                 "surface_card": "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(16, 24, 42, 0.96), stop:1 rgba(9, 14, 26, 0.96))",
-                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
-                "sidebar_border": "rgba(0, 240, 255, 0.20)",
-                "nav": "rgba(255, 255, 255, 0.03)",
-                "nav_border": "rgba(255, 255, 255, 0.06)",
+                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #090E1A, stop:1 #060A14)",
+                "sidebar_border": "rgba(0, 229, 255, 0.22)",
+                "nav": "transparent",
+                "nav_border": "transparent",
                 "nav_active_grad": "rgba(0, 240, 255, 0.14)",
                 "border": "rgba(255, 255, 255, 0.09)",
                 "border_subtle": "rgba(255, 255, 255, 0.05)",
@@ -5872,11 +5882,11 @@ class MainWindow(QMainWindow):
             "ocean": {
                 "surface": "#F0F9FF",
                 "surface_card": "rgba(240, 249, 255, 0.96)",
-                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
-                "sidebar_border": "rgba(0, 240, 255, 0.20)",
-                "nav": "rgba(224, 242, 254, 0.80)",
-                "nav_border": "rgba(186, 230, 253, 0.85)",
-                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #0284C7,stop:1 #06B6D4)",
+                "sidebar": "#F0F9FF",
+                "sidebar_border": "#BAE6FD",
+                "nav": "transparent",
+                "nav_border": "transparent",
+                "nav_active_grad": "#E0F2FE",
                 "border": "#BAE6FD",
                 "border_subtle": "rgba(186, 230, 253, 0.65)",
                 "text": "#0C4A6E",
@@ -5927,11 +5937,11 @@ class MainWindow(QMainWindow):
             "sunset": {
                 "surface": "#FFF7ED",
                 "surface_card": "rgba(255, 247, 237, 0.96)",
-                "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810)",
-                "sidebar_border": "rgba(0, 240, 255, 0.20)",
-                "nav": "rgba(255, 237, 213, 0.80)",
-                "nav_border": "rgba(254, 215, 170, 0.85)",
-                "nav_active_grad": "qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #EA580C,stop:1 #F43F5E)",
+                "sidebar": "#FFF7ED",
+                "sidebar_border": "#FED7AA",
+                "nav": "transparent",
+                "nav_border": "transparent",
+                "nav_active_grad": "#FFEDD5",
                 "border": "#FED7AA",
                 "border_subtle": "rgba(254, 215, 170, 0.65)",
                 "text": "#7C2D12",
@@ -5999,13 +6009,18 @@ class MainWindow(QMainWindow):
         is_dark = (theme_name or self.current_theme()).lower() in ("night", "dark")
         if hasattr(self, "sidebar"):
             self.sidebar.setStyleSheet(
-                "QWidget#navigationSidebar { background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #070B14, stop:1 #050810); border-right: 1.5px solid rgba(0, 240, 255, 0.20); }"
+                f"QWidget#navigationSidebar {{ background: {sidebar_bg}; border-right: 1.5px solid {sidebar_border}; }}"
             )
         if hasattr(self, "sidebar_toggle"):
+            toggle_bg = colors.get('nav', surface) if is_dark else "#F1F5F9"
+            toggle_fg = colors['text'] if is_dark else "#0F172A"
+            toggle_border = sidebar_border if is_dark else "#CBD5E1"
+            toggle_hover = colors['hover'] if is_dark else "#EEF2FF"
+            toggle_hover_fg = colors['hover_text'] if is_dark else colors['accent']
             self.sidebar_toggle.setStyleSheet(
-                f"QPushButton#sidebarToggle {{ background: {colors.get('nav', surface)}; color: {colors['text']}; "
-                f"border: 1.5px solid {sidebar_border}; border-radius: 9px; font-weight: 700; text-align: left; padding: 8px 12px; }} "
-                f"QPushButton#sidebarToggle:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent']}; }}"
+                f"QPushButton#sidebarToggle {{ background: {toggle_bg}; color: {toggle_fg}; "
+                f"border: 1.5px solid {toggle_border}; border-radius: 9px; font-weight: 700; text-align: left; padding: 7px 12px; min-height: 34px; }} "
+                f"QPushButton#sidebarToggle:hover {{ background: {toggle_hover}; color: {toggle_hover_fg}; border-color: {colors['accent']}; }}"
             )
         if hasattr(self, "title_bar"):
             title_bg = "#070B14" if is_dark else "#15233F"
@@ -6017,30 +6032,63 @@ class MainWindow(QMainWindow):
             self.title_label.setStyleSheet("QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }")
         if hasattr(self, "sidebar_buttons"):
             for button, _title in self.sidebar_buttons:
-                button.setStyleSheet("""
-                    QPushButton#sidebarNavButton {
-                        background: transparent;
-                        color: #94A3B8;
-                        border: 1px solid transparent;
-                        border-radius: 9px;
-                        font-size: 9.5pt;
-                        font-weight: 600;
-                        text-align: left;
-                        padding: 9px 12px;
-                    }
-                    QPushButton#sidebarNavButton:hover {
-                        background: rgba(255, 255, 255, 0.05);
-                        color: #FFFFFF;
-                        border: 1px solid rgba(0, 240, 255, 0.35);
-                    }
-                    QPushButton#sidebarNavButton:checked {
-                        background: rgba(0, 240, 255, 0.12);
-                        color: #00F0FF;
-                        border: 1.5px solid #00F0FF;
-                        border-radius: 9px;
-                        font-weight: 800;
-                    }
-                """)
+                if is_dark:
+                    button.setStyleSheet("""
+                        QPushButton#sidebarNavButton {
+                            background: transparent;
+                            color: #94A3B8;
+                            border: 1px solid transparent;
+                            border-radius: 9px;
+                            font-size: 9.5pt;
+                            font-weight: 600;
+                            text-align: left;
+                            padding: 8px 12px;
+                            min-height: 34px;
+                        }
+                        QPushButton#sidebarNavButton:hover {
+                            background: rgba(255, 255, 255, 0.08);
+                            color: #FFFFFF;
+                            border: 1px solid rgba(0, 240, 255, 0.35);
+                        }
+                        QPushButton#sidebarNavButton:checked {
+                            background: rgba(0, 240, 255, 0.16);
+                            color: #00F0FF;
+                            border: 1.5px solid #00F0FF;
+                            border-radius: 9px;
+                            font-weight: 800;
+                        }
+                    """)
+                else:
+                    nav_fg = colors['text']
+                    hover_bg = colors['hover']
+                    hover_fg = colors['hover_text']
+                    active_bg = colors.get('nav_active_grad', '#EEF2FF')
+                    active_fg = colors['accent']
+                    button.setStyleSheet(f"""
+                        QPushButton#sidebarNavButton {{
+                            background: transparent;
+                            color: {nav_fg};
+                            border: 1px solid transparent;
+                            border-radius: 9px;
+                            font-size: 9.5pt;
+                            font-weight: 600;
+                            text-align: left;
+                            padding: 8px 12px;
+                            min-height: 34px;
+                        }}
+                        QPushButton#sidebarNavButton:hover {{
+                            background: {hover_bg};
+                            color: {hover_fg};
+                            border: 1px solid {colors.get('border_subtle', '#CBD5E1')};
+                        }}
+                        QPushButton#sidebarNavButton:checked {{
+                            background: {active_bg};
+                            color: {active_fg};
+                            border: 1.5px solid {active_fg};
+                            border-radius: 9px;
+                            font-weight: 800;
+                        }}
+                    """)
         for header in self.findChildren(QWidget, "pageHeader"):
             header.setStyleSheet(
                 f"QWidget#pageHeader {{ background: {surface}; color: {colors['text']}; }}"
@@ -6216,15 +6264,19 @@ class MainWindow(QMainWindow):
             background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12);
         }}
         QWidget#pageHeader {{ background: {colors['surface']}; color: {colors['text']}; }}
-        QPushButton#sidebarToggle {{ background: {colors['nav']}; color: {colors['text']}; border: 1.5px solid {colors['sidebar_border']};
-            border-radius: 9px; font-weight: 700; text-align: left; padding: 8px 12px; }}
+        QPushButton#sidebarToggle {{ background: {"#F1F5F9" if not is_dark_theme else colors['nav']}; color: {colors['text']}; border: 1.5px solid {colors['sidebar_border']};
+            border-radius: 9px; font-weight: 700; text-align: left; padding: 7px 12px; min-height: 34px; }}
         QPushButton#sidebarToggle:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent']}; }}
-        QPushButton#sidebarNavButton {{ background: {colors['nav']}; color: {colors['text']};
-            border: 1px solid {colors['nav_border']}; border-radius: 9px;
-            font-size: 9.5pt; font-weight: 650; text-align: left; padding: 9px 14px; margin: 1px 0; }}
-        QPushButton#sidebarNavButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent_glow']}; }}
+        QScrollArea#sidebarScrollArea {{ border: 0; background: transparent; }}
+        QScrollArea#sidebarScrollArea > QWidget > QWidget {{ background: transparent; }}
+        QScrollArea#sidebarScrollArea QScrollBar:vertical {{ width: 5px; background: transparent; margin: 0; }}
+        QScrollArea#sidebarScrollArea QScrollBar::handle:vertical {{ background: {colors.get('border_subtle', 'rgba(148, 163, 184, 0.4)')}; border-radius: 2px; }}
+        QPushButton#sidebarNavButton {{ background: transparent; color: {colors['text']};
+            border: 1px solid transparent; border-radius: 9px;
+            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 12px; min-height: 34px; }}
+        QPushButton#sidebarNavButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border: 1px solid {colors.get('border_subtle', 'transparent')}; }}
         QPushButton#sidebarNavButton:checked {{ background: {colors['nav_active_grad']};
-            color: {"#00F0FF" if is_dark_theme else "#FFFFFF"}; border: {"1.5px solid #00F0FF" if is_dark_theme else f"1px solid {colors['accent_glow']}"}; font-weight: 800; }}
+            color: {"#00F0FF" if is_dark_theme else colors['accent']}; border: {"1.5px solid #00F0FF" if is_dark_theme else f"1.5px solid {colors['accent']}"}; font-weight: 800; }}
         QWidget#headerClock {{ background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }}
         QPushButton#headerNavButton {{ background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 6px; font-size: 13pt; font-weight: 700; padding: 0 0 2px 0;
@@ -6609,42 +6661,78 @@ class MainWindow(QMainWindow):
         collapsed = self.sidebar.width() <= 100
         self.sidebar_toggle.setText("☰" if collapsed else "☰  Collapse menu")
         self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
+        colors = self._ui_chrome_palette(self.current_theme())
+        is_dark = (self.current_theme() or "day").lower() in ("night", "dark")
         for button, title in getattr(self, "sidebar_buttons", []):
             if collapsed:
                 label = title.split("  ", 1)[0]
                 button.setText(label)
-                button.setStyleSheet("""
-                    QPushButton#sidebarNavButton {
-                        background: transparent; color: #94A3B8;
-                        border: 1px solid transparent; border-radius: 9px;
-                        font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0; min-height: 38px;
-                    }
-                    QPushButton#sidebarNavButton:hover {
-                        background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
-                        border: 1px solid rgba(0, 240, 255, 0.35);
-                    }
-                    QPushButton#sidebarNavButton:checked {
-                        background: rgba(0, 240, 255, 0.16); color: #00F0FF;
-                        border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
-                    }
-                """)
+                if is_dark:
+                    button.setStyleSheet("""
+                        QPushButton#sidebarNavButton {
+                            background: transparent; color: #94A3B8;
+                            border: 1px solid transparent; border-radius: 9px;
+                            font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0; min-height: 34px;
+                        }
+                        QPushButton#sidebarNavButton:hover {
+                            background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
+                            border: 1px solid rgba(0, 240, 255, 0.35);
+                        }
+                        QPushButton#sidebarNavButton:checked {
+                            background: rgba(0, 240, 255, 0.16); color: #00F0FF;
+                            border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
+                        }
+                    """)
+                else:
+                    button.setStyleSheet(f"""
+                        QPushButton#sidebarNavButton {{
+                            background: transparent; color: {colors['text']};
+                            border: 1px solid transparent; border-radius: 9px;
+                            font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0; min-height: 34px;
+                        }}
+                        QPushButton#sidebarNavButton:hover {{
+                            background: {colors['hover']}; color: {colors['hover_text']};
+                            border: 1px solid {colors.get('border_subtle', '#CBD5E1')};
+                        }}
+                        QPushButton#sidebarNavButton:checked {{
+                            background: {colors.get('nav_active_grad', '#EEF2FF')}; color: {colors['accent']};
+                            border: 1.5px solid {colors['accent']}; border-radius: 9px; font-weight: 800;
+                        }}
+                    """)
             else:
                 button.setText(title.replace("&", "&&"))
-                button.setStyleSheet("""
-                    QPushButton#sidebarNavButton {
-                        background: transparent; color: #E2E8F0;
-                        border: 1px solid transparent; border-radius: 9px;
-                        font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 14px; min-height: 38px;
-                    }
-                    QPushButton#sidebarNavButton:hover {
-                        background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
-                        border: 1px solid rgba(0, 240, 255, 0.35);
-                    }
-                    QPushButton#sidebarNavButton:checked {
-                        background: rgba(0, 240, 255, 0.16); color: #00F0FF;
-                        border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
-                    }
-                """)
+                if is_dark:
+                    button.setStyleSheet("""
+                        QPushButton#sidebarNavButton {
+                            background: transparent; color: #E2E8F0;
+                            border: 1px solid transparent; border-radius: 9px;
+                            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 14px; min-height: 34px;
+                        }
+                        QPushButton#sidebarNavButton:hover {
+                            background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
+                            border: 1px solid rgba(0, 240, 255, 0.35);
+                        }
+                        QPushButton#sidebarNavButton:checked {
+                            background: rgba(0, 240, 255, 0.16); color: #00F0FF;
+                            border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
+                        }
+                    """)
+                else:
+                    button.setStyleSheet(f"""
+                        QPushButton#sidebarNavButton {{
+                            background: transparent; color: {colors['text']};
+                            border: 1px solid transparent; border-radius: 9px;
+                            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 14px; min-height: 34px;
+                        }}
+                        QPushButton#sidebarNavButton:hover {{
+                            background: {colors['hover']}; color: {colors['hover_text']};
+                            border: 1px solid {colors.get('border_subtle', '#CBD5E1')};
+                        }}
+                        QPushButton#sidebarNavButton:checked {{
+                            background: {colors.get('nav_active_grad', '#EEF2FF')}; color: {colors['accent']};
+                            border: 1.5px solid {colors['accent']}; border-radius: 9px; font-weight: 800;
+                        }}
+                    """)
             button.setToolTip(title)
 
     def update_title_label(self):
@@ -13548,6 +13636,8 @@ def main():
     win=MainWindow(db, active_user); win.apply_theme()
     splash.set_status("Ready! Starting workspace...", 100)
     win.show()
+    win.raise_()
+    win.activateWindow()
     splash.finish(win)
 
     if resume_user is not None and resume_tab < win.tabs.count():

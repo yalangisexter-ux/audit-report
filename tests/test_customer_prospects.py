@@ -1403,3 +1403,46 @@ def test_clickable_google_maps_links_and_cell_click(monkeypatch):
             assert tab._current_theme_name == th
     finally:
         tab.close()
+
+
+def test_sidebar_theme_adaptive_styling_and_scroll():
+    from PySide6.QtWidgets import QApplication
+    import app
+    qt_app = QApplication.instance() or QApplication([])
+    db = app.Database()
+    win = app.MainWindow(db, {"id": 1, "username": "admin", "role": "admin", "display_name": "Admin"})
+    try:
+        assert hasattr(win, "sidebar_scroll")
+        assert len(win.sidebar_buttons) == 12
+
+        # Check day mode palette on sidebar
+        win.apply_theme("day")
+        qt_app.processEvents()
+        colors = win._ui_chrome_palette("day")
+        assert colors["sidebar"] == "#F8FAFC"
+        assert "background: #F8FAFC" in win.sidebar.styleSheet()
+
+        # Check ocean mode
+        win.apply_theme("ocean")
+        qt_app.processEvents()
+        colors = win._ui_chrome_palette("ocean")
+        assert colors["sidebar"] == "#F0F9FF"
+        assert "background: #F0F9FF" in win.sidebar.styleSheet()
+
+        # Check sunset mode
+        win.apply_theme("sunset")
+        qt_app.processEvents()
+        colors = win._ui_chrome_palette("sunset")
+        assert colors["sidebar"] == "#FFF7ED"
+        assert "background: #FFF7ED" in win.sidebar.styleSheet()
+
+        # Check night mode
+        win.apply_theme("night")
+        qt_app.processEvents()
+        colors = win._ui_chrome_palette("night")
+        assert "background: qlineargradient" in win.sidebar.styleSheet()
+    finally:
+        win.close()
+        db.conn.close()
+
+
