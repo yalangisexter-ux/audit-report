@@ -6282,7 +6282,7 @@ class MainWindow(QMainWindow):
         }}
         QPushButton {{
             min-height: 34px;
-            padding: 7px 15px;
+            padding: 4px 14px;
             border-radius: 9px;
             font-weight: 600;
             font-size: 9pt;
@@ -6385,7 +6385,7 @@ class MainWindow(QMainWindow):
 
         /* Layout safety: controls must not clip their captions at Windows DPI scaling. */
         QPushButton, QToolButton {{
-            min-height: 34px; padding: 7px 10px; margin: 2px;
+            min-height: 34px; padding: 4px 12px; margin: 2px;
             text-align: center; border-radius: 8px;
         }}
         QGroupBox {{
@@ -7541,8 +7541,9 @@ class MainWindow(QMainWindow):
             ("🖨️", "Print Center", "Select a report type, date, scope, employee, and PDF, Word, or CSV format.", "For Audit / EOD, use the section checkboxes to control included details.", 6),
             ("📁", "EOD Archive", "Upload historical PDFs, associate employee/date, then view, export, refresh, or remove archived files.", "Archived documents stay in the local database and its backups.", 7),
             ("💼", "Business Tracking", "Track catalog products, inventory stock, customer orders, gym memberships, and employee activities.", "Example: Stock reorders · Order tracking · Membership sessions left.", 8),
-            ("💬", "Live Chat", "Real-time team collaboration with Cloudflare-synced channels, threads, and instant updates.", "Example: Shift announcements · Audit coordination · Daily notes.", 9),
-            ("⚙️", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build.", 10),
+            ("🏪", "Store Directory", "Central directory of sports nutrition & supplement stores across India. Verify genuine retailers and export.", "Example: Pure product-selling stores · verified addresses · Google Maps links.", 9),
+            ("💬", "Live Chat", "Real-time team collaboration with Cloudflare-synced channels, threads, and instant updates.", "Example: Shift announcements · Audit coordination · Daily notes.", 10),
+            ("⚙️", "Settings & Backup", "Set working days, create or restore backups, manage account security, and export employees.", "Create a backup before restoring data or replacing a production build.", 11),
         ]
         session_strip.setStyleSheet(
             "QWidget#sessionStrip { background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px; padding: 12px; }"
@@ -8026,8 +8027,8 @@ class MainWindow(QMainWindow):
             ("➕  Add Employee", self.employees_tab, "Open Employees to add or update an employee record.", "#6366F1"),
             ("✓  Assign Task", self.tasks_tab, "Open Task Manager to create or update an assigned task.", "#0EA5E9"),
             ("▦  Mark Attendance", self.attendance_tab, "Open Attendance to record today's status and times.", "#10B981"),
-            ("▤  Generate Report", self.reports_tab, "Open Print Center to preview or generate a report.", "#8B5CF6"),
-            ("⇩  Print / Export", self.reports_tab, "Open Print Center to print or export the selected report.", "#EC4899"),
+            ("🏪  Store Directory", self.customer_tab, "Open Store Directory & Market Coverage.", "#00E5FF"),
+            ("▤  Print Center", self.reports_tab, "Open Print Center to preview, print or export reports.", "#EC4899"),
         ]
         for text, target, tooltip, btn_accent in quick_actions_spec:
             button = QPushButton(text)
@@ -8190,7 +8191,7 @@ class MainWindow(QMainWindow):
         toolbar_layout.addLayout(search_row)
 
         actions_row = QHBoxLayout()
-        actions_row.setSpacing(8)
+        actions_row.setSpacing(6)
         actions = [
             ("➕ Add Employee", self.add_employee, "Add a new employee record", True, "empAddBtn"),
             ("📁 Manage Sections", self.manage_employee_groups, "Manage custom sections and groups (e.g. Technical, House Keeping)", False, "empGroupsBtn"),
@@ -8603,9 +8604,9 @@ class MainWindow(QMainWindow):
 
         att_toolbar_layout.addLayout(row1)
 
-        # Row 2: Selection & Bulk Operations + Attendance Status Markers + Punch Actions
+        # Row 2: Selection & Bulk Operations + Attendance Status Markers + Punch Actions (Balanced spacing)
         row2 = QHBoxLayout()
-        row2.setSpacing(8)
+        row2.setSpacing(6)
 
         self.att_select_all_button = QPushButton("Select All")
         self.att_select_all_button.setObjectName("attSelectAllBtn")
@@ -9604,8 +9605,13 @@ class MainWindow(QMainWindow):
             table.verticalHeader().setDefaultSectionSize(row_height)
             table.verticalHeader().setMinimumSectionSize(max(36, row_height - 6))
             table.setCornerButtonEnabled(False)
-            table.setWordWrap(True)
-            table.setTextElideMode(Qt.TextElideMode.ElideNone)
+            is_leads = table.objectName() in ("leadsTable", "regionTable") or (hasattr(table, "property") and table.property("no_word_wrap"))
+            if not is_leads:
+                table.setWordWrap(True)
+                table.setTextElideMode(Qt.TextElideMode.ElideNone)
+            else:
+                table.setWordWrap(False)
+                table.setTextElideMode(Qt.TextElideMode.ElideRight)
             table.setSelectionBehavior(QAbstractItemView.SelectRows)
             table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)

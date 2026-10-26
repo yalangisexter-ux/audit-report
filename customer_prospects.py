@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -806,7 +807,10 @@ def evaluate_store_verification(record):
 
 def format_prospect_cell_value(record, key):
     """Format and sanitize prospect values for display and export, ensuring 'NA' fallback for empty/displaced data."""
-    raw_val = str(record.get(key, "") or "").strip()
+    raw_val = html.unescape(html.unescape(str(record.get(key, "") or ""))).strip()
+    raw_val = re.sub(r"&#x27;|&apos;", "'", raw_val)
+    raw_val = re.sub(r"&quot;", '"', raw_val)
+    raw_val = re.sub(r"&amp;", '&', raw_val)
     if not raw_val or raw_val.casefold() in {"nan", "none", "null", "n/a", "-", ""}:
         if key == "state":
             resolved = resolve_store_presence_states(record)
@@ -2178,12 +2182,12 @@ class CustomerProspectsTab(QWidget):
         action_layout.setSpacing(12)
 
         self.btn_one_tap_scrape_and_update = QPushButton("⚡ 1-Tap Deep Web Scraping & Master Update")
-        self.btn_one_tap_scrape_and_update.setMinimumHeight(40)
+        self.btn_one_tap_scrape_and_update.setMinimumHeight(38)
         self.btn_one_tap_scrape_and_update.setStyleSheet(
             "QPushButton {"
-            "  font-size: 10.5pt; font-weight: 800; color: #FFFFFF;"
+            "  font-size: 10pt; font-weight: 800; color: #FFFFFF;"
             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563EB, stop:1 #7C3AED);"
-            "  border: none; border-radius: 6px; padding: 0 18px;"
+            "  border: none; border-radius: 7px; padding: 4px 18px;"
             "}"
             "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1D4ED8, stop:1 #6D28D9); }"
         )
@@ -2197,12 +2201,14 @@ class CustomerProspectsTab(QWidget):
 
         self.sync_status_badge = QLabel("🟢 Continuous Sync: Active (Conflict-Free)")
         self.sync_status_badge.setStyleSheet(
-            "font-size: 9pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
-            "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 6px 12px;"
+            "font-size: 8.5pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
+            "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 5px; padding: 4px 10px;"
         )
         action_layout.addWidget(self.sync_status_badge)
 
-        self.snapshot_badge = QLabel("💾 Master Backup: Downloads/Google_Sheets_Master_Database.xlsx")
+        self.snapshot_badge = QLabel("💾 Backup: Downloads/Google_Sheets_Master_Database.xlsx")
+        self.snapshot_badge.setWordWrap(False)
+        self.snapshot_badge.setToolTip("Full path: Downloads/Google_Sheets_Master_Database.xlsx")
         self.snapshot_badge.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
         action_layout.addWidget(self.snapshot_badge, 1)
 
@@ -2376,7 +2382,7 @@ class CustomerProspectsTab(QWidget):
         self.print_export_combo.currentIndexChanged.connect(self._on_print_export_changed)
         self.print_export_combo.setStyleSheet(
             "QComboBox { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; min-width: 140px; } "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-width: 185px; min-height: 30px; } "
             "QComboBox::drop-down { border: none; } "
             "QComboBox QAbstractItemView { background: #1E293B; color: #F8FAFC; selection-background-color: #2563EB; }"
         )
@@ -2403,27 +2409,28 @@ class CustomerProspectsTab(QWidget):
         self.btn_folder = QPushButton("📂 Open Folder")
         self.btn_folder.clicked.connect(self.open_export_folder)
 
-        # Row 1: Primary Search, Category, State, More Filters
+        # Row 1: Primary Search, Category, State, More Filters (Spacious, uncrowded)
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        toolbar.setSpacing(10)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search business name, phone, address, city…")
         self.search_input.setClearButtonEnabled(True)
+        self.search_input.setMinimumWidth(220)
         self.search_input.textChanged.connect(lambda _text: self._filter_timer.start())
         toolbar.addWidget(self.search_input, 2)
 
         self.kind_filter = QComboBox()
         self.kind_filter.addItems(["All types", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
-        # Store Directory opens on product-selling stores by default. Existing filter
-        # choices are preserved so users can still inspect other record types.
         self.kind_filter.setCurrentText("All types")
+        self.kind_filter.setMinimumWidth(150)
         self.kind_filter.setToolTip("Filter by store / gym category")
         self.kind_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.kind_filter, 1)
 
         self.state_filter = QComboBox()
         self.state_filter.addItem("All States / UTs")
+        self.state_filter.setMinimumWidth(140)
         self.state_filter.setToolTip("Filter by State, UT, or Island")
         self.state_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.state_filter, 1)
@@ -2439,19 +2446,21 @@ class CustomerProspectsTab(QWidget):
             "Verified Only",
             "Unverified Only",
         ])
+        self.more_filters.setMinimumWidth(140)
         self.more_filters.setToolTip("Filter by Contact, Website, or Verification status")
         self.more_filters.currentTextChanged.connect(self._on_more_filters_changed)
         toolbar.addWidget(self.more_filters, 1)
 
+        # Retain btn_top_print on self for test compatibility while hiding from top bar to eliminate duplicate button
         self.btn_top_print = QPushButton("🖨️ Print")
         self.btn_top_print.setToolTip("Print current store directory list")
         self.btn_top_print.setStyleSheet(
-            "QPushButton { font-size: 9pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 14px; min-height: 32px; } "
+            "QPushButton { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-height: 30px; } "
             "QPushButton:hover { background: #1D4ED8; }"
         )
         self.btn_top_print.clicked.connect(self.print_leads)
-        toolbar.addWidget(self.btn_top_print, 0)
+        self.btn_top_print.hide()
 
         layout.addLayout(toolbar)
 
@@ -2485,16 +2494,17 @@ class CustomerProspectsTab(QWidget):
         self.exclude_dropdown.currentTextChanged.connect(lambda _text: self.apply_filters())
         self.exclude_dropdown.setStyleSheet(
             "QComboBox { font-size: 8.5pt; font-weight: 600; color: #FCA5A5; background: rgba(239, 68, 68, 0.12); "
-            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 220px; }"
+            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 30px; }"
         )
         exclude_bar.addWidget(self.exclude_dropdown, 0)
 
         self.exclude_keyword = QLineEdit()
         self.exclude_keyword.setPlaceholderText("🚫 Exclude keyword, name, district, or city…")
         self.exclude_keyword.setClearButtonEnabled(True)
+        self.exclude_keyword.setMinimumWidth(200)
         self.exclude_keyword.textChanged.connect(lambda _text: self._filter_timer.start())
         self.exclude_keyword.setStyleSheet(
-            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; }"
+            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; min-height: 30px; }"
         )
         exclude_bar.addWidget(self.exclude_keyword, 1)
 
@@ -2548,14 +2558,17 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.leads_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.leads_table.setSortingEnabled(False)
-        self.leads_table.setMinimumHeight(420)
+        self.leads_table.setObjectName("leadsTable")
+        self.leads_table.setProperty("no_word_wrap", True)
+        self.leads_table.setMinimumHeight(400)
+        self.leads_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
         for index, width in enumerate((95, 80, 210, 140, 125, 200, 300, 85, 120, 140, 180, 130, 170, 180, 200, 180, 80, 105, 130, 100, 160, 220, 160, 130)):
             self.leads_table.setColumnWidth(index, width)
         layout.addWidget(self.leads_table, 1)
 
-        # Dedicated Print Center & Export Section (at the very bottom / last)
+        # Dedicated Print Center & Export Section (at the very bottom / last - spacious & uncrowded)
         print_card = QFrame()
         print_card.setObjectName("storeDirectoryPrintCard")
         print_card.setStyleSheet(
@@ -2575,16 +2588,24 @@ class CustomerProspectsTab(QWidget):
 
         print_layout.addWidget(self.print_export_combo, 0)
 
-        for btn in (
-            self.btn_print_preview, self.btn_print, self.btn_store_details, self.btn_dashboard_print,
-            self.btn_pdf, self.btn_csv, self.btn_xlsx, self.btn_doc, self.btn_folder
-        ):
+        # Retain primary action buttons visible in toolbar
+        for btn in (self.btn_print_preview, self.btn_print, self.btn_folder):
             btn.setStyleSheet(
                 "QPushButton { font-size: 8.5pt; font-weight: 700; background: #1E293B; "
-                "border: 1px solid #3B82F6; border-radius: 6px; padding: 5px 10px; color: #F8FAFC; min-height: 28px; } "
+                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; color: #F8FAFC; min-height: 30px; } "
                 "QPushButton:hover { background: #2563EB; color: #FFFFFF; border-color: #60A5FA; }"
             )
             print_layout.addWidget(btn)
+
+        # Secondary / export buttons remain accessible via print_export_combo; retain handles on self for tests & API
+        for btn in (
+            self.btn_store_details, self.btn_dashboard_print, self.btn_pdf, self.btn_csv, self.btn_xlsx, self.btn_doc
+        ):
+            btn.setStyleSheet(
+                "QPushButton { font-size: 8.5pt; font-weight: 700; background: #1E293B; "
+                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; color: #F8FAFC; min-height: 30px; }"
+            )
+            btn.hide()
 
         print_note = QLabel("Official Raw Strength Calisthenics Print Center")
         print_note.setStyleSheet("font-size: 8.5pt; color: #CBD5E1; font-style: italic;")
@@ -2724,6 +2745,10 @@ class CustomerProspectsTab(QWidget):
         self.region_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.region_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.region_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.region_table.setObjectName("regionTable")
+        self.region_table.setProperty("no_word_wrap", True)
+        self.region_table.setMinimumHeight(400)
+        self.region_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.region_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.region_table, 1)
         privacy = QLabel(
@@ -2762,7 +2787,7 @@ class CustomerProspectsTab(QWidget):
         self.regional_print_combo.currentIndexChanged.connect(self._on_regional_print_export_changed)
         self.regional_print_combo.setStyleSheet(
             "QComboBox { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; min-width: 140px; } "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-width: 195px; min-height: 30px; } "
             "QComboBox::drop-down { border: none; } "
             "QComboBox QAbstractItemView { background: #1E293B; color: #F8FAFC; selection-background-color: #2563EB; }"
         )
@@ -2778,7 +2803,7 @@ class CustomerProspectsTab(QWidget):
         for btn in (self.btn_regional_preview, self.btn_regional_print, self.btn_regional_folder):
             btn.setStyleSheet(
                 "QPushButton { font-size: 8.5pt; font-weight: 600; background: rgba(37, 99, 235, 0.2); "
-                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; color: #93C5FD; } "
+                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; color: #93C5FD; min-height: 30px; } "
                 "QPushButton:hover { background: #2563EB; color: #FFFFFF; }"
             )
             reg_print_layout.addWidget(btn)
@@ -4391,7 +4416,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 elif text == "NA":
                     item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
                 else:
-                    item.setForeground(QColor("#FFFFFF" if is_dark else "#0F172A"))
+                    item.setForeground(QColor("#F8FAFC" if is_dark else "#0F172A"))
                 if text and text != "NA":
                     item.setToolTip(text)
                 self.leads_table.setItem(row_index, column_index, item)
@@ -4726,7 +4751,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 
     def apply_theme(self, theme_name="night"):
         self._current_theme_name = (theme_name or "night").lower()
-        is_dark = self._current_theme_name in {"night", "dark", "ocean", "sunset"}
+        is_dark = self._current_theme_name in {"night", "dark"}
 
         bg = "#0B1120" if is_dark else "#F8FAFC"
         card_bg = "rgba(15, 23, 42, 0.90)" if is_dark else "#FFFFFF"

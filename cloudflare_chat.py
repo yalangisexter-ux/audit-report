@@ -367,7 +367,7 @@ class CloudflareChatTab(QWidget):
         self.login_button = QPushButton("Start Chat as User")
         self.login_button.setMinimumHeight(38)
         self.login_button.setStyleSheet(
-            "QPushButton{background:#6d28d9;color:white;border:0;border-radius:9px;padding:8px 20px;font-weight:700;} "
+            "QPushButton{background:#6d28d9;color:white;border:0;border-radius:9px;padding:5px 18px;font-weight:700;} "
             "QPushButton:hover{background:#5b21b6;}"
         )
         self.login_button.clicked.connect(self._handle_connect)
@@ -408,7 +408,7 @@ class CloudflareChatTab(QWidget):
 
         self.logout_button = QPushButton("Sign out / Switch Role")
         self.logout_button.setStyleSheet(
-            "QPushButton{background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:7px;} "
+            "QPushButton{background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:4px 10px;} "
             "QPushButton:hover{background:#e2e8f0;}"
         )
         self.logout_button.clicked.connect(self._logout)
@@ -464,7 +464,7 @@ class CloudflareChatTab(QWidget):
         self.send_button.setMinimumWidth(86)
         self.send_button.setMinimumHeight(38)
         self.send_button.setStyleSheet(
-            "QPushButton{background:#6d28d9;color:white;border:0;border-radius:9px;padding:8px 14px;font-weight:700;} "
+            "QPushButton{background:#6d28d9;color:white;border:0;border-radius:9px;padding:5px 14px;font-weight:700;} "
             "QPushButton:hover{background:#5b21b6;}"
         )
         self.send_button.clicked.connect(self._send_message)
@@ -608,12 +608,12 @@ class CloudflareChatTab(QWidget):
             """)
         if hasattr(self, "send_button"):
             self.send_button.setStyleSheet(f"""
-                QPushButton {{ background: {btn_bg}; color: {btn_fg}; border: 0; border-radius: 9px; padding: 8px 16px; font-weight: 700; }}
+                QPushButton {{ background: {btn_bg}; color: {btn_fg}; border: 0; border-radius: 9px; padding: 5px 16px; font-weight: 700; }}
                 QPushButton:hover {{ background: {btn_hover}; }}
             """)
         if hasattr(self, "login_button"):
             self.login_button.setStyleSheet(f"""
-                QPushButton {{ background: {btn_bg}; color: {btn_fg}; border: 0; border-radius: 9px; padding: 8px 20px; font-weight: 700; }}
+                QPushButton {{ background: {btn_bg}; color: {btn_fg}; border: 0; border-radius: 9px; padding: 5px 18px; font-weight: 700; }}
                 QPushButton:hover {{ background: {btn_hover}; }}
             """)
         if hasattr(self, "logout_button"):

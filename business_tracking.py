@@ -326,7 +326,7 @@ class BusinessTrackingTab(QWidget):
                     color: {tab_fg};
                     font-weight: 700;
                     font-size: 9.5pt;
-                    padding: 8px 18px;
+                    padding: 5px 16px;
                     margin-right: 6px;
                     border-radius: 8px;
                     border: 1px solid {border};
@@ -454,7 +454,7 @@ class BusinessTrackingTab(QWidget):
         add_btn.setToolTip("Add a product and its opening or received stock quantities.")
         add_btn.setMinimumHeight(34)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 4px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_btn.clicked.connect(self.add_product)
         row.addWidget(add_btn)
         ref_btn = QPushButton("🔄 Refresh")
@@ -483,7 +483,7 @@ class BusinessTrackingTab(QWidget):
         add_btn.setToolTip("Record an order and its current tracking status.")
         add_btn.setMinimumHeight(34)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 4px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_btn.clicked.connect(self.add_order)
         row.addWidget(add_btn)
         ref_btn = QPushButton("🔄 Refresh")
@@ -508,13 +508,13 @@ class BusinessTrackingTab(QWidget):
         add_svc.setToolTip("Add a service offered to members.")
         add_svc.setMinimumHeight(34)
         add_svc.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_svc.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+        add_svc.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 4px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_svc.clicked.connect(self.add_service)
         add_mem = QPushButton("➕ Add Member")
         add_mem.setToolTip("Add a member and record their service and purchased sessions.")
         add_mem.setMinimumHeight(34)
         add_mem.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_mem.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00E5FF, stop:1 #6366F1); color: #020617; font-weight: 800; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: #38BDF8; color: #FFFFFF; }")
+        add_mem.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00E5FF, stop:1 #6366F1); color: #020617; font-weight: 800; border-radius: 8px; padding: 4px 14px; } QPushButton:hover { background: #38BDF8; color: #FFFFFF; }")
         add_mem.clicked.connect(self.add_member)
         ref_btn = QPushButton("🔄 Refresh")
         ref_btn.setMinimumHeight(34)
@@ -554,7 +554,7 @@ class BusinessTrackingTab(QWidget):
         add_btn.setToolTip("Record an employee activity and its current status.")
         add_btn.setMinimumHeight(34)
         add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 6px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
+        add_btn.setStyleSheet("QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); color: #FFFFFF; font-weight: 700; border-radius: 8px; padding: 4px 14px; } QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); }")
         add_btn.clicked.connect(self.add_activity)
         ref_btn = QPushButton("🔄 Refresh")
         ref_btn.setMinimumHeight(34)
