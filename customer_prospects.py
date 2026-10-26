@@ -2564,7 +2564,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
-        for index, width in enumerate((95, 80, 210, 140, 125, 200, 300, 85, 120, 140, 180, 130, 170, 180, 200, 180, 80, 105, 130, 100, 160, 220, 160, 130)):
+        for index, width in enumerate((95, 80, 210, 140, 125, 200, 300, 85, 120, 140, 280, 130, 170, 240, 240, 240, 80, 105, 130, 100, 160, 240, 160, 130)):
             self.leads_table.setColumnWidth(index, width)
         layout.addWidget(self.leads_table, 1)
 
@@ -3609,7 +3609,7 @@ a {{ color: #2563EB; text-decoration: underline; }}
 <tbody>
 """
             for r in records[:1000]:
-                maps_link = f"<a href='{r.get('maps', '')}'>Open Maps</a>" if r.get('maps') else "—"
+                maps_link = f"<a href='{r.get('maps', '')}'>{r.get('maps', '')}</a>" if r.get('maps') else "—"
                 html += f"""<tr>
   <td>{format_prospect_cell_value(r, 'state')}</td>
   <td>{format_prospect_cell_value(r, 'city')}<br><small>{format_prospect_cell_value(r, 'area')}</small></td>
@@ -4378,16 +4378,8 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 web_url = str(record.get("website", "") or "")
                 evidence_url = str(record.get("product_evidence", "") or "")
                 catalog_url = str(record.get("product_catalog", "") or "")
-                if key == "source_url":
-                    text = "Open source" if source_url else "NA"
-                elif key == "maps":
-                    text = "Open Maps" if maps_url.startswith(("https://", "http://")) else "NA"
-                elif key == "product_evidence" and evidence_url.startswith(("https://", "http://")):
-                    text = "View Evidence"
-                elif key == "product_catalog" and catalog_url.startswith(("https://", "http://")):
-                    text = "Open Catalog"
-                else:
-                    text = format_prospect_cell_value(record, key)
+                # Expose full URLs directly in cells as requested
+                text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark", "ocean", "sunset"}
@@ -4418,7 +4410,10 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 else:
                     item.setForeground(QColor("#F8FAFC" if is_dark else "#0F172A"))
                 if text and text != "NA":
-                    item.setToolTip(text)
+                    if key in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
+                        item.setToolTip(f"Double-click to open in browser:\n{text}")
+                    else:
+                        item.setToolTip(text)
                 self.leads_table.setItem(row_index, column_index, item)
         self.leads_table.setUpdatesEnabled(True)
         # Expand row heights so full street addresses are readable in the directory.

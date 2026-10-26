@@ -1228,3 +1228,76 @@ def test_data_integrity_duplicate_merging_and_metric_reporting():
     assert incomplete_count == 1
 
     conn.close()
+
+
+def test_exposed_links_in_store_directory_table():
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import Qt
+    qt_app = QApplication.instance() or QApplication([])
+    tab = prospects.CustomerProspectsTab()
+    try:
+        sample_maps = "https://maps.google.com/?q=Test+Location"
+        sample_web = "https://example.com/store"
+        sample_source = "https://source.example.com/directory"
+        sample_evidence = "https://example.com/evidence/pullup-bar"
+        sample_catalog = "https://example.com/catalog"
+
+        tab.records = [
+            {
+                "kind": "Store",
+                "store_type": "Physical & Online",
+                "business_name": "Pro Fitness Hub",
+                "business_category": "Fitness Equipment",
+                "maps": sample_maps,
+                "website": sample_web,
+                "source_url": sample_source,
+                "product_evidence": sample_evidence,
+                "product_catalog": sample_catalog,
+                "state": "Maharashtra",
+                "city": "Mumbai",
+                "verification_status": "Verified",
+            }
+        ]
+        tab._refresh_views()
+        assert tab.leads_table.rowCount() == 1
+
+        # Check column indexes from LEAD_COLUMNS
+        col_map = {key: idx for idx, (_label, key) in enumerate(tab.LEAD_COLUMNS)}
+
+        # 1. Google Maps: Exposed raw URL, not placeholder text
+        maps_item = tab.leads_table.item(0, col_map["maps"])
+        assert maps_item is not None
+        assert maps_item.text() == sample_maps
+        assert maps_item.text() != "Open Maps"
+        assert maps_item.data(Qt.ItemDataRole.UserRole) == sample_maps
+        assert "Double-click to open in browser" in maps_item.toolTip()
+        assert sample_maps in maps_item.toolTip()
+
+        # 2. Website: Exposed raw URL
+        web_item = tab.leads_table.item(0, col_map["website"])
+        assert web_item is not None
+        assert web_item.text() == sample_web
+        assert web_item.data(Qt.ItemDataRole.UserRole) == sample_web
+
+        # 3. Source URL: Exposed raw URL
+        source_item = tab.leads_table.item(0, col_map["source_url"])
+        assert source_item is not None
+        assert source_item.text() == sample_source
+        assert source_item.text() != "Open source"
+        assert source_item.data(Qt.ItemDataRole.UserRole) == sample_source
+
+        # 4. Product Evidence: Exposed raw URL
+        evidence_item = tab.leads_table.item(0, col_map["product_evidence"])
+        assert evidence_item is not None
+        assert evidence_item.text() == sample_evidence
+        assert evidence_item.text() != "View Evidence"
+        assert evidence_item.data(Qt.ItemDataRole.UserRole) == sample_evidence
+
+        # 5. Product Catalog: Exposed raw URL
+        catalog_item = tab.leads_table.item(0, col_map["product_catalog"])
+        assert catalog_item is not None
+        assert catalog_item.text() == sample_catalog
+        assert catalog_item.text() != "Open Catalog"
+        assert catalog_item.data(Qt.ItemDataRole.UserRole) == sample_catalog
+    finally:
+        tab.close()
