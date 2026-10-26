@@ -1346,3 +1346,28 @@ def test_theme_switching_text_contrast_and_visibility():
         assert name_item.foreground().color().name().upper() == '#0F172A'
     finally:
         tab.close()
+
+
+def test_territory_kpis_breakdown_states_uts_islands():
+    tab = prospects.CustomerProspectsTab()
+    try:
+        assert tab.kpi_labels["states"].text() == "28 Indian States"
+        assert tab.kpi_labels["uts"].text() == "6 Union Territories"
+        assert tab.kpi_labels["islands"].text() == "2 Island Territories"
+
+        tab.records = [
+            {"kind": "Store", "business_name": "Store 1", "state": "Maharashtra"},
+            {"kind": "Store", "business_name": "Store 2", "state": "Karnataka"},
+            {"kind": "Store", "business_name": "Store 3", "state": "Delhi"},
+            {"kind": "Store", "business_name": "Store 4", "state": "Chandigarh (ut)"},
+            {"kind": "Store", "business_name": "Store 5", "state": "Andaman and Nicobar Islands"},
+            {"kind": "Store", "business_name": "Store 6", "state": "Punjab, Haryana"},
+        ]
+        tab._refresh_kpis()
+
+        assert tab.kpi_values["states"].text() == "4 / 28"
+        assert tab.kpi_values["uts"].text() == "2 / 6"
+        assert tab.kpi_values["islands"].text() == "1 / 2"
+        assert tab.kpi_values["regions"].text() == "4 / 28"
+    finally:
+        tab.close()

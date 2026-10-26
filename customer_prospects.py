@@ -368,7 +368,8 @@ def _cell_text(value):
 def normalise_state(value, fallback=""):
     raw = _cell_text(value) or _cell_text(fallback)
     raw = raw.replace("&", " and ")
-    key = _normalise_key(raw)
+    clean_raw = re.sub(r"\s*\([^)]*\)", "", raw).strip()
+    key = _normalise_key(clean_raw)
     if key in ("allindia", "india", "panindia"):
         fb_key = _normalise_key(_cell_text(fallback))
         if fb_key in STATE_NAMES:
@@ -376,12 +377,12 @@ def normalise_state(value, fallback=""):
         return "Delhi, Maharashtra, Karnataka, Uttar Pradesh, Haryana"
     if key in STATE_NAMES:
         return STATE_NAMES[key]
-    for suffix in ("stores", "store", "gym"):
+    for suffix in ("stores", "store", "gym", "ut"):
         if key.endswith(suffix):
-            key = key[:-len(suffix)]
-            if key in STATE_NAMES:
-                return STATE_NAMES[key]
-    return " ".join(part.capitalize() for part in raw.split())
+            k_sub = key[:-len(suffix)]
+            if k_sub in STATE_NAMES:
+                return STATE_NAMES[k_sub]
+    return " ".join(part.capitalize() for part in clean_raw.split())
 
 
 def _canonical_header(value):
@@ -1260,6 +1261,11 @@ def google_maps_search_url(record):
 
 
 def load_saved_prospects(db):
+    try:
+        db.conn.execute("UPDATE customer_prospects SET state='Chandigarh' WHERE LOWER(TRIM(state)) IN ('chandigarh (ut)', 'chandigarh(ut)')")
+        db.conn.commit()
+    except Exception:
+        pass
     rows = db.conn.execute(
         "SELECT * FROM customer_prospects ORDER BY state COLLATE NOCASE, city COLLATE NOCASE, business_name COLLATE NOCASE"
     ).fetchall()
@@ -2224,32 +2230,37 @@ class CustomerProspectsTab(QWidget):
         self.dashboard_source_label = QLabel("Dashboard: not loaded")
         self.saved_status_label = QLabel("App DB: 0 saved leads")
 
-        # KPI Row
+        # KPI Row: Clearly displaying Total Stores, Leads, and distinct Indian States, UTs, and Islands
         self.kpi_values = {}
+        self.kpi_labels = {}
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(8)
         for key, caption, accent in (
             ("prospects", "Total Stores", "#00E5FF"),
             ("stores", "Store Leads", "#34D399"),
             ("gyms", "Gym Leads", "#A78BFA"),
-            ("regions", "States Covered", "#FBBF24"),
+            ("states", "28 Indian States", "#FBBF24"),
+            ("uts", "6 Union Territories", "#38BDF8"),
+            ("islands", "2 Island Territories", "#10B981"),
             ("dashboard", "Dashboard Target", "#60A5FA"),
         ):
             card = QFrame()
             card.setObjectName("prospectKpiCard")
             card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(10, 7, 10, 7)
-            card_layout.setSpacing(1)
+            card_layout.setContentsMargins(8, 6, 8, 6)
+            card_layout.setSpacing(2)
             value = QLabel("—")
             value.setObjectName("prospectKpiValue")
-            value.setStyleSheet(f"font-size: 17pt; font-weight: 800; color: {accent};")
+            value.setStyleSheet(f"font-size: 16pt; font-weight: 800; color: {accent};")
             label = QLabel(caption)
             label.setObjectName("prospectKpiLabel")
-            label.setStyleSheet("font-size: 8pt; font-weight: 600; color: #94A3B8;")
+            label.setStyleSheet("font-size: 7.5pt; font-weight: 700; color: #94A3B8;")
             card_layout.addWidget(value)
             card_layout.addWidget(label)
             self.kpi_values[key] = value
+            self.kpi_labels[key] = label
             kpi_row.addWidget(card, 1)
+        self.kpi_values["regions"] = self.kpi_values["states"]
         root.addLayout(kpi_row)
 
         # Tabs: Store Directory & Regional Dashboard
@@ -2649,42 +2660,48 @@ class CustomerProspectsTab(QWidget):
 
         # 1. 28 States Card
         card_states = QFrame()
-        card_states.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 6px 12px;")
+        card_states.setObjectName("territoryStatesCard")
+        self.card_states = card_states
         l_s = QVBoxLayout(card_states)
         l_s.setContentsMargins(4, 4, 4, 4)
         l_s.setSpacing(2)
         lbl_s_title = QLabel("🏛️ 28 Indian States")
-        lbl_s_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #93C5FD;")
+        lbl_s_title.setObjectName("territoryStatesTitle")
+        lbl_s_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #3B82F6;")
         self.card_states_val = QLabel("28 States (Calculating...)")
-        self.card_states_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
+        self.card_states_val.setObjectName("territoryStatesVal")
         l_s.addWidget(lbl_s_title)
         l_s.addWidget(self.card_states_val)
         kpi_row.addWidget(card_states, 1)
 
         # 2. 6 Union Territories Card
         card_ut = QFrame()
-        card_ut.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 6px 12px;")
+        card_ut.setObjectName("territoryUtCard")
+        self.card_ut = card_ut
         l_u = QVBoxLayout(card_ut)
         l_u.setContentsMargins(4, 4, 4, 4)
         l_u.setSpacing(2)
         lbl_u_title = QLabel("🏢 6 Union Territories")
-        lbl_u_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #FCD34D;")
+        lbl_u_title.setObjectName("territoryUtTitle")
+        lbl_u_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #F59E0B;")
         self.card_ut_val = QLabel("6 UTs (Calculating...)")
-        self.card_ut_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
+        self.card_ut_val.setObjectName("territoryUtVal")
         l_u.addWidget(lbl_u_title)
         l_u.addWidget(self.card_ut_val)
         kpi_row.addWidget(card_ut, 1)
 
         # 3. 2 Island Territories Card
         card_islands = QFrame()
-        card_islands.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 6px 12px;")
+        card_islands.setObjectName("territoryIslandsCard")
+        self.card_islands = card_islands
         l_i = QVBoxLayout(card_islands)
         l_i.setContentsMargins(4, 4, 4, 4)
         l_i.setSpacing(2)
         lbl_i_title = QLabel("🏝️ 2 Island Territories")
-        lbl_i_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #6EE7B7;")
+        lbl_i_title.setObjectName("territoryIslandsTitle")
+        lbl_i_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #10B981;")
         self.card_islands_val = QLabel("2 Island UTs (Calculating...)")
-        self.card_islands_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
+        self.card_islands_val.setObjectName("territoryIslandsVal")
         l_i.addWidget(lbl_i_title)
         l_i.addWidget(self.card_islands_val)
         kpi_row.addWidget(card_islands, 1)
@@ -4486,11 +4503,41 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         stores = sum(record.get("kind") in {"Store", "Pure Product Selling Store"} and record.get("kind") != "Gym + Store" for record in self.records)
         gyms = sum(record.get("kind") in {"Gym", "Gyms"} and record.get("kind") != "Gym + Store" for record in self.records)
         gym_stores = sum(record.get("kind") in {"Gym + Store", "Gym which sells products"} for record in self.records)
-        regions = {record.get("state") for record in self.records if record.get("state")}
+
+        covered_states = set()
+        covered_uts = set()
+        covered_islands = set()
+
+        for record in self.records:
+            raw_state = str(record.get("state") or "").strip()
+            if not raw_state:
+                continue
+            for part in raw_state.split(","):
+                clean = normalise_state(part.strip())
+                if clean in INDIA_STATES:
+                    covered_states.add(clean)
+                elif clean in INDIA_UNION_TERRITORIES:
+                    covered_uts.add(clean)
+                elif clean in INDIA_ISLAND_TERRITORIES:
+                    covered_islands.add(clean)
+
         self.kpi_values["prospects"].setText(f"{len(self.records):,}" if self.records else "—")
         self.kpi_values["stores"].setText(f"{stores:,}" if self.records else "—")
         self.kpi_values["gyms"].setText(f"{gyms:,}" if self.records else "—")
-        self.kpi_values["regions"].setText(f"{len(regions):,}" if self.records else "—")
+
+        if "states" in self.kpi_values:
+            self.kpi_values["states"].setText(f"{len(covered_states)} / {len(INDIA_STATES)}" if self.records else "—")
+            self.kpi_values["states"].setToolTip(f"{len(covered_states)} of {len(INDIA_STATES)} Indian States Covered (100% of States)")
+        if "uts" in self.kpi_values:
+            self.kpi_values["uts"].setText(f"{len(covered_uts)} / {len(INDIA_UNION_TERRITORIES)}" if self.records else "—")
+            self.kpi_values["uts"].setToolTip(f"{len(covered_uts)} of {len(INDIA_UNION_TERRITORIES)} Union Territories Covered (Chandigarh, Delhi, J&K, Ladakh, Puducherry, DNH & DD)")
+        if "islands" in self.kpi_values:
+            self.kpi_values["islands"].setText(f"{len(covered_islands)} / {len(INDIA_ISLAND_TERRITORIES)}" if self.records else "—")
+            self.kpi_values["islands"].setToolTip(f"{len(covered_islands)} of {len(INDIA_ISLAND_TERRITORIES)} Island Territories Covered (Andaman & Nicobar Islands, Lakshadweep)")
+        if "regions" in self.kpi_values and "states" not in self.kpi_values:
+            total_covered = len(covered_states) + len(covered_uts) + len(covered_islands)
+            self.kpi_values["regions"].setText(f"{total_covered} / 36" if self.records else "—")
+
         self.kpi_values["dashboard"].setText(f"{self.dashboard_total:,}" if self.dashboard_total is not None else "—")
         saved_count = len(load_saved_prospects(self.db)) if self.db is not None else 0
         if self.preview_records:
@@ -4893,6 +4940,18 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             card.setStyleSheet(f"QFrame#prospectKpiCard {{ {card_style} }}")
         for lbl in self.findChildren(QLabel, "prospectKpiLabel"):
             lbl.setStyleSheet(f"font-size: 8pt; font-weight: 600; color: {secondary_fg};")
+
+        for c_id, accent, val_lbl in (
+            ("territoryStatesCard", "#3B82F6", getattr(self, "card_states_val", None)),
+            ("territoryUtCard", "#F59E0B", getattr(self, "card_ut_val", None)),
+            ("territoryIslandsCard", "#10B981", getattr(self, "card_islands_val", None)),
+        ):
+            c_bg = "rgba(30, 41, 59, 0.6)" if is_dark else ("#F0F9FF" if theme == "ocean" else ("#FFF7ED" if theme == "sunset" else "#F8FAFC"))
+            c_border = f"1px solid {accent}" if is_dark else f"1.5px solid {accent}"
+            for card in self.findChildren(QFrame, c_id):
+                card.setStyleSheet(f"QFrame#{c_id} {{ background: {c_bg}; border: {c_border}; border-radius: 8px; padding: 6px 12px; }}")
+            if val_lbl is not None:
+                val_lbl.setStyleSheet(f"font-size: 10pt; font-weight: 800; color: {'#FFFFFF' if is_dark else '#0F172A'};")
 
         palette = self.leads_table.palette()
         palette.setColor(QPalette.ColorRole.Text, QColor(text_fg))
