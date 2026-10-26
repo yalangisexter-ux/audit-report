@@ -7889,13 +7889,23 @@ class MainWindow(QMainWindow):
                 subprocess.Popen([str(installer_path), "/SILENT", "/NORESTART"], close_fds=True)
             # Detached watchdog to guarantee the app reopens automatically
             try:
-                exe_target = str(Path(sys.executable).resolve())
+                if getattr(sys, "frozen", False):
+                    exe_target = str(Path(sys.executable).resolve())
+                else:
+                    exe_target = str(Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Raw Strength Employee Audit Manager" / "RawStrengthEmployeeAuditManager.exe")
                 watchdog_cmd = (
-                    f"$setup = Get-Process -Name 'RawStrengthEmployeeAuditManager-Setup' -ErrorAction SilentlyContinue; "
-                    f"if ($setup) {{ $setup.WaitForExit(180000) }}; "
+                    f"$setup = $null; "
+                    f"for ($i = 0; $i -lt 60; $i++) {{ "
+                    f"  $setup = Get-Process -Name 'RawStrengthEmployeeAuditManager-Setup' -ErrorAction SilentlyContinue; "
+                    f"  if ($setup) {{ break }}; "
+                    f"  Start-Sleep -Milliseconds 500; "
+                    f"}}; "
+                    f"if ($setup) {{ $setup.WaitForExit(300000) }}; "
                     f"Start-Sleep -Seconds 2; "
-                    f"if (-not (Get-Process -Name 'RawStrengthEmployeeAuditManager' -ErrorAction SilentlyContinue)) {{ "
-                    f"  Start-Process -FilePath '{exe_target}' "
+                    f"if (Test-Path '{exe_target}') {{ "
+                    f"  if (-not (Get-Process -Name 'RawStrengthEmployeeAuditManager' -ErrorAction SilentlyContinue)) {{ "
+                    f"    Start-Process -FilePath '{exe_target}' "
+                    f"  }} "
                     f"}}"
                 )
                 subprocess.Popen(
