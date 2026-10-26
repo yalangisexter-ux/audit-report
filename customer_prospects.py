@@ -837,7 +837,10 @@ def format_prospect_cell_value(record, key):
         return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
 
     if key in {"website", "maps", "source_url"}:
-        return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
+        res = raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else ""
+        if not res and key == "maps":
+            res = google_maps_search_url(record)
+        return res if res else "NA"
 
     if key == "store_id":
         if raw_val and raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""}:
@@ -1246,17 +1249,18 @@ def cleanup_duplicate_prospects(db):
 
 
 def google_maps_search_url(record):
-    """Build a Google Maps search URL from the store name and its full address."""
-    parts = (
-        str(record.get("business_name") or "").strip(),
-        str(record.get("address") or "").strip(),
-        str(record.get("city") or "").strip(),
-        str(record.get("state") or "").strip(),
-        "India",
-    )
-    query = ", ".join(part for part in parts if part)
-    if not str(record.get("business_name") or "").strip() or not str(record.get("address") or "").strip():
+    """Build a functional Google Maps search URL from the store name and its location/address."""
+    name = str(record.get("business_name") or "").strip()
+    addr = str(record.get("address") or "").strip()
+    city = str(record.get("city") or "").strip()
+    state = str(record.get("state") or "").strip()
+    if not name and not addr and not city:
         return ""
+    clean_parts = [
+        p for p in (name, addr, city, state, "India")
+        if p and p.casefold() not in {"na", "n/a", "none", "null", "-"}
+    ]
+    query = ", ".join(clean_parts)
     return "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
 
 
@@ -1288,20 +1292,19 @@ def load_saved_prospects(db):
             "https://maps.google.com/",
             "https://maps.app.goo.gl/",
         ))
-        if (
-            not is_google_maps_url
-        ) and address_value and address_value.casefold() not in {"na", "n/a", "none", "null", "-"}:
+        if not is_google_maps_url:
             maps_url = google_maps_search_url(record)
-            record["maps"] = maps_url
-            if record.get("id") is not None:
-                try:
-                    db.conn.execute(
-                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-') OR (LOWER(TRIM(maps)) NOT LIKE 'https://www.google.com/maps/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.google.com/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.app.goo.gl/%'))",
-                        (maps_url, record["id"]),
-                    )
-                    changed = True
-                except Exception:
-                    pass
+            if maps_url:
+                record["maps"] = maps_url
+                if record.get("id") is not None:
+                    try:
+                        db.conn.execute(
+                            "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-') OR (LOWER(TRIM(maps)) NOT LIKE 'https://www.google.com/maps/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.google.com/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.app.goo.gl/%'))",
+                            (maps_url, record["id"]),
+                        )
+                        changed = True
+                    except Exception:
+                        pass
     if changed:
         try:
             db.conn.commit()
@@ -2416,11 +2419,13 @@ class CustomerProspectsTab(QWidget):
         # Row 1: Primary Search, Category, State, More Filters (Spacious, uncrowded)
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
+        toolbar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search business name, phone, address, city…")
         self.search_input.setClearButtonEnabled(True)
         self.search_input.setMinimumWidth(220)
+        self.search_input.setFixedHeight(34)
         self.search_input.textChanged.connect(lambda _text: self._filter_timer.start())
         toolbar.addWidget(self.search_input, 2)
 
@@ -2428,6 +2433,7 @@ class CustomerProspectsTab(QWidget):
         self.kind_filter.addItems(["All types", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
         self.kind_filter.setCurrentText("All types")
         self.kind_filter.setMinimumWidth(150)
+        self.kind_filter.setFixedHeight(34)
         self.kind_filter.setToolTip("Filter by store / gym category")
         self.kind_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.kind_filter, 1)
@@ -2435,6 +2441,7 @@ class CustomerProspectsTab(QWidget):
         self.state_filter = QComboBox()
         self.state_filter.addItem("All States / UTs")
         self.state_filter.setMinimumWidth(140)
+        self.state_filter.setFixedHeight(34)
         self.state_filter.setToolTip("Filter by State, UT, or Island")
         self.state_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.state_filter, 1)
@@ -2451,6 +2458,7 @@ class CustomerProspectsTab(QWidget):
             "Unverified Only",
         ])
         self.more_filters.setMinimumWidth(140)
+        self.more_filters.setFixedHeight(34)
         self.more_filters.setToolTip("Filter by Contact, Website, or Verification status")
         self.more_filters.currentTextChanged.connect(self._on_more_filters_changed)
         toolbar.addWidget(self.more_filters, 1)
@@ -2460,7 +2468,7 @@ class CustomerProspectsTab(QWidget):
         self.btn_top_print.setToolTip("Print current store directory list")
         self.btn_top_print.setStyleSheet(
             "QPushButton { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-height: 30px; } "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-height: 32px; } "
             "QPushButton:hover { background: #1D4ED8; }"
         )
         self.btn_top_print.clicked.connect(self.print_leads)
@@ -2484,6 +2492,7 @@ class CustomerProspectsTab(QWidget):
         # Row 2: Consolidated Exclude Dropdown + Keyword Search + Clear Button + Results Counter
         exclude_bar = QHBoxLayout()
         exclude_bar.setSpacing(8)
+        exclude_bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.exclude_dropdown = QComboBox()
         self.exclude_dropdown.addItem("🚫 Exclude Target: None (Show All)")
@@ -2496,9 +2505,10 @@ class CustomerProspectsTab(QWidget):
         self.exclude_dropdown.addItem("Exclude: Unverified Leads")
         self.exclude_dropdown.setToolTip("Select any category, territory, or condition to exclude from the directory")
         self.exclude_dropdown.currentTextChanged.connect(lambda _text: self.apply_filters())
+        self.exclude_dropdown.setFixedHeight(34)
         self.exclude_dropdown.setStyleSheet(
             "QComboBox { font-size: 8.5pt; font-weight: 600; color: #FCA5A5; background: rgba(239, 68, 68, 0.12); "
-            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 30px; }"
+            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 32px; }"
         )
         exclude_bar.addWidget(self.exclude_dropdown, 0)
 
@@ -2506,18 +2516,20 @@ class CustomerProspectsTab(QWidget):
         self.exclude_keyword.setPlaceholderText("🚫 Exclude keyword, name, district, or city…")
         self.exclude_keyword.setClearButtonEnabled(True)
         self.exclude_keyword.setMinimumWidth(200)
+        self.exclude_keyword.setFixedHeight(34)
         self.exclude_keyword.textChanged.connect(lambda _text: self._filter_timer.start())
         self.exclude_keyword.setStyleSheet(
-            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; min-height: 30px; }"
+            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; min-height: 32px; }"
         )
         exclude_bar.addWidget(self.exclude_keyword, 1)
 
         self.btn_clear_excludes = QPushButton("✖ Clear Exclude")
         self.btn_clear_excludes.setToolTip("Clear all negative / exclude filters")
         self.btn_clear_excludes.clicked.connect(self.clear_exclude_filters)
+        self.btn_clear_excludes.setFixedHeight(34)
         self.btn_clear_excludes.setStyleSheet(
             "QPushButton { font-size: 8.5pt; font-weight: 600; background: rgba(239, 68, 68, 0.18); "
-            "border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; color: #FCA5A5; } "
+            "border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 14px; color: #FCA5A5; min-height: 32px; } "
             "QPushButton:hover { background: rgba(239, 68, 68, 0.3); color: #FFFFFF; }"
         )
         exclude_bar.addWidget(self.btn_clear_excludes)
@@ -2567,6 +2579,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setMinimumHeight(400)
         self.leads_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
+        self.leads_table.cellClicked.connect(self.on_table_cell_clicked)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
         for index, width in enumerate((95, 80, 210, 140, 125, 200, 300, 85, 120, 140, 280, 130, 170, 240, 240, 240, 80, 105, 130, 100, 160, 240, 160, 130)):
             self.leads_table.setColumnWidth(index, width)
@@ -2577,18 +2590,21 @@ class CustomerProspectsTab(QWidget):
         print_card.setObjectName("storeDirectoryPrintCard")
         self.print_card = print_card
         print_layout = QHBoxLayout(print_card)
-        print_layout.setContentsMargins(10, 8, 10, 8)
+        print_layout.setContentsMargins(12, 10, 12, 10)
         print_layout.setSpacing(10)
+        print_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         print_title = QLabel("🖨️ Print Center & Export:")
         print_title.setObjectName("storeDirectoryPrintTitle")
         self.print_title = print_title
         print_layout.addWidget(print_title)
 
+        self.print_export_combo.setFixedHeight(34)
         print_layout.addWidget(self.print_export_combo, 0)
 
         self.print_buttons = [self.btn_print_preview, self.btn_print, self.btn_folder]
         for btn in self.print_buttons:
+            btn.setFixedHeight(34)
             print_layout.addWidget(btn)
 
         # Secondary / export buttons remain accessible via print_export_combo; retain handles on self for tests & API
@@ -2763,8 +2779,9 @@ class CustomerProspectsTab(QWidget):
         regional_print_card.setObjectName("regionalDashboardPrintCard")
         self.regional_print_card = regional_print_card
         reg_print_layout = QHBoxLayout(regional_print_card)
-        reg_print_layout.setContentsMargins(10, 8, 10, 8)
+        reg_print_layout.setContentsMargins(12, 10, 12, 10)
         reg_print_layout.setSpacing(10)
+        reg_print_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         reg_print_title = QLabel("🖨️ Regional Print Center & Export:")
         reg_print_title.setObjectName("regionalDashboardPrintTitle")
@@ -2780,6 +2797,7 @@ class CustomerProspectsTab(QWidget):
         self.regional_print_combo.addItem("📊 Export Regional to CSV (.csv)")
         self.regional_print_combo.addItem("📂 Open Export Folder")
         self.regional_print_combo.currentIndexChanged.connect(self._on_regional_print_export_changed)
+        self.regional_print_combo.setFixedHeight(34)
         reg_print_layout.addWidget(self.regional_print_combo, 0)
 
         self.btn_regional_preview = QPushButton("🖨️ Print Preview")
@@ -2791,6 +2809,7 @@ class CustomerProspectsTab(QWidget):
 
         self.regional_print_buttons = [self.btn_regional_preview, self.btn_regional_print, self.btn_regional_folder]
         for btn in self.regional_print_buttons:
+            btn.setFixedHeight(34)
             reg_print_layout.addWidget(btn)
 
         reg_print_note = QLabel("Replicates official Raw Strength Calisthenics Print Center")
@@ -4068,49 +4087,72 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             ("Last Verified", format_prospect_cell_value(record, "last_verified")),
             ("Notes / Remarks", format_prospect_cell_value(record, "notes")),
         ]
+        maps_link = str(record.get("maps") or "").strip() or google_maps_search_url(record)
+        web_link = str(record.get("website") or "").strip()
+        ev_link = str(record.get("product_evidence") or "").strip()
+        cat_link = str(record.get("product_catalog") or "").strip()
+        src_link = str(record.get("source_url") or "").strip()
+
         for label, val in fields:
             lbl = QLabel(f"<b>{label}:</b>")
             lbl.setStyleSheet(f"color: {label_fg}; font-size: 9pt;")
-            val_lbl = QLabel(str(val))
+            val_lbl = QLabel()
             val_lbl.setWordWrap(True)
-            val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            val_lbl.setStyleSheet(f"color: {dialog_fg}; font-size: 9pt;")
+            val_str = str(val or "").strip()
+            link_target = ""
+            if label == "Google Maps Link":
+                link_target = val_str if val_str.startswith(("http://", "https://")) else maps_link
+            elif label == "Official Website" and web_link.startswith(("http://", "https://")):
+                link_target = web_link
+            elif label == "Product Evidence" and ev_link.startswith(("http://", "https://")):
+                link_target = ev_link
+            elif label == "Product Catalog" and cat_link.startswith(("http://", "https://")):
+                link_target = cat_link
+            elif label == "Source URL" and src_link.startswith(("http://", "https://")):
+                link_target = src_link
+
+            if link_target.startswith(("http://", "https://")):
+                val_lbl.setText(f'<a href="{link_target}" style="color: #2563EB; font-weight: 700; text-decoration: underline;">{link_target}</a>')
+                val_lbl.setOpenExternalLinks(True)
+            else:
+                val_lbl.setText(val_str or "NA")
+                val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                val_lbl.setStyleSheet(f"color: {dialog_fg}; font-size: 9pt;")
             form.addRow(lbl, val_lbl)
         scroll.setWidget(container)
         vbox.addWidget(scroll, 1)
 
         btn_row = QHBoxLayout()
-        maps_link = str(record.get("maps") or "").strip()
-        web_link = str(record.get("website") or "").strip()
-        ev_link = str(record.get("product_evidence") or "").strip()
+        btn_row.setSpacing(8)
 
         if maps_link.startswith(("https://", "http://")):
             btn_maps = QPushButton("🗺️ Google Maps")
-            btn_maps.setStyleSheet("QPushButton { font-weight: 600; background: #0D9488; color: white; padding: 6px 10px; border-radius: 6px; }")
+            btn_maps.setStyleSheet("QPushButton { font-weight: 700; background: #0D9488; color: white; padding: 6px 14px; border-radius: 6px; min-height: 32px; } QPushButton:hover { background: #0F766E; }")
             btn_maps.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(maps_link)))
             btn_row.addWidget(btn_maps)
 
         if web_link.startswith(("https://", "http://")):
             btn_web = QPushButton("🌐 Website")
-            btn_web.setStyleSheet("QPushButton { font-weight: 600; background: #475569; color: white; padding: 6px 10px; border-radius: 6px; }")
+            btn_web.setStyleSheet("QPushButton { font-weight: 600; background: #475569; color: white; padding: 6px 12px; border-radius: 6px; min-height: 32px; } QPushButton:hover { background: #334155; }")
             btn_web.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(web_link)))
             btn_row.addWidget(btn_web)
 
         if ev_link.startswith(("https://", "http://")):
             btn_ev = QPushButton("📄 Evidence")
-            btn_ev.setStyleSheet("QPushButton { font-weight: 600; background: #7C3AED; color: white; padding: 6px 10px; border-radius: 6px; }")
+            btn_ev.setStyleSheet("QPushButton { font-weight: 600; background: #7C3AED; color: white; padding: 6px 12px; border-radius: 6px; min-height: 32px; } QPushButton:hover { background: #6D28D9; }")
             btn_ev.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(ev_link)))
             btn_row.addWidget(btn_ev)
 
         btn_print_detail = QPushButton("🖨️ Print Store Details")
         btn_print_detail.setStyleSheet(
-            "QPushButton { font-weight: bold; background: #2563EB; color: white; padding: 6px 14px; border-radius: 6px; } "
+            "QPushButton { font-weight: bold; background: #2563EB; color: white; padding: 6px 16px; border-radius: 6px; min-height: 32px; } "
             "QPushButton:hover { background: #1D4ED8; }"
         )
         btn_print_detail.clicked.connect(lambda: self.open_store_details_preview(record))
         btn_row.addWidget(btn_print_detail)
 
         btn_close = QPushButton("Close")
+        btn_close.setStyleSheet("QPushButton { font-weight: 600; padding: 6px 14px; border-radius: 6px; min-height: 32px; }")
         btn_close.clicked.connect(dialog.accept)
         btn_row.addWidget(btn_close)
         vbox.addLayout(btn_row)
@@ -4365,13 +4407,15 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         self.leads_table.setUpdatesEnabled(False)
         self.leads_table.setRowCount(len(self.records))
         for row_index, record in enumerate(self.records):
+            source_url = str(record.get("source_url", "") or "").strip()
+            maps_url = str(record.get("maps", "") or "").strip()
+            if not maps_url.startswith(("https://", "http://")):
+                maps_url = google_maps_search_url(record)
+            web_url = str(record.get("website", "") or "").strip()
+            evidence_url = str(record.get("product_evidence", "") or "").strip()
+            catalog_url = str(record.get("product_catalog", "") or "").strip()
+
             for column_index, (_label, key) in enumerate(self.LEAD_COLUMNS):
-                source_url = str(record.get("source_url", "") or "")
-                maps_url = str(record.get("maps", "") or "")
-                web_url = str(record.get("website", "") or "")
-                evidence_url = str(record.get("product_evidence", "") or "")
-                catalog_url = str(record.get("product_catalog", "") or "")
-                # Expose full URLs directly in cells as requested
                 text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -4382,8 +4426,18 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 text_color = "#F8FAFC" if is_dark else "#0F172A"
                 if key in {"source_url", "maps", "product_evidence", "product_catalog", "website"}:
                     url_val = maps_url if key == "maps" else (source_url if key == "source_url" else (evidence_url if key == "product_evidence" else (catalog_url if key == "product_catalog" else web_url)))
+                    if key == "maps" and (not text or text == "NA") and url_val:
+                        text = url_val
+                        item.setText(text)
                     item.setData(Qt.ItemDataRole.UserRole, url_val)
-                    item.setForeground(QColor(link_color) if text != "NA" else QColor(dim_color))
+                    if url_val and url_val.startswith(("https://", "http://")):
+                        f = item.font()
+                        f.setUnderline(True)
+                        item.setFont(f)
+                        item.setForeground(QColor(link_color))
+                        item.setToolTip(f"Click or Double-click to open in browser:\n{url_val}")
+                    else:
+                        item.setForeground(QColor(dim_color))
                 elif key == "verification_status":
                     if text == "Verified":
                         item.setForeground(QColor("#10B981" if is_dark else "#059669"))
@@ -4395,15 +4449,29 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                     item.setForeground(QColor(dim_color))
                 else:
                     item.setForeground(QColor(text_color))
-                if text and text != "NA":
-                    if key in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
-                        item.setToolTip(f"Double-click to open in browser:\n{text}")
-                    else:
-                        item.setToolTip(text)
+                if text and text != "NA" and key not in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
+                    item.setToolTip(text)
                 self.leads_table.setItem(row_index, column_index, item)
         self.leads_table.setUpdatesEnabled(True)
         # Expand row heights so full street addresses are readable in the directory.
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
+
+    def on_table_cell_clicked(self, row, column):
+        key = self.LEAD_COLUMNS[column][1]
+        if key in {"maps", "website", "source_url", "product_evidence", "product_catalog"}:
+            item = self.leads_table.item(row, column)
+            url = str(item.data(Qt.ItemDataRole.UserRole) or "").strip() if item else ""
+            if not url and item:
+                val = str(item.text() or "").strip()
+                if val.startswith(("https://", "http://")):
+                    url = val
+            if not url and key == "maps":
+                records = self._get_visible_records()
+                if 0 <= row < len(records):
+                    url = google_maps_search_url(records[row])
+            if url.startswith(("https://", "http://")):
+                QDesktopServices.openUrl(QUrl(url))
+                return
 
     def open_source_link(self, row, column):
         key = self.LEAD_COLUMNS[column][1]
@@ -4414,6 +4482,10 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 val = str(item.text() or "").strip()
                 if val.startswith(("https://", "http://")):
                     url = val
+            if not url and key == "maps":
+                records = self._get_visible_records()
+                if 0 <= row < len(records):
+                    url = google_maps_search_url(records[row])
             if url.startswith(("https://", "http://")):
                 QDesktopServices.openUrl(QUrl(url))
                 return
@@ -4848,7 +4920,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 
         btn_style = (
             f"QPushButton {{ font-size: 8.5pt; font-weight: 700; background: {btn_bg}; color: {btn_fg}; "
-            f"border: 1.5px solid {btn_border}; border-radius: 6px; padding: 4px 12px; min-height: 30px; }} "
+            f"border: 1.5px solid {btn_border}; border-radius: 6px; padding: 5px 14px; min-height: 32px; }} "
             f"QPushButton:hover {{ background: {btn_hover}; color: {btn_fg}; border-color: {accent_title}; }}"
         )
         for b in getattr(self, "print_buttons", []):
@@ -4886,14 +4958,14 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             ex_border = "rgba(239, 68, 68, 0.35)" if is_dark else "#FECACA"
             self.exclude_dropdown.setStyleSheet(
                 f"QComboBox {{ font-size: 8.5pt; font-weight: 600; color: {ex_fg}; background: {ex_bg}; "
-                f"border: 1px solid {ex_border}; border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 30px; }}"
+                f"border: 1px solid {ex_border}; border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 32px; }}"
             )
         if hasattr(self, "exclude_keyword"):
             kw_bg = "#1E293B" if is_dark else "#FFFFFF"
             kw_fg = "#F8FAFC" if is_dark else "#0F172A"
             kw_border = "rgba(239, 68, 68, 0.3)" if is_dark else "#FECACA"
             self.exclude_keyword.setStyleSheet(
-                f"QLineEdit {{ font-size: 8.5pt; color: {kw_fg}; background-color: {kw_bg}; border: 1px solid {kw_border}; border-radius: 6px; padding: 4px 8px; min-height: 30px; }}"
+                f"QLineEdit {{ font-size: 8.5pt; color: {kw_fg}; background-color: {kw_bg}; border: 1px solid {kw_border}; border-radius: 6px; padding: 4px 8px; min-height: 32px; }}"
             )
         if hasattr(self, "btn_clear_excludes"):
             cl_bg = "rgba(239, 68, 68, 0.18)" if is_dark else "#FEE2E2"
@@ -4901,7 +4973,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             cl_border = "rgba(239, 68, 68, 0.4)" if is_dark else "#FCA5A5"
             self.btn_clear_excludes.setStyleSheet(
                 f"QPushButton {{ font-size: 8.5pt; font-weight: 600; background: {cl_bg}; "
-                f"border: 1px solid {cl_border}; border-radius: 6px; padding: 4px 10px; color: {cl_fg}; min-height: 30px; }} "
+                f"border: 1px solid {cl_border}; border-radius: 6px; padding: 4px 14px; color: {cl_fg}; min-height: 32px; }} "
                 f"QPushButton:hover {{ background: rgba(239, 68, 68, 0.3); color: #FFFFFF; }}"
             )
 
@@ -4918,18 +4990,19 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             QFrame#storeDirectoryPrintCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#regionalDashboardPrintCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#prospectViewNavCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
-            QLineEdit {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 24px; }}
+            QLineEdit {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 28px; }}
             QLineEdit:focus {{ border-color: {accent_title}; }}
-            QComboBox {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 24px; }}
+            QComboBox {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 28px; }}
             QComboBox:focus {{ border-color: {accent_title}; }}
             QComboBox QAbstractItemView {{ background-color: {card_bg}; color: {text_fg}; selection-background-color: #2563EB; selection-color: #FFFFFF; border: 1px solid {border}; }}
             QTableWidget {{ background-color: {table_bg}; color: {text_fg}; gridline-color: rgba(255, 255, 255, 0.10); alternate-background-color: {table_alt_bg}; selection-background-color: #2563EB; selection-color: #FFFFFF; font-size: 9pt; border: 1px solid {border}; }}
             QTableWidget::item {{ color: {text_fg}; padding: 6px 8px; }}
             QTableWidget::item:selected {{ background-color: #2563EB; color: #FFFFFF; }}
             QHeaderView::section {{ background-color: {header_bg}; color: {header_fg}; font-weight: 700; font-size: 8.5pt; padding: 8px 6px; border: 1px solid {border}; }}
-            QTabBar::tab {{ font-size: 9pt; font-weight: 700; padding: 6px 16px; border-top-left-radius: 6px; border-top-right-radius: 6px; }}
-            QTabBar::tab:selected {{ background: #2563EB; color: #FFFFFF; }}
-            QTabBar::tab:!selected {{ background: rgba(30, 41, 59, 0.7); color: {secondary_fg}; }}
+            QTabBar::tab {{ font-size: 9.5pt; font-weight: 700; padding: 8px 20px; border-top-left-radius: 8px; border-top-right-radius: 8px; min-height: 28px; }}
+            QTabBar::tab:selected {{ background: {accent_title}; color: #FFFFFF; font-weight: 800; border: 1px solid {accent_title}; border-bottom: none; }}
+            QTabBar::tab:!selected {{ background: {"rgba(30, 41, 59, 0.75)" if is_dark else header_bg}; color: {"#CBD5E1" if is_dark else secondary_fg}; border: 1px solid {border}; border-bottom: none; }}
+            QTabBar::tab:hover:!selected {{ background: {"rgba(51, 65, 85, 0.85)" if is_dark else btn_hover}; color: {"#FFFFFF" if is_dark else text_fg}; }}
             QScrollBar:vertical {{ background: {table_bg}; width: 14px; margin: 0px; border: 1px solid {border}; border-radius: 7px; }}
             QScrollBar::handle:vertical {{ background: #3B82F6; min-height: 28px; border-radius: 6px; }}
             QScrollBar::handle:vertical:hover {{ background: #60A5FA; }}

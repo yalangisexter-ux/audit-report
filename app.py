@@ -4787,18 +4787,28 @@ class AnimatedBackground(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect()
         w, h = max(rect.width(), 1), max(rect.height(), 1)
-        is_day = False
+        theme_name = "night"
         try:
-            is_day = self.window() is not None and self.window().current_theme() == "day"
+            if self.window() is not None and hasattr(self.window(), "current_theme"):
+                theme_name = str(self.window().current_theme() or "night").lower()
         except Exception:
             pass
+        is_light = theme_name in ("day", "ocean", "sunset")
+        is_day = is_light
         base = QLinearGradient(0, 0, w, h)
-        if is_day:
-            # Keep the overall workspace white; the selected wallpaper and
-            # restrained glow provide only a soft moving watermark underneath.
-            base.setColorAt(0.0, QColor("#FFFFFF"))
-            base.setColorAt(0.48, QColor("#FFFFFF"))
-            base.setColorAt(1.0, QColor("#FFFFFF"))
+        if is_light:
+            if theme_name == "ocean":
+                base.setColorAt(0.0, QColor("#F0F9FF"))
+                base.setColorAt(0.5, QColor("#E0F2FE"))
+                base.setColorAt(1.0, QColor("#F0F9FF"))
+            elif theme_name == "sunset":
+                base.setColorAt(0.0, QColor("#FFF7ED"))
+                base.setColorAt(0.5, QColor("#FFEDD5"))
+                base.setColorAt(1.0, QColor("#FFF7ED"))
+            else:
+                base.setColorAt(0.0, QColor("#FFFFFF"))
+                base.setColorAt(0.48, QColor("#F8FAFC"))
+                base.setColorAt(1.0, QColor("#F1F5F9"))
         else:
             base.setColorAt(0.0, QColor("#050811"))
             base.setColorAt(0.52, QColor("#0B1020"))
@@ -4830,10 +4840,17 @@ class AnimatedBackground(QWidget):
             painter.drawPixmap(QRectF(rect), self.wallpaper_pixmap, source)
 
             veil = QLinearGradient(0, 0, 0, h)
-            if is_day:
+            if is_light:
                 fade = 22 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
-                veil.setColorAt(0.0, QColor(255, 255, 255, max(18, fade - 3)))
-                veil.setColorAt(1.0, QColor(255, 255, 255, min(30, fade + 3)))
+                if theme_name == "ocean":
+                    veil.setColorAt(0.0, QColor(240, 249, 255, 215))
+                    veil.setColorAt(1.0, QColor(224, 242, 254, 230))
+                elif theme_name == "sunset":
+                    veil.setColorAt(0.0, QColor(255, 247, 237, 215))
+                    veil.setColorAt(1.0, QColor(255, 237, 213, 230))
+                else:
+                    veil.setColorAt(0.0, QColor(255, 255, 255, 215))
+                    veil.setColorAt(1.0, QColor(248, 250, 252, 230))
             else:
                 veil.setColorAt(0.0, QColor(3, 7, 18, 215))
                 veil.setColorAt(1.0, QColor(3, 7, 18, 240))
@@ -6600,36 +6617,31 @@ class MainWindow(QMainWindow):
                     QPushButton#sidebarNavButton {
                         background: transparent; color: #94A3B8;
                         border: 1px solid transparent; border-radius: 9px;
-                        font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0;
+                        font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0; min-height: 38px;
                     }
                     QPushButton#sidebarNavButton:hover {
-                        background: rgba(255, 255, 255, 0.05); color: #FFFFFF;
+                        background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
                         border: 1px solid rgba(0, 240, 255, 0.35);
                     }
                     QPushButton#sidebarNavButton:checked {
-                        background: rgba(0, 240, 255, 0.14); color: #00F0FF;
+                        background: rgba(0, 240, 255, 0.16); color: #00F0FF;
                         border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
                     }
                 """)
             else:
-                text_width = max(0, button.contentsRect().width() - 22)
-                elided = button.fontMetrics().elidedText(
-                    title, Qt.TextElideMode.ElideRight, text_width
-                )
-                clean_text = elided.replace("&&", "&").replace("&", "&&")
-                button.setText(clean_text)
+                button.setText(title.replace("&", "&&"))
                 button.setStyleSheet("""
                     QPushButton#sidebarNavButton {
-                        background: transparent; color: #94A3B8;
+                        background: transparent; color: #E2E8F0;
                         border: 1px solid transparent; border-radius: 9px;
-                        font-size: 9.5pt; font-weight: 600; text-align: left; padding: 9px 12px;
+                        font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 14px; min-height: 38px;
                     }
                     QPushButton#sidebarNavButton:hover {
-                        background: rgba(255, 255, 255, 0.05); color: #FFFFFF;
+                        background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
                         border: 1px solid rgba(0, 240, 255, 0.35);
                     }
                     QPushButton#sidebarNavButton:checked {
-                        background: rgba(0, 240, 255, 0.12); color: #00F0FF;
+                        background: rgba(0, 240, 255, 0.16); color: #00F0FF;
                         border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
                     }
                 """)
@@ -6882,14 +6894,14 @@ class MainWindow(QMainWindow):
                 if is_dark_theme:
                     btn.setStyleSheet(
                         f"QPushButton#{b_obj} {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:0.5 #6366F1, stop:1 #06B6D4); "
-                        f"color: #FFFFFF; font-weight: 750; border: 1.5px solid #38BDF8; border-radius: 9px; padding: 6px 14px; font-size: 8.5pt; }} "
+                        f"color: #FFFFFF; font-weight: 750; border: 1.5px solid #38BDF8; border-radius: 9px; padding: 6px 14px; min-height: 32px; font-size: 8.5pt; }} "
                         f"QPushButton#{b_obj}:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:0.5 #4F46E5, stop:1 #00E5FF); border-color: #00E5FF; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #3730A3; }}"
                     )
                 else:
                     btn.setStyleSheet(
                         f"QPushButton#{b_obj} {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #7C3AED); "
-                        f"color: #FFFFFF; font-weight: 700; border: 1.5px solid #6366F1; border-radius: 9px; padding: 6px 14px; font-size: 8.5pt; }} "
+                        f"color: #FFFFFF; font-weight: 700; border: 1.5px solid #6366F1; border-radius: 9px; padding: 6px 14px; min-height: 32px; font-size: 8.5pt; }} "
                         f"QPushButton#{b_obj}:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #6D28D9); border-color: #4338CA; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #3730A3; }}"
                     )
@@ -6898,14 +6910,14 @@ class MainWindow(QMainWindow):
                 if is_dark_theme:
                     btn.setStyleSheet(
                         f"QPushButton#{b_obj} {{ background: rgba(239, 68, 68, 0.16); color: #FCA5A5; border: 1.5px solid rgba(239, 68, 68, 0.38); "
-                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; }} "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; min-height: 32px; }} "
                         f"QPushButton#{b_obj}:hover {{ background: #EF4444; color: #FFFFFF; border-color: #F87171; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #DC2626; }}"
                     )
                 else:
                     btn.setStyleSheet(
                         f"QPushButton#{b_obj} {{ background: #FEF2F2; color: #DC2626; border: 1.5px solid #FECACA; "
-                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; }} "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 14px; min-height: 32px; }} "
                         f"QPushButton#{b_obj}:hover {{ background: #DC2626; color: #FFFFFF; border-color: #B91C1C; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #991B1B; }}"
                     )
@@ -6920,14 +6932,14 @@ class MainWindow(QMainWindow):
                 if is_dark_theme:
                     btn.setStyleSheet(
                         f"QPushButton#{b_obj} {{ background: rgba(255, 255, 255, 0.08); color: #F8FAFC; border: 1.5px solid #475569; "
-                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; }} "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; min-height: 32px; }} "
                         f"QPushButton#{b_obj}:hover {{ background: rgba(255, 255, 255, 0.16); color: #FFFFFF; border-color: #818CF8; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: rgba(255, 255, 255, 0.22); }}"
                     )
                 else:
                     btn.setStyleSheet(
                         f"QPushButton#{b_obj} {{ background: #F8FAFC; color: #0F172A; border: 1.5px solid #94A3B8; "
-                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; }} "
+                        f"border-radius: 9px; font-weight: 600; font-size: 8.5pt; padding: 6px 13px; min-height: 32px; }} "
                         f"QPushButton#{b_obj}:hover {{ background: #F1F5F9; color: #4F46E5; border-color: #6366F1; }} "
                         f"QPushButton#{b_obj}:pressed {{ background: #E2E8F0; }}"
                     )
@@ -12894,13 +12906,13 @@ QMenuBar::item:selected { background: #EEF2FF; color: #4F46E5; }
 QMenu { background: #FFFFFF; border: 1.5px solid #CBD5E1; padding: 6px; border-radius: 10px; color: #0F172A; }
 QMenu::item { padding: 8px 24px 8px 16px; border-radius: 6px; color: #0F172A; font-weight: 600; }
 QMenu::item:selected { background: #EEF2FF; color: #4F46E5; }
-QTabBar { background: #0F172A; }
-QTabBar::tab { background: transparent; color: #94A3B8; padding: 10px 14px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 64px; min-height: 24px; }
-QTabBar::tab:selected { background: #1E293B; color: #FFFFFF; border-bottom: 3px solid #6366F1; }
-QTabBar::tab:hover:!selected { background: #1E293B; color: #F8FAFC; }
+QTabBar { background: #F1F5F9; border-bottom: 1.5px solid #CBD5E1; }
+QTabBar::tab { background: transparent; color: #475569; padding: 8px 16px; margin: 0 2px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 64px; min-height: 26px; }
+QTabBar::tab:selected { background: #FFFFFF; color: #2563EB; font-weight: 700; border-bottom: 3px solid #2563EB; border-top-left-radius: 6px; border-top-right-radius: 6px; }
+QTabBar::tab:hover:!selected { background: #E2E8F0; color: #0F172A; }
 QTabBar::scroller { width: 24px; }
-QTabBar QToolButton { background: #1E293B; color: #FFFFFF; border: 1px solid #334155; border-radius: 4px; }
-QPushButton, QToolButton { padding: 7px 14px; min-height: 36px; min-width: 0; border: 1.5px solid #CBD5E1; border-radius: 9px; background: #FFFFFF; color: #0F172A; font-weight: 600; text-align: center; }
+QTabBar QToolButton { background: #F1F5F9; color: #0F172A; border: 1px solid #CBD5E1; border-radius: 4px; }
+QPushButton, QToolButton { padding: 6px 14px; min-height: 34px; min-width: 0; border: 1.5px solid #CBD5E1; border-radius: 9px; background: #FFFFFF; color: #0F172A; font-weight: 600; text-align: center; }
 QPushButton:hover, QToolButton:hover { background: #F1F5F9; color: #4F46E5; border-color: #818CF8; }
 QPushButton:pressed, QToolButton:pressed { background: #E2E8F0; }
 QPushButton:disabled, QToolButton:disabled { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }
@@ -13088,13 +13100,13 @@ QMenu { background: #0F172A; border: 1.5px solid #334155; padding: 6px; border-r
 QMenu::item { padding: 8px 24px 8px 16px; border-radius: 6px; color: #F8FAFC; font-weight: 600; }
 QMenu::item:selected { background: #312E81; color: #FFFFFF; }
 QTabBar { background: #070B14; }
-QTabBar::tab { background: transparent; color: #94A3B8; padding: 10px 15px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 68px; min-height: 24px; }
+QTabBar::tab { background: transparent; color: #94A3B8; padding: 8px 16px; margin: 0 1px; border: 0; border-bottom: 3px solid transparent; font-weight: 600; min-width: 68px; min-height: 26px; }
 QTabBar::tab:selected { background: #0F172A; color: #FFFFFF; border-bottom: 3px solid #818CF8; }
 QTabBar::tab:hover:!selected { background: #0F172A; color: #F8FAFC; }
 QTabBar::scroller { width: 24px; }
 QTabBar QToolButton { background: #0F172A; color: #F8FAFC; border: 1px solid #334155; border-radius: 4px; }
 QPushButton, QToolButton {
-    padding: 7px 14px; min-height: 36px; min-width: 0; border: 1.5px solid #334155;
+    padding: 6px 14px; min-height: 34px; min-width: 0; border: 1.5px solid #334155;
     border-radius: 9px; background: #1E293B; color: #F8FAFC; font-weight: 600; text-align: center;
 }
 QPushButton:hover, QToolButton:hover { background: #334155; color: #FFFFFF; border-color: #6366F1; }

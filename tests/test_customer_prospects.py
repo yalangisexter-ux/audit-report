@@ -1371,3 +1371,35 @@ def test_territory_kpis_breakdown_states_uts_islands():
         assert tab.kpi_values["regions"].text() == "4 / 28"
     finally:
         tab.close()
+
+
+def test_clickable_google_maps_links_and_cell_click(monkeypatch):
+    tab = prospects.CustomerProspectsTab()
+    try:
+        url = prospects.google_maps_search_url({"business_name": "Power Nutrition", "city": "Bengaluru", "state": "Karnataka"})
+        assert "google.com/maps/search" in url
+        assert "Power" in url
+
+        tab.records = [
+            {"kind": "Store", "business_name": "Power Nutrition", "city": "Bengaluru", "state": "Karnataka"}
+        ]
+        tab._fill_leads_table()
+
+        maps_col_idx = [i for i, (lbl, k) in enumerate(tab.LEAD_COLUMNS) if k == "maps"][0]
+        item = tab.leads_table.item(0, maps_col_idx)
+        assert item is not None
+        assert item.font().underline()
+        stored_url = str(item.data(prospects.Qt.ItemDataRole.UserRole))
+        assert "google.com/maps" in stored_url
+
+        opened_urls = []
+        monkeypatch.setattr(prospects.QDesktopServices, "openUrl", lambda qurl: opened_urls.append(qurl.toString()))
+        tab.on_table_cell_clicked(0, maps_col_idx)
+        assert len(opened_urls) == 1
+        assert "google.com/maps" in opened_urls[0]
+
+        for th in ("night", "day", "ocean", "sunset"):
+            tab.apply_theme(th)
+            assert tab._current_theme_name == th
+    finally:
+        tab.close()
