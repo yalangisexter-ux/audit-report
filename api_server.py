@@ -870,14 +870,20 @@ def check_updates():
             "repository": desktop_app.GITHUB_REPOSITORY,
         }
     except Exception as exc:
-        return {
-            "current_version": APP_VERSION,
-            "latest_version": APP_VERSION,
-            "has_update": False,
-            "error": str(exc),
-            "github_releases_url": f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
-            "repository": desktop_app.GITHUB_REPOSITORY,
-        }
+        # A failed GitHub request is not evidence that the installed version is
+        # current. Return an explicit service error so clients cannot suppress an
+        # available update by treating a network/API failure as has_update=False.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "current_version": APP_VERSION,
+                "latest_version": None,
+                "has_update": None,
+                "error": f"Unable to check GitHub releases: {exc}",
+                "github_releases_url": f"https://github.com/{desktop_app.GITHUB_REPOSITORY}/releases/latest",
+                "repository": desktop_app.GITHUB_REPOSITORY,
+            },
+        )
 
 
 # --- Serve Built React Frontend (SPA Fallback) ---

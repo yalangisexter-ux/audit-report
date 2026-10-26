@@ -7814,7 +7814,15 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            self.check_for_updates(force=True)
+            # The worker may still be shutting down when this dialog is shown.
+            # Defer the forced retry until its QThread has fully finished.
+            QTimer.singleShot(0, self._start_force_update_when_idle)
+
+    def _start_force_update_when_idle(self):
+        if getattr(self, "_update_thread", None) is not None:
+            QTimer.singleShot(100, self._start_force_update_when_idle)
+            return
+        self.check_for_updates(force=True)
 
     def show_update_alert(self, version):
         if hasattr(self, "home_update_banner") and hasattr(self, "home_update_text"):
