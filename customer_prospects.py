@@ -2090,8 +2090,10 @@ class CustomerProspectsTab(QWidget):
         self.db = db
         if db is not None:
             try:
-                sanitize_prospect_database_records(db)
-                cleanup_duplicate_prospects(db)
+                if hasattr(db, "get_setting") and db.get_setting("cleanup_prospects_v1360") != "1":
+                    sanitize_prospect_database_records(db)
+                    cleanup_duplicate_prospects(db)
+                    db.set_setting("cleanup_prospects_v1360", "1")
             except Exception:
                 pass
         self.records = load_saved_prospects(db) if db is not None else []
@@ -2295,7 +2297,6 @@ class CustomerProspectsTab(QWidget):
             except Exception:
                 pass
         self.apply_theme(init_theme)
-        self._refresh_views()
 
     def _on_view_selector_changed(self, index):
         if hasattr(self, "pages") and 0 <= index < self.pages.count():
@@ -4406,6 +4407,23 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
     def _fill_leads_table(self):
         self.leads_table.setUpdatesEnabled(False)
         self.leads_table.setRowCount(len(self.records))
+
+        is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
+        theme = getattr(self, "_current_theme_name", "night")
+        link_color = "#38BDF8" if is_dark else ("#0284C7" if theme == "ocean" else ("#EA580C" if theme == "sunset" else "#2563EB"))
+        dim_color = "#94A3B8" if is_dark else "#64748B"
+        text_color = "#F8FAFC" if is_dark else "#0F172A"
+
+        link_qcolor = QColor(link_color)
+        dim_qcolor = QColor(dim_color)
+        text_qcolor = QColor(text_color)
+        status_verified_qcolor = QColor("#10B981" if is_dark else "#059669")
+        status_partial_qcolor = QColor("#F59E0B" if is_dark else "#D97706")
+
+        base_font = self.leads_table.font()
+        underline_font = self.leads_table.font()
+        underline_font.setUnderline(True)
+
         for row_index, record in enumerate(self.records):
             source_url = str(record.get("source_url", "") or "").strip()
             maps_url = str(record.get("maps", "") or "").strip()
@@ -4419,11 +4437,6 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
-                theme = getattr(self, "_current_theme_name", "night")
-                link_color = "#38BDF8" if is_dark else ("#0284C7" if theme == "ocean" else ("#EA580C" if theme == "sunset" else "#2563EB"))
-                dim_color = "#94A3B8" if is_dark else "#64748B"
-                text_color = "#F8FAFC" if is_dark else "#0F172A"
                 if key in {"source_url", "maps", "product_evidence", "product_catalog", "website"}:
                     url_val = maps_url if key == "maps" else (source_url if key == "source_url" else (evidence_url if key == "product_evidence" else (catalog_url if key == "product_catalog" else web_url)))
                     if key == "maps" and (not text or text == "NA") and url_val:
@@ -4431,24 +4444,22 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                         item.setText(text)
                     item.setData(Qt.ItemDataRole.UserRole, url_val)
                     if url_val and url_val.startswith(("https://", "http://")):
-                        f = item.font()
-                        f.setUnderline(True)
-                        item.setFont(f)
-                        item.setForeground(QColor(link_color))
+                        item.setFont(underline_font)
+                        item.setForeground(link_qcolor)
                         item.setToolTip(f"Click or Double-click to open in browser:\n{url_val}")
                     else:
-                        item.setForeground(QColor(dim_color))
+                        item.setForeground(dim_qcolor)
                 elif key == "verification_status":
                     if text == "Verified":
-                        item.setForeground(QColor("#10B981" if is_dark else "#059669"))
+                        item.setForeground(status_verified_qcolor)
                     elif text == "Partially verified":
-                        item.setForeground(QColor("#F59E0B" if is_dark else "#D97706"))
+                        item.setForeground(status_partial_qcolor)
                     else:
-                        item.setForeground(QColor(dim_color))
+                        item.setForeground(dim_qcolor)
                 elif text == "NA":
-                    item.setForeground(QColor(dim_color))
+                    item.setForeground(dim_qcolor)
                 else:
-                    item.setForeground(QColor(text_color))
+                    item.setForeground(text_qcolor)
                 if text and text != "NA" and key not in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
                     item.setToolTip(text)
                 self.leads_table.setItem(row_index, column_index, item)
@@ -5034,4 +5045,48 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         self.region_table.setPalette(palette)
 
         # Repaint both tables with active theme foregrounds
-        self._refresh_views()
+        if self.leads_table.rowCount() == 0 and self.records:
+            self._refresh_views()
+        else:
+            self._apply_theme_to_existing_table()
+
+    def _apply_theme_to_existing_table(self):
+        is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
+        theme = getattr(self, "_current_theme_name", "night")
+        link_color = QColor("#38BDF8" if is_dark else ("#0284C7" if theme == "ocean" else ("#EA580C" if theme == "sunset" else "#2563EB")))
+        dim_color = QColor("#94A3B8" if is_dark else "#64748B")
+        text_color = QColor("#F8FAFC" if is_dark else "#0F172A")
+        status_verified = QColor("#10B981" if is_dark else "#059669")
+        status_partial = QColor("#F59E0B" if is_dark else "#D97706")
+
+        self.leads_table.setUpdatesEnabled(False)
+        url_cols = {i for i, (_, k) in enumerate(self.LEAD_COLUMNS) if k in {"source_url", "maps", "product_evidence", "product_catalog", "website"}}
+        ver_col = next((i for i, (_, k) in enumerate(self.LEAD_COLUMNS) if k == "verification_status"), None)
+
+        rows = self.leads_table.rowCount()
+        cols = self.leads_table.columnCount()
+        for r in range(rows):
+            for c in range(cols):
+                item = self.leads_table.item(r, c)
+                if not item:
+                    continue
+                if c in url_cols:
+                    url = item.data(Qt.ItemDataRole.UserRole)
+                    if url and str(url).startswith(("https://", "http://")):
+                        item.setForeground(link_color)
+                    else:
+                        item.setForeground(dim_color)
+                elif c == ver_col:
+                    t = item.text()
+                    if t == "Verified":
+                        item.setForeground(status_verified)
+                    elif t == "Partially verified":
+                        item.setForeground(status_partial)
+                    else:
+                        item.setForeground(dim_color)
+                else:
+                    if item.text() == "NA":
+                        item.setForeground(dim_color)
+                    else:
+                        item.setForeground(text_color)
+        self.leads_table.setUpdatesEnabled(True)

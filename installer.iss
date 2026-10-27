@@ -1,7 +1,7 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
 #define AppVersionEnv GetEnv("APP_VERSION")
 #if AppVersionEnv == ""
-	#define MyAppVersion "1.3.59"
+	#define MyAppVersion "1.3.60"
 #else
 	#define MyAppVersion AppVersionEnv
 #endif
@@ -44,7 +44,7 @@ Name: "{autodesktop}\\Raw Strength Employee Audit Manager"; Filename: "{app}\\{#
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait skipifdoesntexist
+Filename: "{app}\\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent
 
 [Code]
 var

@@ -5773,7 +5773,21 @@ class MainWindow(QMainWindow):
                 "surface": "#FFFFFF",
                 "surface_card": "#FFFFFF",
                 "sidebar": "#F8FAFC",
-                "sidebar_border": "#E2E8F0",
+                "sidebar_border": "#CBD5E1",
+                "sidebar_toggle_bg": "#FFFFFF",
+                "sidebar_toggle_border": "#CBD5E1",
+                "sidebar_toggle_fg": "#0F172A",
+                "sidebar_toggle_hover": "#EEF2FF",
+                "sidebar_toggle_hover_fg": "#4F46E5",
+                "sidebar_btn_bg": "#FFFFFF",
+                "sidebar_btn_border": "#E2E8F0",
+                "sidebar_btn_fg": "#0F172A",
+                "sidebar_btn_hover_bg": "#EEF2FF",
+                "sidebar_btn_hover_border": "#818CF8",
+                "sidebar_btn_hover_fg": "#312E81",
+                "sidebar_active_bg": "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4F46E5, stop:1 #6366F1)",
+                "sidebar_active_border": "#4338CA",
+                "sidebar_active_fg": "#FFFFFF",
                 "nav": "transparent",
                 "nav_border": "transparent",
                 "nav_active_grad": "#EEF2FF",
@@ -5829,6 +5843,20 @@ class MainWindow(QMainWindow):
                 "surface_card": "qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 rgba(16, 24, 42, 0.96), stop:1 rgba(9, 14, 26, 0.96))",
                 "sidebar": "qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #090E1A, stop:1 #060A14)",
                 "sidebar_border": "rgba(0, 229, 255, 0.22)",
+                "sidebar_toggle_bg": "rgba(255, 255, 255, 0.06)",
+                "sidebar_toggle_border": "rgba(0, 229, 255, 0.30)",
+                "sidebar_toggle_fg": "#F8FAFC",
+                "sidebar_toggle_hover": "rgba(0, 229, 255, 0.16)",
+                "sidebar_toggle_hover_fg": "#FFFFFF",
+                "sidebar_btn_bg": "rgba(255, 255, 255, 0.04)",
+                "sidebar_btn_border": "rgba(255, 255, 255, 0.08)",
+                "sidebar_btn_fg": "#E2E8F0",
+                "sidebar_btn_hover_bg": "rgba(0, 229, 255, 0.12)",
+                "sidebar_btn_hover_border": "rgba(0, 229, 255, 0.40)",
+                "sidebar_btn_hover_fg": "#FFFFFF",
+                "sidebar_active_bg": "rgba(0, 229, 255, 0.22)",
+                "sidebar_active_border": "#00F0FF",
+                "sidebar_active_fg": "#00F0FF",
                 "nav": "transparent",
                 "nav_border": "transparent",
                 "nav_active_grad": "rgba(0, 240, 255, 0.14)",
@@ -5884,6 +5912,20 @@ class MainWindow(QMainWindow):
                 "surface_card": "rgba(240, 249, 255, 0.96)",
                 "sidebar": "#F0F9FF",
                 "sidebar_border": "#BAE6FD",
+                "sidebar_toggle_bg": "#FFFFFF",
+                "sidebar_toggle_border": "#7DD3FC",
+                "sidebar_toggle_fg": "#0C4A6E",
+                "sidebar_toggle_hover": "#E0F2FE",
+                "sidebar_toggle_hover_fg": "#0284C7",
+                "sidebar_btn_bg": "#FFFFFF",
+                "sidebar_btn_border": "#BAE6FD",
+                "sidebar_btn_fg": "#0C4A6E",
+                "sidebar_btn_hover_bg": "#E0F2FE",
+                "sidebar_btn_hover_border": "#38BDF8",
+                "sidebar_btn_hover_fg": "#075985",
+                "sidebar_active_bg": "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284C7, stop:1 #0EA5E9)",
+                "sidebar_active_border": "#0369A1",
+                "sidebar_active_fg": "#FFFFFF",
                 "nav": "transparent",
                 "nav_border": "transparent",
                 "nav_active_grad": "#E0F2FE",
@@ -5939,6 +5981,20 @@ class MainWindow(QMainWindow):
                 "surface_card": "rgba(255, 247, 237, 0.96)",
                 "sidebar": "#FFF7ED",
                 "sidebar_border": "#FED7AA",
+                "sidebar_toggle_bg": "#FFFFFF",
+                "sidebar_toggle_border": "#FDBA74",
+                "sidebar_toggle_fg": "#7C2D12",
+                "sidebar_toggle_hover": "#FFEDD5",
+                "sidebar_toggle_hover_fg": "#EA580C",
+                "sidebar_btn_bg": "#FFFFFF",
+                "sidebar_btn_border": "#FED7AA",
+                "sidebar_btn_fg": "#7C2D12",
+                "sidebar_btn_hover_bg": "#FFEDD5",
+                "sidebar_btn_hover_border": "#FB923C",
+                "sidebar_btn_hover_fg": "#9A3412",
+                "sidebar_active_bg": "qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EA580C, stop:1 #F97316)",
+                "sidebar_active_border": "#C2410C",
+                "sidebar_active_fg": "#FFFFFF",
                 "nav": "transparent",
                 "nav_border": "transparent",
                 "nav_active_grad": "#FFEDD5",
@@ -6009,17 +6065,22 @@ class MainWindow(QMainWindow):
         is_dark = (theme_name or self.current_theme()).lower() in ("night", "dark")
         if hasattr(self, "sidebar"):
             self.sidebar.setStyleSheet(
-                f"QWidget#navigationSidebar {{ background: {sidebar_bg}; border-right: 1.5px solid {sidebar_border}; }}"
+                f"QFrame#navigationSidebar {{ background: {sidebar_bg}; border-right: 1.5px solid {sidebar_border}; }}"
             )
+        if hasattr(self, "sidebar_scroll"):
+            self.sidebar_scroll.setStyleSheet("QScrollArea#sidebarScrollArea { border: 0; background: transparent; }")
+            w = self.sidebar_scroll.widget()
+            if w:
+                w.setStyleSheet("QWidget#sidebarScrollContent { background: transparent; }")
         if hasattr(self, "sidebar_toggle"):
-            toggle_bg = colors.get('nav', surface) if is_dark else "#F1F5F9"
-            toggle_fg = colors['text'] if is_dark else "#0F172A"
-            toggle_border = sidebar_border if is_dark else "#CBD5E1"
-            toggle_hover = colors['hover'] if is_dark else "#EEF2FF"
-            toggle_hover_fg = colors['hover_text'] if is_dark else colors['accent']
+            toggle_bg = colors.get('sidebar_toggle_bg', '#FFFFFF' if not is_dark else 'rgba(255, 255, 255, 0.06)')
+            toggle_fg = colors.get('sidebar_toggle_fg', '#0F172A' if not is_dark else '#F8FAFC')
+            toggle_border = colors.get('sidebar_toggle_border', '#CBD5E1' if not is_dark else 'rgba(0, 229, 255, 0.30)')
+            toggle_hover = colors.get('sidebar_toggle_hover', '#EEF2FF' if not is_dark else 'rgba(0, 229, 255, 0.16)')
+            toggle_hover_fg = colors.get('sidebar_toggle_hover_fg', colors['accent'])
             self.sidebar_toggle.setStyleSheet(
                 f"QPushButton#sidebarToggle {{ background: {toggle_bg}; color: {toggle_fg}; "
-                f"border: 1.5px solid {toggle_border}; border-radius: 9px; font-weight: 700; text-align: left; padding: 7px 12px; min-height: 34px; }} "
+                f"border: 1.5px solid {toggle_border}; border-radius: 9px; font-weight: 700; text-align: left; padding: 7px 12px; min-height: 36px; }} "
                 f"QPushButton#sidebarToggle:hover {{ background: {toggle_hover}; color: {toggle_hover_fg}; border-color: {colors['accent']}; }}"
             )
         if hasattr(self, "title_bar"):
@@ -6031,64 +6092,42 @@ class MainWindow(QMainWindow):
         if hasattr(self, "title_label"):
             self.title_label.setStyleSheet("QLabel#titleLabel { color: #F8FAFC; font-weight: 600; font-size: 10pt; }")
         if hasattr(self, "sidebar_buttons"):
+            btn_bg = colors.get('sidebar_btn_bg', '#FFFFFF' if not is_dark else 'rgba(255, 255, 255, 0.04)')
+            btn_border = colors.get('sidebar_btn_border', '#E2E8F0' if not is_dark else 'rgba(255, 255, 255, 0.08)')
+            btn_fg = colors.get('sidebar_btn_fg', colors['text'])
+            hover_bg = colors.get('sidebar_btn_hover_bg', colors['hover'])
+            hover_border = colors.get('sidebar_btn_hover_border', colors['accent'])
+            hover_fg = colors.get('sidebar_btn_hover_fg', colors['hover_text'])
+            active_bg = colors.get('sidebar_active_bg', colors['accent'])
+            active_border = colors.get('sidebar_active_border', colors['accent'])
+            active_fg = colors.get('sidebar_active_fg', '#FFFFFF')
+
             for button, _title in self.sidebar_buttons:
-                if is_dark:
-                    button.setStyleSheet("""
-                        QPushButton#sidebarNavButton {
-                            background: transparent;
-                            color: #94A3B8;
-                            border: 1px solid transparent;
-                            border-radius: 9px;
-                            font-size: 9.5pt;
-                            font-weight: 600;
-                            text-align: left;
-                            padding: 8px 12px;
-                            min-height: 34px;
-                        }
-                        QPushButton#sidebarNavButton:hover {
-                            background: rgba(255, 255, 255, 0.08);
-                            color: #FFFFFF;
-                            border: 1px solid rgba(0, 240, 255, 0.35);
-                        }
-                        QPushButton#sidebarNavButton:checked {
-                            background: rgba(0, 240, 255, 0.16);
-                            color: #00F0FF;
-                            border: 1.5px solid #00F0FF;
-                            border-radius: 9px;
-                            font-weight: 800;
-                        }
-                    """)
-                else:
-                    nav_fg = colors['text']
-                    hover_bg = colors['hover']
-                    hover_fg = colors['hover_text']
-                    active_bg = colors.get('nav_active_grad', '#EEF2FF')
-                    active_fg = colors['accent']
-                    button.setStyleSheet(f"""
-                        QPushButton#sidebarNavButton {{
-                            background: transparent;
-                            color: {nav_fg};
-                            border: 1px solid transparent;
-                            border-radius: 9px;
-                            font-size: 9.5pt;
-                            font-weight: 600;
-                            text-align: left;
-                            padding: 8px 12px;
-                            min-height: 34px;
-                        }}
-                        QPushButton#sidebarNavButton:hover {{
-                            background: {hover_bg};
-                            color: {hover_fg};
-                            border: 1px solid {colors.get('border_subtle', '#CBD5E1')};
-                        }}
-                        QPushButton#sidebarNavButton:checked {{
-                            background: {active_bg};
-                            color: {active_fg};
-                            border: 1.5px solid {active_fg};
-                            border-radius: 9px;
-                            font-weight: 800;
-                        }}
-                    """)
+                button.setStyleSheet(f"""
+                    QPushButton#sidebarNavButton {{
+                        background: {btn_bg};
+                        color: {btn_fg};
+                        border: 1px solid {btn_border};
+                        border-radius: 9px;
+                        font-size: 9.5pt;
+                        font-weight: 600;
+                        text-align: left;
+                        padding: 8px 12px;
+                        min-height: 36px;
+                    }}
+                    QPushButton#sidebarNavButton:hover {{
+                        background: {hover_bg};
+                        color: {hover_fg};
+                        border: 1px solid {hover_border};
+                    }}
+                    QPushButton#sidebarNavButton:checked {{
+                        background: {active_bg};
+                        color: {active_fg};
+                        border: 1.5px solid {active_border};
+                        border-radius: 9px;
+                        font-weight: 800;
+                    }}
+                """)
         for header in self.findChildren(QWidget, "pageHeader"):
             header.setStyleSheet(
                 f"QWidget#pageHeader {{ background: {surface}; color: {colors['text']}; }}"
@@ -6264,19 +6303,39 @@ class MainWindow(QMainWindow):
             background: rgba(15, 23, 42, 0.20); color: rgba(255, 255, 255, 0.40); border-color: rgba(255, 255, 255, 0.12);
         }}
         QWidget#pageHeader {{ background: {colors['surface']}; color: {colors['text']}; }}
-        QPushButton#sidebarToggle {{ background: {"#F1F5F9" if not is_dark_theme else colors['nav']}; color: {colors['text']}; border: 1.5px solid {colors['sidebar_border']};
-            border-radius: 9px; font-weight: 700; text-align: left; padding: 7px 12px; min-height: 34px; }}
-        QPushButton#sidebarToggle:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border-color: {colors['accent']}; }}
+        QPushButton#sidebarToggle {{
+            background: {colors.get('sidebar_toggle_bg', '#FFFFFF' if not is_dark_theme else 'rgba(255, 255, 255, 0.06)')};
+            color: {colors.get('sidebar_toggle_fg', colors['text'])};
+            border: 1.5px solid {colors.get('sidebar_toggle_border', colors['sidebar_border'])};
+            border-radius: 9px; font-weight: 700; text-align: left; padding: 7px 12px; min-height: 36px;
+        }}
+        QPushButton#sidebarToggle:hover {{
+            background: {colors.get('sidebar_toggle_hover', colors['hover'])};
+            color: {colors.get('sidebar_toggle_hover_fg', colors['hover_text'])};
+            border-color: {colors['accent']};
+        }}
         QScrollArea#sidebarScrollArea {{ border: 0; background: transparent; }}
         QScrollArea#sidebarScrollArea > QWidget > QWidget {{ background: transparent; }}
         QScrollArea#sidebarScrollArea QScrollBar:vertical {{ width: 5px; background: transparent; margin: 0; }}
         QScrollArea#sidebarScrollArea QScrollBar::handle:vertical {{ background: {colors.get('border_subtle', 'rgba(148, 163, 184, 0.4)')}; border-radius: 2px; }}
-        QPushButton#sidebarNavButton {{ background: transparent; color: {colors['text']};
-            border: 1px solid transparent; border-radius: 9px;
-            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 12px; min-height: 34px; }}
-        QPushButton#sidebarNavButton:hover {{ background: {colors['hover']}; color: {colors['hover_text']}; border: 1px solid {colors.get('border_subtle', 'transparent')}; }}
-        QPushButton#sidebarNavButton:checked {{ background: {colors['nav_active_grad']};
-            color: {"#00F0FF" if is_dark_theme else colors['accent']}; border: {"1.5px solid #00F0FF" if is_dark_theme else f"1.5px solid {colors['accent']}"}; font-weight: 800; }}
+        QPushButton#sidebarNavButton {{
+            background: {colors.get('sidebar_btn_bg', '#FFFFFF' if not is_dark_theme else 'rgba(255, 255, 255, 0.04)')};
+            color: {colors.get('sidebar_btn_fg', colors['text'])};
+            border: 1px solid {colors.get('sidebar_btn_border', colors.get('border_subtle', '#CBD5E1'))};
+            border-radius: 9px;
+            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 12px; min-height: 36px;
+        }}
+        QPushButton#sidebarNavButton:hover {{
+            background: {colors.get('sidebar_btn_hover_bg', colors['hover'])};
+            color: {colors.get('sidebar_btn_hover_fg', colors['hover_text'])};
+            border: 1px solid {colors.get('sidebar_btn_hover_border', colors['accent'])};
+        }}
+        QPushButton#sidebarNavButton:checked {{
+            background: {colors.get('sidebar_active_bg', colors['nav_active_grad'])};
+            color: {colors.get('sidebar_active_fg', '#00F0FF' if is_dark_theme else colors['accent'])};
+            border: 1.5px solid {colors.get('sidebar_active_border', '#00F0FF' if is_dark_theme else colors['accent'])};
+            border-radius: 9px; font-weight: 800;
+        }}
         QWidget#headerClock {{ background: transparent; color: #FFFFFF; border: 0; padding: 2px 4px; font-size: 9.5pt; font-weight: 700; }}
         QPushButton#headerNavButton {{ background: rgba(255, 255, 255, 0.08); color: #E2E8F0; border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 6px; font-size: 13pt; font-weight: 700; padding: 0 0 2px 0;
@@ -6663,76 +6722,72 @@ class MainWindow(QMainWindow):
         self.sidebar_toggle.setToolTip("Expand navigation" if collapsed else "Collapse navigation")
         colors = self._ui_chrome_palette(self.current_theme())
         is_dark = (self.current_theme() or "day").lower() in ("night", "dark")
+        btn_bg = colors.get('sidebar_btn_bg', '#FFFFFF' if not is_dark else 'rgba(255, 255, 255, 0.04)')
+        btn_border = colors.get('sidebar_btn_border', '#E2E8F0' if not is_dark else 'rgba(255, 255, 255, 0.08)')
+        btn_fg = colors.get('sidebar_btn_fg', colors['text'])
+        hover_bg = colors.get('sidebar_btn_hover_bg', colors['hover'])
+        hover_border = colors.get('sidebar_btn_hover_border', colors['accent'])
+        hover_fg = colors.get('sidebar_btn_hover_fg', colors['hover_text'])
+        active_bg = colors.get('sidebar_active_bg', colors['accent'])
+        active_border = colors.get('sidebar_active_border', colors['accent'])
+        active_fg = colors.get('sidebar_active_fg', '#FFFFFF')
+
         for button, title in getattr(self, "sidebar_buttons", []):
             if collapsed:
                 label = title.split("  ", 1)[0]
                 button.setText(label)
-                if is_dark:
-                    button.setStyleSheet("""
-                        QPushButton#sidebarNavButton {
-                            background: transparent; color: #94A3B8;
-                            border: 1px solid transparent; border-radius: 9px;
-                            font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0; min-height: 34px;
-                        }
-                        QPushButton#sidebarNavButton:hover {
-                            background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
-                            border: 1px solid rgba(0, 240, 255, 0.35);
-                        }
-                        QPushButton#sidebarNavButton:checked {
-                            background: rgba(0, 240, 255, 0.16); color: #00F0FF;
-                            border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
-                        }
-                    """)
-                else:
-                    button.setStyleSheet(f"""
-                        QPushButton#sidebarNavButton {{
-                            background: transparent; color: {colors['text']};
-                            border: 1px solid transparent; border-radius: 9px;
-                            font-size: 13pt; font-weight: 600; text-align: center; padding: 7px 0; min-height: 34px;
-                        }}
-                        QPushButton#sidebarNavButton:hover {{
-                            background: {colors['hover']}; color: {colors['hover_text']};
-                            border: 1px solid {colors.get('border_subtle', '#CBD5E1')};
-                        }}
-                        QPushButton#sidebarNavButton:checked {{
-                            background: {colors.get('nav_active_grad', '#EEF2FF')}; color: {colors['accent']};
-                            border: 1.5px solid {colors['accent']}; border-radius: 9px; font-weight: 800;
-                        }}
-                    """)
+                button.setStyleSheet(f"""
+                    QPushButton#sidebarNavButton {{
+                        background: {btn_bg};
+                        color: {btn_fg};
+                        border: 1px solid {btn_border};
+                        border-radius: 9px;
+                        font-size: 13pt;
+                        font-weight: 600;
+                        text-align: center;
+                        padding: 7px 0;
+                        min-height: 36px;
+                    }}
+                    QPushButton#sidebarNavButton:hover {{
+                        background: {hover_bg};
+                        color: {hover_fg};
+                        border: 1px solid {hover_border};
+                    }}
+                    QPushButton#sidebarNavButton:checked {{
+                        background: {active_bg};
+                        color: {active_fg};
+                        border: 1.5px solid {active_border};
+                        border-radius: 9px;
+                        font-weight: 800;
+                    }}
+                """)
             else:
                 button.setText(title.replace("&", "&&"))
-                if is_dark:
-                    button.setStyleSheet("""
-                        QPushButton#sidebarNavButton {
-                            background: transparent; color: #E2E8F0;
-                            border: 1px solid transparent; border-radius: 9px;
-                            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 14px; min-height: 34px;
-                        }
-                        QPushButton#sidebarNavButton:hover {
-                            background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
-                            border: 1px solid rgba(0, 240, 255, 0.35);
-                        }
-                        QPushButton#sidebarNavButton:checked {
-                            background: rgba(0, 240, 255, 0.16); color: #00F0FF;
-                            border: 1.5px solid #00F0FF; border-radius: 9px; font-weight: 800;
-                        }
-                    """)
-                else:
-                    button.setStyleSheet(f"""
-                        QPushButton#sidebarNavButton {{
-                            background: transparent; color: {colors['text']};
-                            border: 1px solid transparent; border-radius: 9px;
-                            font-size: 9.5pt; font-weight: 600; text-align: left; padding: 8px 14px; min-height: 34px;
-                        }}
-                        QPushButton#sidebarNavButton:hover {{
-                            background: {colors['hover']}; color: {colors['hover_text']};
-                            border: 1px solid {colors.get('border_subtle', '#CBD5E1')};
-                        }}
-                        QPushButton#sidebarNavButton:checked {{
-                            background: {colors.get('nav_active_grad', '#EEF2FF')}; color: {colors['accent']};
-                            border: 1.5px solid {colors['accent']}; border-radius: 9px; font-weight: 800;
-                        }}
-                    """)
+                button.setStyleSheet(f"""
+                    QPushButton#sidebarNavButton {{
+                        background: {btn_bg};
+                        color: {btn_fg};
+                        border: 1px solid {btn_border};
+                        border-radius: 9px;
+                        font-size: 9.5pt;
+                        font-weight: 600;
+                        text-align: left;
+                        padding: 8px 12px;
+                        min-height: 36px;
+                    }}
+                    QPushButton#sidebarNavButton:hover {{
+                        background: {hover_bg};
+                        color: {hover_fg};
+                        border: 1px solid {hover_border};
+                    }}
+                    QPushButton#sidebarNavButton:checked {{
+                        background: {active_bg};
+                        color: {active_fg};
+                        border: 1.5px solid {active_border};
+                        border-radius: 9px;
+                        font-weight: 800;
+                    }}
+                """)
             button.setToolTip(title)
 
     def update_title_label(self):
@@ -6929,12 +6984,13 @@ class MainWindow(QMainWindow):
                 surface.setStyleSheet(f"QWidget#{object_name} {{ background-color: {card_bg}; color: {card_fg}; border: 1px solid {card_border}; border-radius: 16px; }}")
 
         for scroll in self.findChildren(QScrollArea):
-            scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
             scroll.setAutoFillBackground(False)
             if scroll.viewport():
-                scroll.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+                scroll.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 scroll.viewport().setAutoFillBackground(False)
-                scroll.viewport().setStyleSheet("background: transparent; border: 0;")
+                if scroll.objectName() != "sidebarScrollArea" and scroll is not getattr(self, "sidebar_scroll", None):
+                    scroll.viewport().setStyleSheet("background: transparent; border: 0;")
 
         # Ensure cards, toolbars, and panels on all tabs remain fully opaque with OneText bento finish
         for card_id in (
@@ -7993,19 +8049,32 @@ class MainWindow(QMainWindow):
                     exe_target = str(Path(sys.executable).resolve())
                 else:
                     exe_target = str(Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Raw Strength Employee Audit Manager" / "RawStrengthEmployeeAuditManager.exe")
+                setup_stem = installer_path.stem
                 watchdog_cmd = (
+                    f"$setupBase = '{setup_stem}'; "
                     f"$setup = $null; "
-                    f"for ($i = 0; $i -lt 60; $i++) {{ "
-                    f"  $setup = Get-Process -Name 'RawStrengthEmployeeAuditManager-Setup' -ErrorAction SilentlyContinue; "
+                    f"for ($i = 0; $i -lt 120; $i++) {{ "
+                    f"  $setup = Get-Process | Where-Object {{ $_.ProcessName -like '*RawStrengthEmployeeAuditManager-Setup*' -or $_.ProcessName -like ('*' + $setupBase + '*') }} | Select-Object -First 1; "
                     f"  if ($setup) {{ break }}; "
                     f"  Start-Sleep -Milliseconds 500; "
                     f"}}; "
                     f"if ($setup) {{ $setup.WaitForExit(300000) }}; "
+                    f"for ($j = 0; $j -lt 60; $j++) {{ "
+                    f"  $anySetup = Get-Process | Where-Object {{ $_.ProcessName -like '*RawStrengthEmployeeAuditManager-Setup*' -or $_.ProcessName -like ('*' + $setupBase + '*') }} | Select-Object -First 1; "
+                    f"  if (-not $anySetup) {{ break }}; "
+                    f"  Start-Sleep -Seconds 1; "
+                    f"}}; "
                     f"Start-Sleep -Seconds 2; "
                     f"if (Test-Path '{exe_target}') {{ "
-                    f"  if (-not (Get-Process -Name 'RawStrengthEmployeeAuditManager' -ErrorAction SilentlyContinue)) {{ "
-                    f"    Start-Process -FilePath '{exe_target}' "
-                    f"  }} "
+                    f"  $running = Get-Process -Name 'RawStrengthEmployeeAuditManager' -ErrorAction SilentlyContinue; "
+                    f"  if (-not $running) {{ "
+                    f"    Start-Process -FilePath '{exe_target}' -WorkingDirectory (Split-Path '{exe_target}'); "
+                    f"  }}; "
+                    f"  Start-Sleep -Seconds 3; "
+                    f"  try {{ "
+                    f"    $ws = New-Object -ComObject WScript.Shell; "
+                    f"    $ws.AppActivate('Raw Strength Calisthenics'); "
+                    f"  }} catch {{}}; "
                     f"}}"
                 )
                 subprocess.Popen(
