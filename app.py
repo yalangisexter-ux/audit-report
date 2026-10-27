@@ -4697,7 +4697,7 @@ class AnimatedBackground(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_particles)
-        self.timer.start(45)
+        self.timer.start(80)
         self.init_particles()
         self._load_wallpaper_image()
 
@@ -4767,6 +4767,16 @@ class AnimatedBackground(QWidget):
             self.photo_loader.finished.connect(self._on_wallpaper_loader_finished)
             self.photo_loader.start()
         self.update()
+
+    def hideEvent(self, event):
+        if hasattr(self, "timer") and self.timer.isActive():
+            self.timer.stop()
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        if hasattr(self, "timer") and not self.timer.isActive():
+            self.timer.start(80)
+        super().showEvent(event)
 
     def _on_wallpaper_loaded(self, name, path):
         if path and name == self.mode:
@@ -5704,7 +5714,10 @@ class MainWindow(QMainWindow):
             self.set_clock_mode("analog")
         else:
             self._clock_mode = "digital"
-        self.build_home(); self.build_dashboard(); self.build_employees(); self.build_tasks(); self.build_tracker(); self.build_attendance(); self.build_reports(); self.build_archive(); self.build_settings()
+        for build_fn in (self.build_home, self.build_dashboard, self.build_employees, self.build_tasks, self.build_tracker, self.build_attendance, self.build_reports, self.build_archive, self.build_settings):
+            build_fn()
+            QApplication.processEvents()
+        self.apply_content_surface_styles()
         # Database sync controls remain in the dedicated sync/settings area.
         self.polish_tables()
         self.apply_global_control_polish()
@@ -6646,7 +6659,6 @@ class MainWindow(QMainWindow):
                     QCalendarWidget QAbstractItemView:disabled {{ color: {colors['muted_text']}; }}
                 """)
         self._refresh_theme_chrome(self.current_theme())
-        self.polish_tables()
         self._repair_text_layouts()
 
     def _repair_text_layouts(self):
@@ -6657,6 +6669,8 @@ class MainWindow(QMainWindow):
                 continue
             label.setWordWrap(True)
         for table in self.findChildren(QTableWidget):
+            if table.objectName() in ("leadsTable", "regionTable") or table.rowCount() > 100:
+                continue
             table.setWordWrap(True)
             table.setTextElideMode(Qt.TextElideMode.ElideNone)
             table.resizeRowsToContents()
@@ -6866,7 +6880,6 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(12)
         content.setLayout(content_layout)
         scroll.setWidget(content)
-        self.apply_content_surface_styles()
         outer.addWidget(scroll)
         return outer
 
@@ -7373,7 +7386,6 @@ class MainWindow(QMainWindow):
                     color: #94A3B8;
                 }}
             """)
-        self.polish_tables()
         self._polish_all_input_controls(theme_name)
 
     def _polish_all_input_controls(self, theme_name=None):
@@ -9235,7 +9247,6 @@ class MainWindow(QMainWindow):
 
         l.addStretch(1)
         scroll.setWidget(content)
-        self.apply_content_surface_styles()
         outer.addWidget(scroll)
 
         self.report_type.currentTextChanged.connect(self._report_type_changed)
@@ -9858,6 +9869,8 @@ class MainWindow(QMainWindow):
         table_sel_bg = colors.get("table_sel_bg", "rgba(0, 210, 255, 0.16)" if is_night else "#EEF2FF")
         table_sel_fg = colors.get("table_sel_fg", "#FFFFFF" if is_night else "#312E81")
         for table in self.findChildren(QTableWidget):
+            if table.objectName() in ("leadsTable", "regionTable") or table.rowCount() > 200:
+                continue
             table.setAlternatingRowColors(True)
             table.setShowGrid(False)
             table.verticalHeader().setVisible(False)

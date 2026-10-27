@@ -8,6 +8,7 @@ import html
 import io
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import sys
@@ -808,10 +809,12 @@ def evaluate_store_verification(record):
 
 def format_prospect_cell_value(record, key):
     """Format and sanitize prospect values for display and export, ensuring 'NA' fallback for empty/displaced data."""
-    raw_val = html.unescape(html.unescape(str(record.get(key, "") or ""))).strip()
-    raw_val = re.sub(r"&#x27;|&apos;", "'", raw_val)
-    raw_val = re.sub(r"&quot;", '"', raw_val)
-    raw_val = re.sub(r"&amp;", '&', raw_val)
+    raw_val = str(record.get(key, "") or "").strip()
+    if "&" in raw_val:
+        raw_val = html.unescape(html.unescape(raw_val))
+        raw_val = re.sub(r"&#x27;|&apos;", "'", raw_val)
+        raw_val = re.sub(r"&quot;", '"', raw_val)
+        raw_val = re.sub(r"&amp;", '&', raw_val)
     if not raw_val or raw_val.casefold() in {"nan", "none", "null", "n/a", "-", ""}:
         if key == "state":
             resolved = resolve_store_presence_states(record)
@@ -2297,8 +2300,23 @@ class CustomerProspectsTab(QWidget):
             except Exception:
                 pass
         self.apply_theme(init_theme)
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            self._ensure_data_loaded()
+        else:
+            QTimer.singleShot(100, self._ensure_data_loaded)
+
+    def _ensure_data_loaded(self):
+        if getattr(self, "_data_loaded", False):
+            return
+        self._data_loaded = True
+        self._refresh_views()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._ensure_data_loaded()
 
     def _on_view_selector_changed(self, index):
+        self._ensure_data_loaded()
         if hasattr(self, "pages") and 0 <= index < self.pages.count():
             self.pages.blockSignals(True)
             self.pages.setCurrentIndex(index)
@@ -3764,7 +3782,7 @@ a {{ color: #2563EB; text-decoration: underline; }}
 
     def _run_silent_continuous_sync(self):
         """Background continuous sync running every 60s without user prompts or interruption."""
-        if self.db is None:
+        if self.db is None or getattr(self, "_sync_in_progress", False):
             return
         active_user = getattr(self.db, "active_user", None)
         try:
@@ -3779,22 +3797,40 @@ a {{ color: #2563EB; text-decoration: underline; }}
                 return
         except Exception:
             pass
+        self._sync_in_progress = True
+
+        def _worker():
+            try:
+                res = google_sheets_sync.continuous_auto_sync(self.db)
+                QTimer.singleShot(0, lambda: self._on_continuous_sync_finished(res))
+            except Exception:
+                pass
+            finally:
+                self._sync_in_progress = False
+
+        import threading
+        threading.Thread(target=_worker, name="store-continuous-sync", daemon=True).start()
+
+    def _on_continuous_sync_finished(self, res):
+        if not isinstance(res, dict):
+            return
         try:
-            res = google_sheets_sync.continuous_auto_sync(self.db)
             if res.get("status") == "synced":
-                self.sync_status_badge.setText(f"🟢 Continuous Sync: Active ({len(self.records):,} Stores) · Conflict-Free")
-                self.sync_status_badge.setStyleSheet(
-                    "font-size: 9pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
-                    "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 6px 12px;"
-                )
+                if hasattr(self, "sync_status_badge"):
+                    self.sync_status_badge.setText(f"🟢 Continuous Sync: Active ({len(self.records):,} Stores) · Conflict-Free")
+                    self.sync_status_badge.setStyleSheet(
+                        "font-size: 9pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
+                        "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 6px 12px;"
+                    )
                 if res.get("updated", 0) > 0:
                     self._reload_saved_records()
             elif res.get("status") == "offline":
-                self.sync_status_badge.setText("🟠 Offline: Local Master Updated · Will Auto-Sync When Online")
-                self.sync_status_badge.setStyleSheet(
-                    "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
-                    "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
-                )
+                if hasattr(self, "sync_status_badge"):
+                    self.sync_status_badge.setText("🟠 Offline: Local Master Updated · Will Auto-Sync When Online")
+                    self.sync_status_badge.setStyleSheet(
+                        "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
+                        "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
+                    )
         except Exception:
             pass
 
@@ -4405,6 +4441,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         self.apply_filters()
 
     def _fill_leads_table(self):
+        self.leads_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.leads_table.setUpdatesEnabled(False)
         self.leads_table.setRowCount(len(self.records))
 
@@ -4436,7 +4473,6 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             for column_index, (_label, key) in enumerate(self.LEAD_COLUMNS):
                 text = format_prospect_cell_value(record, key)
                 item = QTableWidgetItem(text)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if key in {"source_url", "maps", "product_evidence", "product_catalog", "website"}:
                     url_val = maps_url if key == "maps" else (source_url if key == "source_url" else (evidence_url if key == "product_evidence" else (catalog_url if key == "product_catalog" else web_url)))
                     if key == "maps" and (not text or text == "NA") and url_val:
@@ -4709,133 +4745,137 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         ex_keywords = [kw.strip() for kw in all_kw_raw.split(",") if kw.strip()]
 
         visible = 0
-        for row_index, record in enumerate(self.records):
-            rec_kind = str(record.get("kind") or "Store").strip()
-            rec_cat = str(record.get("business_category") or "").casefold()
-
-            # Positive filtering
-            if kind in ("All types", "All Categories"):
-                matches_kind = True
-            elif kind == "Store":
-                # Preserve the general Store filter for existing customer/workbook
-                # rows, including rows awaiting address enrichment.
-                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
-            elif kind == "Pure Product Selling Stores":
-                matches_kind = (
-                    rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
-                    and rec_kind not in ("Gym", "Gym + Store")
-                )
-                if matches_kind:
-                    evidence_blob = " ".join(
-                        str(record.get(field) or "")
-                        for field in ("business_name", "business_category", "source_status", "notes")
+        self.leads_table.setUpdatesEnabled(False)
+        try:
+            for row_index, record in enumerate(self.records):
+                rec_kind = str(record.get("kind") or "Store").strip()
+                rec_cat = str(record.get("business_category") or "").casefold()
+    
+                # Positive filtering
+                if kind in ("All types", "All Categories"):
+                    matches_kind = True
+                elif kind == "Store":
+                    # Preserve the general Store filter for existing customer/workbook
+                    # rows, including rows awaiting address enrichment.
+                    matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+                elif kind == "Pure Product Selling Stores":
+                    matches_kind = (
+                        rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+                        and rec_kind not in ("Gym", "Gym + Store")
                     )
-                    if NEGATIVE_FILTER_PATTERN.search(evidence_blob):
-                        matches_kind = False
-            elif kind in ("Gym", "Gyms"):
-                matches_kind = rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store"
-            elif kind in ("Gyms which sell products also", "Gym + Store", "Gyms which sell products"):
-                matches_kind = (
-                    rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
-                    or "product" in rec_cat
-                    or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))
-                )
-            else:
-                matches_kind = rec_kind == kind
-            rec_state_raw = str(record.get("state") or "")
-            rec_states = [s.strip().casefold() for s in rec_state_raw.split(",") if s.strip()]
-            matches_state = (state == "All States / UTs") or (state.casefold() in rec_states) or (rec_state_raw == state)
-            phone = str(record.get("phone") or "").strip()
-            email = str(record.get("email") or record.get("email_address") or "").strip()
-            has_contact = bool(phone or email) and not any(v.casefold() in {"n/a", "na", "none", "null", "-"} for v in (phone, email) if v)
-            matches_contact = (
-                contact == "All contacts"
-                or (contact == "Has phone/email" and has_contact)
-                or (contact == "Missing contact" and not has_contact)
-            )
-            website_value = str(record.get("website") or "").strip()
-            has_website = bool(website_value) and website_value.casefold() not in {"n/a", "na", "none", "null", "-"}
-            matches_website = (
-                website == "All websites"
-                or (website == "Has website" and has_website)
-                or (website == "Missing website" and not has_website)
-            )
-            verified_value = str(record.get("verified") or "").strip().casefold()
-            ver_status = str(record.get("verification_status") or "").strip().casefold()
-            is_verified = verified_value in {"1", "true", "yes", "verified", "y"} or ver_status == "verified"
-            is_partially = ver_status == "partially verified"
-            matches_verification = (
-                verification == "All verification"
-                or (verification == "Verified" and is_verified)
-                or (verification == "Partially verified" and is_partially)
-                or (verification == "Unverified" and (not is_verified and not is_partially))
-            )
-            search_blob = " ".join(str(value or "") for value in record.values()).casefold()
-            search_terms = search.split()
-            matches_search = not search or all(term in search_blob for term in search_terms)
-
-            # Negative / Exclude filtering
-            excluded = False
-            if ex_drop_missing_contact and not has_contact:
-                excluded = True
-            if not excluded and ex_drop_missing_website and not has_website:
-                excluded = True
-            if not excluded and ex_drop_unverified and not is_verified:
-                excluded = True
-
-            if not excluded and ex_state and (ex_state.casefold() in rec_states or rec_state_raw == ex_state):
-                excluded = True
-
-            if not excluded and ex_drop_combo_negative:
-                b_name = str(record.get("business_name") or record.get("name") or "").casefold()
-                is_gym = (rec_kind in ("Gym", "Gyms", "Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
-                          or "gym" in rec_cat
-                          or "gym" in b_name
-                          or "fitness cent" in rec_cat)
-                is_wellness = ("wellness" in search_blob
-                               or "wellness" in rec_cat
-                               or "wellness" in b_name)
-                is_herbal = any(h in search_blob for h in ("herbal", "herbalife", "ayurved", "ayurvedic", "homeopath"))
-                is_healthkart = ("healthkart" in search_blob
-                                 or "healthkart" in b_name
-                                 or "healthkart" in str(record.get("website", "")).casefold())
-                if is_gym or is_wellness or is_herbal or is_healthkart:
-                    excluded = True
-
-            if not excluded and ex_kind:
-                if ex_kind == "Pure Product Selling Stores":
-                    if rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store":
-                        excluded = True
-                elif ex_kind in ("Gym", "Gyms"):
-                    if rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store":
-                        excluded = True
-                elif ex_kind == "Gyms which sell products also":
-                    if (rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                    if matches_kind:
+                        evidence_blob = " ".join(
+                            str(record.get(field) or "")
+                            for field in ("business_name", "business_category", "source_status", "notes")
+                        )
+                        if NEGATIVE_FILTER_PATTERN.search(evidence_blob):
+                            matches_kind = False
+                elif kind in ("Gym", "Gyms"):
+                    matches_kind = rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store"
+                elif kind in ("Gyms which sell products also", "Gym + Store", "Gyms which sell products"):
+                    matches_kind = (
+                        rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
                         or "product" in rec_cat
-                        or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))):
+                        or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))
+                    )
+                else:
+                    matches_kind = rec_kind == kind
+                rec_state_raw = str(record.get("state") or "")
+                rec_states = [s.strip().casefold() for s in rec_state_raw.split(",") if s.strip()]
+                matches_state = (state == "All States / UTs") or (state.casefold() in rec_states) or (rec_state_raw == state)
+                phone = str(record.get("phone") or "").strip()
+                email = str(record.get("email") or record.get("email_address") or "").strip()
+                has_contact = bool(phone or email) and not any(v.casefold() in {"n/a", "na", "none", "null", "-"} for v in (phone, email) if v)
+                matches_contact = (
+                    contact == "All contacts"
+                    or (contact == "Has phone/email" and has_contact)
+                    or (contact == "Missing contact" and not has_contact)
+                )
+                website_value = str(record.get("website") or "").strip()
+                has_website = bool(website_value) and website_value.casefold() not in {"n/a", "na", "none", "null", "-"}
+                matches_website = (
+                    website == "All websites"
+                    or (website == "Has website" and has_website)
+                    or (website == "Missing website" and not has_website)
+                )
+                verified_value = str(record.get("verified") or "").strip().casefold()
+                ver_status = str(record.get("verification_status") or "").strip().casefold()
+                is_verified = verified_value in {"1", "true", "yes", "verified", "y"} or ver_status == "verified"
+                is_partially = ver_status == "partially verified"
+                matches_verification = (
+                    verification == "All verification"
+                    or (verification == "Verified" and is_verified)
+                    or (verification == "Partially verified" and is_partially)
+                    or (verification == "Unverified" and (not is_verified and not is_partially))
+                )
+                search_blob = " ".join(str(value or "") for value in record.values()).casefold()
+                search_terms = search.split()
+                matches_search = not search or all(term in search_blob for term in search_terms)
+    
+                # Negative / Exclude filtering
+                excluded = False
+                if ex_drop_missing_contact and not has_contact:
+                    excluded = True
+                if not excluded and ex_drop_missing_website and not has_website:
+                    excluded = True
+                if not excluded and ex_drop_unverified and not is_verified:
+                    excluded = True
+    
+                if not excluded and ex_state and (ex_state.casefold() in rec_states or rec_state_raw == ex_state):
+                    excluded = True
+    
+                if not excluded and ex_drop_combo_negative:
+                    b_name = str(record.get("business_name") or record.get("name") or "").casefold()
+                    is_gym = (rec_kind in ("Gym", "Gyms", "Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                              or "gym" in rec_cat
+                              or "gym" in b_name
+                              or "fitness cent" in rec_cat)
+                    is_wellness = ("wellness" in search_blob
+                                   or "wellness" in rec_cat
+                                   or "wellness" in b_name)
+                    is_herbal = any(h in search_blob for h in ("herbal", "herbalife", "ayurved", "ayurvedic", "homeopath"))
+                    is_healthkart = ("healthkart" in search_blob
+                                     or "healthkart" in b_name
+                                     or "healthkart" in str(record.get("website", "")).casefold())
+                    if is_gym or is_wellness or is_herbal or is_healthkart:
                         excluded = True
-                elif rec_kind.casefold() == ex_kind.casefold() or ex_kind.casefold() in rec_cat:
-                    excluded = True
-
-            if not excluded and ex_name:
-                rec_name = str(record.get("business_name") or record.get("name") or "").casefold()
-                if ex_name in rec_name:
-                    excluded = True
-
-            if not excluded and ex_district:
-                rec_district = " ".join([str(record.get("city") or ""), str(record.get("area") or ""), str(record.get("district") or "")]).casefold()
-                if ex_district in rec_district:
-                    excluded = True
-
-            if not excluded and ex_keywords:
-                for kw in ex_keywords:
-                    if kw in search_blob:
+    
+                if not excluded and ex_kind:
+                    if ex_kind == "Pure Product Selling Stores":
+                        if rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store":
+                            excluded = True
+                    elif ex_kind in ("Gym", "Gyms"):
+                        if rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store":
+                            excluded = True
+                    elif ex_kind == "Gyms which sell products also":
+                        if (rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                            or "product" in rec_cat
+                            or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))):
+                            excluded = True
+                    elif rec_kind.casefold() == ex_kind.casefold() or ex_kind.casefold() in rec_cat:
                         excluded = True
-                        break
-
-            shown = (not excluded) and matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
-            self.leads_table.setRowHidden(row_index, not shown)
-            visible += shown
+    
+                if not excluded and ex_name:
+                    rec_name = str(record.get("business_name") or record.get("name") or "").casefold()
+                    if ex_name in rec_name:
+                        excluded = True
+    
+                if not excluded and ex_district:
+                    rec_district = " ".join([str(record.get("city") or ""), str(record.get("area") or ""), str(record.get("district") or "")]).casefold()
+                    if ex_district in rec_district:
+                        excluded = True
+    
+                if not excluded and ex_keywords:
+                    for kw in ex_keywords:
+                        if kw in search_blob:
+                            excluded = True
+                            break
+    
+                shown = (not excluded) and matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
+                self.leads_table.setRowHidden(row_index, not shown)
+                visible += shown
+        finally:
+            self.leads_table.setUpdatesEnabled(True)
         total_cnt = len(self.records)
         unique_cnt = len({prospect_dedupe_key(r) for r in self.records})
         verified_cnt = sum(1 for r in self.records if str(r.get("verification_status") or "").casefold() == "verified")
@@ -5045,6 +5085,8 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         self.region_table.setPalette(palette)
 
         # Repaint both tables with active theme foregrounds
+        if not getattr(self, "_data_loaded", False):
+            return
         if self.leads_table.rowCount() == 0 and self.records:
             self._refresh_views()
         else:
