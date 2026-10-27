@@ -827,8 +827,17 @@ def check_updates():
                 "Accept": "application/vnd.github+json",
             }
         )
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            releases = json.loads(resp.read().decode("utf-8"))
+        ssl_ctx = desktop_app.get_ssl_context() if hasattr(desktop_app, "get_ssl_context") else None
+        try:
+            if ssl_ctx:
+                with urllib.request.urlopen(req, timeout=12, context=ssl_ctx) as resp:
+                    releases = json.loads(resp.read().decode("utf-8"))
+            else:
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    releases = json.loads(resp.read().decode("utf-8"))
+        except TypeError:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                releases = json.loads(resp.read().decode("utf-8"))
 
         if not isinstance(releases, list) or not releases:
             return {

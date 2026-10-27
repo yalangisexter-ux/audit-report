@@ -829,8 +829,13 @@ class UpdateWorker(QObject):
         })
         # Keep a failed network request from leaving the UI in a checking state
         # for a full minute per attempt.
-        with urlopen(request, timeout=20, context=get_ssl_context()) as response:
-            return response.read()
+        ssl_ctx = get_ssl_context()
+        try:
+            with urlopen(request, timeout=20, context=ssl_ctx) as response:
+                return response.read()
+        except TypeError:
+            with urlopen(request, timeout=20) as response:
+                return response.read()
 
     def run(self):
         try:
@@ -932,7 +937,11 @@ class UpdateWorker(QObject):
                         headers["Range"] = f"bytes={downloaded}-"
                     request = Request(installer_url, headers=headers)
                     try:
-                        with urlopen(request, timeout=90, context=get_ssl_context()) as response:
+                        try:
+                            _resp_cm = urlopen(request, timeout=90, context=get_ssl_context())
+                        except TypeError:
+                            _resp_cm = urlopen(request, timeout=90)
+                        with _resp_cm as response:
                             status = getattr(response, "status", response.getcode())
                             if downloaded and status != 206:
                                 # Server ignored Range; restart cleanly to avoid corrupting the file.

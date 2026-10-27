@@ -177,7 +177,27 @@ def test_api_settings():
     assert "settings" in data
     assert "app_version" in data
 
-def test_api_system_updates():
+def test_api_system_updates(monkeypatch):
+    import json
+    fake_releases = json.dumps([{
+        "tag_name": "v1.3.62",
+        "draft": False,
+        "prerelease": False,
+        "published_at": "2026-10-27T12:00:00Z",
+        "assets": [{
+            "name": "RawStrengthEmployeeAuditManager-Setup.exe",
+            "browser_download_url": "https://github.com/yalangisexter-ux/audit-report/releases/download/v1.3.62/RawStrengthEmployeeAuditManager-Setup.exe",
+            "size": 75604753,
+        }]
+    }]).encode("utf-8")
+
+    class FakeResp:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def read(self): return fake_releases
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: FakeResp())
     res = client.get("/api/system/check-updates")
     assert res.status_code == 200
     data = res.json()

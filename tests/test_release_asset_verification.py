@@ -308,7 +308,7 @@ def test_update_request_uses_bounded_timeout_and_reports_check_progress(monkeypa
         def read(self):
             return b'{"ok": true}'
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout=20, *args, **kwargs):
         captured["timeout"] = timeout
         return FakeResponse()
 

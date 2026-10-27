@@ -67,7 +67,7 @@ jobs:
         run: |
           $env:QT_QPA_PLATFORM = "offscreen"
           $env:PYTHONWARNINGS = "ignore"
-          python -m pytest -q
+          python -m pytest tests -q
           if ($LASTEXITCODE -ne 0) {
             throw "Pytest regression tests failed with exit code $LASTEXITCODE"
           }
