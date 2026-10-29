@@ -28,17 +28,6 @@
       }
     }, true);
 
-    // Resume queued automatic uploads after connectivity returns, and refresh
-    // remote changes when a customer returns to the open web app.
-    window.addEventListener("online", async () => {
-      if (typeof pullFromCloud === "function") await pullFromCloud(true);
-      if (typeof scheduleMobileAutoPush === "function") scheduleMobileAutoPush();
-    });
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden && navigator.onLine && typeof pullFromCloud === "function") {
-        pullFromCloud(true);
-      }
-    });
   };
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", install, { once: true });
