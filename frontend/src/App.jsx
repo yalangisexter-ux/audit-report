@@ -14,6 +14,7 @@ export default function App() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('rsc_auth_token') || '');
   const [authChecked, setAuthChecked] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const [dashboardData, setDashboardData] = useState(null);
@@ -163,8 +164,15 @@ export default function App() {
           <input className="w-full mb-4 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
             value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} required autoComplete="username" />
           <label className="block text-xs font-semibold text-slate-400 mb-1">Password</label>
-          <input type="password" className="w-full mb-6 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
-            value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required autoComplete="current-password" />
+          <div className="flex gap-2 mb-6">
+            <input type={showPassword ? 'text' : 'password'} className="flex-1 min-w-0 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
+              value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required autoComplete="current-password" />
+            <button type="button" onClick={() => setShowPassword((visible) => !visible)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}
+              className="rounded-lg border border-white/10 px-3 py-2.5 text-sm font-semibold text-cyan-300 hover:border-cyan-400/60">
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
+          </div>
           <button type="submit" disabled={loginBusy}
             className="w-full rounded-lg bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950 font-bold py-2.5 text-sm disabled:opacity-60 min-h-[44px]">
             {loginBusy ? 'Signing in…' : 'Sign in'}
