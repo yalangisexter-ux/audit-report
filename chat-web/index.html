@@ -21,7 +21,7 @@ button,input,select{font:inherit}button{cursor:pointer;border:1px solid var(--li
     <div class="brand"><div class="logo">RSC</div><div><h1>Raw Strength</h1><p>Employee Audit Manager</p></div></div>
     <h2>Live Chat</h2><p class="muted">Private employee conversations and authorized team groups.</p>
     <div class="field"><label for="username">Chat username</label><input id="username" autocomplete="username" required maxlength="40"></div>
-    <div class="field"><label for="password">Chat password</label><input id="password" type="password" autocomplete="current-password" required maxlength="256"></div>
+    <div class="field"><label for="password">Chat password</label><div style="display:flex;gap:8px;align-items:center"><input id="password" type="password" autocomplete="current-password" required maxlength="256" style="flex:1;min-width:0"><button id="togglePassword" type="button" aria-label="Show password" aria-pressed="false">Show</button></div></div>
     <button class="primary" style="width:100%;margin-top:8px" type="submit">Sign in securely</button>
     <p id="loginError" class="error" role="alert"></p>
     <p class="muted" style="font-size:12px">Chat credentials are provisioned by your chat administrator. Your desktop application password is separate.</p>
