@@ -1,11 +1,11 @@
-# Render Blueprint — testing deploy of the web UI + API
+# Render Blueprint — lightweight web API + static React (no PySide6)
 services:
   - type: web
     name: audit-report-web
     runtime: python
     plan: free
     region: oregon
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-web.txt
     startCommand: python -c "import os; import web_auth_shim; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
       - key: PYTHON_VERSION
@@ -18,4 +18,4 @@ services:
         value: "1"
       - key: DB_SYNC_WORKER_URL
         value: "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
-    healthCheckPath: /docs
+    healthCheckPath: /api/health

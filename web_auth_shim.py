@@ -6,6 +6,9 @@ import secrets
 import sqlite3
 from pathlib import Path
 
+# Must run before api_server -> app imports PySide6
+import web_qt_stub  # noqa: F401
+
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
@@ -71,7 +74,6 @@ def _pull_shared_database_if_configured():
 @api.app.middleware("http")
 async def require_api_login(request: Request, call_next):
     path = request.url.path
-    # Allow static frontend and public API endpoints without a session
     if not path.startswith("/api/"):
         return await call_next(request)
     if path in PUBLIC_PATHS or path.startswith("/api/auth/login") or path.startswith("/api/auth/setup"):
@@ -84,6 +86,5 @@ async def require_api_login(request: Request, call_next):
     return await call_next(request)
 
 
-# Pull shared DB once before the app starts serving
 _pull_shared_database_if_configured()
 print("[Web Auth] API login middleware enabled; auto-admin bypass blocked.")
