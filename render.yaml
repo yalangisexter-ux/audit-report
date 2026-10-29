@@ -1,12 +1,11 @@
 # Render Blueprint — testing deploy of the web UI + API
-# Dashboard: https://dashboard.render.com
 services:
   - type: web
     name: audit-report-web
     runtime: python
     plan: free
     region: oregon
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && cd frontend && npm install && npm run build && cd ..
     startCommand: python -c "import os; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
       - key: PYTHON_VERSION
@@ -15,4 +14,8 @@ services:
         value: offscreen
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: DB_SYNC_USE_DESKTOP_DEFAULT
+        value: "1"
+      - key: DB_SYNC_WORKER_URL
+        value: "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
     healthCheckPath: /docs
