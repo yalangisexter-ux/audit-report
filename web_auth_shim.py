@@ -1,4 +1,4 @@
-"""Web-only boot shim: cloud DB first, never keep historical seed roster (EXE untouched)."""
+"""Web-only boot shim: cloud DB first, login diagnostics, no historical seed (EXE untouched)."""
 from __future__ import annotations
 
 import os
@@ -10,6 +10,7 @@ os.environ.setdefault("SKIP_INITIAL_AUDIT_SEED", "1")
 
 import web_qt_stub  # noqa: F401
 
+from fastapi import Depends, HTTPException
 from fastapi.responses import JSONResponse
 from starlette.requests import Request
 
@@ -19,6 +20,7 @@ PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/login",
     "/api/auth/setup",
+    "/api/auth/status",
     "/docs",
     "/openapi.json",
     "/redoc",
@@ -29,7 +31,6 @@ PURGE_SEED = os.environ.get("WEB_PURGE_SEED_DATA", "1").strip().lower() in ("1",
 
 
 def _purge_historical_seed(db_path: Path) -> None:
-    """Remove embedded historical audit demo employees/tasks if present."""
     if not db_path.is_file():
         return
     try:
@@ -41,18 +42,15 @@ def _purge_historical_seed(db_path: Path) -> None:
                  SELECT id FROM employees WHERE IFNULL(notes,'') LIKE '%historical audit%'
                )"""
         )
-        conn.execute(
-            "DELETE FROM employees WHERE IFNULL(notes,'') LIKE '%historical audit%'"
-        )
-        conn.execute(
-            "DELETE FROM settings WHERE key LIKE 'initial_audit%'"
-        )
+        conn.execute("DELETE FROM employees WHERE IFNULL(notes,'') LIKE '%historical audit%'")
+        conn.execute("DELETE FROM settings WHERE key LIKE 'initial_audit%'")
         conn.commit()
         after_e = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
         after_t = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         names = [r[0] for r in conn.execute("SELECT name FROM employees ORDER BY id LIMIT 12").fetchall()]
+        users = [r[0] for r in conn.execute("SELECT username FROM auth_users WHERE active=1 ORDER BY username").fetchall()]
         conn.close()
-        print(f"[DB] Purge seed: employees {before_e}->{after_e}, tasks now {after_t}, names={names}")
+        print(f"[DB] Purge seed: employees {before_e}->{after_e}, tasks={after_t}, names={names}, auth_users={users}")
     except Exception as exc:
         print(f"[DB] Purge seed skipped: {exc}")
 
@@ -70,7 +68,7 @@ def _pull_shared_database_if_configured():
     if not encryption_secret and os.environ.get("DB_SYNC_USE_DESKTOP_DEFAULT", "").strip().lower() in ("1", "true", "yes"):
         encryption_secret = "Devlopershouse@1996#"
     if not worker_url or not encryption_secret:
-        print("[DB Sync] Shared DB pull skipped (set DB_SYNC_ENCRYPTION_SECRET or DB_SYNC_USE_DESKTOP_DEFAULT=1).")
+        print("[DB Sync] Shared DB pull skipped.")
         return False
 
     install_id = (os.environ.get("DB_SYNC_INSTALLATION_ID") or secrets.token_hex(16)).strip()
@@ -96,17 +94,86 @@ def _pull_shared_database_if_configured():
         emp_count = check.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
         task_count = check.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         names = [r[0] for r in check.execute("SELECT name FROM employees ORDER BY id LIMIT 12").fetchall()]
+        users = [r[0] for r in check.execute("SELECT username FROM auth_users WHERE active=1").fetchall()]
         check.close()
         if not integrity or integrity[0] != "ok":
             tmp.unlink(missing_ok=True)
             print("[DB Sync] Pulled snapshot failed integrity check.")
             return False
         os.replace(tmp, db_path)
-        print(f"[DB Sync] Restored cloud DB: auth_users={user_count}, employees={emp_count}, tasks={task_count}, names={names}")
+        print(f"[DB Sync] Restored cloud DB: auth={user_count} users={users}, employees={emp_count}, tasks={task_count}, names={names}")
         return True
     except Exception as exc:
         print(f"[DB Sync] Pull failed: {exc}")
         return False
+
+
+@api.app.get("/api/auth/status")
+def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
+        usernames = [
+            r[0]
+            for r in conn.execute(
+                "SELECT username FROM auth_users WHERE active=1 ORDER BY username COLLATE NOCASE"
+            ).fetchall()
+        ]
+    except Exception:
+        count, usernames = 0, []
+    return {
+        "user_count": count,
+        "usernames": usernames,
+        "setup_required": count == 0,
+        "hint": "Use the exact Username from the desktop app (e.g. admin or taruna), not the display name.",
+    }
+
+
+@api.app.post("/api/auth/login")
+def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
+    username = (req.username or "").strip()
+    password = req.password or ""
+    if not username or not password:
+        raise HTTPException(status_code=401, detail="Username and password are required")
+
+    try:
+        total_users = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
+    except Exception:
+        total_users = 0
+
+    if total_users == 0:
+        raise HTTPException(
+            status_code=401,
+            detail="No login accounts on this web server yet. On the desktop app run Cloud Sync, then redeploy/restart the web service so it pulls the shared database.",
+        )
+
+    row = conn.execute(
+        "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+        (username,),
+    ).fetchone()
+    if not row:
+        print(f"[Auth] unknown username={username!r} active_users={total_users}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password. Use the desktop Username field (often admin or taruna), not the display name.",
+        )
+
+    import app as desktop_app
+
+    _, digest = desktop_app.hash_pin(password, row["password_salt"])
+    if not secrets.compare_digest(digest, row["password_hash"]):
+        print(f"[Auth] bad password for username={row['username']!r}")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    token = secrets.token_hex(24)
+    user_info = {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"] or row["username"],
+        "role": row["role"],
+    }
+    api.ACTIVE_SESSIONS[token] = user_info
+    print(f"[Auth] Login ok: {user_info['username']} ({user_info['role']})")
+    return {"token": token, "user": user_info}
 
 
 @api.app.middleware("http")
