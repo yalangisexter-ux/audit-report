@@ -5,7 +5,7 @@ services:
     runtime: python
     plan: free
     region: oregon
-    buildCommand: pip install -r requirements.txt && cd frontend && npm install && npm run build && cd ..
+    buildCommand: pip install -r requirements.txt
     startCommand: python -c "import os; import web_auth_shim; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
       - key: PYTHON_VERSION
