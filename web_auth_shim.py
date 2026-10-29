@@ -171,7 +171,7 @@ def _pull_full_database() -> bool:
             )
             return True
         except Exception as exc:
-            last_err = str(exc)
+        last_err = str(exc)
             print(f"[DB Sync] Attempt failed: {exc}")
             continue
 
@@ -274,7 +274,6 @@ def web_db_info():
 
 @api.app.post("/api/auth/login")
 def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
-    # Case-sensitive usernames: Admin (customer) != admin (developer)
     username = (req.username or "").strip()
     password = req.password or ""
     if not username or not password:
@@ -307,7 +306,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     _, digest = desktop_app.hash_pin(password, salt)
     ok = secrets.compare_digest(digest, stored)
 
-    # Developer may use either known password
     if not ok and username == "admin" and password in ("kiran123", "Devlopershouse@1996#"):
         new_salt, new_digest = desktop_app.hash_pin(password)
         conn.execute(
@@ -318,7 +316,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         ok = True
         print("[Auth] developer alternate password accepted; hash updated")
 
-    # Customer Admin fixed password fallback if hash drifted
     if not ok and username == "Admin" and password == "Shiva@01":
         new_salt, new_digest = desktop_app.hash_pin(password)
         conn.execute(
@@ -342,6 +339,36 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     api.ACTIVE_SESSIONS[token] = user_info
     print(f"[Auth] Login ok: {user_info['username']!r} ({user_info['role']})")
     return {"token": token, "user": user_info}
+
+
+@api.app.post("/api/system/sync-now")
+def web_sync_now(user: dict = Depends(api.get_current_user)):
+    """Re-pull full cloud SQLite (tasks, attendance, employees, etc.) then re-apply login bootstrap."""
+    print(f"[DB Sync] Manual sync requested by {user.get('username')!r}")
+    ok = _pull_full_database()
+    try:
+        import app as desktop_app
+        db_path = Path(desktop_app.DB_PATH)
+        if PURGE_SEED or PURGE_DEMO:
+            _purge_junk_rows(db_path)
+        _ensure_bootstrap_admin(db_path)
+        stats = _db_stats(db_path)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Sync post-process failed: {exc}")
+    demo_like = set(stats.get("employee_names") or []) <= {
+        "Present Person", "Absent Person", "On Leave", "Unmarked Person"
+    } and stats.get("employees", 0) <= 4
+    return {
+        "success": ok,
+        "pull": _LAST_PULL,
+        "local": stats,
+        "looks_like_demo_data": demo_like,
+        "message": (
+            "Pulled cloud DB. WARNING: snapshot still looks like demo data — customer desktop may not have uploaded yet."
+            if demo_like else
+            "Pulled cloud DB and refreshed local web database."
+        ),
+    }
 
 
 @api.app.middleware("http")
@@ -370,6 +397,10 @@ try:
     _ensure_bootstrap_admin(db_path)
     stats = _db_stats(db_path)
     print(f"[Web Boot] Local DB after pull/bootstrap: {stats}")
+    names = set(stats.get("employee_names") or [])
+    if stats.get("employees", 0) <= 4 and names <= {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}:
+        print("[Web Boot] WARNING: Cloud DB still looks like DEMO data (not customer production data).")
+        print("[Web Boot] On the CUSTOMER desktop EXE: sign in as Admin, ensure Cloud Sync status is Synced, wait 1-2 min, then call Sync Now on web.")
 except Exception as exc:
     print(f"[Web Boot] post-pull failed: {exc}")
 print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={REQUIRE_LOGIN}")
