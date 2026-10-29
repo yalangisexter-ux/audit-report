@@ -1,4 +1,4 @@
-# Render Blueprint — web API + React build on deploy
+# Render web — cloud DB preferred, no historical seed roster
 services:
   - type: web
     name: audit-report-web
@@ -19,5 +19,9 @@ services:
       - key: DB_SYNC_WORKER_URL
         value: "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
       - key: WEB_REQUIRE_LOGIN
+        value: "1"
+      - key: SKIP_INITIAL_AUDIT_SEED
+        value: "1"
+      - key: WEB_PURGE_SEED_DATA
         value: "1"
     healthCheckPath: /api/health
