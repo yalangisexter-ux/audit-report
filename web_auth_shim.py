@@ -210,10 +210,11 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Case-sensitive real accounts:
+    """Create fallback accounts only when absent; never overwrite synced credentials.
 
-    Admin  = customer (Taruna)  password Shiva@01
-    admin  = developer/tester   password kiran123 (login also accepts Devlopershouse@1996#)
+    A pulled desktop database is authoritative for customer usernames, password
+    hashes, roles, and active state. Rewriting those rows at web startup breaks
+    desktop-to-web login, so bootstrap only inserts accounts that do not exist.
     """
     try:
         import app as desktop_app
@@ -225,24 +226,33 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             except Exception:
                 pass
         conn = db.conn
+        existing = {
+            str(row[0]).casefold()
+            for row in conn.execute("SELECT username FROM auth_users").fetchall()
+        }
 
+        # Do not ship default passwords or reset existing users. Optional
+        # bootstrap accounts are created only when explicitly configured.
         customer_pwd = (
             os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD")
             or os.environ.get("WEB_BOOTSTRAP_TARUNA_PASSWORD")
             or ""
-        ).strip() or "Shiva@01"
-        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
+        )
+        dev_pwd = os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or ""
 
-        _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
-        _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
-        _upsert_user_exact(conn, desktop_app, "taruna", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+        if "admin" not in existing and customer_pwd:
+            _upsert_user_exact(conn, desktop_app, "Admin", "Administrator", "Admin", customer_pwd)
+        if "admin" not in existing and dev_pwd:
+            _upsert_user_exact(conn, desktop_app, "admin", "Developer", "Developer", dev_pwd)
+        if "taruna" not in existing and customer_pwd:
+            _upsert_user_exact(conn, desktop_app, "taruna", "Administrator", "Admin", customer_pwd)
 
         conn.commit()
         try:
             db.conn.close()
         except Exception:
             pass
-        print("[Auth] Bootstrap complete: Admin + admin + taruna")
+        print("[Auth] Bootstrap checked without overwriting existing synchronized accounts")
     except Exception as exc:
         print(f"[Auth] Bootstrap failed: {exc}")
 
@@ -329,23 +339,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     _, digest = desktop_app.hash_pin(password, salt)
     ok = secrets.compare_digest(digest, stored)
 
-    if not ok and username == "admin" and password in ("kiran123", "Devlopershouse@1996#"):
-        new_salt, new_digest = desktop_app.hash_pin(password)
-        conn.execute(
-            "UPDATE auth_users SET password_salt=?, password_hash=?, updated_at=? WHERE id=?",
-            (new_salt, new_digest, desktop_app.now_text(), row["id"]),
-        )
-        conn.commit()
-        ok = True
-
-    if not ok and username == "Admin" and password == "Shiva@01":
-        new_salt, new_digest = desktop_app.hash_pin(password)
-        conn.execute(
-            "UPDATE auth_users SET password_salt=?, password_hash=?, updated_at=? WHERE id=?",
-            (new_salt, new_digest, desktop_app.now_text(), row["id"]),
-        )
-        conn.commit()
-        ok = True
 
     if not ok:
         raise HTTPException(status_code=401, detail="Invalid username or password")
