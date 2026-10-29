@@ -1,4 +1,4 @@
-"""Web boot: full cloud DB pull + case-sensitive real logins (EXE untouched)."""
+"""Web boot: full cloud DB pull + case-insensitive usernames with desktop-compatible password checks (EXE untouched)."""
 from __future__ import annotations
 
 import os
