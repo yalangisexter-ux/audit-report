@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
+import time
 import sqlite3
 from pathlib import Path
 
@@ -308,6 +310,55 @@ def web_db_info():
     return {"pull": _LAST_PULL, "local": stats}
 
 
+_LOGIN_REFRESH_LOCK = threading.Lock()
+_LAST_LOGIN_REFRESH_AT = 0.0
+
+
+def _refresh_login_database_if_needed() -> None:
+    """Refresh a stale Render snapshot at most once every 15 seconds after a failed login."""
+    global _LAST_LOGIN_REFRESH_AT
+    now = time.monotonic()
+    if now - _LAST_LOGIN_REFRESH_AT < 15:
+        return
+    if not _LOGIN_REFRESH_LOCK.acquire(blocking=False):
+        return
+    try:
+        now = time.monotonic()
+        if now - _LAST_LOGIN_REFRESH_AT < 15:
+            return
+        _LAST_LOGIN_REFRESH_AT = now
+        if _pull_full_database():
+            try:
+                import app as desktop_app
+                db_path = Path(desktop_app.DB_PATH)
+                if PURGE_SEED or PURGE_DEMO:
+                    _purge_junk_rows(db_path)
+            except Exception as exc:
+                print(f"[DB Sync] Login refresh cleanup skipped: {exc}")
+    finally:
+        _LOGIN_REFRESH_LOCK.release()
+
+
+def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
+    """Return an authenticated user row; usernames are case-insensitive, passwords are not."""
+    row = conn.execute(
+        "SELECT * FROM auth_users WHERE username = ? COLLATE NOCASE AND active = 1",
+        (username,),
+    ).fetchone()
+    if not row:
+        return None
+    import app as desktop_app
+    salt = row["password_salt"]
+    stored = row["password_hash"]
+    if not salt or not stored:
+        return None
+    try:
+        _, digest = desktop_app.hash_pin(password, salt)
+    except Exception:
+        return None
+    return row if secrets.compare_digest(str(digest), str(stored)) else None
+
+
 @api.app.post("/api/auth/login")
 def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
     username = (req.username or "").strip()
@@ -315,36 +366,35 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     if not username or not password:
         raise HTTPException(status_code=401, detail="Username and password are required")
 
-    try:
-        total_users = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
-    except Exception:
-        total_users = 0
-    if total_users == 0:
-        raise HTTPException(
-            status_code=401,
-            detail="No login accounts on web yet. Redeploy so bootstrap installs Admin/admin.",
-        )
-
-    row = conn.execute(
-        "SELECT * FROM auth_users WHERE username = ? AND active = 1",
-        (username,),
-    ).fetchone()
+    row = _find_active_login_user(conn, username, password)
     if not row:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password. Usernames are case-sensitive: Admin (customer) vs admin (developer).",
-        )
-
-    import app as desktop_app
-
-    salt = row["password_salt"]
-    stored = row["password_hash"]
-    _, digest = desktop_app.hash_pin(password, salt)
-    ok = secrets.compare_digest(digest, stored)
-
-
-    if not ok:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        # Render may have started before the desktop's latest encrypted snapshot was
+        # uploaded. Refresh once and retry against a newly opened DB connection so
+        # a valid, recently changed desktop password/account is not rejected by a
+        # stale connection to the previous SQLite file.
+        _refresh_login_database_if_needed()
+        try:
+            import app as desktop_app
+            fresh = sqlite3.connect(str(Path(desktop_app.DB_PATH)), timeout=10)
+            fresh.row_factory = sqlite3.Row
+            try:
+                row = _find_active_login_user(fresh, username, password)
+                total_users = fresh.execute(
+                    "SELECT COUNT(*) FROM auth_users WHERE active = 1"
+                ).fetchone()[0]
+            finally:
+                fresh.close()
+        except Exception as exc:
+            print(f"[Auth] Refreshed login retry failed: {exc}")
+            row = None
+            total_users = 0
+        if not row:
+            if total_users == 0:
+                raise HTTPException(
+                    status_code=401,
+                    detail="No synchronized login accounts are available yet. Check the cloud database sync status and redeploy after the desktop snapshot is uploaded.",
+                )
+            raise HTTPException(status_code=401, detail="Invalid username or password")
 
     token = secrets.token_hex(24)
     user_info = {
