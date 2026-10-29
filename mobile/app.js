@@ -937,7 +937,15 @@ async function authenticateUser(username, password) {
     return false;
   }
 
-  const user = (state.users || []).find(u => (u.username || "").trim().toLowerCase() === uname);
+  let user = (state.users || []).find(u => (u.username || "").trim().toLowerCase() === uname);
+  if (!user) {
+    if (errEl) {
+      errEl.textContent = "Checking your account securely…";
+      errEl.classList.remove("hidden");
+    }
+    await pullFromCloud(true);
+    user = (state.users || []).find(u => (u.username || "").trim().toLowerCase() === uname);
+  }
   if (!user) {
     if (errEl) {
       errEl.textContent = "Login rejected: this account has not been synchronized from the desktop database. Check cloud sync and try again.";
@@ -946,7 +954,7 @@ async function authenticateUser(username, password) {
     return false;
   }
 
-  if (user.active === 0) {
+  if (user.active === 0 || user.active === false || user.active === "0") {
     if (errEl) { errEl.textContent = "This account is disabled. Contact system administrator."; errEl.classList.remove("hidden"); }
     return false;
   }
@@ -1345,16 +1353,6 @@ document.getElementById("btnCheckAppUpdate")?.addEventListener("click", async ()
   }
 });
 
-document.getElementById("btnSyncCheck")?.addEventListener("click", () => {
-  pullFromCloud(false);
-  showToast("Checking cloud synchronization...");
-});
-document.getElementById("quickSyncBtn")?.addEventListener("click", () => {
-  pullFromCloud(false);
-  showToast("Checking cloud synchronization...");
-});
-document.getElementById("btnPushData")?.addEventListener("click", () => pushToCloud(false));
-document.getElementById("btnPullData")?.addEventListener("click", () => pullFromCloud(false));
 
 document.getElementById("genNewInstallIdBtn")?.addEventListener("click", () => {
   state.installId = generateHex(32);
@@ -1410,10 +1408,24 @@ window.addEventListener("DOMContentLoaded", () => {
     await authenticateUser(u, p);
   });
 
-  // Pull latest accounts button on auth modal
-  document.getElementById("btnSyncAccountsNow")?.addEventListener("click", async () => {
-    showToast("Synchronizing user accounts from cloud...");
-    await pullFromCloud(false);
+  document.getElementById("toggleAppAuthPassword")?.addEventListener("click", () => {
+    const field = document.getElementById("appAuthPassword");
+    const button = document.getElementById("toggleAppAuthPassword");
+    if (!field || !button) return;
+    const reveal = field.type === "password";
+    field.type = reveal ? "text" : "password";
+    button.textContent = reveal ? "Hide" : "Show";
+    button.setAttribute("aria-pressed", String(reveal));
+    button.setAttribute("aria-label", reveal ? "Hide password" : "Show password");
+    field.focus();
+  });
+
+  window.addEventListener("online", () => {
+    pullFromCloud(true);
+    scheduleMobileAutoPush();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) pullFromCloud(true);
   });
 
   // Header logout button
