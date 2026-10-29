@@ -9390,6 +9390,10 @@ class MainWindow(QMainWindow):
             "Set or update the Cloudflare Sync Worker URL for database backup and synchronization."
         )
         self.github_sync_config_button.clicked.connect(self.configure_github_sync_url)
+        # Customer installations sync automatically; do not expose manual sync or
+        # customer-editable endpoint controls. Keep the widgets for compatibility.
+        self.github_sync_now_button.hide()
+        self.github_sync_config_button.hide()
         sync_actions.addWidget(self.github_sync_now_button)
         sync_actions.addWidget(self.github_sync_config_button)
         sync_actions.addStretch(1)
@@ -9655,6 +9659,11 @@ class MainWindow(QMainWindow):
             self.db.github_sync._on_dirty_callback = lambda: self.schedule_auto_sync(delay_ms=2000)
 
         QTimer.singleShot(1500, self._background_auto_sync)
+        # Reconcile remote changes continuously while the desktop app is open.
+        self._continuous_sync_timer = QTimer(self)
+        self._continuous_sync_timer.setInterval(30000)
+        self._continuous_sync_timer.timeout.connect(self._background_auto_sync)
+        self._continuous_sync_timer.start()
 
     def schedule_auto_sync(self, delay_ms=2500, immediate=False, developer_authorized=False):
         if is_developer_test_user(getattr(self, "current_user", None)) and not developer_authorized:
