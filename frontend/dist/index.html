@@ -1,17 +1,263 @@
-<!doctype html>
-<html lang="en" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Raw Strength Calisthenics | Enterprise Operations OS</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-CdYYoK6T.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BPPBqr5R.css">
-  </head>
-  <body class="bg-[#070B14] text-slate-100 antialiased selection:bg-cyan-500 selection:text-black">
-    <div id="root"></div>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Raw Strength Calisthenics | Employee Audit Manager</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #070B14; color: #e2e8f0; min-height: 100vh; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    .card { background: rgba(15,23,42,.9); border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 20px; }
+    .login-box { max-width: 420px; margin: 10vh auto; }
+    h1 { margin: 0 0 4px; font-size: 1.25rem; }
+    .muted { color: #94a3b8; font-size: .85rem; }
+    label { display: block; font-size: .75rem; color: #94a3b8; margin: 12px 0 4px; font-weight: 600; }
+    input, button, select { width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: #020617; color: #f8fafc; padding: 12px; font-size: .95rem; }
+    button { cursor: pointer; background: linear-gradient(90deg,#22d3ee,#6366f1); color: #0f172a; font-weight: 800; border: none; min-height: 44px; }
+    button.secondary { background: #0f172a; color: #67e8f9; border: 1px solid rgba(255,255,255,.12); }
+    .err { background: rgba(127,29,29,.35); border: 1px solid rgba(244,63,94,.35); color: #fda4af; padding: 10px 12px; border-radius: 10px; margin-top: 12px; font-size: .9rem; word-break: break-word; }
+    .top { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .brand { display: flex; gap: 10px; align-items: center; }
+    .logo { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg,#6366f1,#22d3ee); display:flex; align-items:center; justify-content:center; font-weight: 900; color:#0f172a; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .tab { width: auto; padding: 10px 14px; border-radius: 999px; background: #0f172a; color: #94a3b8; border: 1px solid rgba(255,255,255,.08); font-weight: 600; }
+    .tab.active { color: #67e8f9; border-color: rgba(34,211,238,.45); background: rgba(34,211,238,.12); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 12px; margin-bottom: 16px; }
+    .kpi { padding: 14px; border-radius: 14px; background: rgba(15,23,42,.85); border: 1px solid rgba(255,255,255,.08); }
+    .kpi b { display: block; font-size: 1.5rem; color: #67e8f9; margin-top: 4px; }
+    .row { padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(2,6,23,.55); margin-bottom: 8px; }
+    .row strong { display: block; word-break: break-word; }
+    .row span { color: #94a3b8; font-size: .8rem; word-break: break-word; }
+    .hidden { display: none !important; }
+    .status { font-size: .8rem; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div id="loginView" class="wrap">
+    <div class="card login-box">
+      <div class="brand" style="margin-bottom:16px">
+        <div class="logo">RSC</div>
+        <div>
+          <h1>Raw Strength Calisthenics</h1>
+          <div class="muted">Employee Audit Manager · Sign in</div>
+        </div>
+      </div>
+      <p class="muted">Use the same username and password as the desktop app.</p>
+      <form id="loginForm">
+        <label>Username</label>
+        <input id="username" autocomplete="username" required />
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+        <div style="height:14px"></div>
+        <button type="submit" id="loginBtn">Sign in</button>
+        <div id="loginErr" class="err hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <div id="appView" class="wrap hidden">
+    <div class="top">
+      <div class="brand">
+        <div class="logo">RSC</div>
+        <div>
+          <h1>Raw Strength Calisthenics</h1>
+          <div class="muted" id="userLine">Signed in</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;width:auto">
+        <button class="secondary" id="refreshBtn" style="width:auto;padding:10px 14px">Refresh</button>
+        <button class="secondary" id="logoutBtn" style="width:auto;padding:10px 14px">Sign out</button>
+      </div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="tasks">Tasks</button>
+      <button class="tab" data-tab="attendance">Attendance</button>
+      <button class="tab" data-tab="employees">Employees</button>
+      <button class="tab" data-tab="business">Products</button>
+    </div>
+    <div id="content"></div>
+    <p class="status" id="statusLine"></p>
+  </div>
+
+  <script>
+    const API = '/api';
+    let token = localStorage.getItem('rsc_auth_token') || '';
+    let user = null;
+    let cache = { dashboard: null, employees: [], tasks: [], attendance: { roster: [] }, products: [], services: [] };
+    let tab = 'dashboard';
+
+    async function api(path, options = {}) {
+      const headers = Object.assign({}, options.headers || {});
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+      const res = await fetch(API + path, Object.assign({}, options, { headers }));
+      if (res.status === 401) {
+        token = '';
+        localStorage.removeItem('rsc_auth_token');
+        showLogin();
+        throw new Error('Login required');
+      }
+      return res;
+    }
+
+    function showLogin() {
+      document.getElementById('loginView').classList.remove('hidden');
+      document.getElementById('appView').classList.add('hidden');
+    }
+    function showApp() {
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('appView').classList.remove('hidden');
+      document.getElementById('userLine').textContent =
+        (user && (user.display_name || user.username) || 'User') + ' · ' + ((user && user.role) || '');
+    }
+
+    function setErr(msg) {
+      const el = document.getElementById('loginErr');
+      if (!msg) { el.classList.add('hidden'); el.textContent = ''; return; }
+      el.textContent = msg; el.classList.remove('hidden');
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      setErr('');
+      document.getElementById('loginBtn').disabled = true;
+      try {
+        const body = {
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value
+        };
+        const res = await fetch(API + '/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Invalid username or password');
+        token = data.token;
+        user = data.user;
+        localStorage.setItem('rsc_auth_token', token);
+        showApp();
+        await loadAll();
+      } catch (err) {
+        setErr(err.message || 'Login failed');
+      } finally {
+        document.getElementById('loginBtn').disabled = false;
+      }
+    }
+
+    async function boot() {
+      if (!token) { showLogin(); return; }
+      try {
+        const res = await api('/auth/me');
+        if (!res.ok) throw new Error('session');
+        const data = await res.json();
+        user = data.user;
+        showApp();
+        await loadAll();
+      } catch {
+        token = '';
+        localStorage.removeItem('rsc_auth_token');
+        showLogin();
+      }
+    }
+
+    async function loadAll() {
+      document.getElementById('statusLine').textContent = 'Loading…';
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const [d, e, t, a, p, s] = await Promise.all([
+          api('/dashboard').then(r => r.ok ? r.json() : null),
+          api('/employees').then(r => r.ok ? r.json() : []),
+          api('/tasks').then(r => r.ok ? r.json() : []),
+          api('/attendance?work_date=' + today).then(r => r.ok ? r.json() : { roster: [] }),
+          api('/business/products').then(r => r.ok ? r.json() : []),
+          api('/business/services').then(r => r.ok ? r.json() : []),
+        ]);
+        cache.dashboard = d;
+        cache.employees = Array.isArray(e) ? e : [];
+        cache.tasks = Array.isArray(t) ? t : [];
+        cache.attendance = a || { roster: [] };
+        cache.products = Array.isArray(p) ? p : [];
+        cache.services = Array.isArray(s) ? s : [];
+        document.getElementById('statusLine').textContent =
+          'Employees: ' + cache.employees.length + ' · Tasks: ' + cache.tasks.length + ' · Loaded from API/DB';
+        render();
+      } catch (err) {
+        document.getElementById('statusLine').textContent = 'Load error: ' + (err.message || err);
+      }
+    }
+
+    function render() {
+      const k = (cache.dashboard && cache.dashboard.kpis) || {};
+      const c = document.getElementById('content');
+      if (tab === 'dashboard') {
+        c.innerHTML = '<div class="grid">' +
+          kpi('Employees', k.total_employees ?? cache.employees.length) +
+          kpi('Present today', k.present_today ?? 0) +
+          kpi('Open tasks', k.open_tasks ?? 0) +
+          kpi('Completed', k.completed_tasks ?? 0) +
+          '</div>' + listBlock('Recent tasks', (cache.dashboard && cache.dashboard.today_tasks) || cache.tasks.slice(0, 8), t =>
+            escapeHtml(t.title || '') + ' · ' + escapeHtml(t.status || '') + ' · ' + escapeHtml(t.employee_name || '')
+          );
+      } else if (tab === 'tasks') {
+        c.innerHTML = listBlock('Tasks (' + cache.tasks.length + ')', cache.tasks, t =>
+          '<strong>' + escapeHtml(t.title || '') + '</strong><span>' +
+          escapeHtml([t.employee_name, t.status, t.task_date, t.priority].filter(Boolean).join(' · ')) + '</span>'
+        );
+      } else if (tab === 'attendance') {
+        const roster = cache.attendance.roster || [];
+        c.innerHTML = '<p class="muted">Date: ' + escapeHtml(cache.attendance.date || '—') + '</p>' +
+          listBlock('Attendance', roster, r =>
+            '<strong>' + escapeHtml(r.name || '') + '</strong><span>' +
+            escapeHtml([r.department, r.employee_code, r.status || r.attendance_status || 'Unmarked'].filter(Boolean).join(' · ')) + '</span>'
+          );
+      } else if (tab === 'employees') {
+        c.innerHTML = listBlock('Employees (' + cache.employees.length + ')', cache.employees, e =>
+          '<strong>' + escapeHtml(e.name || '') + '</strong><span>' +
+          escapeHtml([e.employee_code, e.department, e.designation, e.phone, e.email].filter(Boolean).join(' · ')) + '</span>'
+        );
+      } else if (tab === 'business') {
+        c.innerHTML =
+          listBlock('Products (' + cache.products.length + ')', cache.products, p =>
+            '<strong>' + escapeHtml(p.name || '') + '</strong><span>' +
+            escapeHtml([p.sku, p.category].filter(Boolean).join(' · ')) + '</span>'
+          ) +
+          listBlock('Services (' + cache.services.length + ')', cache.services, s =>
+            '<strong>' + escapeHtml(s.name || '') + '</strong><span>' +
+            escapeHtml([s.category, s.training_mode, s.standard_price != null ? ('₹' + s.standard_price) : ''].filter(Boolean).join(' · ')) + '</span>'
+          );
+      }
+    }
+
+    function kpi(label, val) {
+      return '<div class="kpi"><span class="muted">' + escapeHtml(String(label)) + '</span><b>' + escapeHtml(String(val ?? 0)) + '</b></div>';
+    }
+    function listBlock(title, rows, mapFn) {
+      if (!rows || !rows.length) return '<div class="card"><strong>' + escapeHtml(title) + '</strong><p class="muted">No rows.</p></div>';
+      return '<div class="card" style="margin-bottom:12px"><strong>' + escapeHtml(title) + '</strong><div style="height:10px"></div>' +
+        rows.map(r => '<div class="row">' + mapFn(r) + '</div>').join('') + '</div>';
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      token = ''; localStorage.removeItem('rsc_auth_token'); showLogin();
+    });
+    document.getElementById('refreshBtn').addEventListener('click', loadAll);
+    document.getElementById('tabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('.tab');
+      if (!btn) return;
+      tab = btn.getAttribute('data-tab');
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+      render();
+    });
+
+    boot();
+  </script>
+</body>
 </html>
