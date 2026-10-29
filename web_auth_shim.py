@@ -23,9 +23,8 @@ PUBLIC_PATHS = {
     "/redoc",
 }
 
-# Until the React login screen is deployed, GET APIs stay open so the UI does not crash.
-# Set WEB_REQUIRE_LOGIN=1 on Render to enforce Bearer tokens on all non-public API routes.
-REQUIRE_LOGIN = os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes")
+# Login UI is deployed. Default ON. Set WEB_REQUIRE_LOGIN=0 to open APIs without a token.
+REQUIRE_LOGIN = os.environ.get("WEB_REQUIRE_LOGIN", "1").strip().lower() in ("1", "true", "yes")
 
 
 def _pull_shared_database_if_configured():
@@ -83,18 +82,12 @@ async def require_api_login(request: Request, call_next):
     if path in PUBLIC_PATHS or path.startswith("/api/auth/login") or path.startswith("/api/auth/setup"):
         return await call_next(request)
 
-    # Default: allow GET so the current React UI (no login form yet) does not crash.
-    if not REQUIRE_LOGIN and request.method in ("GET", "HEAD", "OPTIONS"):
-        return await call_next(request)
-
-    if not REQUIRE_LOGIN and request.method in ("GET", "HEAD", "OPTIONS"):
+    if not REQUIRE_LOGIN:
         return await call_next(request)
 
     auth = request.headers.get("authorization") or ""
     token = auth.replace("Bearer ", "").strip()
-    if REQUIRE_LOGIN and (not token or token not in api.ACTIVE_SESSIONS):
-        return JSONResponse(status_code=401, content={"detail": "Login required"})
-    if token and token not in api.ACTIVE_SESSIONS and REQUIRE_LOGIN:
+    if not token or token not in api.ACTIVE_SESSIONS:
         return JSONResponse(status_code=401, content={"detail": "Login required"})
     return await call_next(request)
 
@@ -103,4 +96,4 @@ _pull_shared_database_if_configured()
 if REQUIRE_LOGIN:
     print("[Web Auth] Strict login enabled (WEB_REQUIRE_LOGIN=1).")
 else:
-    print("[Web Auth] Read APIs open (set WEB_REQUIRE_LOGIN=1 after login UI is deployed).")
+    print("[Web Auth] APIs open (WEB_REQUIRE_LOGIN=0).")
