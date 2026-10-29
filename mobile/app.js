@@ -1067,8 +1067,13 @@ async function pushToCloud(silent = false) {
   } catch (err) {
     if (feedback) feedback.textContent = `❌ Sync failed: ${err.message}. Data is not confirmed synced.`;
     const badge = document.querySelector("#syncStatusCard .sync-status-header strong");
-    if (badge) badge.textContent = "Cloud sync failed";
+    if (badge) badge.textContent = "Cloud sync failed — retry scheduled";
     if (!silent) showToast(`Sync failed: ${err.message}`, 5000);
+    // Retry failed background uploads automatically; keep local data untouched.
+    if (navigator.onLine) {
+      if (mobileDebouncePush) clearTimeout(mobileDebouncePush);
+      mobileDebouncePush = setTimeout(() => pushToCloud(true), 10000);
+    }
   }
 }
 
