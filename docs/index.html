@@ -1,24 +1,74 @@
-<!doctype html>
-<html lang="en" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="/audit-report/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Raw Strength Calisthenics | Enterprise Operations OS (GitHub Pages Test)</title>
-    <meta name="description" content="Static UI shell for testing — backend API is not available on GitHub Pages." />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/audit-report/assets/index-KWg1RZF9.js"></script>
-    <link rel="stylesheet" crossorigin href="/audit-report/assets/index-DwFlyJXH.css">
-  </head>
-  <body class="bg-[#070B14] text-slate-100 antialiased selection:bg-cyan-500 selection:text-black">
-    <div id="root"></div>
-    <noscript>
-      <p style="padding:2rem;font-family:sans-serif;color:#94a3b8">
-        This is a static test deploy of the Raw Strength Employee Audit Manager React UI on GitHub Pages.
-        Full features require the local FastAPI backend.
-      </p>
-    </noscript>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Raw Strength Calisthenics — Employee Audit Manager (GitHub Pages Test)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    background: linear-gradient(160deg, #070B14 0%, #0F172A 45%, #111827 100%);
+    color: #E2E8F0;
+    min-height: 100vh;
+    padding: 2rem 1.25rem;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #22D3EE; background: rgba(34,211,238,0.12);
+    border: 1px solid rgba(34,211,238,0.35); border-radius: 999px; padding: 0.35rem 0.85rem;
+    margin-bottom: 1rem;
+  }
+  h1 { font-size: 1.75rem; font-weight: 800; color: #F8FAFC; line-height: 1.25; margin-bottom: 0.5rem; }
+  .sub { color: #94A3B8; margin-bottom: 1.75rem; line-height: 1.55; }
+  .card {
+    background: rgba(15,23,42,0.85); border: 1px solid #334155; border-radius: 16px;
+    padding: 1.25rem 1.4rem; margin-bottom: 1rem;
+  }
+  .card h2 { font-size: 0.95rem; color: #A5B4FC; margin-bottom: 0.6rem; }
+  .card p, .card li { font-size: 0.9rem; color: #CBD5E1; line-height: 1.55; }
+  .card ul { padding-left: 1.2rem; }
+  .card li { margin: 0.35rem 0; }
+  a { color: #38BDF8; }
+  .ver { font-family: ui-monospace, monospace; color: #67E8F9; }
+  .warn {
+    border-color: #B45309; background: rgba(120,53,15,0.35);
+  }
+  .warn h2 { color: #FCD34D; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="wrap">
+    <div class="badge">GitHub Pages · Test only</div>
+    <h1>Raw Strength Calisthenics<br/>Employee Audit Manager</h1>
+    <p class="sub">Static test shell hosted on GitHub Pages. Version <span class="ver">v1.3.64</span>.</p>
+
+    <div class="card warn">
+      <h2>Backend is not live on GitHub Pages</h2>
+      <p>This page is for UI / hosting verification only. Login, tasks, attendance, reports, and all data require the FastAPI + SQLite backend (run locally with <code>python run_web.py</code>) or a host that runs Python.</p>
+    </div>
+
+    <div class="card">
+      <h2>What you can test here</h2>
+      <ul>
+        <li>GitHub Pages is serving from the <code>docs/</code> folder on <code>main</code></li>
+        <li>HTTPS URL and path base <code>/audit-report/</code> resolve correctly</li>
+        <li>Static assets and branding shell load</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Full app</h2>
+      <ul>
+        <li>Desktop installer: <a href="https://github.com/yalangisexter-ux/audit-report/releases/latest">GitHub Releases</a></li>
+        <li>Source: <a href="https://github.com/yalangisexter-ux/audit-report">yalangisexter-ux/audit-report</a></li>
+        <li>Local web UI: <code>python run_web.py</code> → http://127.0.0.1:8000</li>
+      </ul>
+    </div>
+  </div>
+</body>
 </html>
