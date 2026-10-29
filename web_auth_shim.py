@@ -279,10 +279,13 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
         "pull": _LAST_PULL,
         "is_demo_snapshot": is_demo,
         "hint": (
-            "Cloud still has DEMO data (not customer DB). On customer Windows EXE: login as Admin, "
-            "Settings → Sync Now, wait for Synced, then redeploy web."
+            "The latest cloud snapshot contains demo-only employee data. Verify the desktop app has uploaded the real customer database."
             if is_demo
-            else "Case-sensitive: Admin = customer (Shiva@01); admin = developer (kiran123 or Devlopershouse@1996#)."
+            else (
+                "Using synchronized desktop accounts; username capitalization must match the desktop account."
+                if (_LAST_PULL or {}).get("ok")
+                else "Cloud database pull failed. Check DB_SYNC_WORKER_URL, DB_SYNC_INSTALLATION_ID, and DB_SYNC_ENCRYPTION_SECRET before retrying login."
+            )
         ),
         "how_to_sync_real_db": [
             "1. On the PC that has real customer data, open the desktop EXE",
