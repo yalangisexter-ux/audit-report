@@ -291,6 +291,85 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         )
 
     row = conn.execute(
-        "SELECT * FROM auth_users WHERE username = ? AND active co = 1",
+        "SELECT * FROM auth_users WHERE username = ? AND active = 1",
         (username,),
     ).fetchone()
+    if not row:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password. Usernames are case-sensitive: Admin (customer) vs admin (developer).",
+        )
+
+    import app as desktop_app
+
+    salt = row["password_salt"]
+    stored = row["password_hash"]
+    _, digest = desktop_app.hash_pin(password, salt)
+    ok = secrets.compare_digest(digest, stored)
+
+    # Developer may use either known password
+    if not ok and username == "admin" and password in ("kiran123", "Devlopershouse@1996#"):
+        new_salt, new_digest = desktop_app.hash_pin(password)
+        conn.execute(
+            "UPDATE auth_users SET password_salt=?, password_hash=?, updated_at=? WHERE id=?",
+            (new_salt, new_digest, desktop_app.now_text(), row["id"]),
+        )
+        conn.commit()
+        ok = True
+        print("[Auth] developer alternate password accepted; hash updated")
+
+    # Customer Admin fixed password fallback if hash drifted
+    if not ok and username == "Admin" and password == "Shiva@01":
+        new_salt, new_digest = desktop_app.hash_pin(password)
+        conn.execute(
+            "UPDATE auth_users SET password_salt=?, password_hash=?, updated_at=? WHERE id=?",
+            (new_salt, new_digest, desktop_app.now_text(), row["id"]),
+        )
+        conn.commit()
+        ok = True
+        print("[Auth] customer Admin password accepted; hash updated")
+
+    if not ok:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    token = secrets.token_hex(24)
+    user_info = {
+        "id": row["id"],
+        "username": row["username"],
+        "display_name": row["display_name"] or row["username"],
+        "role": row["role"],
+    }
+    api.ACTIVE_SESSIONS[token] = user_info
+    print(f"[Auth] Login ok: {user_info['username']!r} ({user_info['role']})")
+    return {"token": token, "user": user_info}
+
+
+@api.app.middleware("http")
+async def require_api_login(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    if path in PUBLIC_PATHS or path.startswith("/api/auth/login") or path.startswith("/api/auth/setup"):
+        return await call_next(request)
+    if not REQUIRE_LOGIN:
+        return await call_next(request)
+    auth = request.headers.get("authorization") or ""
+    token = auth.replace("Bearer ", "").strip()
+    if not token or token not in api.ACTIVE_SESSIONS:
+        return JSONResponse(status_code=401, content={"detail": "Login required"})
+    return await call_next(request)
+
+
+print("[Web Boot] Pulling full cloud database snapshot…")
+pulled = _pull_full_database()
+try:
+    import app as desktop_app
+    db_path = Path(desktop_app.DB_PATH)
+    if PURGE_SEED or PURGE_DEMO:
+        _purge_junk_rows(db_path)
+    _ensure_bootstrap_admin(db_path)
+    stats = _db_stats(db_path)
+    print(f"[Web Boot] Local DB after pull/bootstrap: {stats}")
+except Exception as exc:
+    print(f"[Web Boot] post-pull failed: {exc}")
+print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={REQUIRE_LOGIN}")
