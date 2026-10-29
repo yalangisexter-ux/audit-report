@@ -532,11 +532,21 @@
     const values = {}; for (const field of $("dialogFields").querySelectorAll("input,select")) values[field.id] = field.value;
     try { await state.pendingAction(values); hideDialog(); } catch (error) { setError("dialogError", error.message); }
   });
+  $("togglePassword").addEventListener("click", () => {
+    const field = $("password");
+    const button = $("togglePassword");
+    const reveal = field.type === "password";
+    field.type = reveal ? "text" : "password";
+    button.textContent = reveal ? "Hide" : "Show";
+    button.setAttribute("aria-pressed", String(reveal));
+    button.setAttribute("aria-label", reveal ? "Hide password" : "Show password");
+    field.focus();
+  });
   $("loginForm").addEventListener("submit", async event => {
     event.preventDefault(); setError("loginError", "");
     const button = $("loginForm").querySelector("button[type=submit]"); button.disabled = true; button.textContent = "Signing in…";
     try {
-      const data = await api("/api/auth/login", {method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})});
+      const data = await api("/api/auth/login", {method:"POST",body:JSON.stringify({username:$("username").value.trim(),password:$("password").value})});
       state.token = data.token; state.user = data.user;
       $("loginView").classList.add("hidden"); $("appView").classList.remove("hidden");
       $("signedInAs").textContent = (state.user.displayName || state.user.username) + " · " + state.user.role;
