@@ -26,9 +26,6 @@
         </div>
         <button id="headerLogoutBtn" class="btn-logout" title="Sign Out">⎋</button>
       </div>
-      <button id="quickSyncBtn" class="icon-btn" title="Sync with Cloud" aria-label="Sync">
-        <span class="sync-icon">🔄</span>
-      </button>
       <button id="themeToggleBtn" class="icon-btn" title="Toggle Theme" aria-label="Toggle Theme">
         <span class="theme-icon">🌙</span>
       </button>
@@ -255,7 +252,6 @@
             <strong>Cloud sync status: Not verified</strong>
           </div>
           <p class="sync-status-sub">Sync status is shown only after a real cloud request succeeds. If a request fails, changes are not confirmed as synchronized.</p>
-          <button id="btnSyncCheck" class="btn btn-sm btn-outline" style="margin-top: 8px;">🔄 Check Updates Now</button>
         </div>
         <p id="syncFeedbackMsg" class="feedback-msg"></p>
       </div>
@@ -515,14 +511,14 @@
         </div>
         <div class="form-group">
           <label>Password / PIN</label>
-          <input type="password" id="appAuthPassword" class="input-cyber" placeholder="Enter password or PIN" required autocomplete="current-password">
+          <div style="display:flex;gap:8px;align-items:stretch">
+            <input type="password" id="appAuthPassword" class="input-cyber" placeholder="Enter password or PIN" required autocomplete="current-password" style="flex:1;min-width:0">
+            <button type="button" id="toggleAppAuthPassword" class="btn btn-outline btn-sm" aria-label="Show password" aria-pressed="false" style="min-width:64px">Show</button>
+          </div>
         </div>
         <div id="appAuthError" class="auth-error-msg hidden"></div>
         <button type="submit" id="btnAppSignIn" class="btn btn-primary btn-block btn-cyber-glow">INITIALIZE SESSION ➔</button>
       </form>
-      <div class="auth-footer-actions">
-        <button type="button" id="btnSyncAccountsNow" class="btn btn-outline btn-sm">🔄 Pull Latest Accounts from Cloud</button>
-      </div>
     </div>
   </div>
 
