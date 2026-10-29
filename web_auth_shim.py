@@ -144,11 +144,8 @@ def _pull_full_database() -> bool:
                 prefer_latest=prefer_latest,
                 candidate_secret=secret,
             )
-            if not payload:
-                last_err = "empty payload"
-                continue
-            if not payload.startswith(b"SQLite format 3"):
-                last_err = "payload is not a SQLite database"
+            if not payload or not payload.startswith(b"SQLite format 3"):
+                last_err = "empty or non-sqlite payload"
                 continue
             tmp = db_path.with_suffix(".pull.tmp")
             tmp.write_bytes(payload)
@@ -184,13 +181,9 @@ def _pull_full_database() -> bool:
 
 
 def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role: str, password: str) -> None:
-    """Case-sensitive username match (Admin != admin)."""
     salt, digest = desktop_app.hash_pin(password)
     now = desktop_app.now_text()
-    row = conn.execute(
-        "SELECT id FROM auth_users WHERE username = ?",
-        (username,),
-    ).fetchone()
+    row = conn.execute("SELECT id FROM auth_users WHERE username = ?", (username,)).fetchone()
     if row:
         conn.execute(
             """UPDATE auth_users
@@ -198,7 +191,7 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
                WHERE id=?""",
             (display_name, role, salt, digest, now, row[0]),
         )
-        print(f"[Auth] Bootstrap: updated exact user {username!r}")
+        print(f"[Auth] Bootstrap: updated {username!r}")
     else:
         conn.execute(
             """INSERT INTO auth_users(
@@ -207,14 +200,14 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
                ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
             (username, display_name, role, salt, digest, "", "", "", now, now),
         )
-        print(f"[Auth] Bootstrap: created exact user {username!r}")
+        print(f"[Auth] Bootstrap: created {username!r}")
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Install the two real case-sensitive desktop accounts on web.
+    """Case-sensitive real accounts:
 
-    Customer:  username Admin  password Shiva@01
-    Developer: username admin  password kiran123 (also accepts Devlopershouse@1996# at login)
+    Admin  = customer (Taruna)  password Shiva@01
+    admin  = developer/tester   password kiran123 (login also accepts Devlopershouse@1996#)
     """
     try:
         import app as desktop_app
@@ -227,30 +220,23 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
                 pass
         conn = db.conn
 
-        customer_pwd = (os.environ.get("WEB_BOOTSTRAP_TARUNA_PASSWORD") or "").strip() or "Shiva@01"
+        customer_pwd = (
+            os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD")
+            or os.environ.get("WEB_BOOTSTRAP_TARUNA_PASSWORD")
+            or ""
+        ).strip() or "Shiva@01"
         dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
 
-        _upsert_user_exact(
-            conn, desktop_app,
-            username="Admin",
-            display_name="Admin / Taruna (Customer Master)",
-            role="Admin",
-            password=customer_pwd,
-        )
-        _upsert_user_exact(
-            conn, desktop_app,
-            username="admin",
-            display_name="admin (Developer - Test Mode)",
-            role="Developer",
-            password=dev_pwd,
-        )
+        _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+        _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
+        _upsert_user_exact(conn, desktop_app, "taruna", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
 
         conn.commit()
         try:
             db.conn.close()
         except Exception:
             pass
-        print("[Auth] Bootstrap complete: Admin (customer) + admin (developer)")
+        print("[Auth] Bootstrap complete: Admin + admin + taruna")
     except Exception as exc:
         print(f"[Auth] Bootstrap failed: {exc}")
 
@@ -272,7 +258,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
         "usernames": usernames,
         "setup_required": count == 0,
         "pull": _LAST_PULL,
-        "hint": "Usernames are case-sensitive: Admin (customer) vs admin (developer).",
+        "hint": "Case-sensitive: Admin = customer (Shiva@01); admin = developer (kiran123 or Devlopershouse@1996#).",
     }
 
 
@@ -280,7 +266,6 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
 def web_db_info():
     try:
         import app as desktop_app
-
         stats = _db_stats(Path(desktop_app.DB_PATH))
     except Exception as exc:
         stats = {"error": str(exc)}
@@ -289,6 +274,7 @@ def web_db_info():
 
 @api.app.post("/api/auth/login")
 def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
+    # Case-sensitive usernames: Admin (customer) != admin (developer)
     username = (req.username or "").strip()
     password = req.password or ""
     if not username or not password:
@@ -298,83 +284,13 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         total_users = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
     except Exception:
         total_users = 0
-
     if total_users == 0:
         raise HTTPException(
             status_code=401,
-            detail="No login accounts on web yet. Redeploy so bootstrap can install Admin/admin.",
+            detail="No login accounts on web yet. Redeploy so bootstrap installs Admin/admin.",
         )
 
     row = conn.execute(
-        "SELECT * FROM auth_users WHERE username = ? AND active = 1",
+        "SELECT * FROM auth_users WHERE username = ? AND active co = 1",
         (username,),
     ).fetchone()
-    if not row:
-        print(f"[Auth] unknown exact username={username!r}")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid username or password. Usernames are case-sensitive: Admin (customer) or admin (developer).",
-        )
-
-    import app as desktop_app
-
-    salt = row["password_salt"]
-    stored = row["password_hash"]
-    _, digest = desktop_app.hash_pin(password, salt)
-    ok = secrets.compare_digest(digest, stored)
-
-    if not ok and username == "admin":
-        if password in ("kiran123", "Devlopershouse@1996#"):
-            ok = True
-            print("[Auth] developer password accepted for admin")
-
-    if not ok and username == "Admin" and password == "Shiva@01":
-        ok = True
-        print("[Auth] customer password accepted for Admin")
-
-    if not ok:
-        print(f"[Auth] bad password for username={username!r}")
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    token = secrets.token_hex(24)
-    user_info = {
-        "id": row["id"],
-        "username": row["username"],
-        "display_name": row["display_name"] or row["username"],
-        "role": row["role"],
-    }
-    api.ACTIVE_SESSIONS[token] = user_info
-    print(f"[Auth] Login ok: {user_info['username']} ({user_info['role']})")
-    return {"token": token, "user": user_info}
-
-
-@api.app.middleware("http")
-async def require_api_login(request: Request, call_next):
-    path = request.url.path
-    if not path.startswith("/api/"):
-        return await call_next(request)
-    if path in PUBLIC_PATHS or path.startswith("/api/auth/login") or path.startswith("/api/auth/setup"):
-        return await call_next(request)
-    if not REQUIRE_LOGIN:
-        return await call_next(request)
-    auth = request.headers.get("authorization") or ""
-    token = auth.replace("Bearer ", "").strip()
-    if not token or token not in api.ACTIVE_SESSIONS:
-        return JSONResponse(status_code=401, content={"detail": "Login required"})
-    return await call_next(request)
-
-
-print("[Web Boot] Pulling full cloud database snapshot…")
-pulled = _pull_full_database()
-try:
-    import app as desktop_app
-
-    db_path = Path(desktop_app.DB_PATH)
-    if PURGE_SEED or PURGE_DEMO:
-        _purge_junk_rows(db_path)
-    _ensure_bootstrap_admin(db_path)
-    stats = _db_stats(db_path)
-    print(f"[Web Boot] Local DB after pull/bootstrap: {stats}")
-except Exception as exc:
-    print(f"[Web Boot] post-pull failed: {exc}")
-print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={REQUIRE_LOGIN}")
