@@ -1,4 +1,4 @@
-"""Web-only boot shim: require login + pull shared cloud DB (does not change the Windows EXE)."""
+"""Web-only boot shim: shared cloud DB pull + optional login gate (does not change the Windows EXE)."""
 from __future__ import annotations
 
 import os
@@ -22,6 +22,10 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
 }
+
+# Until the React login screen is deployed, GET APIs stay open so the UI does not crash.
+# Set WEB_REQUIRE_LOGIN=1 on Render to enforce Bearer tokens on all non-public API routes.
+REQUIRE_LOGIN = os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes")
 
 
 def _pull_shared_database_if_configured():
@@ -79,12 +83,24 @@ async def require_api_login(request: Request, call_next):
     if path in PUBLIC_PATHS or path.startswith("/api/auth/login") or path.startswith("/api/auth/setup"):
         return await call_next(request)
 
+    # Default: allow GET so the current React UI (no login form yet) does not crash.
+    if not REQUIRE_LOGIN and request.method in ("GET", "HEAD", "OPTIONS"):
+        return await call_next(request)
+
+    if not REQUIRE_LOGIN and request.method in ("GET", "HEAD", "OPTIONS"):
+        return await call_next(request)
+
     auth = request.headers.get("authorization") or ""
     token = auth.replace("Bearer ", "").strip()
-    if not token or token not in api.ACTIVE_SESSIONS:
+    if REQUIRE_LOGIN and (not token or token not in api.ACTIVE_SESSIONS):
+        return JSONResponse(status_code=401, content={"detail": "Login required"})
+    if token and token not in api.ACTIVE_SESSIONS and REQUIRE_LOGIN:
         return JSONResponse(status_code=401, content={"detail": "Login required"})
     return await call_next(request)
 
 
 _pull_shared_database_if_configured()
-print("[Web Auth] API login middleware enabled; auto-admin bypass blocked.")
+if REQUIRE_LOGIN:
+    print("[Web Auth] Strict login enabled (WEB_REQUIRE_LOGIN=1).")
+else:
+    print("[Web Auth] Read APIs open (set WEB_REQUIRE_LOGIN=1 after login UI is deployed).")
