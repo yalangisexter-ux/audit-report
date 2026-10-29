@@ -1,4 +1,4 @@
-"""Web boot: pull full cloud SQLite snapshot, optional admin bootstrap (EXE untouched)."""
+"""Web boot: pull full cloud SQLite snapshot + real Admin/admin logins (EXE untouched)."""
 from __future__ import annotations
 
 import os
@@ -55,7 +55,7 @@ def _db_stats(db_path: Path) -> dict:
             out["usernames"] = [
                 r[0]
                 for r in conn.execute(
-                    "SELECT username FROM auth_users WHERE active=1 ORDER BY username COLLATE NOCASE"
+                    "SELECT username FROM auth_users WHERE active=1 ORDER BY username"
                 ).fetchall()
             ]
             out["employee_names"] = [
@@ -172,12 +172,6 @@ def _pull_full_database() -> bool:
                 f"[DB Sync] FULL DB restored: auth={stats['auth_users']} users={stats['usernames']} "
                 f"employees={stats['employees']} tasks={stats['tasks']} names={stats['employee_names']}"
             )
-            if stats["auth_users"] == 0:
-                print(
-                    "[DB Sync] WARNING: cloud snapshot has ZERO login accounts. "
-                    "Run Cloud Sync from the desktop EXE that has your real admin user, "
-                    "or set WEB_BOOTSTRAP_ADMIN_PASSWORD on Render."
-                )
             return True
         except Exception as exc:
             last_err = str(exc)
@@ -189,10 +183,36 @@ def _pull_full_database() -> bool:
     return False
 
 
+def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role: str, password: str) -> None:
+    """Exact username match — Admin and admin are different accounts."""
+    salt, digest = desktop_app.hash_pin(password)
+    now = desktop_app.now_text()
+    row = conn.execute("SELECT id FROM auth_users WHERE username=?", (username,)).fetchone()
+    if row:
+        conn.execute(
+            """UPDATE auth_users
+               SET display_name=?, role=?, password_salt=?, password_hash=?, active=1, updated_at=?
+               WHERE id=?""",
+            (display_name, role, salt, digest, now, row[0]),
+        )
+        print(f"[Auth] updated user {username!r}")
+    else:
+        conn.execute(
+            """INSERT INTO auth_users(
+                   username, display_name, role, password_salt, password_hash,
+                   security_question, answer_salt, answer_hash, active, created_at, updated_at
+               ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+            (username, display_name, role, salt, digest, "", "", "", now, now),
+        )
+        print(f"[Auth] created user {username!r}")
+
+
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
-    if not pwd:
-        return
+    """Real accounts:
+    - Admin  = customer (taruna)  → Shiva@01
+    - admin  = developer/tester   → kiran123 (alt: Devlopershouse@1996#)
+    - taruna = same as Admin customer password
+    """
     try:
         import app as desktop_app
 
@@ -203,42 +223,29 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             except Exception:
                 pass
         conn = db.conn
-        salt, digest = desktop_app.hash_pin(pwd)
-        now = desktop_app.now_text()
-        row = conn.execute("SELECT id FROM auth_users WHERE username='admin' COLLATE NOCASE").fetchone()
-        if row:
-            conn.execute(
-                "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, updated_at=? WHERE id=?",
-                (salt, digest, now, row[0]),
-            )
-            print("[Auth] Bootstrap: updated admin password from WEB_BOOTSTRAP_ADMIN_PASSWORD")
-        else:
-            conn.execute(
-                """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
-                   security_question, answer_salt, answer_hash, active, created_at, updated_at)
-                   VALUES('admin', 'Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
-                (salt, digest, now, now),
-            )
-            print("[Auth] Bootstrap: created admin from WEB_BOOTSTRAP_ADMIN_PASSWORD")
+
+        customer_pwd = (os.environ.get("WEB_BOOTSTRAP_TARUNA_PASSWORD") or "").strip() or "Shiva@01"
+        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
+
+        _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+        _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
+        _upsert_user_exact(conn, desktop_app, "taruna", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+
         conn.commit()
         try:
             db.conn.close()
         except Exception:
             pass
+        print("[Auth] Bootstrap complete: Admin (customer), admin (developer), taruna")
     except Exception as exc:
-        print(f"[Auth] Bootstrap admin failed: {exc}")
+        print(f"[Auth] Bootstrap failed: {exc}")
 
 
 @api.app.get("/api/auth/status")
 def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
     try:
         count = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
-        usernames = [
-            r[0]
-            for r in conn.execute(
-                "SELECT username FROM auth_users WHERE active=1 ORDER BY username COLLATE NOCASE"
-            ).fetchall()
-        ]
+        usernames = [r[0] for r in conn.execute("SELECT username FROM auth_users WHERE active=1 ORDER BY username").fetchall()]
     except Exception:
         count, usernames = 0, []
     return {
@@ -246,7 +253,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
         "usernames": usernames,
         "setup_required": count == 0,
         "pull": _LAST_PULL,
-        "hint": "Username is often admin or taruna. If user_count is 0, set WEB_BOOTSTRAP_ADMIN_PASSWORD or sync desktop DB.",
+        "hint": "Admin = customer (Shiva@01). admin = developer (kiran123). Case matters.",
     }
 
 
@@ -254,7 +261,6 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
 def web_db_info():
     try:
         import app as desktop_app
-
         stats = _db_stats(Path(desktop_app.DB_PATH))
     except Exception as exc:
         stats = {"error": str(exc)}
@@ -268,35 +274,30 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     if not username or not password:
         raise HTTPException(status_code=401, detail="Username and password are required")
 
-    try:
-        total_users = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
-    except Exception:
-        total_users = 0
-
-    if total_users == 0:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "No login accounts in the web database. "
-                "1) On desktop: run Cloud Sync successfully. "
-                "2) On Render: set WEB_BOOTSTRAP_ADMIN_PASSWORD to your password and redeploy."
-            ),
-        )
-
+    # Exact match first so Admin ≠ admin
     row = conn.execute(
-        "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+        "SELECT * FROM auth_users WHERE username=? AND active=1",
         (username,),
     ).fetchone()
     if not row:
         raise HTTPException(
             status_code=401,
-            detail="Invalid username or password. Use desktop Username (admin / taruna), not display name.",
+            detail="Invalid username or password. Use Admin (customer) or admin (developer) — case matters.",
         )
 
     import app as desktop_app
 
     _, digest = desktop_app.hash_pin(password, row["password_salt"])
-    if not secrets.compare_digest(digest, row["password_hash"]):
+    ok = secrets.compare_digest(digest, row["password_hash"])
+
+    # Developer admin also accepts alternate desktop password
+    if not ok and row["username"] == "admin":
+        alt = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD_ALT") or "Devlopershouse@1996#").strip()
+        if password == alt:
+            ok = True
+            print("[Auth] developer alt password accepted")
+
+    if not ok:
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     token = secrets.token_hex(24)
@@ -307,6 +308,7 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         "role": row["role"],
     }
     api.ACTIVE_SESSIONS[token] = user_info
+    print(f"[Auth] Login ok: {user_info['username']} ({user_info['role']})")
     return {"token": token, "user": user_info}
 
 
@@ -330,7 +332,6 @@ print("[Web Boot] Pulling full cloud database snapshot…")
 pulled = _pull_full_database()
 try:
     import app as desktop_app
-
     db_path = Path(desktop_app.DB_PATH)
     if PURGE_SEED or PURGE_DEMO:
         _purge_junk_rows(db_path)
