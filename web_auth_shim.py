@@ -143,7 +143,7 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     if total_users == 0:
         raise HTTPException(
             status_code=401,
-            detail="No login accounts on this web server yet. On the desktop app run Cloud Sync, then redeploy/restart the web service so it pulls the shared database.",
+            detail="No login accounts on this web server yet. Set WEB_BOOTSTRAP_ADMIN_PASSWORD on Render, or sync the desktop cloud DB and redeploy.",
         )
 
     row = conn.execute(
@@ -192,6 +192,46 @@ async def require_api_login(request: Request, call_next):
     return await call_next(request)
 
 
+def _ensure_bootstrap_admin(db_path: Path) -> None:
+    """Optional: set WEB_BOOTSTRAP_ADMIN_PASSWORD on Render to force-sync admin password (web only)."""
+    pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
+    if not pwd:
+        return
+    try:
+        import app as desktop_app
+        db = desktop_app.Database()
+        if hasattr(db, "close_github_sync"):
+            try:
+                db.close_github_sync(timeout=0)
+            except Exception:
+                pass
+        conn = db.conn
+        salt, digest = desktop_app.hash_pin(pwd)
+        now = desktop_app.now_text()
+        row = conn.execute("SELECT id FROM auth_users WHERE username='admin' COLLATE NOCASE").fetchone()
+        if row:
+            conn.execute(
+                "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, updated_at=? WHERE id=?",
+                (salt, digest, now, row[0]),
+            )
+            print("[Auth] Bootstrap: updated password for admin from WEB_BOOTSTRAP_ADMIN_PASSWORD")
+        else:
+            conn.execute(
+                """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
+                   security_question, answer_salt, answer_hash, active, created_at, updated_at)
+                   VALUES('admin', 'Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
+                (salt, digest, now, now),
+            )
+            print("[Auth] Bootstrap: created admin from WEB_BOOTSTRAP_ADMIN_PASSWORD")
+        conn.commit()
+        try:
+            db.conn.close()
+        except Exception:
+            pass
+    except Exception as exc:
+        print(f"[Auth] Bootstrap admin failed: {exc}")
+
+
 pulled = _pull_shared_database_if_configured()
 if PURGE_SEED:
     try:
@@ -199,4 +239,9 @@ if PURGE_SEED:
         _purge_historical_seed(Path(desktop_app.DB_PATH))
     except Exception as exc:
         print(f"[DB] Post-boot purge failed: {exc}")
+try:
+    import app as desktop_app
+    _ensure_bootstrap_admin(Path(desktop_app.DB_PATH))
+except Exception as exc:
+    print(f"[Auth] Bootstrap call failed: {exc}")
 print(f"[Web Boot] cloud_pull={'ok' if pulled else 'no'}; login_required={REQUIRE_LOGIN}; purge_seed={PURGE_SEED}")
