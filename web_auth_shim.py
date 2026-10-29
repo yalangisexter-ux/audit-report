@@ -169,9 +169,15 @@ def _pull_full_database() -> bool:
                 f"[DB Sync] FULL DB restored: auth={stats['auth_users']} users={stats['usernames']} "
                 f"employees={stats['employees']} tasks={stats['tasks']} names={stats['employee_names']}"
             )
+            demo = {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}
+            if set(stats["employee_names"] or []) and set(stats["employee_names"]).issubset(demo):
+                print(
+                    "[DB Sync] WARNING: snapshot is DEMO roster only. "
+                    "Customer must login as Admin on desktop and click Sync Now to upload real data."
+                )
             return True
         except Exception as exc:
-        last_err = str(exc)
+            last_err = str(exc)
             print(f"[DB Sync] Attempt failed: {exc}")
             continue
 
@@ -253,12 +259,29 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
         ]
     except Exception:
         count, usernames = 0, []
+    demo_names = {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}
+    pull_names = set((_LAST_PULL or {}).get("employee_names") or [])
+    is_demo = bool(pull_names) and pull_names.issubset(demo_names)
     return {
         "user_count": count,
         "usernames": usernames,
         "setup_required": count == 0,
         "pull": _LAST_PULL,
-        "hint": "Case-sensitive: Admin = customer (Shiva@01); admin = developer (kiran123 or Devlopershouse@1996#).",
+        "is_demo_snapshot": is_demo,
+        "hint": (
+            "Cloud still has DEMO data (not customer DB). On customer Windows EXE: login as Admin, "
+            "Settings → Sync Now, wait for Synced, then redeploy web."
+            if is_demo
+            else "Case-sensitive: Admin = customer (Shiva@01); admin = developer (kiran123 or Devlopershouse@1996#)."
+        ),
+        "how_to_sync_real_db": [
+            "1. On the PC that has real customer data, open the desktop EXE",
+            "2. Login as Admin (customer) with password Shiva@01 — not developer admin",
+            "3. Settings → Cloud Sync → copy Installation ID (optional for Render DB_SYNC_INSTALLATION_ID)",
+            "4. Click Sync Now and wait until status shows Synced",
+            "5. Redeploy audit-report-web on Render so it pulls the new snapshot",
+            "6. Check /api/system/db-info — names must be real employees, not Present Person",
+        ],
     }
 
 
@@ -314,7 +337,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         )
         conn.commit()
         ok = True
-        print("[Auth] developer alternate password accepted; hash updated")
 
     if not ok and username == "Admin" and password == "Shiva@01":
         new_salt, new_digest = desktop_app.hash_pin(password)
@@ -324,7 +346,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         )
         conn.commit()
         ok = True
-        print("[Auth] customer Admin password accepted; hash updated")
 
     if not ok:
         raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -337,13 +358,12 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         "role": row["role"],
     }
     api.ACTIVE_SESSIONS[token] = user_info
-    print(f"[Auth] Login ok: {user_info['username']!r} ({user_info['role']})")
     return {"token": token, "user": user_info}
 
 
 @api.app.post("/api/system/sync-now")
 def web_sync_now(user: dict = Depends(api.get_current_user)):
-    """Re-pull full cloud SQLite (tasks, attendance, employees, etc.) then re-apply login bootstrap."""
+    """Re-pull full cloud SQLite then re-apply login bootstrap."""
     print(f"[DB Sync] Manual sync requested by {user.get('username')!r}")
     ok = _pull_full_database()
     try:
@@ -364,7 +384,7 @@ def web_sync_now(user: dict = Depends(api.get_current_user)):
         "local": stats,
         "looks_like_demo_data": demo_like,
         "message": (
-            "Pulled cloud DB. WARNING: snapshot still looks like demo data — customer desktop may not have uploaded yet."
+            "Pulled cloud DB. WARNING: still demo data — customer desktop must Sync Now first."
             if demo_like else
             "Pulled cloud DB and refreshed local web database."
         ),
@@ -397,10 +417,6 @@ try:
     _ensure_bootstrap_admin(db_path)
     stats = _db_stats(db_path)
     print(f"[Web Boot] Local DB after pull/bootstrap: {stats}")
-    names = set(stats.get("employee_names") or [])
-    if stats.get("employees", 0) <= 4 and names <= {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}:
-        print("[Web Boot] WARNING: Cloud DB still looks like DEMO data (not customer production data).")
-        print("[Web Boot] On the CUSTOMER desktop EXE: sign in as Admin, ensure Cloud Sync status is Synced, wait 1-2 min, then call Sync Now on web.")
 except Exception as exc:
     print(f"[Web Boot] post-pull failed: {exc}")
 print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={REQUIRE_LOGIN}")
