@@ -263,40 +263,35 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
 def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
     try:
         count = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
-        usernames = [
-            r[0]
-            for r in conn.execute(
-                "SELECT username FROM auth_users WHERE active=1 ORDER BY username"
-            ).fetchall()
-        ]
+        employees = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
+        tasks = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
     except Exception:
-        count, usernames = 0, []
+        count, employees, tasks = 0, 0, 0
     demo_names = {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}
     pull_names = set((_LAST_PULL or {}).get("employee_names") or [])
     is_demo = bool(pull_names) and pull_names.issubset(demo_names)
+    pull_summary = {
+        "ok": bool((_LAST_PULL or {}).get("ok")),
+        "auth_users": int((_LAST_PULL or {}).get("auth_users") or 0),
+        "employees": int((_LAST_PULL or {}).get("employees") or 0),
+        "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
+    }
     return {
         "user_count": count,
-        "usernames": usernames,
+        "employee_count": employees,
+        "task_count": tasks,
         "setup_required": count == 0,
-        "pull": _LAST_PULL,
+        "pull": pull_summary,
         "is_demo_snapshot": is_demo,
         "hint": (
-            "The latest cloud snapshot contains demo-only employee data. Verify the desktop app has uploaded the real customer database."
+            "The cloud snapshot contains demo data. On the desktop PC with the real records, use Settings > Cloud Sync > Sync Now, wait for Synced, then redeploy this Render service."
             if is_demo
             else (
-                "Using synchronized desktop accounts; username capitalization must match the desktop account."
-                if (_LAST_PULL or {}).get("ok")
-                else "Cloud database pull failed. Check DB_SYNC_WORKER_URL, DB_SYNC_INSTALLATION_ID, and DB_SYNC_ENCRYPTION_SECRET before retrying login."
+                "A database snapshot was downloaded. Verify the account and records counts before signing in."
+                if pull_summary["ok"]
+                else "The cloud database snapshot could not be downloaded. Check the Render database-sync configuration and service logs."
             )
         ),
-        "how_to_sync_real_db": [
-            "1. On the PC that has real customer data, open the desktop EXE",
-            "2. Login as Admin (customer) with password Shiva@01 — not developer admin",
-            "3. Settings → Cloud Sync → copy Installation ID (optional for Render DB_SYNC_INSTALLATION_ID)",
-            "4. Click Sync Now and wait until status shows Synced",
-            "5. Redeploy audit-report-web on Render so it pulls the new snapshot",
-            "6. Check /api/system/db-info — names must be real employees, not Present Person",
-        ],
     }
 
 
@@ -305,9 +300,20 @@ def web_db_info():
     try:
         import app as desktop_app
         stats = _db_stats(Path(desktop_app.DB_PATH))
-    except Exception as exc:
-        stats = {"error": str(exc)}
-    return {"pull": _LAST_PULL, "local": stats}
+        safe_stats = {
+            "auth_users": int(stats.get("auth_users") or 0),
+            "employees": int(stats.get("employees") or 0),
+            "tasks": int(stats.get("tasks") or 0),
+        }
+    except Exception:
+        safe_stats = {"error": "Database statistics are unavailable"}
+    pull_summary = {
+        "ok": bool((_LAST_PULL or {}).get("ok")),
+        "auth_users": int((_LAST_PULL or {}).get("auth_users") or 0),
+        "employees": int((_LAST_PULL or {}).get("employees") or 0),
+        "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
+    }
+    return {"pull": pull_summary, "local": safe_stats}
 
 
 _LOGIN_REFRESH_LOCK = threading.Lock()
