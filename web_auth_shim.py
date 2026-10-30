@@ -463,6 +463,36 @@ async def require_api_login(request: Request, call_next):
     return await call_next(request)
 
 
+# api_server.py registers its SPA catch-all before this shim is imported.
+# Move the shim's API routes ahead of that GET catch-all; otherwise diagnostic
+# GETs such as /api/auth/status are swallowed and return "API endpoint not found".
+_spa_fallback_index = next(
+    (
+        index
+        for index, route in enumerate(api.app.router.routes)
+        if getattr(route, "path", None) == "/{full_path:path}"
+        and "GET" in (getattr(route, "methods", None) or set())
+    ),
+    None,
+)
+if _spa_fallback_index is not None:
+    _late_api_routes = [
+        route
+        for route in api.app.router.routes[_spa_fallback_index:]
+        if (getattr(route, "path", None) or "").startswith("/api/")
+    ]
+    if _late_api_routes:
+        _late_api_route_ids = {id(route) for route in _late_api_routes}
+        api.app.router.routes[:] = (
+            api.app.router.routes[:_spa_fallback_index]
+            + _late_api_routes
+            + [
+                route
+                for route in api.app.router.routes[_spa_fallback_index:]
+                if id(route) not in _late_api_route_ids
+            ]
+        )
+
 print("[Web Boot] Pulling full cloud database snapshot…")
 pulled = _pull_full_database()
 try:
