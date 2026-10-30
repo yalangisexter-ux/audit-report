@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import brandLogo from '../../assets/raw_strength_brand_hud.png';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase,
-  Settings, RefreshCw, CheckCircle2, Menu, LogOut
+  Settings, RefreshCw, CheckCircle2, Menu, LogOut, Eye, EyeOff
 } from 'lucide-react';
 
 const API_BASE = '/api';
@@ -149,7 +149,7 @@ export default function App() {
   if (!currentUser || !authToken) {
     return (
       <div className="min-h-screen bg-[#070B14] text-slate-100 flex items-center justify-center p-6">
-        <form onSubmit={handleLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-8 shadow-2xl">
+        <form onSubmit={handleLogin} className="w-full max-w-lg rounded-3xl border border-cyan-400/20 bg-slate-900/90 p-6 sm:p-9 shadow-2xl shadow-black/40">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
               <img src={brandLogo} alt="Raw Strength Calisthenics" className="w-full h-full rounded-[10px] object-contain" />
@@ -165,13 +165,13 @@ export default function App() {
           <input className="w-full mb-4 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
             value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} required autoComplete="username" />
           <label className="block text-xs font-semibold text-slate-400 mb-1">Password</label>
-          <div className="flex gap-2 mb-6">
-            <input type={showPassword ? 'text' : 'password'} className="flex-1 min-w-0 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
+          <div className="relative mb-6">
+            <input type={showPassword ? 'text' : 'password'} className="w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-3 pr-20 text-base outline-none focus:border-cyan-400"
               value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required autoComplete="current-password" />
             <button type="button" onClick={() => setShowPassword((visible) => !visible)}
               aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}
-              className="rounded-lg border border-white/10 px-3 py-2.5 text-sm font-semibold text-cyan-300 hover:border-cyan-400/60">
-              {showPassword ? 'Hide' : 'Show'}
+              className="absolute inset-y-0 right-2 my-auto h-10 min-w-16 rounded-lg border border-cyan-400/30 bg-slate-900 px-3 text-sm font-bold text-cyan-300 hover:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/50">
+              {showPassword ? <><EyeOff className="inline w-4 h-4 mr-1" />Hide</> : <><Eye className="inline w-4 h-4 mr-1" />Show</>}
             </button>
           </div>
           <button type="submit" disabled={loginBusy}
