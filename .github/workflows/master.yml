@@ -30,6 +30,14 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Build Render React frontend
+        shell: pwsh
+        run: |
+          npm --prefix frontend ci --include=dev
+          if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
+          npm --prefix frontend run build
+          if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed." }
+
       - name: Build and verify Render React frontend
         shell: pwsh
         run: |
