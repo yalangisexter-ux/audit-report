@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import brandLogo from '../../assets/raw_strength_brand_hud.png';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase,
   Settings, RefreshCw, CheckCircle2, Menu, LogOut
@@ -151,7 +152,7 @@ export default function App() {
         <form onSubmit={handleLogin} className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-900/90 p-8 shadow-2xl">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
-              <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center font-black text-cyan-400">RSC</div>
+              <img src={brandLogo} alt="Raw Strength Calisthenics" className="w-full h-full rounded-[10px] object-contain" />
             </div>
             <div>
               <h1 className="text-lg font-extrabold text-white break-words">Raw Strength Calisthenics</h1>
@@ -194,7 +195,7 @@ export default function App() {
         <div className="p-4 flex items-center justify-between border-b border-white/5">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
-              <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center font-black text-cyan-400">RSC</div>
+              <img src={brandLogo} alt="Raw Strength Calisthenics" className="w-full h-full rounded-[10px] object-contain" />
             </div>
             {sidebarOpen && (
               <div className="min-w-0">
