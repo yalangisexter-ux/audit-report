@@ -129,13 +129,20 @@ def _pull_full_database() -> bool:
         print("[DB Sync] Missing worker URL or encryption secret")
         return False
 
-    target_id = (os.environ.get("DB_SYNC_INSTALLATION_ID") or "").strip().lower()
+    # Desktop and Android installations share this documented namespace by default.
+    # A Render-specific override still takes precedence for customers who explicitly
+    # linked their desktop to a custom installation ID. Never use an unscoped
+    # "latest snapshot" lookup: it could mix data between customers.
+    default_installation_id = "c4cf201d3c68e2fcaf60aa05fd423d9a"
+    target_id = (
+        os.environ.get("DB_SYNC_INSTALLATION_ID") or default_installation_id
+    ).strip().lower()
     if not re.fullmatch(r"[0-9a-f]{32}", target_id):
         _LAST_PULL = {
             "ok": False,
-            "error": "DB_SYNC_INSTALLATION_ID must be set to the customer's desktop installation ID; refusing an unscoped latest-snapshot pull.",
+            "error": "DB_SYNC_INSTALLATION_ID must be a 32-character hexadecimal installation ID.",
         }
-        print("[DB Sync] Refusing unscoped snapshot pull; configure DB_SYNC_INSTALLATION_ID.")
+        print("[DB Sync] Invalid DB_SYNC_INSTALLATION_ID; refusing snapshot pull.")
         return False
     install_id = target_id
     db_path = Path(desktop_app.DB_PATH)
@@ -151,10 +158,9 @@ def _pull_full_database() -> bool:
                 worker_url=worker_url,
                 encryption_secret=secret,
             )
-            prefer_latest = not (target_id and len(target_id) == 32)
             payload = sync.download_latest_snapshot(
-                target_installation_id=target_id if len(target_id) == 32 else "",
-                prefer_latest=prefer_latest,
+                target_installation_id=target_id,
+                prefer_latest=False,
                 candidate_secret=secret,
             )
             if not payload or not payload.startswith(b"SQLite format 3"):
