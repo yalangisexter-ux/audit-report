@@ -359,6 +359,16 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
     return row if secrets.compare_digest(str(digest), str(stored)) else None
 
 
+# api_server.py registers a local-only /api/auth/login route during import.
+# Remove that earlier route so this cloud-aware handler is the route FastAPI matches.
+api.app.router.routes[:] = [
+    route for route in api.app.router.routes
+    if not (
+        getattr(route, "path", None) == "/api/auth/login"
+        and "POST" in (getattr(route, "methods", None) or set())
+    )
+]
+
 @api.app.post("/api/auth/login")
 def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
     username = (req.username or "").strip()
