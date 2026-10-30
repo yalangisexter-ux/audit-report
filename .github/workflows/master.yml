@@ -64,6 +64,18 @@ jobs:
           }
           finally { Pop-Location }
 
+      - name: Build and verify Render React frontend
+        shell: pwsh
+        run: |
+          Push-Location frontend
+          try {
+            npm ci --include=dev
+            npm run build
+            if (-not (Test-Path "dist/index.html")) { throw "Vite build did not produce frontend/dist/index.html" }
+            if (-not (Test-Path "dist/assets")) { throw "Vite build did not produce frontend/dist/assets" }
+          }
+          finally { Pop-Location }
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
