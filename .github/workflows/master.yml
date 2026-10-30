@@ -30,6 +30,14 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Build Render React frontend
+        shell: pwsh
+        run: |
+          npm ci --prefix frontend --include=dev
+          if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed with exit code $LASTEXITCODE" }
+          npm run build --prefix frontend
+          if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed with exit code $LASTEXITCODE" }
+
       - name: Validate Cloudflare Worker and browser chat JavaScript
         shell: pwsh
         run: |
