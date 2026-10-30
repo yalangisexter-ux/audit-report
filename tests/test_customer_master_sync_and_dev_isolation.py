@@ -83,9 +83,13 @@ def test_commit_hook_suppressed_for_developer_test_user(tmp_path, monkeypatch):
     db = app.Database()
 
     marked = []
+    scheduled = []
     class DummySync:
         def mark_pending(self):
             marked.append(True)
+        def schedule_sync(self, delay=2.0):
+            scheduled.append(delay)
+            return True
 
     db.github_sync = DummySync()
 
@@ -101,6 +105,7 @@ def test_commit_hook_suppressed_for_developer_test_user(tmp_path, monkeypatch):
     db.conn.execute("INSERT INTO test_t VALUES (2)")
     db.conn.commit()
     assert len(marked) == 1, "Customer commit MUST trigger mark_pending"
+    assert scheduled == [2.0], "Customer commit MUST schedule a debounced background sync"
 
 
 def test_google_sheets_continuous_sync_paused_in_dev_test_mode():

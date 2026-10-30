@@ -17,9 +17,11 @@ formats are accepted on pull. Merges are additive: local users and records are p
 1. Sign in with an Admin account and open **Settings & Backup**.
 2. Enter a fine-grained GitHub personal access token limited to this repository with
    **Contents: Read and write**, then select **Save token**.
-3. Local database changes remain on the computer. Select **Push to Git DB** when you want to
-   upload the current snapshot. Saving a token, saving records, opening the app, and restarting
-   the app do not upload anything.
+3. Customer database changes are uploaded automatically in the background after a short
+   debounce. Local commits are never blocked by network activity. Failed uploads remain pending
+   and retry automatically when the connection is restored. Customer sign-in also queues an
+   initial snapshot so the cloud copy is populated without requiring a manual push. The **Push
+   to Git DB** action remains available for an immediate manual retry.
 
 The token is protected with Windows DPAPI for the current Windows account. It is not stored in
 source code, the installer, the encrypted snapshot, or status messages. Each computer that pushes
