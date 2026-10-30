@@ -306,6 +306,7 @@ class GitHubDatabaseSync:
         self._change_serial = 0
         self._closed = False
         self._thread = None
+        self._sync_timer = None
 
     @property
     def has_token(self):
@@ -359,6 +360,27 @@ class GitHubDatabaseSync:
             except Exception:
                 pass
 
+    def schedule_sync(self, delay: float = 2.0):
+        """Debounce automatic customer sync without blocking a local database commit."""
+        with self._lock:
+            if self._closed or not self._encryption_secret or not self.worker_url:
+                return False
+            previous = self._sync_timer
+            if previous is not None:
+                previous.cancel()
+            timer = threading.Timer(max(0.0, float(delay)), self._run_scheduled_sync)
+            timer.daemon = True
+            self._sync_timer = timer
+        timer.start()
+        return True
+
+    def _run_scheduled_sync(self):
+        with self._lock:
+            self._sync_timer = None
+            if self._closed or not self._dirty:
+                return
+        self.request_sync()
+
     def set_status(self, status):
         with self._lock:
             self._status = str(status)
@@ -404,7 +426,11 @@ class GitHubDatabaseSync:
     def close(self, timeout=3):
         with self._lock:
             self._closed = True
+            timer = self._sync_timer
+            self._sync_timer = None
             thread = self._thread
+        if timer is not None:
+            timer.cancel()
         try:
             self._queue.put_nowait(None)
         except Exception:
@@ -435,9 +461,14 @@ class GitHubDatabaseSync:
                     self._last_error = str(exc)[:1000]
                     self._error_serial += 1
                     self._busy = False
+                # Retain pending customer changes during outages and retry in background.
+                if self.is_dirty and not self._closed:
+                    self.schedule_sync(30.0)
             else:
                 with self._lock:
                     self._busy = False
+                if self.is_dirty and not self._closed:
+                    self.schedule_sync(2.0)
 
     def _worker_request(self, method: str, endpoint: str, *, payload=None, binary=False, allow_404=False, _retry_auth=True):
         if not self.worker_url:

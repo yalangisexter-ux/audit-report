@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
+import shutil
 import threading
 import time
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 os.environ.setdefault("SKIP_INITIAL_AUDIT_SEED", "1")
@@ -30,8 +33,9 @@ PUBLIC_PATHS = {
 }
 
 REQUIRE_LOGIN = os.environ.get("WEB_REQUIRE_LOGIN", "1").strip().lower() in ("1", "true", "yes")
-PURGE_SEED = os.environ.get("WEB_PURGE_SEED_DATA", "1").strip().lower() in ("1", "true", "yes")
-PURGE_DEMO = os.environ.get("WEB_PURGE_DEMO_ROSTER", "1").strip().lower() in ("1", "true", "yes")
+# Never delete customer or seed rows during web startup by default.
+PURGE_SEED = os.environ.get("WEB_PURGE_SEED_DATA", "0").strip().lower() in ("1", "true", "yes")
+PURGE_DEMO = os.environ.get("WEB_PURGE_DEMO_ROSTER", "0").strip().lower() in ("1", "true", "yes")
 
 _LAST_PULL = {
     "ok": False,
@@ -125,8 +129,15 @@ def _pull_full_database() -> bool:
         print("[DB Sync] Missing worker URL or encryption secret")
         return False
 
-    target_id = (os.environ.get("DB_SYNC_INSTALLATION_ID") or "").strip()
-    install_id = target_id if len(target_id) == 32 else secrets.token_hex(16)
+    target_id = (os.environ.get("DB_SYNC_INSTALLATION_ID") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", target_id):
+        _LAST_PULL = {
+            "ok": False,
+            "error": "DB_SYNC_INSTALLATION_ID must be set to the customer's desktop installation ID; refusing an unscoped latest-snapshot pull.",
+        }
+        print("[DB Sync] Refusing unscoped snapshot pull; configure DB_SYNC_INSTALLATION_ID.")
+        return False
+    install_id = target_id
     db_path = Path(desktop_app.DB_PATH)
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -165,18 +176,42 @@ def _pull_full_database() -> bool:
                 tmp.unlink(missing_ok=True)
                 last_err = "integrity_check failed"
                 continue
+
+            # Reject snapshots without real login accounts and a non-demo roster.
+            demo = {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}
+            incoming_names = set(stats.get("employee_names") or [])
+            demo_only = bool(incoming_names) and incoming_names.issubset(demo)
+            if stats.get("auth_users", 0) < 1 or stats.get("employees", 0) < 1 or demo_only:
+                tmp.unlink(missing_ok=True)
+                last_err = "snapshot has no active customer accounts or contains only demo roster data; existing web database was preserved"
+                continue
+
+            # Do not replace a populated real database with a smaller snapshot.
+            current = _db_stats(db_path)
+            current_names = set(current.get("employee_names") or [])
+            current_is_real = bool(current.get("auth_users", 0)) and bool(current.get("employees", 0)) and not (
+                current_names and current_names.issubset(demo)
+            )
+            if current_is_real and (
+                stats.get("auth_users", 0) < current.get("auth_users", 0)
+                or stats.get("employees", 0) < current.get("employees", 0)
+                or stats.get("tasks", 0) < current.get("tasks", 0)
+            ):
+                tmp.unlink(missing_ok=True)
+                last_err = "incoming snapshot is smaller than the existing customer database; existing data was preserved"
+                continue
+
+            # Keep a timestamped recovery copy before activating any downloaded DB.
+            if db_path.is_file():
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = db_path.with_name(f"{db_path.stem}.pre-sync-{stamp}.db")
+                shutil.copy2(db_path, backup_path)
             os.replace(tmp, db_path)
             _LAST_PULL = {"ok": True, "error": "", **stats}
             print(
-                f"[DB Sync] FULL DB restored: auth={stats['auth_users']} users={stats['usernames']} "
-                f"employees={stats['employees']} tasks={stats['tasks']} names={stats['employee_names']}"
+                f"[DB Sync] Validated customer snapshot activated: auth={stats['auth_users']} "
+                f"employees={stats['employees']} tasks={stats['tasks']}"
             )
-            demo = {"Present Person", "Absent Person", "On Leave", "Unmarked Person"}
-            if set(stats["employee_names"] or []) and set(stats["employee_names"]).issubset(demo):
-                print(
-                    "[DB Sync] WARNING: snapshot is DEMO roster only. "
-                    "Customer must login as Admin on desktop and click Sync Now to upload real data."
-                )
             return True
         except Exception as exc:
             last_err = str(exc)

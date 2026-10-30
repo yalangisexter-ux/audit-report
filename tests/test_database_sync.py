@@ -290,3 +290,40 @@ def test_download_latest_snapshot_accepts_mobile_json_manifest(tmp_path, monkeyp
     assert parsed["auth_users"][0]["username"] == "sharedadmin"
     assert parsed["employees"][0]["name"] == "Mobile Employee"
     sync.close()
+
+
+def test_automatic_sync_scheduler_queues_customer_changes_without_blocking(tmp_path, monkeypatch):
+    import threading
+
+    sync = GitHubDatabaseSync(
+        tmp_path / "customer.db", "example/repository", "9" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
+    )
+    queued = threading.Event()
+
+    def fake_request_sync():
+        queued.set()
+        return True
+
+    monkeypatch.setattr(sync, "request_sync", fake_request_sync)
+    try:
+        sync.mark_pending()
+        assert sync.schedule_sync(0.01) is True
+        assert queued.wait(1.0), "automatic sync should queue in the background"
+    finally:
+        sync.close()
+
+
+def test_automatic_sync_scheduler_is_cancelled_on_shutdown(tmp_path, monkeypatch):
+    sync = GitHubDatabaseSync(
+        tmp_path / "customer.db", "example/repository", "8" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
+    )
+    calls = []
+    monkeypatch.setattr(sync, "request_sync", lambda: calls.append(True))
+    sync.mark_pending()
+    sync.schedule_sync(0.2)
+    sync.close()
+    import time
+    time.sleep(0.25)
+    assert calls == []

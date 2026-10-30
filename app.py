@@ -13762,6 +13762,7 @@ def main():
         info(None, "Historical audit imported: 8 employees and 36 task records for 09-10-2026. To review them, select 2026-10-09 in All Tasks, Employee Task Tracker, or Print Center. Today's screens may be empty until you add today's tasks.")
         db.set_setting("initial_audit_notice_shown", "1")
 
+    db.set_active_user(active_user)
     win=MainWindow(db, active_user); win.apply_theme()
     splash.set_status("Ready! Starting workspace...", 100)
     win.show()
