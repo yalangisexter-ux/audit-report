@@ -898,6 +898,9 @@ def check_updates():
 # --- Serve Built React Frontend (SPA Fallback) ---
 DIST_DIR = ROOT_DIR / "frontend" / "dist"
 
+if (ROOT_DIR / "assets").is_dir():
+    app.mount("/brand-assets", StaticFiles(directory=str(ROOT_DIR / "assets")), name="brand-assets")
+
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
