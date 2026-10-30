@@ -901,12 +901,19 @@ DIST_DIR = ROOT_DIR / "frontend" / "dist"
 if (ROOT_DIR / "assets").is_dir():
     app.mount("/brand-assets", StaticFiles(directory=str(ROOT_DIR / "assets")), name="brand-assets")
 
+@app.get("/brand-logo.png")
+def serve_brand_logo():
+    logo_path = ROOT_DIR / "assets" / "raw_strength_brand_hud.png"
+    if not logo_path.is_file():
+        raise HTTPException(status_code=404, detail="Brand logo asset is unavailable")
+    return FileResponse(logo_path, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
 
     @app.get("/")
     def serve_react_root():
-        return FileResponse(DIST_DIR / "index.html")
+        return FileResponse(DIST_DIR / "index.html", headers={"Cache-Control": "no-store, max-age=0, must-revalidate"})
 
     @app.get("/{full_path:path}")
     def serve_react_spa(full_path: str):
