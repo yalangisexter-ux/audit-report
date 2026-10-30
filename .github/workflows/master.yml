@@ -30,13 +30,19 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Build Render React frontend
+      - name: Build and verify Render React frontend
         shell: pwsh
         run: |
-          npm --prefix frontend ci --include=dev
-          if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed with exit code $LASTEXITCODE" }
-          npm --prefix frontend run build
-          if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed with exit code $LASTEXITCODE" }
+          Push-Location frontend
+          try {
+            npm ci --include=dev
+            if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed with exit code $LASTEXITCODE" }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed with exit code $LASTEXITCODE" }
+            if (-not (Test-Path "dist/index.html")) { throw "Vite build did not produce frontend/dist/index.html" }
+            if (-not (Test-Path "dist/assets")) { throw "Vite build did not produce frontend/dist/assets" }
+          }
+          finally { Pop-Location }
 
       - name: Validate Cloudflare Worker and browser chat JavaScript
         shell: pwsh
@@ -53,18 +59,6 @@ jobs:
             npm install --no-audit --no-fund
             npm run check
             npm test
-          }
-          finally { Pop-Location }
-
-      - name: Build and verify Render React frontend
-        shell: pwsh
-        run: |
-          Push-Location frontend
-          try {
-            npm ci --include=dev
-            npm run build
-            if (-not (Test-Path "dist/index.html")) { throw "Vite build did not produce frontend/dist/index.html" }
-            if (-not (Test-Path "dist/assets")) { throw "Vite build did not produce frontend/dist/assets" }
           }
           finally { Pop-Location }
 
