@@ -276,23 +276,30 @@ export class DeviceRegistry {
         return json({ error: "Invalid claim" }, 400);
       }
       const result = await this.storage.transaction(async txn => {
-        const key = "installation:" + installation_id;
+        // A customer installation can have a desktop and a web client.
+        // Preserve the legacy record for existing desktop registrations.
+        const legacy = await txn.get("installation:" + installation_id);
+        if (legacy && legacy.device_id === device_id &&
+            constantTimeEqual(legacy.secret_hash, secret_hash)) return "legacy-device";
+        const key = "installation:" + installation_id + ":device:" + device_id;
         const current = await txn.get(key);
-        if (!current) {
-          await txn.put(key, { installation_id, device_id, secret_hash, created_at: Date.now() });
-          return "created";
+        if (current) {
+          return constantTimeEqual(current.secret_hash, secret_hash) ? "same-device" : "conflict";
         }
-        if (current.device_id === device_id && constantTimeEqual(current.secret_hash, secret_hash)) return "same-device";
-        return "conflict";
+        await txn.put(key, { installation_id, device_id, secret_hash, created_at: Date.now() });
+        return "created";
       });
-      return result === "conflict" ? json({ error: "Installation already claimed" }, 409) : json({ success: true });
+      return result === "conflict" ? json({ error: "Device ID is already registered with different credentials" }, 409) : json({ success: true });
     }
     if (url.pathname === "/verify" && request.method === "POST") {
       const { installation_id, device_id } = body || {};
       if (!INSTALLATION_RE.test(installation_id || "") || !DEVICE_RE.test(device_id || "")) return json({ error: "Invalid device" }, 400);
-      const record = await this.storage.get("installation:" + installation_id);
-      if (!record || record.device_id !== device_id) return json({ error: "Device not registered" }, 403);
-      return json({ success: true });
+      const record = await this.storage.get("installation:" + installation_id + ":device:" + device_id);
+      if (record && record.device_id === device_id) return json({ success: true });
+      // Backward compatibility with the original single-device registry key.
+      const legacy = await this.storage.get("installation:" + installation_id);
+      if (legacy && legacy.device_id === device_id) return json({ success: true });
+      return json({ error: "Device not registered" }, 403);
     }
     return json({ error: "Not found" }, 404);
   }
