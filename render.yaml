@@ -6,7 +6,7 @@ services:
     autoDeploy: true
     region: oregon
     # Do NOT run npm build: Vite overwrites the operational sidebar UI in frontend/dist.
-    buildCommand: pip install -r requirements-web.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt
     startCommand: python -c "import os; import web_auth_shim; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
       - key: PYTHON_VERSION
