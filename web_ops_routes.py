@@ -12,7 +12,15 @@ import api_server as api
 
 def _rows(conn, sql, params=()):
     try:
-        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+        cur = conn.execute(sql, params)
+        cols = [c[0] for c in cur.description] if cur.description else []
+        out = []
+        for r in cur.fetchall():
+            if isinstance(r, sqlite3.Row):
+                out.append(dict(r))
+            else:
+                out.append({cols[i]: r[i] for i in range(len(cols))})
+        return out
     except Exception:
         return []
 
@@ -78,68 +86,43 @@ def list_customer_prospects(
         sql += """ AND (
             IFNULL(business_name,'') LIKE ?
             OR IFNULL(city,'') LIKE ?
+            OR IFNULL(contact_name,'') LIKE ?
             OR IFNULL(phone,'') LIKE ?
-            OR IFNULL(email,'') LIKE ?
-            OR IFNULL(address,'') LIKE ?
         )"""
-        params.extend([term, term, term, term, term])
-    sql += " ORDER BY state COLLATE NOCASE, city COLLATE NOCASE, business_name COLLATE NOCASE LIMIT ?"
+        params.extend([term, term, term, term])
+    sql += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
     return _rows(conn, sql, tuple(params))
 
 
 @api.app.get("/api/customers/summary")
-def customer_directory_summary(conn: sqlite3.Connection = Depends(api.get_db)):
-    total = _count(conn, "SELECT COUNT(*) FROM customer_prospects")
-    states = _rows(
-        conn,
-        """SELECT state AS name, COUNT(*) AS count
-           FROM customer_prospects
-           GROUP BY state
-           ORDER BY count DESC, state COLLATE NOCASE
-           LIMIT 40""",
-    )
-    return {"total": total, "states": states}
+def customers_summary(conn: sqlite3.Connection = Depends(api.get_db)):
+    return {
+        "prospects": _count(conn, "SELECT COUNT(*) FROM customer_prospects"),
+        "by_state": _rows(
+            conn,
+            """SELECT IFNULL(state,'') AS state, COUNT(*) AS count
+               FROM customer_prospects GROUP BY IFNULL(state,'')
+               ORDER BY count DESC LIMIT 50""",
+        ),
+    }
 
 
 @api.app.get("/api/print-center/summary")
-def print_center_summary(
-    report_date: Optional[str] = None,
-    conn: sqlite3.Connection = Depends(api.get_db),
-):
-    d = report_date or date.today().isoformat()
-    tasks = _rows(
-        conn,
-        """SELECT t.id, t.title, t.status, t.priority, t.task_date, e.name AS employee_name
-           FROM tasks t LEFT JOIN employees e ON e.id = t.employee_id
-           WHERE t.task_date = ?
-           ORDER BY e.name COLLATE NOCASE, t.id DESC
-           LIMIT 100""",
-        (d,),
-    )
-    if not tasks:
-        tasks = _rows(
-            conn,
-            """SELECT t.id, t.title, t.status, t.priority, t.task_date, e.name AS employee_name
-               FROM tasks t LEFT JOIN employees e ON e.id = t.employee_id
-               ORDER BY t.task_date DESC, t.id DESC
-               LIMIT 40""",
-        )
-    attendance = _rows(
-        conn,
-        """SELECT e.name, e.department, a.attendance_status, a.check_in, a.check_out
-           FROM employees e
-           LEFT JOIN attendance a ON a.employee_id = e.id AND a.work_date = ?
-           WHERE e.active = 1
-           ORDER BY e.name COLLATE NOCASE
-           LIMIT 100""",
-        (d,),
-    )
+def print_center_summary(conn: sqlite3.Connection = Depends(api.get_db)):
+    today = date.today().isoformat()
     return {
-        "report_date": d,
-        "employee_count": _count(conn, "SELECT COUNT(*) FROM employees"),
-        "task_count_for_date": len(tasks),
-        "tasks": tasks,
-        "attendance": attendance,
-        "note": "Web Print Center shows a live summary. Full PDF export/print remains in the desktop EXE.",
+        "employees": _count(conn, "SELECT COUNT(*) FROM employees WHERE active=1"),
+        "tasks_open": _count(
+            conn,
+            """SELECT COUNT(*) FROM tasks
+               WHERE lower(IFNULL(status,'')) NOT IN ('done','completed','closed')""",
+        ),
+        "attendance_today": _count(
+            conn,
+            "SELECT COUNT(*) FROM attendance WHERE date = ?",
+            (today,),
+        ),
+        "orders": _count(conn, "SELECT COUNT(*) FROM bt_orders"),
+        "members": _count(conn, "SELECT COUNT(*) FROM bt_members"),
     }

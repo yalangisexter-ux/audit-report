@@ -292,8 +292,6 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
     try:
         import app as desktop_app
 
-        # Avoid desktop_app.Database() on Linux/Render — it can raise
-        # "Sync secrets can only be protected on Windows" and abort bootstrap.
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(db_path), timeout=30)
@@ -491,7 +489,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
 
     row = _find_active_login_user(conn, username, password)
 
-    # Customer convenience: Admin maps to taruna when Admin row is missing
     if not row and username == "Admin":
         row = _find_active_login_user(conn, "taruna", password)
 
@@ -582,3 +579,16 @@ try:
     print("[Web Boot] Operational routes registered")
 except Exception as _exc:
     print(f"[Web Boot] Operational routes skipped: {_exc}")
+
+# FastAPI matches routes in registration order. api_server registers
+# /{full_path:path} before this module adds /api/auth/status and ops routes,
+# so those APIs would 404. Keep the SPA catch-all last.
+try:
+    routes = list(api.app.router.routes)
+    spa = [r for r in routes if getattr(r, "path", None) == "/{full_path:path}"]
+    rest = [r for r in routes if getattr(r, "path", None) != "/{full_path:path}"]
+    if spa:
+        api.app.router.routes[:] = rest + spa
+        print(f"[Web Boot] Reordered routes: SPA catch-all moved last ({len(spa)} route(s))")
+except Exception as _exc:
+    print(f"[Web Boot] Route reorder skipped: {_exc}")
