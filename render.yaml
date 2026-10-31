@@ -27,4 +27,5 @@ services:
         value: "0"
       - key: WEB_PURGE_DEMO_ROSTER
         value: "0"
+      # Optional on paid plans with a disk: set AUDIT_DATA_DIR=/var/data
     healthCheckPath: /api/health
