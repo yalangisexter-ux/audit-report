@@ -2,92 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+:root { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { width: 100%; min-height: 100%; margin: 0; }
+body { min-width: 320px; overflow-x: hidden; background: #070B14; color: #F8FAFC; }
+.glass-panel { background: linear-gradient(180deg,rgba(16,24,42,.85),rgba(9,14,26,.92)); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,.08); }
+.glass-panel-glow { background: linear-gradient(180deg,rgba(16,24,42,.90),rgba(9,14,26,.95)); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(0,229,255,.25); box-shadow: 0 0 25px -5px rgba(0,229,255,.15); }
+.glass-nav-active { background: linear-gradient(90deg,rgba(0,229,255,.22),rgba(79,70,229,.35) 45%,rgba(6,182,212,.12)); border: 1px solid #00E5FF; border-left: 4px solid #00E5FF; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgba(8,12,22,.5); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #00E5FF; }
+.login-screen { min-height: 100vh; min-height: 100dvh; padding: max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left)); }
+.login-card { background: rgba(15,23,42,.94); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.login-card img { display: block; object-fit: contain; }
+.password-field input { min-height: 3.25rem; }
+.password-toggle { z-index: 2; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.webapp-shell { isolation: isolate; }
+.webapp-sidebar { flex: 0 0 auto; width: 16rem; min-width: 4rem; min-height: 0; }
+.webapp-content { min-width: 0; min-height: 0; }
+.webapp-main { min-width: 0; overflow-x: auto; overflow-wrap: anywhere; overscroll-behavior: contain; }
+.webapp-main > * { min-width: 0; max-width: 100%; }
+.webapp-main table { display: block; max-width: 100%; overflow-x: auto; }
+.mobile-menu-button, .mobile-sidebar-backdrop { display: none; }
+@media (max-width: 767px) {
+  .webapp-shell { height: 100dvh; min-height: 100dvh; }
+  .webapp-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 60; width: min(19rem,calc(100vw - 3.25rem)) !important; min-width: 0; height: 100dvh; padding-bottom: env(safe-area-inset-bottom,0px); transform: translateX(-105%); transition: transform .24s ease; background: rgba(7,11,24,.97); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); box-shadow: 18px 0 48px rgba(0,0,0,.42); }
+  .webapp-sidebar.is-open { transform: translateX(0); }
+  .webapp-sidebar.is-closed { transform: translateX(-105%); }
+  .mobile-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 55; width: 100%; height: 100%; border: 0; background: rgba(0,0,0,.58); }
+  .mobile-menu-button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .webapp-header { min-height: 3.75rem; gap: .5rem; padding-left: .75rem; padding-right: .75rem; }
+  .webapp-main { padding: .75rem; padding-bottom: calc(.75rem + env(safe-area-inset-bottom,0px)); }
+  .webapp-main .grid { grid-template-columns: minmax(0,1fr) !important; }
+  .webapp-main .grid > * { min-width: 0; }
+  .webapp-main input, .webapp-main select, .webapp-main textarea { max-width: 100%; min-width: 0; }
+  .login-card { padding: 1.25rem; border-radius: 1.25rem; }
+  .login-card h1 { font-size: clamp(1rem,4.5vw,1.25rem); line-height: 1.3; }
+  .login-card p { overflow-wrap: anywhere; }
+  .password-toggle { min-width: 4.5rem; }
 }
-
-body {
-  margin: 0;
-  background-color: #070B14;
-  color: #F8FAFC;
-  overflow-x: hidden;
-}
-
-/* Custom glassmorphism card styling */
-.glass-panel {
-  background: linear-gradient(180deg, rgba(16, 24, 42, 0.85) 0%, rgba(9, 14, 26, 0.92) 100%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.glass-panel-glow {
-  background: linear-gradient(180deg, rgba(16, 24, 42, 0.90) 0%, rgba(9, 14, 26, 0.95) 100%);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(0, 229, 255, 0.25);
-  box-shadow: 0 0 25px -5px rgba(0, 229, 255, 0.15);
-}
-
-.glass-nav-active {
-  background: linear-gradient(90deg, rgba(0, 229, 255, 0.22) 0%, rgba(79, 70, 229, 0.35) 45%, rgba(6, 182, 212, 0.12) 100%);
-  border: 1px solid #00E5FF;
-  border-left: 4px solid #00E5FF;
-}
-
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: rgba(8, 12, 22, 0.5);
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #00E5FF;
-}
-
-
-html, body, #root { width:100%; min-height:100%; }
-*, *::before, *::after { box-sizing:border-box; }
-body { min-width:320px; }
-.webapp-shell { isolation:isolate; }
-.webapp-sidebar { flex:0 0 auto; width:16rem; min-width:4rem; min-height:0; }
-.webapp-sidebar.is-closed { width:4rem; }
-.webapp-content { min-width:0; min-height:0; }
-.webapp-main { min-width:0; overflow-x:auto; overflow-wrap:anywhere; overscroll-behavior:contain; }
-.webapp-main > * { min-width:0; max-width:100%; }
-.webapp-main table { display:block; max-width:100%; overflow-x:auto; }
-.mobile-menu-button, .mobile-sidebar-backdrop { display:none; }
-@media (max-width:767px) {
- .webapp-shell { height:100dvh; min-height:100dvh; }
- .webapp-sidebar { position:fixed; inset:0 auto 0 0; z-index:60; width:min(19rem,calc(100vw - 3.25rem)) !important; min-width:0; height:100dvh; padding-bottom:env(safe-area-inset-bottom,0px); transform:translateX(-105%); transition:transform .24s ease; background:rgba(7,11,24,.97); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); box-shadow:18px 0 48px rgba(0,0,0,.42); }
- .webapp-sidebar.is-open { transform:translateX(0); }
- .webapp-sidebar.is-closed { transform:translateX(-105%); width:min(19rem,calc(100vw - 3.25rem)) !important; }
- .mobile-sidebar-backdrop { display:block; position:fixed; inset:0; z-index:55; width:100%; height:100%; border:0; background:rgba(0,0,0,.58); }
- .mobile-menu-button { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; }
- .webapp-header { min-height:3.75rem; gap:.5rem; }
- .webapp-main { padding:.75rem; padding-bottom:calc(.75rem + env(safe-area-inset-bottom,0px)); }
- .webapp-main .grid { grid-template-columns:minmax(0,1fr) !important; }
- .webapp-main .grid > * { min-width:0; }
- .webapp-main input, .webapp-main select, .webapp-main textarea { max-width:100%; min-width:0; }
-}
-@media (min-width:768px) and (max-width:1023px) { .webapp-sidebar { width:13rem; } }
-@media (prefers-reduced-motion:reduce) { *, *::before, *::after { transition-duration:.01ms !important; animation-duration:.01ms !important; } }
-
-.mobile-menu-button { display:none; }
-@media (max-width:767px) {
- .mobile-menu-button { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; }
- .webapp-sidebar { position:fixed; inset:0 auto 0 0; z-index:60; height:100dvh; min-width:0; padding-bottom:env(safe-area-inset-bottom,0px); transition:transform .24s ease; background:rgba(7,11,24,.97); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px); box-shadow:18px 0 48px rgba(0,0,0,.42); }
- .webapp-sidebar.w-16 { width:min(19rem,calc(100vw - 3.25rem)) !important; transform:translateX(-105%); }
- .webapp-sidebar.w-64 { width:min(19rem,calc(100vw - 3.25rem)) !important; transform:translateX(0); }
- .webapp-header { min-height:3.75rem; gap:.5rem; }
- .webapp-main { padding:.75rem; padding-bottom:calc(.75rem + env(safe-area-inset-bottom,0px)); }
- .webapp-main .grid { grid-template-columns:minmax(0,1fr) !important; }
- .webapp-main .grid > * { min-width:0; }
- .webapp-main input, .webapp-main select, .webapp-main textarea { max-width:100%; min-width:0; }
-}
+@media (min-width: 768px) and (max-width: 1023px) { .webapp-sidebar { width: 13rem; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } }
