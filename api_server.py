@@ -75,27 +75,20 @@ def get_db():
 ACTIVE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.Connection = Depends(get_db)):
-    if not authorization:
-        # Default fallback to first active admin/user for seamless local development
-        row = conn.execute("SELECT id, username, display_name, role FROM auth_users WHERE active=1 ORDER BY id ASC LIMIT 1").fetchone()
-        if row:
-            return dict(row)
-        return {"id": 1, "username": "Admin", "display_name": "Administrator", "role": "Admin"}
-    
-    token = authorization.replace("Bearer ", "").strip()
-    if token in ACTIVE_SESSIONS:
+    token = ""
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            token = value.strip()
+    if token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
-    
-    # Check if token matches a username directly for testing
-    row = conn.execute("SELECT id, username, display_name, role FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (token,)).fetchone()
-    if row:
-        return dict(row)
-    
-    # Fallback to first user
+    if os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes"):
+        raise HTTPException(status_code=401, detail="Login required")
+    # Non-web local development may use the first account; production web boot requires a token.
     row = conn.execute("SELECT id, username, display_name, role FROM auth_users WHERE active=1 ORDER BY id ASC LIMIT 1").fetchone()
     if row:
         return dict(row)
-    return {"id": 1, "username": "Admin", "display_name": "Administrator", "role": "Admin"}
+    raise HTTPException(status_code=401, detail="Login required")
 
 
 # ----------------- Models ----------------- #
