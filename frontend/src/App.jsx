@@ -191,7 +191,7 @@ export default function App() {
         </div>
       )}
 
-      <aside className={`transition-all duration-300 flex flex-col border-r border-white/5 bg-slate-950/80 z-20 ${sidebarOpen ? 'w-64' : 'w-16'}`}>
+      <aside className={`webapp-sidebar transition-all duration-300 flex flex-col border-r border-white/5 bg-slate-950/80 z-20 ${sidebarOpen ? 'w-64' : 'w-16'}`}>
         <div className="p-4 flex items-center justify-between border-b border-white/5">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
