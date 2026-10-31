@@ -111,6 +111,66 @@ def _purge_junk_rows(db_path: Path) -> None:
         print(f"[DB] Purge skipped: {exc}")
 
 
+def _preserve_existing_login_accounts(current_db: Path, incoming_db: Path) -> int:
+    """Carry forward exact existing Admin/admin credentials before replacing a snapshot.
+
+    Existing password salts/hashes and active flags always win over a cloud snapshot.
+    No account is created and no password is reset by this migration.
+    """
+    if not current_db.is_file() or not incoming_db.is_file():
+        return 0
+    local = sqlite3.connect(str(current_db), timeout=10)
+    incoming = sqlite3.connect(str(incoming_db), timeout=10)
+    local.row_factory = sqlite3.Row
+    incoming.row_factory = sqlite3.Row
+    preserved = 0
+    try:
+        local_tables = {r[0] for r in local.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        incoming_tables = {r[0] for r in incoming.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "auth_users" not in local_tables or "auth_users" not in incoming_tables:
+            return 0
+        local_cols = [r[1] for r in local.execute("PRAGMA table_info(auth_users)")]
+        incoming_cols = {r[1] for r in incoming.execute("PRAGMA table_info(auth_users)")}
+        cols = [name for name in local_cols if name in incoming_cols]
+        if not {"username", "password_salt", "password_hash"}.issubset(cols):
+            return 0
+        qcols = ",".join('"' + name.replace('"', '""') + '"' for name in cols)
+        for username in ("Admin", "admin"):
+            old = local.execute(
+                "SELECT * FROM auth_users WHERE username=? COLLATE BINARY LIMIT 1", (username,)
+            ).fetchone()
+            if old is None:
+                continue
+            current = incoming.execute(
+                "SELECT id FROM auth_users WHERE username=? COLLATE BINARY LIMIT 1", (username,)
+            ).fetchone()
+            if current is not None:
+                assignments = [
+                    name for name in ("password_salt", "password_hash", "active")
+                    if name in cols
+                ]
+                if assignments:
+                    set_sql = ",".join('"' + name + '"=?' for name in assignments)
+                    incoming.execute(
+                        f"UPDATE auth_users SET {set_sql} WHERE username=? COLLATE BINARY",
+                        tuple(old[name] for name in assignments) + (username,),
+                    )
+            else:
+                insert_cols = [name for name in cols if name != "id"]
+                insert_sql_cols = ",".join('"' + name.replace('"', '""') + '"' for name in insert_cols)
+                placeholders = ",".join("?" for _ in insert_cols)
+                incoming.execute(
+                    f"INSERT INTO auth_users ({insert_sql_cols}) VALUES ({placeholders})",
+                    tuple(old[name] for name in insert_cols),
+                )
+            preserved += 1
+        incoming.commit()
+        return preserved
+    finally:
+        incoming.close()
+        local.close()
+
+
 def _pull_full_database() -> bool:
     global _LAST_PULL
     try:
@@ -186,6 +246,13 @@ def _pull_full_database() -> bool:
                 tmp.unlink(missing_ok=True)
                 last_err = "snapshot missing accounts or demo-only; preserving existing web DB"
                 continue
+
+            # Keep locally established customer/developer credentials even when the
+            # cloud snapshot contains only one auth account. Never synthesize or reset
+            # passwords; preserve only exact existing account rows from this installation.
+            preserved_accounts = _preserve_existing_login_accounts(db_path, tmp)
+            if preserved_accounts:
+                print(f"[Auth] Preserved {preserved_accounts} existing exact login account(s)")
 
             current = _db_stats(db_path)
             current_names = set(current.get("employee_names") or [])
