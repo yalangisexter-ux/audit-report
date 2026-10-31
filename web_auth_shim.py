@@ -47,6 +47,14 @@ _LAST_PULL = {
 }
 
 
+def _public_login_name(username: str) -> str:
+    """Return only role-based login aliases; never expose legacy account labels."""
+    value = str(username or "")
+    if value.casefold() in ("admin", "taruna"):
+        return "Admin" if value == "Admin" or value.casefold() == "taruna" else "admin"
+    return "Account"
+
+
 def _db_stats(db_path: Path) -> dict:
     out = {"auth_users": 0, "employees": 0, "tasks": 0, "usernames": [], "employee_names": []}
     if not db_path.is_file():
@@ -356,7 +364,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
         count = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
         employees = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
         tasks = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-        usernames = [r[0] for r in conn.execute("SELECT username FROM auth_users WHERE active=1 ORDER BY username").fetchall()]
+        usernames = [_public_login_name(r[0]) for r in conn.execute("SELECT username FROM auth_users WHERE active=1 ORDER BY username").fetchall()]
     except Exception:
         count, employees, tasks, usernames = 0, 0, 0, []
     return {
@@ -383,7 +391,10 @@ def web_db_info():
         stats = _db_stats(Path(desktop_app.DB_PATH))
     except Exception as exc:
         stats = {"error": str(exc)}
-    return {"pull": _LAST_PULL, "local": stats}
+    safe_pull = dict(_LAST_PULL or {})
+    safe_pull["usernames"] = [_public_login_name(u) for u in safe_pull.get("usernames", [])]
+    stats["usernames"] = [_public_login_name(u) for u in stats.get("usernames", [])]
+    return {"pull": safe_pull, "local": stats}
 
 
 _LOGIN_REFRESH_LOCK = threading.Lock()
