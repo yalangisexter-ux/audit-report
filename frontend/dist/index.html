@@ -14,6 +14,9 @@
     h1 { margin: 0 0 4px; font-size: 1.25rem; }
     .muted { color: #94a3b8; font-size: .85rem; }
     label { display: block; font-size: .75rem; color: #94a3b8; margin: 12px 0 4px; font-weight: 600; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 44px; }
+    .pw-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: auto; min-height: 32px; padding: 6px 8px; background: transparent; color: #94a3b8; border: none; font-size: .75rem; font-weight: 700; }
     input, button, select { width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: #020617; color: #f8fafc; padding: 12px; font-size: .95rem; }
     button { cursor: pointer; background: linear-gradient(90deg,#22d3ee,#6366f1); color: #0f172a; font-weight: 800; border: none; min-height: 44px; }
     button.secondary { background: #0f172a; color: #67e8f9; border: 1px solid rgba(255,255,255,.12); }
@@ -44,12 +47,15 @@
           <div class="muted">Employee Audit Manager · Sign in</div>
         </div>
       </div>
-      <p class="muted">Use the same username and password as the desktop app.</p>
+      <p class="muted">Case-sensitive usernames: <b>Admin</b> (customer) or <b>admin</b> (developer).</p>
       <form id="loginForm">
         <label>Username</label>
         <input id="username" autocomplete="username" required />
         <label>Password</label>
-        <input id="password" type="password" autocomplete="current-password" required />
+        <div class="pw-wrap">
+          <input id="password" type="password" autocomplete="current-password" required />
+          <button type="button" class="pw-toggle" id="togglePw" aria-label="Show password">Show</button>
+        </div>
         <div style="height:14px"></div>
         <button type="submit" id="loginBtn">Sign in</button>
         <div id="loginErr" class="err hidden"></div>
@@ -244,6 +250,12 @@
       return String(s).replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
     }
 
+    document.getElementById('togglePw').addEventListener('click', () => {
+      const inp = document.getElementById('password');
+      const btn = document.getElementById('togglePw');
+      if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'Hide'; }
+      else { inp.type = 'password'; btn.textContent = 'Show'; }
+    });
     document.getElementById('loginForm').addEventListener('submit', handleLogin);
     document.getElementById('logoutBtn').addEventListener('click', () => {
       token = ''; localStorage.removeItem('rsc_auth_token'); showLogin();
