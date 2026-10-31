@@ -212,10 +212,53 @@ def _pull_full_database() -> bool:
     return False
 
 
+def _force_case_sensitive_usernames(conn: sqlite3.Connection) -> None:
+    """Ensure auth_users.username can hold both Admin and admin (BINARY)."""
+    try:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS auth_users_bin (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL COLLATE BINARY,
+                display_name TEXT,
+                role TEXT,
+                password_salt TEXT,
+                password_hash TEXT,
+                security_question TEXT,
+                answer_salt TEXT,
+                answer_hash TEXT,
+                active INTEGER DEFAULT 1,
+                created_at TEXT,
+                updated_at TEXT
+            )"""
+        )
+        conn.execute("DELETE FROM auth_users_bin")
+        conn.execute(
+            """INSERT INTO auth_users_bin(
+                   id, username, display_name, role, password_salt, password_hash,
+                   security_question, answer_salt, answer_hash, active, created_at, updated_at)
+               SELECT id, username, display_name, role, password_salt, password_hash,
+                      security_question, answer_salt, answer_hash, active, created_at, updated_at
+               FROM auth_users"""
+        )
+        conn.execute("DROP TABLE auth_users")
+        conn.execute("ALTER TABLE auth_users_bin RENAME TO auth_users")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_username_bin ON auth_users(username)"
+        )
+        conn.execute("PRAGMA foreign_keys=ON")
+        print("[Auth] auth_users username collation forced to BINARY")
+    except Exception as exc:
+        print(f"[Auth] BINARY username migration skipped: {exc}")
+
+
 def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role: str, password: str) -> None:
     salt, digest = desktop_app.hash_pin(password)
     now = desktop_app.now_text()
-    row = conn.execute("SELECT id FROM auth_users WHERE username = ?", (username,)).fetchone()
+    row = conn.execute(
+        "SELECT id FROM auth_users WHERE username = ? COLLATE BINARY",
+        (username,),
+    ).fetchone()
     if row:
         conn.execute(
             """UPDATE auth_users
@@ -247,6 +290,7 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             except Exception:
                 pass
         conn = db.conn
+        _force_case_sensitive_usernames(conn)
 
         customer_pwd = (
             os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD")
@@ -254,6 +298,32 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             or ""
         ).strip() or "Shiva@01"
         dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
+
+        try:
+            conn.execute("PRAGMA case_sensitive_like = ON")
+        except Exception:
+            pass
+        try:
+            rows = conn.execute("SELECT id, username, display_name, role FROM auth_users").fetchall()
+            for r in rows:
+                uname = r[1] if not isinstance(r, sqlite3.Row) else r["username"]
+                if str(uname) == "admin":
+                    continue
+                elif str(uname) == "Admin":
+                    continue
+                elif str(uname).casefold() == "admin":
+                    rid = r[0] if not isinstance(r, sqlite3.Row) else r["id"]
+                    conn.execute(
+                        "UPDATE auth_users SET username=?, display_name=?, role=? WHERE id=?",
+                        ("admin", "admin (Developer - Test Mode)", "Developer", rid),
+                    )
+            conn.execute(
+                """DELETE FROM auth_users
+                   WHERE lower(username) IN ('admin', 'taruna')
+                     AND username NOT IN ('admin', 'Admin', 'taruna')"""
+            )
+        except Exception as exc:
+            print(f"[Auth] Case-split normalize skipped: {exc}")
 
         _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
         _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
@@ -339,7 +409,7 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
     import app as desktop_app
 
     row = conn.execute(
-        "SELECT * FROM auth_users WHERE username = ? AND active = 1",
+        "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
         (username,),
     ).fetchone()
     if not row:
