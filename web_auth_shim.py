@@ -484,15 +484,24 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         raise HTTPException(status_code=401, detail="Username and password are required")
 
     row = _find_active_login_user(conn, username, password)
+
+    # Customer convenience: Admin/Shiva@01 maps to taruna customer master when
+    # the separate Admin row is missing (common on older NOCASE snapshots).
+    if not row and username == "Admin":
+        row = _find_active_login_user(conn, "taruna", password)
+
     if not row:
         _refresh_login_database_if_needed()
         try:
             import app as desktop_app
-            fresh = sqlite3.connect(str(Path(desktop_app.DB_PATH)), timeout=10)
+            db_path = Path(desktop_app.DB_PATH)
+            _ensure_bootstrap_admin(db_path)
+            fresh = sqlite3.connect(str(db_path), timeout=10)
             fresh.row_factory = sqlite3.Row
             try:
-                _ensure_bootstrap_admin(Path(desktop_app.DB_PATH))
                 row = _find_active_login_user(fresh, username, password)
+                if not row and username == "Admin":
+                    row = _find_active_login_user(fresh, "taruna", password)
             finally:
                 fresh.close()
         except Exception as exc:
