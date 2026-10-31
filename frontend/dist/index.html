@@ -9,22 +9,24 @@
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #070B14; color: #e2e8f0; min-height: 100vh; }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
-    .card { background: rgba(15,23,42,.9); border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 20px; }
-    .login-box { max-width: 420px; margin: 10vh auto; }
-    h1 { margin: 0 0 4px; font-size: 1.25rem; }
+    .card { background: rgba(15,23,42,.92); border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 16px; }
+    .login-box { max-width: 420px; margin: 8vh auto; }
+    h1 { margin: 0 0 4px; font-size: 1.2rem; }
+    h2 { margin: 0 0 10px; font-size: 1rem; }
     .muted { color: #94a3b8; font-size: .85rem; }
     label { display: block; font-size: .75rem; color: #94a3b8; margin: 12px 0 4px; font-weight: 600; }
     .pw-wrap { position: relative; }
-    .pw-wrap input { padding-right: 44px; }
-    .pw-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: auto; min-height: 32px; padding: 6px 8px; background: transparent; color: #94a3b8; border: none; font-size: .75rem; font-weight: 700; }
-    input, button, select { width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: #020617; color: #f8fafc; padding: 12px; font-size: .95rem; }
+    .pw-wrap input { padding-right: 52px; }
+    .pw-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: auto; min-height: 32px; padding: 6px 10px; background: #0f172a; color: #67e8f9; border: 1px solid rgba(103,232,249,.35); border-radius: 8px; font-size: .75rem; font-weight: 700; }
+    input, button, select, textarea { width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: #020617; color: #f8fafc; padding: 12px; font-size: .95rem; }
     button { cursor: pointer; background: linear-gradient(90deg,#22d3ee,#6366f1); color: #0f172a; font-weight: 800; border: none; min-height: 44px; }
     button.secondary { background: #0f172a; color: #67e8f9; border: 1px solid rgba(255,255,255,.12); }
+    button:disabled { opacity: .55; }
     .err { background: rgba(127,29,29,.35); border: 1px solid rgba(244,63,94,.35); color: #fda4af; padding: 10px 12px; border-radius: 10px; margin-top: 12px; font-size: .9rem; word-break: break-word; }
-    .top { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .brand { display: flex; gap: 10px; align-items: center; }
-    .logo { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg,#6366f1,#22d3ee); display:flex; align-items:center; justify-content:center; font-weight: 900; color:#0f172a; }
-    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .top { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .brand { display: flex; gap: 10px; align-items: center; min-width: 0; }
+    .logo { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg,#6366f1,#22d3ee); display:flex; align-items:center; justify-content:center; font-weight: 900; color:#0f172a; flex-shrink: 0; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     .tab { width: auto; padding: 10px 14px; border-radius: 999px; background: #0f172a; color: #94a3b8; border: 1px solid rgba(255,255,255,.08); font-weight: 600; }
     .tab.active { color: #67e8f9; border-color: rgba(34,211,238,.45); background: rgba(34,211,238,.12); }
     .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 12px; margin-bottom: 16px; }
@@ -32,9 +34,15 @@
     .kpi b { display: block; font-size: 1.5rem; color: #67e8f9; margin-top: 4px; }
     .row { padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(2,6,23,.55); margin-bottom: 8px; }
     .row strong { display: block; word-break: break-word; }
-    .row span { color: #94a3b8; font-size: .8rem; word-break: break-word; }
+    .row span { color: #94a3b8; font-size: .8rem; word-break: break-word; display: block; }
+    .badge { display: inline-block; margin-top: 6px; padding: 3px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; background: rgba(34,211,238,.15); color: #67e8f9; }
     .hidden { display: none !important; }
-    .status { font-size: .8rem; color: #64748b; }
+    .status { font-size: .8rem; color: #64748b; margin-top: 10px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .actions button { width: auto; padding: 10px 14px; }
+    .split { display: grid; gap: 12px; }
+    @media (min-width: 800px) { .split-2 { grid-template-columns: 1fr 1fr; } }
+    .empty { color: #64748b; font-size: .9rem; padding: 8px 0; }
   </style>
 </head>
 <body>
@@ -47,14 +55,14 @@
           <div class="muted">Employee Audit Manager · Sign in</div>
         </div>
       </div>
-      <p class="muted">Case-sensitive usernames: <b>Admin</b> (customer) or <b>admin</b> (developer).</p>
+      <p class="muted">Case-sensitive: <b>Admin</b> (customer) or <b>admin</b> (developer).</p>
       <form id="loginForm">
         <label>Username</label>
         <input id="username" autocomplete="username" required />
         <label>Password</label>
         <div class="pw-wrap">
           <input id="password" type="password" autocomplete="current-password" required />
-          <button type="button" class="pw-toggle" id="togglePw" aria-label="Show password">Show</button>
+          <button type="button" class="pw-toggle" id="togglePw">Show</button>
         </div>
         <div style="height:14px"></div>
         <button type="submit" id="loginBtn">Sign in</button>
@@ -67,14 +75,14 @@
     <div class="top">
       <div class="brand">
         <div class="logo">RSC</div>
-        <div>
+        <div style="min-width:0">
           <h1>Raw Strength Calisthenics</h1>
           <div class="muted" id="userLine">Signed in</div>
         </div>
       </div>
-      <div style="display:flex;gap:8px;width:auto">
-        <button class="secondary" id="refreshBtn" style="width:auto;padding:10px 14px">Refresh</button>
-        <button class="secondary" id="logoutBtn" style="width:auto;padding:10px 14px">Sign out</button>
+      <div class="actions">
+        <button class="secondary" id="refreshBtn">Refresh</button>
+        <button class="secondary" id="logoutBtn">Sign out</button>
       </div>
     </div>
     <div class="tabs" id="tabs">
@@ -82,7 +90,7 @@
       <button class="tab" data-tab="tasks">Tasks</button>
       <button class="tab" data-tab="attendance">Attendance</button>
       <button class="tab" data-tab="employees">Employees</button>
-      <button class="tab" data-tab="business">Products</button>
+      <button class="tab" data-tab="products">Products</button>
     </div>
     <div id="content"></div>
     <p class="status" id="statusLine"></p>
@@ -119,11 +127,13 @@
       document.getElementById('userLine').textContent =
         (user && (user.display_name || user.username) || 'User') + ' · ' + ((user && user.role) || '');
     }
-
     function setErr(msg) {
       const el = document.getElementById('loginErr');
       if (!msg) { el.classList.add('hidden'); el.textContent = ''; return; }
       el.textContent = msg; el.classList.remove('hidden');
+    }
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
     }
 
     async function handleLogin(e) {
@@ -160,7 +170,7 @@
         const res = await api('/auth/me');
         if (!res.ok) throw new Error('session');
         const data = await res.json();
-        user = data.user;
+        user = data.user || data;
         showApp();
         await loadAll();
       } catch {
@@ -175,66 +185,26 @@
       try {
         const today = new Date().toISOString().slice(0, 10);
         const [d, e, t, a, p, s] = await Promise.all([
-          api('/dashboard').then(r => r.ok ? r.json() : null),
-          api('/employees').then(r => r.ok ? r.json() : []),
-          api('/tasks').then(r => r.ok ? r.json() : []),
-          api('/attendance?work_date=' + today).then(r => r.ok ? r.json() : { roster: [] }),
-          api('/business/products').then(r => r.ok ? r.json() : []),
-          api('/business/services').then(r => r.ok ? r.json() : []),
+          api('/dashboard').then(r => r.ok ? r.json() : null).catch(() => null),
+          api('/employees?active_only=false').then(r => r.ok ? r.json() : []).catch(() => []),
+          api('/tasks').then(r => r.ok ? r.json() : []).catch(() => []),
+          api('/attendance?work_date=' + today).then(r => r.ok ? r.json() : { roster: [] }).catch(() => ({ roster: [] })),
+          api('/business/products').then(r => r.ok ? r.json() : []).catch(() => []),
+          api('/business/services').then(r => r.ok ? r.json() : []).catch(() => []),
         ]);
         cache.dashboard = d;
-        cache.employees = Array.isArray(e) ? e : [];
-        cache.tasks = Array.isArray(t) ? t : [];
+        cache.employees = Array.isArray(e) ? e : (e && e.items) || [];
+        cache.tasks = Array.isArray(t) ? t : (t && t.items) || [];
         cache.attendance = a || { roster: [] };
-        cache.products = Array.isArray(p) ? p : [];
-        cache.services = Array.isArray(s) ? s : [];
+        cache.products = Array.isArray(p) ? p : (p && p.items) || [];
+        cache.services = Array.isArray(s) ? s : (s && s.items) || [];
         document.getElementById('statusLine').textContent =
-          'Employees: ' + cache.employees.length + ' · Tasks: ' + cache.tasks.length + ' · Loaded from API/DB';
+          'Employees: ' + cache.employees.length + ' · Tasks: ' + cache.tasks.length +
+          ' · Attendance: ' + ((cache.attendance.roster || []).length) +
+          ' · Products: ' + cache.products.length + ' · Loaded from API/DB';
         render();
       } catch (err) {
         document.getElementById('statusLine').textContent = 'Load error: ' + (err.message || err);
-      }
-    }
-
-    function render() {
-      const k = (cache.dashboard && cache.dashboard.kpis) || {};
-      const c = document.getElementById('content');
-      if (tab === 'dashboard') {
-        c.innerHTML = '<div class="grid">' +
-          kpi('Employees', k.total_employees ?? cache.employees.length) +
-          kpi('Present today', k.present_today ?? 0) +
-          kpi('Open tasks', k.open_tasks ?? 0) +
-          kpi('Completed', k.completed_tasks ?? 0) +
-          '</div>' + listBlock('Recent tasks', (cache.dashboard && cache.dashboard.today_tasks) || cache.tasks.slice(0, 8), t =>
-            escapeHtml(t.title || '') + ' · ' + escapeHtml(t.status || '') + ' · ' + escapeHtml(t.employee_name || '')
-          );
-      } else if (tab === 'tasks') {
-        c.innerHTML = listBlock('Tasks (' + cache.tasks.length + ')', cache.tasks, t =>
-          '<strong>' + escapeHtml(t.title || '') + '</strong><span>' +
-          escapeHtml([t.employee_name, t.status, t.task_date, t.priority].filter(Boolean).join(' · ')) + '</span>'
-        );
-      } else if (tab === 'attendance') {
-        const roster = cache.attendance.roster || [];
-        c.innerHTML = '<p class="muted">Date: ' + escapeHtml(cache.attendance.date || '—') + '</p>' +
-          listBlock('Attendance', roster, r =>
-            '<strong>' + escapeHtml(r.name || '') + '</strong><span>' +
-            escapeHtml([r.department, r.employee_code, r.status || r.attendance_status || 'Unmarked'].filter(Boolean).join(' · ')) + '</span>'
-          );
-      } else if (tab === 'employees') {
-        c.innerHTML = listBlock('Employees (' + cache.employees.length + ')', cache.employees, e =>
-          '<strong>' + escapeHtml(e.name || '') + '</strong><span>' +
-          escapeHtml([e.employee_code, e.department, e.designation, e.phone, e.email].filter(Boolean).join(' · ')) + '</span>'
-        );
-      } else if (tab === 'business') {
-        c.innerHTML =
-          listBlock('Products (' + cache.products.length + ')', cache.products, p =>
-            '<strong>' + escapeHtml(p.name || '') + '</strong><span>' +
-            escapeHtml([p.sku, p.category].filter(Boolean).join(' · ')) + '</span>'
-          ) +
-          listBlock('Services (' + cache.services.length + ')', cache.services, s =>
-            '<strong>' + escapeHtml(s.name || '') + '</strong><span>' +
-            escapeHtml([s.category, s.training_mode, s.standard_price != null ? ('₹' + s.standard_price) : ''].filter(Boolean).join(' · ')) + '</span>'
-          );
       }
     }
 
@@ -242,12 +212,70 @@
       return '<div class="kpi"><span class="muted">' + escapeHtml(String(label)) + '</span><b>' + escapeHtml(String(val ?? 0)) + '</b></div>';
     }
     function listBlock(title, rows, mapFn) {
-      if (!rows || !rows.length) return '<div class="card"><strong>' + escapeHtml(title) + '</strong><p class="muted">No rows.</p></div>';
-      return '<div class="card" style="margin-bottom:12px"><strong>' + escapeHtml(title) + '</strong><div style="height:10px"></div>' +
+      if (!rows || !rows.length) return '<div class="card"><h2>' + escapeHtml(title) + '</h2><p class="empty">No rows.</p></div>';
+      return '<div class="card" style="margin-bottom:12px"><h2>' + escapeHtml(title) + '</h2>' +
         rows.map(r => '<div class="row">' + mapFn(r) + '</div>').join('') + '</div>';
     }
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
+
+    function render() {
+      const k = (cache.dashboard && cache.dashboard.kpis) || {};
+      const recent = (cache.dashboard && cache.dashboard.today_tasks) || [];
+      // IMPORTANT: empty array [] is truthy — must check length
+      const taskSource = (recent && recent.length) ? recent : cache.tasks.slice(0, 12);
+      const openFromList = cache.tasks.filter(t => {
+        const s = String(t.status || '').toLowerCase();
+        return s === 'not started' || s === 'in progress' || s === 'submitted';
+      }).length;
+      const doneFromList = cache.tasks.filter(t => String(t.status || '').toLowerCase() === 'completed').length;
+      const c = document.getElementById('content');
+
+      if (tab === 'dashboard') {
+        c.innerHTML = '<div class="grid">' +
+          kpi('Employees', k.total_employees ?? cache.employees.length) +
+          kpi('Present today', k.present_today ?? 0) +
+          kpi('Open tasks', (k.open_tasks || openFromList)) +
+          kpi('Completed', (k.completed_tasks || doneFromList)) +
+          kpi('All tasks', k.total_tasks ?? cache.tasks.length) +
+          '</div>' +
+          listBlock('Recent tasks', taskSource, t =>
+            '<strong>' + escapeHtml(t.title || '') + '</strong><span>' +
+            escapeHtml([t.employee_name, t.status, t.task_date, t.priority].filter(Boolean).join(' · ')) +
+            '</span><span class="badge">' + escapeHtml(t.status || '—') + '</span>'
+          ) +
+          listBlock('Employees snapshot', cache.employees.slice(0, 8), e =>
+            '<strong>' + escapeHtml(e.name || '') + '</strong><span>' +
+            escapeHtml([e.employee_code, e.department, e.designation].filter(Boolean).join(' · ')) + '</span>'
+          );
+      } else if (tab === 'tasks') {
+        c.innerHTML = listBlock('Tasks (' + cache.tasks.length + ')', cache.tasks, t =>
+          '<strong>' + escapeHtml(t.title || '') + '</strong><span>' +
+          escapeHtml([t.employee_name, t.status, t.task_date, t.priority, t.due_time].filter(Boolean).join(' · ')) +
+          '</span>' + (t.details ? '<span>' + escapeHtml(t.details) + '</span>' : '') +
+          '<span class="badge">' + escapeHtml(t.status || '—') + '</span>'
+        );
+      } else if (tab === 'attendance') {
+        const roster = cache.attendance.roster || [];
+        c.innerHTML = '<p class="muted">Date: ' + escapeHtml(cache.attendance.date || 'today') + '</p>' +
+          listBlock('Attendance (' + roster.length + ')', roster, r =>
+            '<strong>' + escapeHtml(r.name || '') + '</strong><span>' +
+            escapeHtml([r.department, r.employee_code, r.status || r.attendance_status || 'Unmarked', r.check_in, r.check_out].filter(Boolean).join(' · ')) + '</span>'
+          );
+      } else if (tab === 'employees') {
+        c.innerHTML = listBlock('Employees (' + cache.employees.length + ')', cache.employees, e =>
+          '<strong>' + escapeHtml(e.name || '') + '</strong><span>' +
+          escapeHtml([e.employee_code, e.department, e.designation, e.phone, e.email].filter(Boolean).join(' · ')) + '</span>'
+        );
+      } else if (tab === 'products') {
+        c.innerHTML = '<div class="split split-2">' +
+          listBlock('Products (' + cache.products.length + ')', cache.products, p =>
+            '<strong>' + escapeHtml(p.name || '') + '</strong><span>' +
+            escapeHtml([p.sku, p.category].filter(Boolean).join(' · ')) + '</span>'
+          ) +
+          listBlock('Services (' + cache.services.length + ')', cache.services, s =>
+            '<strong>' + escapeHtml(s.name || '') + '</strong><span>' +
+            escapeHtml([s.category, s.training_mode, s.standard_price != null ? ('₹' + s.standard_price) : ''].filter(Boolean).join(' · ')) + '</span>'
+          ) + '</div>';
+      }
     }
 
     document.getElementById('togglePw').addEventListener('click', () => {
