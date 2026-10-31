@@ -283,13 +283,31 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
     try:
         import app as desktop_app
 
-        db = desktop_app.Database()
-        if hasattr(db, "close_github_sync"):
-            try:
-                db.close_github_sync(timeout=0)
-            except Exception:
-                pass
-        conn = db.conn
+        # Avoid desktop_app.Database() on Linux/Render — it can raise
+        # "Sync secrets can only be protected on Windows" and abort bootstrap.
+        db_path = Path(db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS auth_users (
+                    id INTEGER PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    display_name TEXT,
+                    role TEXT,
+                    password_salt TEXT,
+                    password_hash TEXT,
+                    security_question TEXT,
+                    answer_salt TEXT,
+                    answer_hash TEXT,
+                    active INTEGER DEFAULT 1,
+                    created_at TEXT,
+                    updated_at TEXT
+                )"""
+            )
+        except Exception:
+            pass
         _force_case_sensitive_usernames(conn)
 
         customer_pwd = (
@@ -329,7 +347,7 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
 
         conn.commit()
         try:
-            db.conn.close()
+            conn.close()
         except Exception:
             pass
         print("[Auth] Bootstrap forced Admin/admin/taruna passwords for web login")
