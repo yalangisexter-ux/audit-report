@@ -79,6 +79,57 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller pytest
 
+
+      - name: Download high-resolution photographic wallpaper assets
+        shell: pwsh
+        run: |
+          $wallpaperDir = Join-Path $PWD "assets/wallpapers/photos"
+          New-Item -ItemType Directory -Force -Path $wallpaperDir | Out-Null
+          $wallpapers = @{
+            "galaxy.jpg" = "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "milky_way.jpg" = "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "ocean_waves.jpg" = "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "lord_shiva.jpg" = "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+            "love_couples.jpg" = "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"
+          }
+          foreach ($filename in $wallpapers.Keys) {
+            $destination = Join-Path $wallpaperDir $filename
+            Invoke-WebRequest -Uri $wallpapers[$filename] -OutFile $destination
+            if ((Get-Item $destination).Length -lt 10000) { throw "Wallpaper download is incomplete: $filename" }
+          }
+
+      - name: Configure optional production Worker endpoints
+        shell: pwsh
+        env:
+          DB_SYNC_WORKER_URL: ${{ vars.DB_SYNC_WORKER_URL }}
+          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
+        run: |
+          $workerUrl = ""
+          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }
+          if (-not [string]::IsNullOrWhiteSpace($workerUrl)) {
+            $uri = [Uri]$workerUrl
+            if ($uri.Scheme -ne "https" -or $uri.Host -notmatch "\\.workers\\.dev$") { throw "Database-sync Worker URL must be an HTTPS Cloudflare Workers hostname." }
+            $sourcePath = "database_sync.py"
+            $source = Get-Content $sourcePath -Raw
+            $replacement = 'DEFAULT_DB_SYNC_WORKER_URL = "' + $workerUrl.TrimEnd("/") + '"'
+            $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL\\s*=\\s*["''][^"'']*["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
+            if (-not $source.Contains($replacement)) { throw "Could not inject database-sync Worker URL." }
+            Set-Content -Path $sourcePath -Value $source -Encoding utf8
+            if ($uri.Host -ne ([Uri]$workerUrl).Host -or -not $source.Contains([regex]::Escape($uri.Host))) { throw "Database-sync Worker host validation failed." }
+          }
+
+          $chatUrl = $env:CHAT_WORKER_URL
+          if (-not [string]::IsNullOrWhiteSpace($chatUrl)) {
+            $chatUri = [Uri]$chatUrl
+            if ($chatUri.Scheme -ne "https" -or $chatUri.Host -notmatch "\\.workers\\.dev$") { throw "Live Chat Worker URL must be an HTTPS Cloudflare Workers hostname." }
+            $sourcePath = "cloudflare_chat.py"
+            $source = Get-Content $sourcePath -Raw
+            $replacement = 'DEFAULT_CHAT_API_BASE = "' + $chatUrl.TrimEnd("/") + '"'
+            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE\\s*=\\s*["''][^"'']*["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
+            if (-not $source.Contains($replacement)) { throw "Could not inject production Live Chat endpoint." }
+            Set-Content -Path $sourcePath -Value $source -Encoding utf8
+          }
+
       - name: Run regression tests
         shell: pwsh
         env:
