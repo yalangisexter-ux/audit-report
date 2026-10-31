@@ -260,26 +260,21 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
         (username,),
     ).fetchone()
     if row:
-        conn.execute(
-            """UPDATE auth_users
-               SET display_name=?, role=?, password_salt=?, password_hash=?, active=1, updated_at=?
-               WHERE id=?""",
-            (display_name, role, salt, digest, now, row[0]),
-        )
-        print(f"[Auth] Bootstrap: updated {username!r}")
-    else:
-        conn.execute(
-            """INSERT INTO auth_users(
-                   username, display_name, role, password_salt, password_hash,
-                   security_question, answer_salt, answer_hash, active, created_at, updated_at
-               ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
-            (username, display_name, role, salt, digest, "", "", "", now, now),
-        )
-        print(f"[Auth] Bootstrap: created {username!r}")
+        # Never overwrite an existing customer's password or role at web startup.
+        print(f"[Auth] Bootstrap: preserved existing account {username!r}")
+        return
+    conn.execute(
+        """INSERT INTO auth_users(
+               username, display_name, role, password_salt, password_hash,
+               security_question, answer_salt, answer_hash, active, created_at, updated_at
+           ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+        (username, display_name, role, salt, digest, "", "", "", now, now),
+    )
+    print(f"[Auth] Bootstrap: created explicitly configured account {username!r}")
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Force case-sensitive Admin (customer) and admin (developer) web passwords."""
+    """Preserve existing web accounts; optionally provision from deployment secrets."""
     try:
         import app as desktop_app
 
@@ -310,12 +305,14 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             pass
         _force_case_sensitive_usernames(conn)
 
+        # Never ship default credentials or rotate existing account passwords.
+        # Provision new accounts only from explicitly configured deployment secrets.
         customer_pwd = (
             os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD")
             or os.environ.get("WEB_BOOTSTRAP_TARUNA_PASSWORD")
             or ""
-        ).strip() or "Shiva@01"
-        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
+        ).strip()
+        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
 
         try:
             conn.execute("PRAGMA case_sensitive_like = ON")
@@ -341,9 +338,11 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
         except Exception as exc:
             print(f"[Auth] Case-split normalize skipped: {exc}")
 
-        _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
-        _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
-        _upsert_user_exact(conn, desktop_app, "taruna", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+        if customer_pwd:
+            _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+            _upsert_user_exact(conn, desktop_app, "taruna", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+        if dev_pwd:
+            _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
 
         conn.commit()
         try:
@@ -377,7 +376,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
             "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
             "error": str((_LAST_PULL or {}).get("error") or "")[:240],
         },
-        "hint": "Case-sensitive: Admin=customer (Shiva@01); admin=developer (kiran123 or Devlopershouse@1996#).",
+        "hint": "Usernames are case-sensitive. Existing account credentials are preserved; contact the administrator for account recovery.",
     }
 
 
@@ -421,7 +420,7 @@ def _refresh_login_database_if_needed() -> None:
 
 
 def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
-    """Case-sensitive username; Admin != admin. Accepts known web passwords."""
+    """Authenticate case-sensitive usernames only against their stored password hash."""
     import app as desktop_app
 
     row = conn.execute(
@@ -446,24 +445,7 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
     if ok_hash(password):
         return row
 
-    allowed = []
-    if username == "Admin":
-        allowed = ["Shiva@01"]
-    elif username == "admin":
-        allowed = ["kiran123", "Devlopershouse@1996#"]
-    elif username.casefold() == "taruna":
-        allowed = ["Shiva@01"]
-
-    if password in allowed:
-        new_salt, new_digest = desktop_app.hash_pin(password)
-        conn.execute(
-            "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, updated_at=? WHERE id=?",
-            (new_salt, new_digest, desktop_app.now_text(), row["id"]),
-        )
-        conn.commit()
-        print(f"[Auth] Accepted known password for {username!r}; hash updated")
-        return conn.execute("SELECT * FROM auth_users WHERE id=?", (row["id"],)).fetchone()
-
+    # No hard-coded password bypasses: the stored account hash is authoritative.
     return None
 
 
