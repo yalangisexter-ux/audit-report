@@ -10,8 +10,6 @@ on:
 permissions:
   contents: write
 
-# Keep only the latest build for each branch. New code pushes cancel stale builds.
-# Encrypted customer database snapshots do not need a full Windows installer build.
 concurrency:
   group: audit-report-main-release-${{ github.ref }}
   cancel-in-progress: true
@@ -106,220 +104,6 @@ jobs:
           choco install innosetup --yes --no-progress
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup compiler was not installed." }
 
-      - name: Download high-resolution photographic wallpaper assets
-        shell: pwsh
-        run: |
-          $wallpaperDir = "assets/wallpapers/photos"
-          New-Item -ItemType Directory -Force -Path $wallpaperDir | Out-Null
-          $wallpapers = @{
-            "galaxy.jpg" = "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "milky_way.jpg" = "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "ocean_waves.jpg" = "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "lord_shiva.jpg" = "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "love_couples.jpg" = "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-          }
-          foreach ($name in $wallpapers.Keys) {
-            $target = Join-Path $wallpaperDir $name
-            Invoke-WebRequest -Uri $wallpapers[$name] -OutFile $target
-            $bytes = [System.IO.File]::ReadAllBytes($target)
-            if ($bytes.Length -lt 30000 -or $bytes[0] -ne 0xFF -or $bytes[1] -ne 0xD8 -or $bytes[2] -ne 0xFF) {
-              throw "Wallpaper download is not a valid high-resolution JPEG: $name"
-            }
-            Write-Host "Verified photo wallpaper $name ($($bytes.Length) bytes)"
-          }
-
-      - name: Deploy production Live Chat Worker
-        id: deploy_chat
-        shell: pwsh
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CHAT_JWT_SECRET: ${{ secrets.CHAT_JWT_SECRET }}
-          CHAT_BOOTSTRAP_TOKEN: ${{ secrets.CHAT_BOOTSTRAP_TOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) { throw "Missing Actions secret CLOUDFLARE_API_TOKEN." }
-          try {
-            $accRes = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts" -Headers @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
-            if ($accRes.result -and $accRes.result.Count -gt 0) {
-              $matched = $accRes.result | Where-Object { $_.id -eq $env:CLOUDFLARE_ACCOUNT_ID } | Select-Object -First 1
-              if ($null -eq $matched) {
-                $env:CLOUDFLARE_ACCOUNT_ID = $accRes.result[0].id
-                Write-Host "Resolved active Cloudflare Account ID: $($env:CLOUDFLARE_ACCOUNT_ID)"
-              }
-            }
-          } catch {
-            Write-Host "Account resolution check: $_"
-          }
-          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) { throw "Missing Actions variable CLOUDFLARE_ACCOUNT_ID." }
-          if ([string]::IsNullOrWhiteSpace($env:CHAT_JWT_SECRET) -or $env:CHAT_JWT_SECRET.Length -lt 32) { throw "CHAT_JWT_SECRET is missing or shorter than 32 characters." }
-          if ([string]::IsNullOrWhiteSpace($env:CHAT_BOOTSTRAP_TOKEN)) { throw "Missing Actions secret CHAT_BOOTSTRAP_TOKEN." }
-          Push-Location cloudflare-chat
-          try {
-            npm install --no-audit --no-fund
-            npm run check
-            npx wrangler d1 migrations apply rsc-employee-chat-livescreen-sharing --remote --config wrangler.toml
-            $env:CHAT_JWT_SECRET | npx wrangler secret put CHAT_JWT_SECRET --config wrangler.toml
-            $env:CHAT_BOOTSTRAP_TOKEN | npx wrangler secret put CHAT_BOOTSTRAP_TOKEN --config wrangler.toml
-            $deployLog = @()
-            $deployExitCode = 1
-            for ($attempt = 1; $attempt -le 3; $attempt++) {
-              Write-Host "Deploying Live Chat Worker (attempt $attempt of 3)..."
-              $deployLog = npm run deploy 2>&1
-              $deployExitCode = $LASTEXITCODE
-              $deployLog | ForEach-Object { Write-Host $_ }
-              if ($deployExitCode -eq 0) { break }
-              if ($attempt -lt 3) {
-                Write-Host "Worker deployment failed with exit code $deployExitCode; retrying in 10 seconds."
-                Start-Sleep -Seconds 10
-              }
-            }
-            if ($deployExitCode -ne 0) {
-              throw "Live Chat Worker deployment failed after 3 attempts (last exit code $deployExitCode)."
-            }
-            $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-employee-chat[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
-            if ($null -eq $workerUrl) {
-              try {
-                $subRes = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/workers/subdomain" -Headers @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
-                if ($subRes.result -and $subRes.result.subdomain) {
-                  $workerUrl = [PSCustomObject]@{ Value = "https://raw-strength-employee-chat.$($subRes.result.subdomain).workers.dev" }
-                  Write-Host "Resolved Worker URL from Cloudflare subdomain API: $($workerUrl.Value)"
-                }
-              } catch {
-                Write-Host "Subdomain lookup: $_"
-              }
-            }
-            if ($null -eq $workerUrl) { throw "Worker deploy succeeded but Wrangler output did not expose its URL. Set CHAT_WORKER_URL to the deployed HTTPS URL." }
-            "worker_url=$($workerUrl.Value)" >> $env:GITHUB_OUTPUT
-          }
-          finally { Pop-Location }
-
-      - name: Configure the production Live Chat endpoint when available
-        shell: pwsh
-        env:
-          DEPLOYED_CHAT_WORKER_URL: ${{ steps.deploy_chat.outputs.worker_url }}
-          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
-        run: |
-          $workerUrl = $env:DEPLOYED_CHAT_WORKER_URL
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:CHAT_WORKER_URL }
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) {
-            Write-Host "::warning::CHAT_WORKER_URL is missing. Live Chat endpoint will not be preconfigured in this build. Set the variable or ensure deploy step outputs the URL."
-            exit 0
-          } else {
-            $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
-            if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { 
-              Write-Host "::warning::CHAT_WORKER_URL is not a plain HTTPS base URL. Skipping injection."
-              exit 0
-            }
-            $sourcePath = "cloudflare_chat.py"
-            $source = Get-Content $sourcePath -Raw
-            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE = ".*?"', ('DEFAULT_CHAT_API_BASE = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
-            if ($source -notmatch ('DEFAULT_CHAT_API_BASE = "https://' + [regex]::Escape($uri.Host))) { 
-              Write-Host "::warning::Could not configure the production Live Chat endpoint."
-              exit 0
-            }
-            Set-Content -Path $sourcePath -Value $source -Encoding utf8
-            Write-Host "Configured production Live Chat endpoint: $($uri.GetLeftPart([System.UriPartial]::Authority))"
-          }
-
-      - name: Deploy isolated database-sync Worker
-        id: deploy_db_sync
-        shell: pwsh
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          RELEASE_TOKEN_2: ${{ secrets.RELEASE_TOKEN_2 }}
-          DB_SYNC_JWT_SECRET: ${{ secrets.DB_SYNC_JWT_SECRET }}
-          CHAT_JWT_SECRET: ${{ secrets.CHAT_JWT_SECRET }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_API_TOKEN)) { throw "Missing Actions secret CLOUDFLARE_API_TOKEN." }
-          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_ACCOUNT_ID)) { throw "Missing Actions variable CLOUDFLARE_ACCOUNT_ID." }
-          if ([string]::IsNullOrWhiteSpace($env:RELEASE_TOKEN_2)) { throw "Missing Actions secret RELEASE_TOKEN_2 (database sync only)." }
-          if ([string]::IsNullOrWhiteSpace($env:DB_SYNC_JWT_SECRET)) {
-            if ([string]::IsNullOrWhiteSpace($env:CHAT_JWT_SECRET) -or $env:CHAT_JWT_SECRET.Length -lt 32) {
-              throw "Set DB_SYNC_JWT_SECRET or provide a strong CHAT_JWT_SECRET for domain-separated fallback."
-            }
-            $material = [System.Text.Encoding]::UTF8.GetBytes("RawStrengthEmployeeAuditManager:database-sync-worker-jwt:v1:" + $env:CHAT_JWT_SECRET)
-            $sha256 = [System.Security.Cryptography.SHA256]::Create()
-            try { $env:DB_SYNC_JWT_SECRET = [Convert]::ToHexString($sha256.ComputeHash($material)).ToLowerInvariant() }
-            finally { $sha256.Dispose() }
-          }
-          if ($env:DB_SYNC_JWT_SECRET.Length -lt 32) { throw "Resolved database-sync JWT secret is too weak." }
-          Push-Location audit-db-sync
-          try {
-            $firstDeployLog = @()
-            $firstDeployExitCode = 1
-            for ($attempt = 1; $attempt -le 3; $attempt++) {
-              Write-Host "Preparing database-sync Worker (attempt $attempt of 3)..."
-              $firstDeployLog = npm run deploy 2>&1
-              $firstDeployExitCode = $LASTEXITCODE
-              $firstDeployLog | ForEach-Object { Write-Host $_ }
-              if ($firstDeployExitCode -eq 0) { break }
-              if ($attempt -lt 3) {
-                Write-Host "Initial database-sync deployment failed with exit code $firstDeployExitCode; retrying in 10 seconds."
-                Start-Sleep -Seconds 10
-              }
-            }
-            if ($firstDeployExitCode -ne 0) {
-              throw "Initial database-sync Worker deployment failed after 3 attempts (last exit code $firstDeployExitCode)."
-            }
-
-            $env:RELEASE_TOKEN_2 | npx wrangler secret put RELEASE_TOKEN_2 --config wrangler.toml
-            if ($LASTEXITCODE -ne 0) { throw "Could not configure RELEASE_TOKEN_2 for the database-sync Worker." }
-            $env:DB_SYNC_JWT_SECRET | npx wrangler secret put JWT_SECRET --config wrangler.toml
-            if ($LASTEXITCODE -ne 0) { throw "Could not configure JWT_SECRET for the database-sync Worker." }
-
-            $deployLog = @()
-            $deployExitCode = 1
-            for ($attempt = 1; $attempt -le 3; $attempt++) {
-              Write-Host "Deploying database-sync Worker with configured secrets (attempt $attempt of 3)..."
-              $deployLog = npm run deploy 2>&1
-              $deployExitCode = $LASTEXITCODE
-              $deployLog | ForEach-Object { Write-Host $_ }
-              if ($deployExitCode -eq 0) { break }
-              if ($attempt -lt 3) {
-                Write-Host "Database-sync deployment failed with exit code $deployExitCode; retrying in 10 seconds."
-                Start-Sleep -Seconds 10
-              }
-            }
-            if ($deployExitCode -ne 0) {
-              throw "Database-sync Worker deployment failed after 3 attempts (last exit code $deployExitCode)."
-            }
-
-            $workerUrl = [regex]::Matches(($deployLog -join "`n"), 'https://raw-strength-audit-db-sync[.][A-Za-z0-9-]+[.]workers[.]dev') | Select-Object -Last 1
-            if ($null -eq $workerUrl) {
-              try {
-                $subRes = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/accounts/$($env:CLOUDFLARE_ACCOUNT_ID)/workers/subdomain" -Headers @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
-                if ($subRes.result -and $subRes.result.subdomain) {
-                  $workerUrl = [PSCustomObject]@{ Value = "https://raw-strength-audit-db-sync.$($subRes.result.subdomain).workers.dev" }
-                  Write-Host "Resolved Worker URL from Cloudflare subdomain API: $($workerUrl.Value)"
-                }
-              } catch {
-                Write-Host "Subdomain lookup note: $_"
-              }
-            }
-            if ($null -eq $workerUrl) { throw "Database-sync Worker deploy did not expose its URL. Configure DB_SYNC_WORKER_URL with the exact deployed HTTPS URL." }
-            "worker_url=$($workerUrl.Value)" >> $env:GITHUB_OUTPUT
-          }
-          finally { Pop-Location }
-
-      - name: Configure the database-sync Worker endpoint for this build
-        shell: pwsh
-        env:
-          DEPLOYED_DB_SYNC_WORKER_URL: ${{ steps.deploy_db_sync.outputs.worker_url }}
-          DB_SYNC_WORKER_URL: ${{ vars.DB_SYNC_WORKER_URL }}
-        run: |
-          $workerUrl = $env:DEPLOYED_DB_SYNC_WORKER_URL
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) { throw "No database-sync Worker URL was resolved; refusing to package a build with broken sync." }
-          $uri = [System.Uri]::new($workerUrl.Trim().TrimEnd('/'))
-          if ($uri.Scheme -ne "https" -or $uri.AbsolutePath -ne "/" -or $uri.Query -or $uri.Fragment -or $uri.UserInfo) { throw "DB_SYNC_WORKER_URL must be a plain HTTPS Worker base URL." }
-          $sourcePath = "database_sync.py"
-          $source = Get-Content $sourcePath -Raw
-          $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL = ".*?"', ('DEFAULT_DB_SYNC_WORKER_URL = "' + $uri.GetLeftPart([System.UriPartial]::Authority) + '"'), 1)
-          if ($source -notmatch ('DEFAULT_DB_SYNC_WORKER_URL = "https://' + [regex]::Escape($uri.Host))) { throw "Could not inject database-sync Worker URL." }
-          Set-Content -Path $sourcePath -Value $source -Encoding utf8
-          Write-Host "Configured secure database-sync Worker endpoint."
-
       - name: Compile Python application with bundled assets
         shell: pwsh
         run: |
@@ -330,7 +114,7 @@ jobs:
       - name: Build standalone Windows installer
         shell: pwsh
         env:
-          APP_VERSION: "1.3.64"
+          APP_VERSION: "1.3.65"
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
@@ -351,7 +135,7 @@ jobs:
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.3.64
+          name: RawStrengthEmployeeAuditManager-Setup-v1.3.65
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
@@ -360,8 +144,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.64
-          name: Raw Strength Employee Audit Manager v1.3.64
+          tag_name: v1.3.65
+          name: Raw Strength Employee Audit Manager v1.3.65
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
