@@ -115,7 +115,7 @@ jobs:
             $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL\s*=\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
             if (-not $source.Contains($replacement)) { throw "Could not inject database-sync Worker URL." }
             Set-Content -Path $sourcePath -Value $source -Encoding utf8
-            if ($uri.Host -ne ([Uri]$workerUrl).Host -or -not $source.Contains([regex]::Escape($uri.Host))) { throw "Database-sync Worker host validation failed." }
+            if ($uri.Host -ne ([Uri]$workerUrl).Host -or $source -notmatch [regex]::Escape($uri.Host)) { throw "Database-sync Worker host validation failed." }
           }
 
           $chatUrl = $env:CHAT_WORKER_URL
