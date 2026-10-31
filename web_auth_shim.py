@@ -307,11 +307,7 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
 
         # Never ship default credentials or rotate existing account passwords.
         # Provision new accounts only from explicitly configured deployment secrets.
-        customer_pwd = (
-            os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD")
-            or os.environ.get("WEB_BOOTSTRAP_TARUNA_PASSWORD")
-            or ""
-        ).strip()
+        customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip()
         dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
 
         try:
@@ -339,8 +335,8 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             print(f"[Auth] Case-split normalize skipped: {exc}")
 
         if customer_pwd:
-            _upsert_user_exact(conn, desktop_app, "Admin", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
-            _upsert_user_exact(conn, desktop_app, "taruna", "Admin / Taruna (Customer Master)", "Admin", customer_pwd)
+            _upsert_user_exact(conn, desktop_app, "Admin", "Admin (Customer)", "Admin", customer_pwd)
+            _upsert_user_exact(conn, desktop_app, "taruna", "Admin (Customer)", "Admin", customer_pwd)
         if dev_pwd:
             _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
 
@@ -376,7 +372,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
             "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
             "error": str((_LAST_PULL or {}).get("error") or "")[:240],
         },
-        "hint": "Usernames are case-sensitive. Existing account credentials are preserved; contact the administrator for account recovery.",
+        "hint": "Use Admin for the customer account or admin for the developer/tester account. Usernames are case-sensitive; existing passwords are preserved.",
     }
 
 
@@ -505,14 +501,16 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         )
 
     token = secrets.token_hex(24)
+    # Keep legacy database identifiers and personal names out of the web client.
+    is_customer_login = username == "Admin"
     user_info = {
         "id": row["id"],
-        "username": row["username"],
-        "display_name": row["display_name"] or row["username"],
-        "role": row["role"],
+        "username": "Admin" if is_customer_login else "admin",
+        "display_name": "Admin (Customer)" if is_customer_login else "admin (Developer / Tester)",
+        "role": "Admin" if is_customer_login else "Developer",
     }
     api.ACTIVE_SESSIONS[token] = user_info
-    print(f"[Auth] Login ok: {user_info['username']!r} ({user_info['role']})")
+    print(f"[Auth] Login ok: {user_info['display_name']}")
     return {"token": token, "user": user_info}
 
 
