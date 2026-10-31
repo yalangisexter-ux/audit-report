@@ -56,14 +56,15 @@ const deviceB = "2".repeat(32);
 const secretA = "secret-A-".repeat(8);
 const secretB = "secret-B-".repeat(8);
 
-test("first registration succeeds; a second device cannot claim the same installation", async () => {
+test("desktop and web devices can register against the same customer installation", async () => {
   const env = makeEnv();
   const register = (installation_id, device_id, device_secret) => worker.fetch(new Request("https://worker/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ installation_id, device_id, device_secret }) }), env);
   const first = await register(installA, deviceA, secretA);
   assert.equal(first.status, 200);
   assert.ok((await first.json()).token);
   const second = await register(installA, deviceB, secretB);
-  assert.equal(second.status, 409);
+  assert.equal(second.status, 200);
+  assert.ok((await second.json()).token);
   const refresh = await register(installA, deviceA, secretA);
   assert.equal(refresh.status, 200);
 });
