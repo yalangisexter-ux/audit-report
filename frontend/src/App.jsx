@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import brandLogo from '../../assets/raw_strength_brand_hud.png';
+import brandLogo from '../../assets/raw_strength_brand.png';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase,
   Settings, RefreshCw, CheckCircle2, Menu, LogOut, Eye, EyeOff
@@ -148,8 +148,8 @@ export default function App() {
 
   if (!currentUser || !authToken) {
     return (
-      <div className="min-h-screen bg-[#070B14] text-slate-100 flex items-center justify-center p-6">
-        <form onSubmit={handleLogin} className="w-full max-w-lg rounded-3xl border border-cyan-400/20 bg-slate-900/90 p-6 sm:p-9 shadow-2xl shadow-black/40">
+      <div className="login-screen min-h-screen bg-[#070B14] text-slate-100 flex items-center justify-center p-4 sm:p-6">
+        <form onSubmit={handleLogin} className="login-card w-full max-w-lg rounded-3xl border border-cyan-400/20 bg-slate-900/90 p-5 sm:p-9 shadow-2xl shadow-black/40">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
               <img src={brandLogo} alt="Raw Strength Calisthenics" className="w-full h-full rounded-[10px] object-contain" />
@@ -165,12 +165,12 @@ export default function App() {
           <input className="w-full mb-4 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
             value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} required autoComplete="username" />
           <label className="block text-xs font-semibold text-slate-400 mb-1">Password</label>
-          <div className="relative mb-6">
-            <input type={showPassword ? 'text' : 'password'} className="w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-3 pr-20 text-base outline-none focus:border-cyan-400"
+          <div className="password-field relative mb-6">
+            <input type={showPassword ? 'text' : 'password'} className="w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-3 pr-24 text-base outline-none focus:border-cyan-400"
               value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required autoComplete="current-password" />
             <button type="button" onClick={() => setShowPassword((visible) => !visible)}
               aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}
-              className="absolute inset-y-0 right-2 my-auto h-10 min-w-16 rounded-lg border border-cyan-400/30 bg-slate-900 px-3 text-sm font-bold text-cyan-300 hover:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/50">
+              className="password-toggle absolute inset-y-0 right-2 my-auto h-10 min-w-16 rounded-lg border border-cyan-400/50 bg-slate-800 px-3 text-sm font-bold text-cyan-200 hover:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/50">
               {showPassword ? <><EyeOff className="inline w-4 h-4 mr-1" />Hide</> : <><Eye className="inline w-4 h-4 mr-1" />Show</>}
             </button>
           </div>
@@ -191,7 +191,7 @@ export default function App() {
         </div>
       )}
 
-      <aside className={`webapp-sidebar transition-all duration-300 flex flex-col border-r border-white/5 bg-slate-950/80 z-20 ${sidebarOpen ? 'w-64' : 'w-16'}`}>
+      {sidebarOpen && <button type="button" className="mobile-sidebar-backdrop" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}\n      <aside className={`webapp-sidebar ${sidebarOpen ? 'is-open w-64' : 'is-closed w-16'} transition-all duration-300 flex flex-col border-r border-white/5 bg-slate-950/80 z-20`}>
         <div className="p-4 flex items-center justify-between border-b border-white/5">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
@@ -241,7 +241,7 @@ export default function App() {
       </aside>
 
       <div className="webapp-content flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="h-14 px-4 border-b border-white/5 flex items-center justify-between bg-slate-950/50">
+        <header className="webapp-header h-14 px-4 border-b border-white/5 flex items-center justify-between bg-slate-950/50">
           <button type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" className="mobile-menu-button p-2 rounded-lg bg-slate-900 border border-white/10 text-cyan-300"><Menu className="w-5 h-5" /></button><h1 className="text-base font-black text-white uppercase truncate">{navItems.find(n => n.id === activeTab)?.label}</h1>
           <div className="flex items-center gap-3 shrink-0">
             <div className="text-xs font-mono text-cyan-300">{currentTime.toLocaleTimeString()}</div>
