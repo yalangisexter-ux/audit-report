@@ -316,6 +316,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
         "auth_users": int((_LAST_PULL or {}).get("auth_users") or 0),
         "employees": int((_LAST_PULL or {}).get("employees") or 0),
         "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
+        "error": str((_LAST_PULL or {}).get("error") or "")[:240],
     }
     return {
         "user_count": count,
