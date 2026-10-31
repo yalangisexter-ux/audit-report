@@ -23,5 +23,7 @@ services:
       - key: SKIP_INITIAL_AUDIT_SEED
         value: "1"
       - key: WEB_PURGE_SEED_DATA
-        value: "1"
+        value: "0"
+      - key: WEB_PURGE_DEMO_ROSTER
+        value: "0"
     healthCheckPath: /api/health
