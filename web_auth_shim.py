@@ -573,6 +573,20 @@ print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={RE
 
 try:
     import web_ops_routes  # noqa: F401
-    print("[Web Boot] Operational routes registered")
+
+    # api_server registers its SPA catch-all before this web-only module is
+    # imported. FastAPI matches routes in registration order, so the catch-all
+    # otherwise intercepts /api/customers/* and /api/print-center/* and returns
+    # the SPA 404 before these operational endpoints can execute.
+    _spa_fallbacks = [
+        route for route in api.app.router.routes
+        if getattr(route, "path", None) == "/{full_path:path}"
+    ]
+    if _spa_fallbacks:
+        api.app.router.routes[:] = [
+            route for route in api.app.router.routes
+            if getattr(route, "path", None) != "/{full_path:path}"
+        ] + _spa_fallbacks
+    print("[Web Boot] Operational routes registered before SPA fallback")
 except Exception as _exc:
     print(f"[Web Boot] Operational routes skipped: {_exc}")
