@@ -8,10 +8,10 @@
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #070B14; color: #e2e8f0; min-height: 100vh; }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
-    .card { background: rgba(15,23,42,.92); border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 16px; }
-    .login-box { max-width: 420px; margin: 8vh auto; }
-    h1 { margin: 0 0 4px; font-size: 1.2rem; }
+    .hidden { display: none !important; }
+    .login-wrap { max-width: 420px; margin: 8vh auto; padding: 16px; }
+    .card { background: rgba(15,23,42,.94); border: 1px solid rgba(255,255,255,.1); border-radius: 16px; padding: 16px; }
+    h1 { margin: 0 0 4px; font-size: 1.15rem; }
     h2 { margin: 0 0 10px; font-size: 1rem; }
     .muted { color: #94a3b8; font-size: .85rem; }
     label { display: block; font-size: .75rem; color: #94a3b8; margin: 12px 0 4px; font-weight: 600; }
@@ -19,35 +19,51 @@
     .pw-wrap input { padding-right: 52px; }
     .pw-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: auto; min-height: 32px; padding: 6px 10px; background: #0f172a; color: #67e8f9; border: 1px solid rgba(103,232,249,.35); border-radius: 8px; font-size: .75rem; font-weight: 700; }
     input, button, select, textarea { width: 100%; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); background: #020617; color: #f8fafc; padding: 12px; font-size: .95rem; }
-    button { cursor: pointer; background: linear-gradient(90deg,#22d3ee,#6366f1); color: #0f172a; font-weight: 800; border: none; min-height: 44px; }
+    button { cursor: pointer; background: linear-gradient(90deg,#22d3ee,#6366f1); color: #0f172a; font-weight: 800; border: none; min-height: 42px; }
     button.secondary { background: #0f172a; color: #67e8f9; border: 1px solid rgba(255,255,255,.12); }
     button:disabled { opacity: .55; }
     .err { background: rgba(127,29,29,.35); border: 1px solid rgba(244,63,94,.35); color: #fda4af; padding: 10px 12px; border-radius: 10px; margin-top: 12px; font-size: .9rem; word-break: break-word; }
-    .top { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .brand { display: flex; gap: 10px; align-items: center; min-width: 0; }
-    .logo { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg,#6366f1,#22d3ee); display:flex; align-items:center; justify-content:center; font-weight: 900; color:#0f172a; flex-shrink: 0; }
-    .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-    .tab { width: auto; padding: 10px 14px; border-radius: 999px; background: #0f172a; color: #94a3b8; border: 1px solid rgba(255,255,255,.08); font-weight: 600; }
-    .tab.active { color: #67e8f9; border-color: rgba(34,211,238,.45); background: rgba(34,211,238,.12); }
+    .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg,#6366f1,#22d3ee); display:flex; align-items:center; justify-content:center; font-weight: 900; color:#0f172a; flex-shrink: 0; font-size: .85rem; }
+    .shell { display: flex; min-height: 100vh; }
+    .sidebar { width: 250px; background: rgba(2,6,23,.95); border-right: 1px solid rgba(255,255,255,.06); display: flex; flex-direction: column; flex-shrink: 0; }
+    .sidebar-head { padding: 16px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .nav { padding: 10px; flex: 1; overflow-y: auto; }
+    .nav-btn { width: 100%; text-align: left; background: transparent; color: #94a3b8; border: 1px solid transparent; border-radius: 12px; padding: 11px 12px; margin-bottom: 4px; font-weight: 600; min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .nav-btn:hover { background: rgba(255,255,255,.04); color: #e2e8f0; }
+    .nav-btn.active { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(34,211,238,.35); }
+    .nav-btn .badge { background: #0f172a; color: #67e8f9; border-radius: 999px; padding: 2px 8px; font-size: .7rem; }
+    .sidebar-foot { padding: 12px; border-top: 1px solid rgba(255,255,255,.06); }
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .topbar { height: 56px; border-bottom: 1px solid rgba(255,255,255,.06); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: rgba(2,6,23,.55); gap: 10px; }
+    .topbar h1 { font-size: 1rem; text-transform: uppercase; letter-spacing: .04em; }
+    .content { padding: 16px; overflow-y: auto; flex: 1; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 12px; margin-bottom: 16px; }
     .kpi { padding: 14px; border-radius: 14px; background: rgba(15,23,42,.85); border: 1px solid rgba(255,255,255,.08); }
-    .kpi b { display: block; font-size: 1.5rem; color: #67e8f9; margin-top: 4px; }
+    .kpi b { display: block; font-size: 1.45rem; color: #67e8f9; margin-top: 4px; }
     .row { padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,.08); background: rgba(2,6,23,.55); margin-bottom: 8px; }
     .row strong { display: block; word-break: break-word; }
     .row span { color: #94a3b8; font-size: .8rem; word-break: break-word; display: block; }
-    .badge { display: inline-block; margin-top: 6px; padding: 3px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; background: rgba(34,211,238,.15); color: #67e8f9; }
-    .hidden { display: none !important; }
+    .badge-pill { display: inline-block; margin-top: 6px; padding: 3px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; background: rgba(34,211,238,.15); color: #67e8f9; }
     .status { font-size: .8rem; color: #64748b; margin-top: 10px; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .actions button { width: auto; padding: 10px 14px; }
     .split { display: grid; gap: 12px; }
-    @media (min-width: 800px) { .split-2 { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 900px) { .split-2 { grid-template-columns: 1fr 1fr; } }
     .empty { color: #64748b; font-size: .9rem; padding: 8px 0; }
+    .menu-btn { display: none; width: auto; padding: 8px 12px; }
+    .backdrop { display: none; }
+    @media (max-width: 860px) {
+      .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 40; transform: translateX(-105%); transition: transform .2s ease; }
+      .sidebar.open { transform: translateX(0); }
+      .menu-btn { display: inline-flex; }
+      .backdrop.open { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 30; }
+    }
   </style>
 </head>
 <body>
-  <div id="loginView" class="wrap">
-    <div class="card login-box">
+  <div id="loginView" class="login-wrap">
+    <div class="card">
       <div class="brand" style="margin-bottom:16px">
         <div class="logo">RSC</div>
         <div>
@@ -71,36 +87,57 @@
     </div>
   </div>
 
-  <div id="appView" class="wrap hidden">
-    <div class="top">
-      <div class="brand">
-        <div class="logo">RSC</div>
-        <div style="min-width:0">
-          <h1>Raw Strength Calisthenics</h1>
-          <div class="muted" id="userLine">Signed in</div>
+  <div id="appView" class="shell hidden">
+    <div id="backdrop" class="backdrop"></div>
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-head">
+        <div class="brand">
+          <div class="logo">RSC</div>
+          <div style="min-width:0">
+            <div style="font-weight:800;font-size:.9rem">RAW STRENGTH</div>
+            <div class="muted" style="font-size:.7rem;letter-spacing:.12em;color:#67e8f9">CALISTHENICS</div>
+          </div>
         </div>
       </div>
-      <div class="actions">
-        <button class="secondary" id="refreshBtn">Refresh</button>
-        <button class="secondary" id="logoutBtn">Sign out</button>
+      <nav class="nav" id="sideNav">
+        <button class="nav-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="nav-btn" data-tab="tasks">Task Manager <span class="badge" id="badgeTasks">0</span></button>
+        <button class="nav-btn" data-tab="attendance">Attendance</button>
+        <button class="nav-btn" data-tab="employees">Employees <span class="badge" id="badgeEmp">0</span></button>
+        <button class="nav-btn" data-tab="business">Business / Products</button>
+        <button class="nav-btn" data-tab="reports">Reports</button>
+        <button class="nav-btn" data-tab="settings">Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="muted" id="userLine" style="margin-bottom:8px;word-break:break-word">Signed in</div>
+        <div class="actions">
+          <button class="secondary" id="refreshBtn">Refresh</button>
+          <button class="secondary" id="logoutBtn">Sign out</button>
+        </div>
+      </div>
+    </aside>
+    <div class="main">
+      <div class="topbar">
+        <button class="secondary menu-btn" id="menuBtn">Menu</button>
+        <h1 id="pageTitle">Dashboard</h1>
+        <div class="muted" id="clock"></div>
+      </div>
+      <div class="content">
+        <div id="content"></div>
+        <p class="status" id="statusLine"></p>
       </div>
     </div>
-    <div class="tabs" id="tabs">
-      <button class="tab active" data-tab="dashboard">Dashboard</button>
-      <button class="tab" data-tab="tasks">Tasks</button>
-      <button class="tab" data-tab="attendance">Attendance</button>
-      <button class="tab" data-tab="employees">Employees</button>
-      <button class="tab" data-tab="products">Products</button>
-    </div>
-    <div id="content"></div>
-    <p class="status" id="statusLine"></p>
   </div>
 
   <script>
     const API = '/api';
+    const TITLES = {
+      dashboard: 'Dashboard', tasks: 'Task Manager', attendance: 'Attendance',
+      employees: 'Employees', business: 'Business / Products', reports: 'Reports', settings: 'Settings'
+    };
     let token = localStorage.getItem('rsc_auth_token') || '';
     let user = null;
-    let cache = { dashboard: null, employees: [], tasks: [], attendance: { roster: [] }, products: [], services: [] };
+    let cache = { dashboard: null, employees: [], tasks: [], attendance: { roster: [] }, products: [], services: [], holidays: [], settings: {} };
     let tab = 'dashboard';
 
     async function api(path, options = {}) {
@@ -109,14 +146,11 @@
       if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
       const res = await fetch(API + path, Object.assign({}, options, { headers }));
       if (res.status === 401) {
-        token = '';
-        localStorage.removeItem('rsc_auth_token');
-        showLogin();
+        token = ''; localStorage.removeItem('rsc_auth_token'); showLogin();
         throw new Error('Login required');
       }
       return res;
     }
-
     function showLogin() {
       document.getElementById('loginView').classList.remove('hidden');
       document.getElementById('appView').classList.add('hidden');
@@ -135,33 +169,23 @@
     function escapeHtml(s) {
       return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
     }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('backdrop').classList.remove('open');
+    }
 
     async function handleLogin(e) {
-      e.preventDefault();
-      setErr('');
+      e.preventDefault(); setErr('');
       document.getElementById('loginBtn').disabled = true;
       try {
-        const body = {
-          username: document.getElementById('username').value.trim(),
-          password: document.getElementById('password').value
-        };
-        const res = await fetch(API + '/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
+        const body = { username: document.getElementById('username').value.trim(), password: document.getElementById('password').value };
+        const res = await fetch(API + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Invalid username or password');
-        token = data.token;
-        user = data.user;
-        localStorage.setItem('rsc_auth_token', token);
-        showApp();
-        await loadAll();
-      } catch (err) {
-        setErr(err.message || 'Login failed');
-      } finally {
-        document.getElementById('loginBtn').disabled = false;
-      }
+        token = data.token; user = data.user; localStorage.setItem('rsc_auth_token', token);
+        showApp(); await loadAll();
+      } catch (err) { setErr(err.message || 'Login failed'); }
+      finally { document.getElementById('loginBtn').disabled = false; }
     }
 
     async function boot() {
@@ -169,28 +193,23 @@
       try {
         const res = await api('/auth/me');
         if (!res.ok) throw new Error('session');
-        const data = await res.json();
-        user = data.user || data;
-        showApp();
-        await loadAll();
-      } catch {
-        token = '';
-        localStorage.removeItem('rsc_auth_token');
-        showLogin();
-      }
+        const data = await res.json(); user = data.user || data; showApp(); await loadAll();
+      } catch { token = ''; localStorage.removeItem('rsc_auth_token'); showLogin(); }
     }
 
     async function loadAll() {
       document.getElementById('statusLine').textContent = 'Loading…';
       try {
         const today = new Date().toISOString().slice(0, 10);
-        const [d, e, t, a, p, s] = await Promise.all([
+        const [d, e, t, a, p, s, h, st] = await Promise.all([
           api('/dashboard').then(r => r.ok ? r.json() : null).catch(() => null),
           api('/employees?active_only=false').then(r => r.ok ? r.json() : []).catch(() => []),
           api('/tasks').then(r => r.ok ? r.json() : []).catch(() => []),
           api('/attendance?work_date=' + today).then(r => r.ok ? r.json() : { roster: [] }).catch(() => ({ roster: [] })),
           api('/business/products').then(r => r.ok ? r.json() : []).catch(() => []),
           api('/business/services').then(r => r.ok ? r.json() : []).catch(() => []),
+          api('/holidays').then(r => r.ok ? r.json() : []).catch(() => []),
+          api('/settings').then(r => r.ok ? r.json() : {}).catch(() => ({})),
         ]);
         cache.dashboard = d;
         cache.employees = Array.isArray(e) ? e : (e && e.items) || [];
@@ -198,10 +217,14 @@
         cache.attendance = a || { roster: [] };
         cache.products = Array.isArray(p) ? p : (p && p.items) || [];
         cache.services = Array.isArray(s) ? s : (s && s.items) || [];
+        cache.holidays = Array.isArray(h) ? h : [];
+        cache.settings = st || {};
+        document.getElementById('badgeTasks').textContent = String(cache.tasks.length);
+        document.getElementById('badgeEmp').textContent = String(cache.employees.length);
         document.getElementById('statusLine').textContent =
           'Employees: ' + cache.employees.length + ' · Tasks: ' + cache.tasks.length +
           ' · Attendance: ' + ((cache.attendance.roster || []).length) +
-          ' · Products: ' + cache.products.length + ' · Loaded from API/DB';
+          ' · Products: ' + cache.products.length + ' · Services: ' + cache.services.length;
         render();
       } catch (err) {
         document.getElementById('statusLine').textContent = 'Load error: ' + (err.message || err);
@@ -220,14 +243,11 @@
     function render() {
       const k = (cache.dashboard && cache.dashboard.kpis) || {};
       const recent = (cache.dashboard && cache.dashboard.today_tasks) || [];
-      // IMPORTANT: empty array [] is truthy — must check length
       const taskSource = (recent && recent.length) ? recent : cache.tasks.slice(0, 12);
-      const openFromList = cache.tasks.filter(t => {
-        const s = String(t.status || '').toLowerCase();
-        return s === 'not started' || s === 'in progress' || s === 'submitted';
-      }).length;
-      const doneFromList = cache.tasks.filter(t => String(t.status || '').toLowerCase() === 'completed').length;
+      const openFromList = cache.tasks.filter(t => ['not started','in progress','submitted'].includes(String(t.status||'').toLowerCase())).length;
+      const doneFromList = cache.tasks.filter(t => String(t.status||'').toLowerCase() === 'completed').length;
       const c = document.getElementById('content');
+      document.getElementById('pageTitle').textContent = TITLES[tab] || tab;
 
       if (tab === 'dashboard') {
         c.innerHTML = '<div class="grid">' +
@@ -235,46 +255,60 @@
           kpi('Present today', k.present_today ?? 0) +
           kpi('Open tasks', (k.open_tasks || openFromList)) +
           kpi('Completed', (k.completed_tasks || doneFromList)) +
-          kpi('All tasks', k.total_tasks ?? cache.tasks.length) +
-          '</div>' +
+          kpi('All tasks', k.total_tasks ?? cache.tasks.length) + '</div>' +
           listBlock('Recent tasks', taskSource, t =>
             '<strong>' + escapeHtml(t.title || '') + '</strong><span>' +
             escapeHtml([t.employee_name, t.status, t.task_date, t.priority].filter(Boolean).join(' · ')) +
-            '</span><span class="badge">' + escapeHtml(t.status || '—') + '</span>'
-          ) +
+            '</span><span class="badge-pill">' + escapeHtml(t.status || '—') + '</span>') +
           listBlock('Employees snapshot', cache.employees.slice(0, 8), e =>
             '<strong>' + escapeHtml(e.name || '') + '</strong><span>' +
-            escapeHtml([e.employee_code, e.department, e.designation].filter(Boolean).join(' · ')) + '</span>'
-          );
+            escapeHtml([e.employee_code, e.department, e.designation].filter(Boolean).join(' · ')) + '</span>');
       } else if (tab === 'tasks') {
-        c.innerHTML = listBlock('Tasks (' + cache.tasks.length + ')', cache.tasks, t =>
+        c.innerHTML = listBlock('Task Manager (' + cache.tasks.length + ')', cache.tasks, t =>
           '<strong>' + escapeHtml(t.title || '') + '</strong><span>' +
           escapeHtml([t.employee_name, t.status, t.task_date, t.priority, t.due_time].filter(Boolean).join(' · ')) +
           '</span>' + (t.details ? '<span>' + escapeHtml(t.details) + '</span>' : '') +
-          '<span class="badge">' + escapeHtml(t.status || '—') + '</span>'
-        );
+          '<span class="badge-pill">' + escapeHtml(t.status || '—') + '</span>');
       } else if (tab === 'attendance') {
         const roster = cache.attendance.roster || [];
         c.innerHTML = '<p class="muted">Date: ' + escapeHtml(cache.attendance.date || 'today') + '</p>' +
           listBlock('Attendance (' + roster.length + ')', roster, r =>
             '<strong>' + escapeHtml(r.name || '') + '</strong><span>' +
-            escapeHtml([r.department, r.employee_code, r.status || r.attendance_status || 'Unmarked', r.check_in, r.check_out].filter(Boolean).join(' · ')) + '</span>'
-          );
+            escapeHtml([r.department, r.employee_code, r.status || r.attendance_status || 'Unmarked', r.check_in, r.check_out].filter(Boolean).join(' · ')) + '</span>');
       } else if (tab === 'employees') {
         c.innerHTML = listBlock('Employees (' + cache.employees.length + ')', cache.employees, e =>
           '<strong>' + escapeHtml(e.name || '') + '</strong><span>' +
-          escapeHtml([e.employee_code, e.department, e.designation, e.phone, e.email].filter(Boolean).join(' · ')) + '</span>'
-        );
-      } else if (tab === 'products') {
+          escapeHtml([e.employee_code, e.department, e.designation, e.phone, e.email, e.active === 0 ? 'Inactive' : 'Active'].filter(Boolean).join(' · ')) + '</span>');
+      } else if (tab === 'business') {
         c.innerHTML = '<div class="split split-2">' +
           listBlock('Products (' + cache.products.length + ')', cache.products, p =>
             '<strong>' + escapeHtml(p.name || '') + '</strong><span>' +
-            escapeHtml([p.sku, p.category].filter(Boolean).join(' · ')) + '</span>'
-          ) +
-          listBlock('Services (' + cache.services.length + ')', cache.services, s =>
+            escapeHtml([p.sku, p.category, p.selling_price != null ? ('₹' + p.selling_price) : ''].filter(Boolean).join(' · ')) + '</span>') +
+          listBlock('Services / Plans (' + cache.services.length + ')', cache.services, s =>
             '<strong>' + escapeHtml(s.name || '') + '</strong><span>' +
-            escapeHtml([s.category, s.training_mode, s.standard_price != null ? ('₹' + s.standard_price) : ''].filter(Boolean).join(' · ')) + '</span>'
-          ) + '</div>';
+            escapeHtml([s.category, s.training_mode, s.standard_price != null ? ('₹' + s.standard_price) : ''].filter(Boolean).join(' · ')) + '</span>') + '</div>';
+      } else if (tab === 'reports') {
+        const byStatus = {};
+        cache.tasks.forEach(t => { const s = String(t.status || 'Unknown'); byStatus[s] = (byStatus[s] || 0) + 1; });
+        const statusRows = Object.keys(byStatus).map(k => ({ name: k, count: byStatus[k] }));
+        c.innerHTML = '<div class="grid">' +
+          kpi('Employees', cache.employees.length) + kpi('Tasks', cache.tasks.length) +
+          kpi('Products', cache.products.length) + kpi('Services', cache.services.length) + '</div>' +
+          listBlock('Tasks by status', statusRows, r =>
+            '<strong>' + escapeHtml(r.name) + '</strong><span>' + escapeHtml(String(r.count)) + ' tasks</span>') +
+          listBlock('Holidays', cache.holidays, h =>
+            '<strong>' + escapeHtml(h.holiday_name || '') + '</strong><span>' + escapeHtml(h.holiday_date || '') + '</span>') +
+          '<div class="card"><h2>Report note</h2><p class="muted">Live summary from the shared database. Full PDF/export remains available in the desktop EXE.</p></div>';
+      } else if (tab === 'settings') {
+        const entries = Object.keys(cache.settings || {}).map(k => ({ key: k, value: cache.settings[k] }));
+        c.innerHTML = '<div class="card" style="margin-bottom:12px"><h2>Account</h2>' +
+          '<div class="row"><strong>' + escapeHtml((user && (user.display_name || user.username)) || '') + '</strong>' +
+          '<span>Role: ' + escapeHtml((user && user.role) || '') + ' · Username: ' + escapeHtml((user && user.username) || '') + '</span></div></div>' +
+          listBlock('App settings', entries.slice(0, 40), s =>
+            '<strong>' + escapeHtml(String(s.key)) + '</strong><span>' + escapeHtml(typeof s.value === 'object' ? JSON.stringify(s.value) : String(s.value ?? '')) + '</span>') +
+          '<div class="card"><h2>Cloud / web notes</h2><p class="muted">Customer automatic sync runs from the desktop EXE while logged in as <b>Admin</b>. Web pulls the shared encrypted database snapshot on boot and refresh.</p>' +
+          '<div class="actions" style="margin-top:10px"><button class="secondary" id="settingsRefresh">Refresh data now</button></div></div>';
+        setTimeout(() => { const b = document.getElementById('settingsRefresh'); if (b) b.onclick = () => loadAll(); }, 0);
       }
     }
 
@@ -286,17 +320,22 @@
     });
     document.getElementById('loginForm').addEventListener('submit', handleLogin);
     document.getElementById('logoutBtn').addEventListener('click', () => {
-      token = ''; localStorage.removeItem('rsc_auth_token'); showLogin();
+      token = ''; localStorage.removeItem('rsc_auth_token'); showLogin(); closeSidebar();
     });
     document.getElementById('refreshBtn').addEventListener('click', loadAll);
-    document.getElementById('tabs').addEventListener('click', (e) => {
-      const btn = e.target.closest('.tab');
+    document.getElementById('menuBtn').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.add('open');
+      document.getElementById('backdrop').classList.add('open');
+    });
+    document.getElementById('backdrop').addEventListener('click', closeSidebar);
+    document.getElementById('sideNav').addEventListener('click', (e) => {
+      const btn = e.target.closest('.nav-btn');
       if (!btn) return;
       tab = btn.getAttribute('data-tab');
-      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
-      render();
+      document.querySelectorAll('.nav-btn').forEach(t => t.classList.toggle('active', t === btn));
+      closeSidebar(); render();
     });
-
+    setInterval(() => { const el = document.getElementById('clock'); if (el) el.textContent = new Date().toLocaleTimeString(); }, 1000);
     boot();
   </script>
 </body>
