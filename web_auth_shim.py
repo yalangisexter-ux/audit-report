@@ -326,6 +326,49 @@ def _force_case_sensitive_usernames(conn: sqlite3.Connection) -> None:
         print(f"[Auth] BINARY username migration skipped: {exc}")
 
 
+def _normalize_web_login_accounts(db_path: Path) -> None:
+    """Migrate legacy customer login label to Admin without changing credentials.
+
+    Runs after the desktop Database initializer so its legacy NOCASE username
+    provisioning cannot collapse the two web identities. The EXE code is untouched.
+    """
+    if not db_path.is_file():
+        return
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        conn.row_factory = sqlite3.Row
+        _force_case_sensitive_usernames(conn)
+        # Older desktop databases used "taruna" as the customer account name.
+        # Rename that exact legacy row only when the web customer name is absent.
+        customer = conn.execute(
+            "SELECT id FROM auth_users WHERE username=? COLLATE BINARY LIMIT 1", ("Admin",)
+        ).fetchone()
+        legacy_customer = conn.execute(
+            "SELECT id FROM auth_users WHERE username=? COLLATE BINARY LIMIT 1", ("taruna",)
+        ).fetchone()
+        if customer is None and legacy_customer is not None:
+            conn.execute(
+                "UPDATE auth_users SET username=?, display_name=?, role=?, updated_at=? WHERE id=?",
+                ("Admin", "Admin (Customer)", "Admin", datetime.now().isoformat(timespec="seconds"), legacy_customer["id"]),
+            )
+            print("[Auth] Migrated legacy customer account label to Admin; password hash preserved")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT username, active, length(password_salt) AS salt_len, length(password_hash) AS hash_len "
+            "FROM auth_users WHERE username IN ('Admin','admin') COLLATE BINARY"
+        ).fetchall()
+        for row in rows:
+            print(
+                f"[Auth] Account check: {row['username']} active={int(row['active'] or 0)} "
+                f"salt_present={bool(row['salt_len'])} hash_present={bool(row['hash_len'])}"
+            )
+    except Exception as exc:
+        conn.rollback()
+        print(f"[Auth] Web account normalization failed: {exc}")
+    finally:
+        conn.close()
+
+
 def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role: str, password: str) -> None:
     """Create a missing account only. Existing passwords and account metadata are immutable here."""
     row = conn.execute("SELECT id FROM auth_users WHERE username=? COLLATE BINARY", (username,)).fetchone()
@@ -558,6 +601,11 @@ try:
     if PURGE_SEED or PURGE_DEMO:
         _purge_junk_rows(db_path)
     _ensure_bootstrap_admin(db_path)
+    # Initialize schema first, then enforce web-only exact account identities.
+    # This prevents the legacy desktop NOCASE migration from treating Admin/admin
+    # as the same user. Existing salts and hashes are retained byte-for-byte.
+    api.ensure_database()
+    _normalize_web_login_accounts(db_path)
     stats = _db_stats(db_path)
     print(f"[Web Boot] Local DB after pull/bootstrap: {stats}")
 except Exception as exc:
