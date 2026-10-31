@@ -9,7 +9,7 @@ const API_BASE = '/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [currentUser, setCurrentUser] = useState(null);
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('rsc_auth_token') || '');
