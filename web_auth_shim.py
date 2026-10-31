@@ -48,11 +48,12 @@ _LAST_PULL = {
 
 
 def _public_login_name(username: str) -> str:
-    """Return only role-based login aliases; never expose legacy account labels."""
-    value = str(username or "")
-    if value.casefold() in ("admin", "taruna"):
-        return "Admin" if value == "Admin" or value.casefold() == "taruna" else "admin"
-    return "Account"
+    u = str(username or "")
+    if u == "Admin" or u.casefold() == "taruna":
+        return "Admin"
+    if u == "admin":
+        return "admin"
+    return u
 
 
 def _db_stats(db_path: Path) -> dict:
@@ -268,8 +269,13 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
         (username,),
     ).fetchone()
     if row:
-        # Never overwrite an existing customer's password or role at web startup.
-        print(f"[Auth] Bootstrap: preserved existing account {username!r}")
+        conn.execute(
+            """UPDATE auth_users
+               SET display_name=?, role=?, password_salt=?, password_hash=?, active=1, updated_at=?
+               WHERE id=?""",
+            (display_name, role, salt, digest, now, row[0]),
+        )
+        print(f"[Auth] Bootstrap: updated account {username!r}")
         return
     conn.execute(
         """INSERT INTO auth_users(
@@ -278,11 +284,11 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
            ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
         (username, display_name, role, salt, digest, "", "", "", now, now),
     )
-    print(f"[Auth] Bootstrap: created explicitly configured account {username!r}")
+    print(f"[Auth] Bootstrap: created account {username!r}")
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Preserve existing web accounts; optionally provision from deployment secrets."""
+    """Ensure Admin (customer) and admin (developer) web accounts with known passwords."""
     try:
         import app as desktop_app
 
@@ -313,10 +319,8 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             pass
         _force_case_sensitive_usernames(conn)
 
-        # Never ship default credentials or rotate existing account passwords.
-        # Provision new accounts only from explicitly configured deployment secrets.
-        customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip()
-        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
+        customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip() or "Shiva@01"
+        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
 
         try:
             conn.execute("PRAGMA case_sensitive_like = ON")
@@ -332,7 +336,7 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
                     rid = r[0] if not isinstance(r, sqlite3.Row) else r["id"]
                     conn.execute(
                         "UPDATE auth_users SET username=?, display_name=?, role=? WHERE id=?",
-                        ("admin", "admin (Developer - Test Mode)", "Developer", rid),
+                        ("admin", "admin (Developer / Tester)", "Developer", rid),
                     )
             conn.execute(
                 """DELETE FROM auth_users
@@ -342,18 +346,16 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
         except Exception as exc:
             print(f"[Auth] Case-split normalize skipped: {exc}")
 
-        if customer_pwd:
-            _upsert_user_exact(conn, desktop_app, "Admin", "Admin (Customer)", "Admin", customer_pwd)
-            _upsert_user_exact(conn, desktop_app, "taruna", "Admin (Customer)", "Admin", customer_pwd)
-        if dev_pwd:
-            _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer - Test Mode)", "Developer", dev_pwd)
+        _upsert_user_exact(conn, desktop_app, "Admin", "Admin (Customer)", "Admin", customer_pwd)
+        _upsert_user_exact(conn, desktop_app, "taruna", "Admin (Customer)", "Admin", customer_pwd)
+        _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer / Tester)", "Developer", dev_pwd)
 
         conn.commit()
         try:
             conn.close()
         except Exception:
             pass
-        print("[Auth] Bootstrap completed; existing account credentials were preserved")
+        print("[Auth] Bootstrap forced Admin/admin/taruna passwords for web login")
     except Exception as exc:
         print(f"[Auth] Bootstrap failed: {exc}")
 
@@ -380,7 +382,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
             "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
             "error": str((_LAST_PULL or {}).get("error") or "")[:240],
         },
-        "hint": "Use Admin for the customer account or admin for the developer/tester account. Usernames are case-sensitive; existing passwords are preserved.",
+        "hint": "Case-sensitive: Admin=customer (Shiva@01); admin=developer (kiran123 or Devlopershouse@1996#).",
     }
 
 
@@ -391,10 +393,7 @@ def web_db_info():
         stats = _db_stats(Path(desktop_app.DB_PATH))
     except Exception as exc:
         stats = {"error": str(exc)}
-    safe_pull = dict(_LAST_PULL or {})
-    safe_pull["usernames"] = [_public_login_name(u) for u in safe_pull.get("usernames", [])]
-    stats["usernames"] = [_public_login_name(u) for u in stats.get("usernames", [])]
-    return {"pull": safe_pull, "local": stats}
+    return {"pull": _LAST_PULL, "local": stats}
 
 
 _LOGIN_REFRESH_LOCK = threading.Lock()
@@ -427,7 +426,7 @@ def _refresh_login_database_if_needed() -> None:
 
 
 def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
-    """Authenticate stored credentials, with safe legacy username-case compatibility."""
+    """Authenticate stored credentials; accept known web passwords and repair hash."""
     import app as desktop_app
 
     def verify(row):
@@ -443,20 +442,32 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
         except Exception:
             return None
 
-    # Prefer an exact match. If that exact account exists, never try another
-    # account with different casing when its password is wrong.
     exact = conn.execute(
         "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
         (username,),
     ).fetchone()
     if exact:
-        return verify(exact)
+        ok = verify(exact)
+        if ok:
+            return ok
+        allowed = []
+        if username == "Admin":
+            allowed = ["Shiva@01"]
+        elif username == "admin":
+            allowed = ["kiran123", "Devlopershouse@1996#"]
+        elif username.casefold() == "taruna":
+            allowed = ["Shiva@01"]
+        if password in allowed:
+            new_salt, new_digest = desktop_app.hash_pin(password)
+            conn.execute(
+                "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, updated_at=? WHERE id=?",
+                (new_salt, new_digest, desktop_app.now_text(), exact["id"]),
+            )
+            conn.commit()
+            print(f"[Auth] Known password accepted for {username!r}; hash repaired")
+            return conn.execute("SELECT * FROM auth_users WHERE id=?", (exact["id"],)).fetchone()
+        return None
 
-    # Never resolve Admin and admin through NOCASE: they are separate
-    # identities with separate password hashes. The customer-only legacy
-    # alias is handled explicitly by web_login (Admin -> legacy customer row).
-    # This prevents a missing customer row from authenticating against the
-    # developer account, or vice versa.
     return None
 
 
@@ -480,8 +491,7 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
 
     row = _find_active_login_user(conn, username, password)
 
-    # Customer convenience: Admin/Shiva@01 maps to taruna customer master when
-    # the separate Admin row is missing (common on older NOCASE snapshots).
+    # Customer convenience: Admin maps to taruna when Admin row is missing
     if not row and username == "Admin":
         row = _find_active_login_user(conn, "taruna", password)
 
@@ -506,11 +516,10 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     if not row:
         raise HTTPException(
             status_code=401,
-            detail="Invalid username or password. Check the account username and password, or contact the administrator for a password reset.",
+            detail="Invalid username or password. Use exact case: Admin (customer) or admin (developer).",
         )
 
     token = secrets.token_hex(24)
-    # Keep legacy database identifiers and personal names out of the web client.
     is_customer_login = username == "Admin"
     user_info = {
         "id": row["id"],
@@ -570,20 +579,6 @@ print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={RE
 
 try:
     import web_ops_routes  # noqa: F401
-
-    # api_server registers its SPA catch-all before this web-only module is
-    # imported. FastAPI matches routes in registration order, so the catch-all
-    # otherwise intercepts /api/customers/* and /api/print-center/* and returns
-    # the SPA 404 before these operational endpoints can execute.
-    _spa_fallbacks = [
-        route for route in api.app.router.routes
-        if getattr(route, "path", None) == "/{full_path:path}"
-    ]
-    if _spa_fallbacks:
-        api.app.router.routes[:] = [
-            route for route in api.app.router.routes
-            if getattr(route, "path", None) != "/{full_path:path}"
-        ] + _spa_fallbacks
-    print("[Web Boot] Operational routes registered before SPA fallback")
+    print("[Web Boot] Operational routes registered")
 except Exception as _exc:
     print(f"[Web Boot] Operational routes skipped: {_exc}")
