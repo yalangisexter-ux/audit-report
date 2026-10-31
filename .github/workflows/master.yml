@@ -112,7 +112,7 @@ jobs:
             $sourcePath = "database_sync.py"
             $source = Get-Content $sourcePath -Raw
             $replacement = 'DEFAULT_DB_SYNC_WORKER_URL = "' + $workerUrl.TrimEnd("/") + '"'
-            $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL\\s*=\\s*["''][^"'']*["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
+            $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL\\s*=\\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
             if (-not $source.Contains($replacement)) { throw "Could not inject database-sync Worker URL." }
             Set-Content -Path $sourcePath -Value $source -Encoding utf8
             if ($uri.Host -ne ([Uri]$workerUrl).Host -or -not $source.Contains([regex]::Escape($uri.Host))) { throw "Database-sync Worker host validation failed." }
@@ -125,7 +125,7 @@ jobs:
             $sourcePath = "cloudflare_chat.py"
             $source = Get-Content $sourcePath -Raw
             $replacement = 'DEFAULT_CHAT_API_BASE = "' + $chatUrl.TrimEnd("/") + '"'
-            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE\\s*=\\s*["''][^"'']*["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
+            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE\\s*=\\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
             if (-not $source.Contains($replacement)) { throw "Could not inject production Live Chat endpoint." }
             Set-Content -Path $sourcePath -Value $source -Encoding utf8
           }
