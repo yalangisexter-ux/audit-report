@@ -208,7 +208,7 @@ def health_check(conn: sqlite3.Connection = Depends(get_db)):
 @app.post("/api/auth/login")
 def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
     username = req.username.strip()
-    row = conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)).fetchone()
+    row = conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1", (username,)).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
