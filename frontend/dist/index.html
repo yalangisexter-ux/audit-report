@@ -1,124 +1,88 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Raw Strength Calisthenics | Employee Audit Manager</title>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>RSC Employee Audit Manager</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#070B14;color:#e2e8f0;min-height:100vh}
-.hidden{display:none!important}.login-wrap{max-width:420px;margin:8vh auto;padding:16px}.card{background:rgba(15,23,42,.94);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:16px;margin-bottom:12px}
-h1{margin:0 0 4px;font-size:1.15rem}h2{margin:0 0 10px;font-size:1rem}.muted{color:#94a3b8;font-size:.85rem}
-label{display:block;font-size:.75rem;color:#94a3b8;margin:12px 0 4px;font-weight:600}.pw-wrap{position:relative}.pw-wrap input{padding-right:52px}
-.pw-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;min-height:32px;padding:6px 10px;background:#0f172a;color:#67e8f9;border:1px solid rgba(103,232,249,.35);border-radius:8px;font-size:.75rem;font-weight:700}
-input,button,select,textarea{width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020617;color:#f8fafc;padding:12px;font-size:.95rem}
-button{cursor:pointer;background:linear-gradient(90deg,#22d3ee,#6366f1);color:#0f172a;font-weight:800;border:none;min-height:42px}
-button.secondary{background:#0f172a;color:#67e8f9;border:1px solid rgba(255,255,255,.12)}button:disabled{opacity:.55}
-.err{background:rgba(127,29,29,.35);border:1px solid rgba(244,63,94,.35);color:#fda4af;padding:10px 12px;border-radius:10px;margin-top:12px;font-size:.9rem;word-break:break-word}
-.brand{display:flex;gap:10px;align-items:center;min-width:0}.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#6366f1,#22d3ee);display:flex;align-items:center;justify-content:center;font-weight:900;color:#0f172a;flex-shrink:0;font-size:.85rem}
-.shell{display:flex;min-height:100vh}.sidebar{width:270px;background:rgba(2,6,23,.97);border-right:1px solid rgba(255,255,255,.06);display:flex;flex-direction:column;flex-shrink:0}
-.sidebar-head{padding:16px;border-bottom:1px solid rgba(255,255,255,.06)}.nav{padding:10px;flex:1;overflow-y:auto}
-.nav-btn{width:100%;text-align:left;background:transparent;color:#94a3b8;border:1px solid transparent;border-radius:12px;padding:11px 12px;margin-bottom:4px;font-weight:600;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:8px}
-.nav-btn:hover{background:rgba(255,255,255,.04);color:#e2e8f0}.nav-btn.active{background:rgba(34,211,238,.12);color:#67e8f9;border-color:rgba(34,211,238,.35)}
-.nav-btn .badge{background:#0f172a;color:#67e8f9;border-radius:999px;padding:2px 8px;font-size:.7rem}
-.nav-section{font-size:.68rem;letter-spacing:.08em;color:#64748b;text-transform:uppercase;margin:12px 8px 6px;font-weight:700}
-.sidebar-foot{padding:12px;border-top:1px solid rgba(255,255,255,.06)}.main{flex:1;min-width:0;display:flex;flex-direction:column}
-.topbar{min-height:56px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(2,6,23,.55);gap:10px;flex-wrap:wrap}
-.topbar h1{font-size:1rem;text-transform:uppercase;letter-spacing:.04em}.content{padding:16px;overflow-y:auto;flex:1}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px}
-.kpi{padding:14px;border-radius:14px;background:rgba(15,23,42,.85);border:1px solid rgba(255,255,255,.08)}.kpi b{display:block;font-size:1.35rem;color:#67e8f9;margin-top:4px}
-.row{padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(2,6,23,.55);margin-bottom:8px}.row strong{display:block;word-break:break-word}.row span{color:#94a3b8;font-size:.8rem;word-break:break-word;display:block}
-.pill{display:inline-block;margin-top:6px;padding:3px 8px;border-radius:999px;font-size:.72rem;font-weight:700;background:rgba(34,211,238,.15);color:#67e8f9}
-.status{font-size:.8rem;color:#64748b;margin-top:10px}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button,.chip{width:auto;padding:8px 12px;min-height:36px}
-.chip{background:#0f172a;color:#94a3b8;border:1px solid rgba(255,255,255,.1);border-radius:999px;font-weight:600;cursor:pointer}.chip.active{color:#67e8f9;border-color:rgba(34,211,238,.45);background:rgba(34,211,238,.12)}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center}.toolbar select,.toolbar input{width:auto;min-width:140px;flex:1;max-width:280px;padding:10px}
-.empty{color:#64748b;font-size:.9rem;padding:8px 0}.menu-btn{display:none;width:auto;padding:8px 12px}.backdrop{display:none}
-@media(max-width:900px){.sidebar{position:fixed;inset:0 auto 0 0;z-index:40;transform:translateX(-105%);transition:transform .2s ease;width:min(300px,88vw)}.sidebar.open{transform:translateX(0)}.menu-btn{display:inline-flex}.backdrop.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30}}
+:root{--bg:#020617;--card:#0f172a;--line:rgba(255,255,255,.08);--text:#e2e8f0;--muted:#94a3b8;--accent:#22d3ee;--accent2:#6366f1}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:radial-gradient(1200px 600px at 10% -10%,#1e293b 0%,var(--bg) 55%);color:var(--text);min-height:100vh}
+button,input,select{font:inherit}button{cursor:pointer}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{width:min(420px,100%);background:rgba(15,23,42,.95);border:1px solid var(--line);border-radius:18px;padding:24px}
+.brand{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+.logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#22d3ee,#6366f1);display:grid;place-items:center;font-weight:800}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+input,select{width:100%;background:#020617;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 12px}
+.btn{border:0;border-radius:12px;padding:12px 14px;font-weight:700;color:#0b1220;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}.btn.sm{padding:7px 10px;border-radius:8px;font-size:12px}
+.err{margin-top:12px;padding:10px;border-radius:10px;background:rgba(127,29,29,.35);color:#fecaca;display:none}
+.shell{display:none;min-height:100vh}.shell.on{display:flex}
+.sidebar{width:270px;background:rgba(2,6,23,.97);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.nav{padding:10px;flex:1;overflow:auto}.nav button{width:100%;text-align:left;background:transparent;border:0;color:var(--muted);padding:11px 12px;border-radius:10px;margin-bottom:4px}
+.nav button.active,.nav button:hover{background:rgba(34,211,238,.12);color:var(--text)}
+.sidebar-foot{padding:12px;border-top:1px solid var(--line)}.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)}.content{padding:16px 18px 28px;overflow:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}.kpi b{display:block;font-size:22px;margin-top:6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}.card h2{margin:0 0 10px;font-size:16px}
+.muted{color:var(--muted);font-size:13px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.list{display:flex;flex-direction:column;gap:8px}.item{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--line);border-radius:12px}
+.badge{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.toast{position:fixed;right:16px;bottom:16px;background:#0f172a;border:1px solid var(--line);padding:12px;border-radius:12px;display:none;z-index:50}
+@media(max-width:900px){.sidebar{position:fixed;inset:0 auto 0 0;z-index:40;transform:translateX(-105%)}.sidebar.open{transform:none}}
 </style></head><body>
-<div id="loginView" class="login-wrap"><div class="card"><div class="brand" style="margin-bottom:16px"><div class="logo">RSC</div><div><h1>Raw Strength Calisthenics</h1><div class="muted">Employee Audit Manager · Sign in</div></div></div>
+<div id="loginView" class="login-wrap"><div class="login-card">
+<div class="brand"><div class="logo">RSC</div><div><div style="font-weight:800">Raw Strength Calisthenics</div><div class="muted">Employee Audit Manager</div></div></div>
 <p class="muted">Exact case: <b>Admin</b> (customer) or <b>admin</b> (developer).</p>
-<form id="loginForm"><label>Username</label><input id="username" autocomplete="username" required/>
-<label>Password</label><div class="pw-wrap"><input id="password" type="password" autocomplete="current-password" required/><button type="button" class="pw-toggle" id="togglePw">Show</button></div>
-<div style="height:14px"></div><button type="submit" id="loginBtn">Sign in</button><div id="loginErr" class="err hidden"></div></form></div></div>
-<div id="appView" class="shell hidden"><div id="backdrop" class="backdrop"></div>
-<aside id="sidebar" class="sidebar"><div class="sidebar-head"><div class="brand"><div class="logo">RSC</div><div><div style="font-weight:800;font-size:.9rem">RAW STRENGTH</div><div class="muted" style="font-size:.7rem;letter-spacing:.12em;color:#67e8f9">CALISTHENICS</div></div></div></div>
-<nav class="nav" id="sideNav">
-<div class="nav-section">Operations</div>
-<button class="nav-btn active" data-tab="dashboard">Dashboard</button>
-<button class="nav-btn" data-tab="tasks">Task Manager <span class="badge" id="badgeTasks">0</span></button>
-<button class="nav-btn" data-tab="attendance">Attendance</button>
-<button class="nav-btn" data-tab="employees">Employees <span class="badge" id="badgeEmp">0</span></button>
-<div class="nav-section">Business</div>
-<button class="nav-btn" data-tab="business">Business Tracking</button>
-<button class="nav-btn" data-tab="customers">Customer Directory <span class="badge" id="badgeCust">0</span></button>
-<div class="nav-section">Output</div>
-<button class="nav-btn" data-tab="print">Print Center</button>
-<button class="nav-btn" data-tab="reports">Reports</button>
-<button class="nav-btn" data-tab="settings">Settings</button>
+<label>Username</label><input id="username" value="Admin"/>
+<label>Password</label><div class="row"><input id="password" type="password" style="flex:1"/><button type="button" class="btn secondary sm" id="togglePw">Show</button></div>
+<div style="margin-top:16px"><button class="btn" id="loginBtn" style="width:100%">Sign in</button></div>
+<div class="err" id="loginErr"></div></div></div>
+<div id="appShell" class="shell"><aside class="sidebar" id="sidebar">
+<div style="padding:16px;border-bottom:1px solid var(--line)"><div class="brand" style="margin:0"><div class="logo">RSC</div><div><div style="font-weight:700;font-size:14px">Audit Manager</div><div class="muted" id="userLabel">—</div></div></div></div>
+<nav class="nav" id="nav">
+<button data-tab="dashboard" class="active">Dashboard</button>
+<button data-tab="employees">Employees</button>
+<button data-tab="tasks">Tasks</button>
+<button data-tab="attendance">Attendance</button>
+<button data-tab="business">Business Tracking</button>
+<button data-tab="customers">Customer Directory</button>
+<button data-tab="print">Print Center</button>
+<button data-tab="reports">Reports</button>
+<button data-tab="settings">Settings</button>
 </nav>
-<div class="sidebar-foot"><div class="muted" id="userLine" style="margin-bottom:8px;word-break:break-word">Signed in</div>
-<div class="actions"><button class="secondary" id="refreshBtn">Refresh</button><button class="secondary" id="logoutBtn">Sign out</button></div></div></aside>
-<div class="main"><div class="topbar"><button class="secondary menu-btn" id="menuBtn">Menu</button><h1 id="pageTitle">Dashboard</h1><div class="muted" id="clock"></div></div>
-<div class="content"><div id="content"></div><p class="status" id="statusLine"></p></div></div></div>
+<div class="sidebar-foot"><button class="btn secondary" id="syncBtn" style="width:100%;margin-bottom:8px">Sync Now</button>
+<button class="btn secondary" id="logoutBtn" style="width:100%">Sign out</button></div></aside>
+<div class="main"><div class="top"><div><div style="font-weight:700" id="pageTitle">Dashboard</div><div class="muted" id="pageSub">Live data</div></div><div class="muted" id="clock"></div></div>
+<div class="content" id="content"></div></div></div>
+<div class="toast" id="toast"></div>
 <script>
-const API='/api';
-const TITLES={dashboard:'Dashboard',tasks:'Task Manager',attendance:'Attendance',employees:'Employees',business:'Business Tracking',customers:'Customer Directory',print:'Print Center',reports:'Reports',settings:'Settings'};
-let token=localStorage.getItem('rsc_auth_token')||'';let user=null;let tab='dashboard';let bizSub='overview';let printDate=new Date().toISOString().slice(0,10);let custQ='';let custState='';
-let cache={dashboard:null,employees:[],tasks:[],attendance:{roster:[]},products:[],services:[],orders:[],members:[],activities:[],bizOverview:{},prospects:[],custSummary:{total:0,states:[]},printSummary:null,holidays:[],settings:{}};
-async function api(path,options={}){const headers=Object.assign({},options.headers||{});if(token)headers['Authorization']='Bearer '+token;if(options.body&&!headers['Content-Type'])headers['Content-Type']='application/json';const res=await fetch(API+path,Object.assign({},options,{headers}));if(res.status===401){token='';localStorage.removeItem('rsc_auth_token');showLogin();throw new Error('Login required');}return res;}
-function showLogin(){document.getElementById('loginView').classList.remove('hidden');document.getElementById('appView').classList.add('hidden');}
-function showApp(){document.getElementById('loginView').classList.add('hidden');document.getElementById('appView').classList.remove('hidden');document.getElementById('userLine').textContent=(user&&(user.display_name||user.username)||'User')+' · '+((user&&user.role)||'');}
-function setErr(msg){const el=document.getElementById('loginErr');if(!msg){el.classList.add('hidden');el.textContent='';return;}el.textContent=msg;el.classList.remove('hidden');}
-function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function closeSidebar(){document.getElementById('sidebar').classList.remove('open');document.getElementById('backdrop').classList.remove('open');}
-function kpi(label,val){return '<div class="kpi"><span class="muted">'+escapeHtml(String(label))+'</span><b>'+escapeHtml(String(val??0))+'</b></div>';}
-function listBlock(title,rows,mapFn){if(!rows||!rows.length)return '<div class="card"><h2>'+escapeHtml(title)+'</h2><p class="empty">No rows.</p></div>';return '<div class="card"><h2>'+escapeHtml(title)+'</h2>'+rows.map(r=>'<div class="row">'+mapFn(r)+'</div>').join('')+'</div>';}
-async function handleLogin(e){e.preventDefault();setErr('');document.getElementById('loginBtn').disabled=true;try{const body={username:document.getElementById('username').value.trim(),password:document.getElementById('password').value};const res=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(typeof data.detail==='string'?data.detail:'Invalid username or password');token=data.token;user=data.user;localStorage.setItem('rsc_auth_token',token);showApp();await loadAll();}catch(err){setErr(err.message||'Login failed');}finally{document.getElementById('loginBtn').disabled=false;}}
-async function boot(){if(!token){showLogin();return;}try{const res=await api('/auth/me');if(!res.ok)throw new Error('session');const data=await res.json();user=data.user||data;showApp();await loadAll();}catch{token='';localStorage.removeItem('rsc_auth_token');showLogin();}}
-async function loadAll(){document.getElementById('statusLine').textContent='Loading…';try{const today=new Date().toISOString().slice(0,10);const qs=new URLSearchParams();if(custQ)qs.set('q',custQ);if(custState)qs.set('state',custState);qs.set('limit','250');
-const [d,e,t,a,p,s,o,m,act,bo,pr,cs,pc,h,st]=await Promise.all([
-api('/dashboard').then(r=>r.ok?r.json():null).catch(()=>null),
-api('/employees?active_only=false').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/tasks').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/attendance?work_date='+today).then(r=>r.ok?r.json():{roster:[]}).catch(()=>({roster:[]})),
-api('/business/products').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/business/services').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/business/orders').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/business/members').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/business/activities').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/business/overview').then(r=>r.ok?r.json():{}).catch(()=>({})),
-api('/customers/prospects?'+qs.toString()).then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/customers/summary').then(r=>r.ok?r.json():{total:0,states:[]}).catch(()=>({total:0,states:[]})),
-api('/print-center/summary?report_date='+encodeURIComponent(printDate)).then(r=>r.ok?r.json():null).catch(()=>null),
-api('/holidays').then(r=>r.ok?r.json():[]).catch(()=>[]),
-api('/settings').then(r=>r.ok?r.json():{}).catch(()=>({})),
-]);
-cache.dashboard=d;cache.employees=Array.isArray(e)?e:[];cache.tasks=Array.isArray(t)?t:[];cache.attendance=a||{roster:[]};cache.products=Array.isArray(p)?p:[];cache.services=Array.isArray(s)?s:[];cache.orders=Array.isArray(o)?o:[];cache.members=Array.isArray(m)?m:[];cache.activities=Array.isArray(act)?act:[];cache.bizOverview=bo||{};cache.prospects=Array.isArray(pr)?pr:[];cache.custSummary=cs||{total:0,states:[]};cache.printSummary=pc;cache.holidays=Array.isArray(h)?h:[];cache.settings=st||{};
-document.getElementById('badgeTasks').textContent=String(cache.tasks.length);document.getElementById('badgeEmp').textContent=String(cache.employees.length);document.getElementById('badgeCust').textContent=String(cache.custSummary.total||cache.prospects.length);
-document.getElementById('statusLine').textContent='Emp '+cache.employees.length+' · Tasks '+cache.tasks.length+' · Orders '+cache.orders.length+' · Members '+cache.members.length+' · Prospects '+(cache.custSummary.total||cache.prospects.length);render();
-}catch(err){document.getElementById('statusLine').textContent='Load error: '+(err.message||err);}}
-function renderBusiness(){const chips=['overview','products','orders','services','members','activities'].map(id=>'<button class="chip'+(bizSub===id?' active':'')+'" data-biz="'+id+'">'+id[0].toUpperCase()+id.slice(1)+'</button>').join('');let body='<div class="toolbar">'+chips+'</div>';const o=cache.bizOverview||{};
-if(bizSub==='overview'){body+='<div class="grid">'+kpi('Products',o.products??cache.products.length)+kpi('Orders',o.orders??cache.orders.length)+kpi('Open orders',o.open_orders??0)+kpi('Services',o.services??cache.services.length)+kpi('Members',o.members??cache.members.length)+kpi('Activities',o.activities??cache.activities.length)+'</div>'+listBlock('Latest orders',cache.orders.slice(0,8),r=>'<strong>'+escapeHtml(r.customer_name||r.order_code||('Order #'+r.id))+'</strong><span>'+escapeHtml([r.status,r.order_date,r.total_amount!=null?('₹'+r.total_amount):''].filter(Boolean).join(' · '))+'</span>');}
-else if(bizSub==='products'){body+=listBlock('Products ('+cache.products.length+')',cache.products,r=>'<strong>'+escapeHtml(r.name||'')+'</strong><span>'+escapeHtml([r.sku,r.category,r.brand,r.selling_price!=null?('₹'+r.selling_price):''].filter(Boolean).join(' · '))+'</span>');}
-else if(bizSub==='orders'){body+=listBlock('Orders ('+cache.orders.length+')',cache.orders,r=>'<strong>'+escapeHtml(r.customer_name||r.order_code||('Order #'+r.id))+'</strong><span>'+escapeHtml([r.status,r.order_date,r.channel,r.total_amount!=null?('₹'+r.total_amount):''].filter(Boolean).join(' · '))+'</span><span class="pill">'+escapeHtml(r.status||'—')+'</span>');}
-else if(bizSub==='services'){body+=listBlock('Services / Plans ('+cache.services.length+')',cache.services,r=>'<strong>'+escapeHtml(r.name||'')+'</strong><span>'+escapeHtml([r.category,r.training_mode,r.standard_price!=null?('₹'+r.standard_price):''].filter(Boolean).join(' · '))+'</span>');}
-else if(bizSub==='members'){body+=listBlock('Members ('+cache.members.length+')',cache.members,r=>'<strong>'+escapeHtml(r.full_name||r.name||'')+'</strong><span>'+escapeHtml([r.status,r.plan_name,r.phone,r.start_date,r.end_date].filter(Boolean).join(' · '))+'</span>');}
-else if(bizSub==='activities'){body+=listBlock('Activities ('+cache.activities.length+')',cache.activities,r=>'<strong>'+escapeHtml(r.title||r.activity_type||('Activity #'+r.id))+'</strong><span>'+escapeHtml([r.status,r.activity_date,r.member_name,r.notes].filter(Boolean).join(' · '))+'</span>');}
-return body;}
-function renderCustomers(){const states=(cache.custSummary.states||[]).map(s=>'<option value="'+escapeHtml(s.name||'')+'"'+(custState===(s.name||'')?' selected':'')+'>'+escapeHtml((s.name||'—')+' ('+s.count+')')+'</option>').join('');return '<div class="toolbar"><select id="custState"><option value="">All states</option>'+states+'</select><input id="custSearch" placeholder="Search name, city, phone…" value="'+escapeHtml(custQ)+'"/><button class="secondary" id="custApply">Apply</button></div><div class="grid">'+kpi('Prospects',cache.custSummary.total||cache.prospects.length)+kpi('States',(cache.custSummary.states||[]).length)+'</div>'+listBlock('Customer directory ('+cache.prospects.length+' shown)',cache.prospects,r=>'<strong>'+escapeHtml(r.business_name||r.name||'')+'</strong><span>'+escapeHtml([r.state,r.city,r.phone,r.email].filter(Boolean).join(' · '))+'</span>'+(r.address?'<span>'+escapeHtml(r.address)+'</span>':'')+(r.website?'<span>'+escapeHtml(r.website)+'</span>':''));}
-function renderPrint(){const pc=cache.printSummary||{};return '<div class="toolbar"><label class="muted" style="margin:0">Report date</label><input type="date" id="printDate" value="'+escapeHtml(printDate)+'"/><button class="secondary" id="printApply">Load summary</button></div><div class="grid">'+kpi('Report date',pc.report_date||printDate)+kpi('Employees',pc.employee_count??cache.employees.length)+kpi('Tasks listed',(pc.tasks||[]).length)+kpi('Attendance rows',(pc.attendance||[]).length)+'</div>'+listBlock('Tasks for print summary',pc.tasks||[],r=>'<strong>'+escapeHtml(r.title||'')+'</strong><span>'+escapeHtml([r.employee_name,r.status,r.task_date,r.priority].filter(Boolean).join(' · '))+'</span>')+listBlock('Attendance for print summary',pc.attendance||[],r=>'<strong>'+escapeHtml(r.name||'')+'</strong><span>'+escapeHtml([r.department,r.attendance_status||'Unmarked',r.check_in,r.check_out].filter(Boolean).join(' · '))+'</span>')+'<div class="card"><h2>Print Center</h2><p class="muted">'+escapeHtml(pc.note||'Live web summary. Full PDF/print is available in the desktop EXE.')+'</p></div>';}
-function render(){const k=(cache.dashboard&&cache.dashboard.kpis)||{};const recent=(cache.dashboard&&cache.dashboard.today_tasks)||[];const taskSource=(recent&&recent.length)?recent:cache.tasks.slice(0,12);const openFromList=cache.tasks.filter(t=>['not started','in progress','submitted','pending'].includes(String(t.status||'').toLowerCase())).length;const doneFromList=cache.tasks.filter(t=>String(t.status||'').toLowerCase()==='completed').length;const c=document.getElementById('content');document.getElementById('pageTitle').textContent=TITLES[tab]||tab;
-if(tab==='dashboard'){c.innerHTML='<div class="grid">'+kpi('Employees',k.total_employees??cache.employees.length)+kpi('Present today',k.present_today??0)+kpi('Open tasks',k.open_tasks||openFromList)+kpi('Completed',k.completed_tasks||doneFromList)+kpi('Orders',cache.orders.length)+kpi('Prospects',cache.custSummary.total||cache.prospects.length)+'</div>'+listBlock('Recent tasks',taskSource,t=>'<strong>'+escapeHtml(t.title||'')+'</strong><span>'+escapeHtml([t.employee_name,t.status,t.task_date].filter(Boolean).join(' · '))+'</span><span class="pill">'+escapeHtml(t.status||'—')+'</span>');}
-else if(tab==='tasks'){c.innerHTML=listBlock('Task Manager ('+cache.tasks.length+')',cache.tasks,t=>'<strong>'+escapeHtml(t.title||'')+'</strong><span>'+escapeHtml([t.employee_name,t.status,t.task_date,t.priority,t.due_time].filter(Boolean).join(' · '))+'</span>'+(t.details?'<span>'+escapeHtml(t.details)+'</span>':'')+'<span class="pill">'+escapeHtml(t.status||'—')+'</span>');}
-else if(tab==='attendance'){const roster=cache.attendance.roster||[];c.innerHTML='<p class="muted">Date: '+escapeHtml(cache.attendance.date||'today')+'</p>'+listBlock('Attendance ('+roster.length+')',roster,r=>'<strong>'+escapeHtml(r.name||'')+'</strong><span>'+escapeHtml([r.department,r.employee_code,r.status||r.attendance_status||'Unmarked',r.check_in,r.check_out].filter(Boolean).join(' · '))+'</span>');}
-else if(tab==='employees'){c.innerHTML=listBlock('Employees ('+cache.employees.length+')',cache.employees,e=>'<strong>'+escapeHtml(e.name||'')+'</strong><span>'+escapeHtml([e.employee_code,e.department,e.designation,e.phone,e.email,e.active===0?'Inactive':'Active'].filter(Boolean).join(' · '))+'</span>');}
-else if(tab==='business'){c.innerHTML=renderBusiness();c.querySelectorAll('[data-biz]').forEach(btn=>btn.onclick=()=>{bizSub=btn.getAttribute('data-biz');render();});}
-else if(tab==='customers'){c.innerHTML=renderCustomers();const apply=document.getElementById('custApply');if(apply)apply.onclick=async()=>{custQ=(document.getElementById('custSearch').value||'').trim();custState=document.getElementById('custState').value||'';await loadAll();};}
-else if(tab==='print'){c.innerHTML=renderPrint();const apply=document.getElementById('printApply');if(apply)apply.onclick=async()=>{printDate=document.getElementById('printDate').value||printDate;await loadAll();};}
-else if(tab==='reports'){const byStatus={};cache.tasks.forEach(t=>{const s=String(t.status||'Unknown');byStatus[s]=(byStatus[s]||0)+1;});const statusRows=Object.keys(byStatus).map(k=>({name:k,count:byStatus[k]}));c.innerHTML='<div class="grid">'+kpi('Employees',cache.employees.length)+kpi('Tasks',cache.tasks.length)+kpi('Orders',cache.orders.length)+kpi('Prospects',cache.custSummary.total||cache.prospects.length)+'</div>'+listBlock('Tasks by status',statusRows,r=>'<strong>'+escapeHtml(r.name)+'</strong><span>'+escapeHtml(String(r.count))+' tasks</span>')+listBlock('Holidays',cache.holidays,h=>'<strong>'+escapeHtml(h.holiday_name||'')+'</strong><span>'+escapeHtml(h.holiday_date||'')+'</span>')+'<div class="card"><h2>Reports</h2><p class="muted">Use Print Center for dated summaries. Full PDF export remains in the desktop EXE.</p></div>';}
-else if(tab==='settings'){const entries=Object.keys(cache.settings||{}).map(k=>({key:k,value:cache.settings[k]}));c.innerHTML='<div class="card"><h2>Account</h2><div class="row"><strong>'+escapeHtml((user&&(user.display_name||user.username))||'')+'</strong><span>Role: '+escapeHtml((user&&user.role)||'')+' · Username: '+escapeHtml((user&&user.username)||'')+'</span></div></div>'+listBlock('App settings',entries.slice(0,50),s=>'<strong>'+escapeHtml(String(s.key))+'</strong><span>'+escapeHtml(typeof s.value==='object'?JSON.stringify(s.value):String(s.value??''))+'</span>')+'<div class="card"><h2>Sync</h2><p class="muted">Customer automatic sync runs from the desktop EXE as <b>Admin</b>. Web pulls the shared DB on boot/refresh.</p><div class="actions" style="margin-top:10px"><button class="secondary" id="settingsRefresh">Refresh data now</button></div></div>';const b=document.getElementById('settingsRefresh');if(b)b.onclick=()=>loadAll();}}
-document.getElementById('togglePw').addEventListener('click',()=>{const inp=document.getElementById('password');const btn=document.getElementById('togglePw');if(inp.type==='password'){inp.type='text';btn.textContent='Hide';}else{inp.type='password';btn.textContent='Show';}});
-document.getElementById('loginForm').addEventListener('submit',handleLogin);
-document.getElementById('logoutBtn').addEventListener('click',()=>{token='';localStorage.removeItem('rsc_auth_token');showLogin();closeSidebar();});
-document.getElementById('refreshBtn').addEventListener('click',loadAll);
-document.getElementById('menuBtn').addEventListener('click',()=>{document.getElementById('sidebar').classList.add('open');document.getElementById('backdrop').classList.add('open');});
-document.getElementById('backdrop').addEventListener('click',closeSidebar);
-document.getElementById('sideNav').addEventListener('click',e=>{const btn=e.target.closest('.nav-btn');if(!btn)return;tab=btn.getAttribute('data-tab');document.querySelectorAll('.nav-btn').forEach(t=>t.classList.toggle('active',t===btn));closeSidebar();render();});
-setInterval(()=>{const el=document.getElementById('clock');if(el)el.textContent=new Date().toLocaleTimeString();},1000);
-boot();
+const API='';let token=localStorage.getItem('rsc_auth_token')||'';let user=null,tab='dashboard';
+let cache={dashboard:null,employees:[],tasks:[],attendance:null,products:[],services:[],orders:[],members:[],overview:{},prospects:[],custSummary:{},printSummary:{},holidays:[],authStatus:null,dbInfo:null};
+const titles={dashboard:'Dashboard',employees:'Employees',tasks:'Tasks',attendance:'Attendance',business:'Business Tracking',customers:'Customer Directory',print:'Print Center',reports:'Reports',settings:'Settings'};
+function toast(m){const e=document.getElementById('toast');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]))}
+function badge(st){return `<span class="badge">${esc(st||'—')}</span>`}
+async function api(path,opts={}){const h=Object.assign({'Content-Type':'application/json'},opts.headers||{});if(token)h.Authorization='Bearer '+token;return fetch(API+'/api'+path,{...opts,headers:h})}
+function showLogin(){document.getElementById('loginView').style.display='flex';document.getElementById('appShell').classList.remove('on')}
+function showApp(){document.getElementById('loginView').style.display='none';document.getElementById('appShell').classList.add('on');document.getElementById('userLabel').textContent=(user&&(user.display_name||user.username))||'Signed in'}
+async function doLogin(){const username=document.getElementById('username').value.trim();const password=document.getElementById('password').value;const err=document.getElementById('loginErr');err.style.display='none';document.getElementById('loginBtn').disabled=true;try{const res=await api('/auth/login',{method:'POST',body:JSON.stringify({username,password})});const data=await res.json();if(!res.ok)throw new Error(data.detail||'Login failed');token=data.token;user=data.user;localStorage.setItem('rsc_auth_token',token);showApp();await loadAll();render()}catch(e){err.textContent=e.message;err.style.display='block'}finally{document.getElementById('loginBtn').disabled=false}}
+async function loadAll(){const jobs=[['/dashboard','dashboard'],['/employees','employees'],['/tasks','tasks'],['/attendance','attendance'],['/business/products','products'],['/business/services','services'],['/business/orders','orders'],['/business/members','members'],['/business/overview','overview'],['/customers/prospects','prospects'],['/customers/summary','custSummary'],['/print-center/summary','printSummary'],['/holidays','holidays'],['/auth/status','authStatus'],['/system/db-info','dbInfo']];await Promise.all(jobs.map(async([p,k])=>{try{const r=await api(p);if(r.ok)cache[k]=await r.json()}catch{}}))}
+function kpi(l,v){return `<div class="kpi"><div class="muted">${esc(l)}</div><b>${esc(v??'—')}</b></div>`}
+function listBlock(t,rows,fn){return `<div class="card"><h2>${esc(t)}</h2><div class="list">${(rows&&rows.length)?rows.map(fn).join(''):'<div class="muted">No records.</div>'}</div></div>`}
+function renderDashboard(){const d=cache.dashboard||{},k=d.kpis||{};return `<div class="grid">${kpi('Employees',k.total_employees??cache.employees.length)}${kpi('Present',k.present_today)}${kpi('Open tasks',k.open_tasks)}${kpi('Completed',k.completed_tasks)}${kpi('Tasks',cache.tasks.length)}</div>`+listBlock('Employees',cache.employees.slice(0,8),e=>`<div class="item"><div><strong>${esc(e.name)}</strong><span class="muted">${esc([e.department,e.designation].filter(Boolean).join(' · '))}</span></div>${badge(e.active?'Active':'Inactive')}</div>`)}
+function renderEmployees(){return `<div class="card"><h2>Add employee</h2><div class="form-grid"><input id="empName" placeholder="Name *"/><input id="empDept" placeholder="Department"/><input id="empDesig" placeholder="Designation"/><input id="empPhone" placeholder="Phone"/></div><div style="margin-top:10px"><button class="btn sm" id="empCreate">Save</button></div></div>`+listBlock('Employees ('+cache.employees.length+')',cache.employees,e=>`<div class="item"><div><strong>${esc(e.name)}</strong><span class="muted">${esc([e.department,e.phone].filter(Boolean).join(' · '))}</span></div><button class="btn secondary sm" data-del-emp="${e.id}">Delete</button></div>`)}
+function renderTasks(){const opts=cache.employees.map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');return `<div class="card"><h2>New task</h2><div class="form-grid"><input id="taskTitle" placeholder="Title *"/><select id="taskEmp">${opts||'<option value="1">Emp</option>'}</select><select id="taskStatus"><option>Not started</option><option>In progress</option><option>Completed</option><option>Submitted</option></select><input id="taskDetails" placeholder="Details"/></div><div style="margin-top:10px"><button class="btn sm" id="taskCreate">Create</button></div></div>`+listBlock('Tasks ('+cache.tasks.length+')',cache.tasks,t=>`<div class="item"><div><strong>${esc(t.title)}</strong><span class="muted">${esc([t.employee_name||t.employee_id,t.status].join(' · '))}</span></div><div class="row">${badge(t.status)}<select data-task-status="${t.id}"><option>Not started</option><option>In progress</option><option>Submitted</option><option>Completed</option></select><button class="btn secondary sm" data-del-task="${t.id}">Delete</button></div></div>`)}
+function renderAttendance(){const roster=(cache.attendance&&cache.attendance.roster)||[];return listBlock('Attendance',roster,r=>`<div class="item"><div><strong>${esc(r.name||r.employee_name||r.employee_id)}</strong></div><div class="row">${badge(r.attendance_status||r.status||'Unmarked')}<button class="btn sm" data-mark="${r.employee_id||r.id}" data-status="Present">Present</button><button class="btn secondary sm" data-mark="${r.employee_id||r.id}" data-status="Absent">Absent</button><button class="btn secondary sm" data-mark="${r.employee_id||r.id}" data-status="Leave">Leave</button></div></div>`)}
+function renderBusiness(){const o=cache.overview||{};return `<div class="grid">${kpi('Products',o.products??cache.products.length)}${kpi('Orders',o.orders??cache.orders.length)}${kpi('Members',o.members??cache.members.length)}</div>`+listBlock('Products',cache.products,p=>`<div class="item"><strong>${esc(p.name)}</strong>${badge(p.selling_price)}</div>`)+listBlock('Orders',cache.orders,r=>`<div class="item"><strong>${esc(r.order_code||r.id)}</strong>${badge(r.status)}</div>`)}
+function renderCustomers(){return listBlock('Prospects',cache.prospects,p=>`<div class="item"><div><strong>${esc(p.business_name||p.name||p.id)}</strong><span class="muted">${esc([p.city,p.state,p.phone].filter(Boolean).join(' · '))}</span></div></div>`)}
+function renderPrint(){const pc=cache.printSummary||{};return `<div class="grid">${kpi('Employees',pc.employees)}${kpi('Open tasks',pc.tasks_open)}${kpi('Attendance',pc.attendance_today)}</div><div class="card"><h2>Print Center</h2><p class="muted">Web summary. Full PDF export remains in the desktop EXE during migration.</p><button class="btn secondary sm" onclick="print()">Print page</button></div>`}
+function renderReports(){return `<div class="grid">${kpi('Employees',cache.employees.length)}${kpi('Tasks',cache.tasks.length)}${kpi('Prospects',cache.prospects.length)}</div><div class="card"><h2>Reports</h2><p class="muted">EXE retains full multi-format export during migration.</p></div>`}
+function renderSettings(){return `<div class="card"><h2>Account</h2><p><strong>${esc(user&&user.display_name)}</strong><br/><span class="muted">${esc(user&&user.role)} · ${esc(user&&user.username)}</span></p></div><div class="card"><h2>Database</h2><pre class="muted" style="white-space:pre-wrap">${esc(JSON.stringify({auth:cache.authStatus,db:cache.dbInfo},null,2))}</pre><button class="btn sm" id="syncBtn2">Sync Now</button></div>`}
+function render(){document.getElementById('pageTitle').textContent=titles[tab]||tab;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));const m={dashboard:renderDashboard,employees:renderEmployees,tasks:renderTasks,attendance:renderAttendance,business:renderBusiness,customers:renderCustomers,print:renderPrint,reports:renderReports,settings:renderSettings};document.getElementById('content').innerHTML=(m[tab]||renderDashboard)();bind()}
+function bind(){const ec=document.getElementById('empCreate');if(ec)ec.onclick=async()=>{const name=document.getElementById('empName').value.trim();if(!name)return toast('Name required');const res=await api('/employees',{method:'POST',body:JSON.stringify({name,department:document.getElementById('empDept').value,designation:document.getElementById('empDesig').value,phone:document.getElementById('empPhone').value,active:1})});toast(res.ok?'Saved':'Failed');await loadAll();render()};document.querySelectorAll('[data-del-emp]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete?'))return;await api('/employees/'+b.dataset.delEmp,{method:'DELETE'});await loadAll();render()});const tc=document.getElementById('taskCreate');if(tc)tc.onclick=async()=>{const title=document.getElementById('taskTitle').value.trim();if(!title)return toast('Title required');const res=await api('/tasks',{method:'POST',body:JSON.stringify({title,employee_id:Number(document.getElementById('taskEmp').value||1),status:document.getElementById('taskStatus').value,details:document.getElementById('taskDetails').value})});toast(res.ok?'Created':'Failed');await loadAll();render()};document.querySelectorAll('[data-task-status]').forEach(sel=>{sel.onchange=async()=>{const id=sel.dataset.taskStatus;const t=cache.tasks.find(x=>String(x.id)===String(id));if(!t)return;await api('/tasks/'+id,{method:'PUT',body:JSON.stringify({title:t.title,employee_id:t.employee_id,status:sel.value,task_date:t.task_date,priority:t.priority||'Normal',details:t.details||''})});await loadAll();render()}});document.querySelectorAll('[data-del-task]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete?'))return;await api('/tasks/'+b.dataset.delTask,{method:'DELETE'});await loadAll();render()});document.querySelectorAll('[data-mark]').forEach(b=>b.onclick=async()=>{await api('/attendance/mark',{method:'POST',body:JSON.stringify({employee_id:Number(b.dataset.mark),attendance_status:b.dataset.status})});toast('Marked '+b.dataset.status);await loadAll();render()});const s2=document.getElementById('syncBtn2');if(s2)s2.onclick=()=>document.getElementById('syncBtn').click()}
+document.getElementById('loginBtn').onclick=doLogin;
+document.getElementById('togglePw').onclick=()=>{const i=document.getElementById('password');i.type=i.type==='password'?'text':'password'};
+document.getElementById('logoutBtn').onclick=()=>{token='';localStorage.removeItem('rsc_auth_token');showLogin()};
+document.getElementById('nav').onclick=e=>{const b=e.target.closest('button[data-tab]');if(!b)return;tab=b.dataset.tab;render()};
+document.getElementById('syncBtn').onclick=async()=>{const res=await api('/system/sync-now',{method:'POST',body:'{}'});toast(res.ok?'Sync done':'Sync failed');await loadAll();render()};
+(async()=>{if(!token){showLogin();return}try{const r=await api('/auth/me');if(!r.ok)throw 0;user=(await r.json()).user;showApp();await loadAll();render()}catch{token='';localStorage.removeItem('rsc_auth_token');showLogin()}})();
 </script></body></html>
