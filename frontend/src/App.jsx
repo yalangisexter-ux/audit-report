@@ -1,369 +1,103 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import brandLogo from '../../assets/raw_strength_brand.png';
 import {
-  LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase,
-  Settings, RefreshCw, CheckCircle2, Menu, LogOut, Eye, EyeOff
+  LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase, Settings,
+  RefreshCw, CheckCircle2, Menu, LogOut, MessageCircle, Store, Archive, ClipboardList,
+  Plus, Trash2, Search, Download, Clock3
 } from 'lucide-react';
 
-const API_BASE = '/api';
+const API = '/api';
+const today = () => new Date().toISOString().slice(0, 10);
+const navItems = [
+  ['home','Home',LayoutDashboard],['dashboard','Dashboard',LayoutDashboard],
+  ['employees','Employees',Users],['tasks','Task Manager',CheckSquare],
+  ['tracker','Employee Tracker',ClipboardList],['attendance','Attendance',CalendarCheck],
+  ['reports','Print Center',Printer],['archive','EOD Archive',Archive],
+  ['business','Business Tracking',Briefcase],['customers','Store Directory',Store],
+  ['chat','Live Chat',MessageCircle],['settings','Settings & Backup',Settings]
+];
+const card='rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-black/10';
+const field='w-full min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400';
+const btn='inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-50';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('rsc_auth_token') || '');
-  const [authChecked, setAuthChecked] = useState(false);
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [showPassword, setShowPassword] = useState(false);
-  const [loginError, setLoginError] = useState('');
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [employees, setEmployees] = useState([]);
-  const [tasks, setTasks] = useState([]);
-  const [attendance, setAttendance] = useState({ date: new Date().toISOString().split('T')[0], roster: [] });
-  const [products, setProducts] = useState([]);
-  const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [notification, setNotification] = useState(null);
+  const [tab,setTab]=useState('home'),[sidebar,setSidebar]=useState(true);
+  const [token,setToken]=useState(()=>localStorage.getItem('rsc_auth_token')||'');
+  const [user,setUser]=useState(null),[checked,setChecked]=useState(false);
+  const [login,setLogin]=useState({username:'',password:''}),[error,setError]=useState('');
+  const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
+  const [data,setData]=useState({dashboard:null,employees:[],tasks:[],attendance:{date:today(),roster:[]},products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,db:null});
+  const [query,setQuery]=useState('');
+  const [form,setForm]=useState({name:'',employee_code:'',department:'',designation:'',phone:'',email:'',title:'',task_date:today(),employee_id:'',priority:'Normal',status:'Not started',details:'',sku:'',category:'General',brand:'',base_unit:'PCS',opening_stock:0,received_qty:0,reorder_level:0,selling_price:0,training_mode:'In-Person',standard_price:0,customer_name:'',order_value:0,full_name:'',plan_name:'',business_name:'',city:'',state:'',contact_person:'',content:'',channel:'general'});
+  const [report,setReport]=useState({date:today(),report_type:'Audit / EOD',employee_id:''});
+  const [reportText,setReportText]=useState('');
 
-  useEffect(() => {
-    const t = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      const token = localStorage.getItem('rsc_auth_token') || '';
-      if (!token) { setAuthChecked(true); return; }
-      try {
-        const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok) throw new Error('session');
-        const data = await res.json();
-        setAuthToken(token);
-        window.__rsc_token = token;
-        setCurrentUser(data.user);
-        setAuthChecked(true);
-        loadAll(token);
-      } catch {
-        localStorage.removeItem('rsc_auth_token');
-        setAuthToken('');
-        setCurrentUser(null);
-        setAuthChecked(true);
-      }
-    })();
-  }, []);
-
-  const apiFetch = async (url, options = {}) => {
-    const token = authToken || window.__rsc_token || localStorage.getItem('rsc_auth_token') || '';
-    const headers = { ...(options.headers || {}) };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-    const res = await fetch(url, { ...options, headers });
-    if (res.status === 401) {
-      localStorage.removeItem('rsc_auth_token');
-      window.__rsc_token = '';
-      setAuthToken('');
-      setCurrentUser(null);
-    }
-    return res;
+  const apiFetch=async(path,options={})=>{
+    const headers={...(options.headers||{})};
+    const active=token||localStorage.getItem('rsc_auth_token')||'';
+    if(active) headers.Authorization='Bearer '+active;
+    if(options.body) headers['Content-Type']='application/json';
+    const res=await fetch(API+path,{...options,headers});
+    if(res.status===401){localStorage.removeItem('rsc_auth_token');setToken('');setUser(null);}
+    if(!res.ok){const body=await res.json().catch(()=>({}));throw new Error(body.detail||('Request failed ('+res.status+')'));}
+    return res.status===204?null:res.json();
   };
-
-  const showNotification = (msg) => {
-    setNotification(msg);
-    setTimeout(() => setNotification(null), 3000);
+  const load=async()=>{
+    if(!token)return;
+    setBusy(true);
+    const jobs=[
+      ['dashboard','/dashboard',null],['employees','/employees',[]],['tasks','/tasks',[]],
+      ['attendance','/attendance?work_date='+today(),{date:today(),roster:[]}],
+      ['products','/business/products',[]],['services','/business/services',[]],
+      ['orders','/business/orders',[]],['members','/business/members',[]],
+      ['prospects','/customers/prospects',[]],['messages','/chat/messages?channel=general',[]],
+      ['print','/print-center/summary',null],['db','/system/db-info',null]
+    ];
+    const results=await Promise.all(jobs.map(async([key,path,fallback])=>{try{return [key,await apiFetch(path)]}catch(e){return [key,fallback]}}));
+    setData(prev=>({...prev,...Object.fromEntries(results)}));setBusy(false);
   };
+  useEffect(()=>{(async()=>{if(!token){setChecked(true);return;}try{const r=await fetch(API+'/auth/me',{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw 0;const j=await r.json();setUser(j.user);setChecked(true);}catch{localStorage.removeItem('rsc_auth_token');setToken('');setUser(null);setChecked(true);}})()},[]);
+  useEffect(()=>{if(user&&token)load()},[user,token]);
+  const notify=(s)=>{setNotice(s);setTimeout(()=>setNotice(''),3500)};
+  const submitLogin=async(e)=>{e.preventDefault();setError('');setBusy(true);try{const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(login)});const j=await r.json();if(!r.ok)throw new Error(j.detail||'Invalid username or password');localStorage.setItem('rsc_auth_token',j.token);setToken(j.token);setUser(j.user);notify('Signed in');}catch(e){setError(e.message)}finally{setBusy(false)}};
+  const logout=()=>{localStorage.removeItem('rsc_auth_token');setToken('');setUser(null);setData({dashboard:null,employees:[],tasks:[],attendance:{date:today(),roster:[]},products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,db:null})};
+  const set=(key,value)=>setForm(p=>({...p,[key]:value}));
+  const post=async(path,payload)=>{await apiFetch(path,{method:'POST',body:JSON.stringify(payload)});await load();notify('Saved successfully');};
+  const del=async(path)=>{if(!window.confirm('Delete this record?'))return;await apiFetch(path,{method:'DELETE'});await load();notify('Record deleted')};
+  const filtered=(items,keys)=>items.filter(x=>keys.some(k=>String(x[k]??'').toLowerCase().includes(query.toLowerCase())));
+  const employeeOptions=data.employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>);
+  const heading=navItems.find(x=>x[0]===tab)?.[1]||'Home';
+  const Panel=({title,children,actions})=><section className={card}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold text-white">{title}</h2>{actions}</div>{children}</section>;
+  const Input=({label,name,type='text',placeholder=''})=><label className="block min-w-0 space-y-1"><span className="text-xs font-semibold text-slate-400">{label}</span><input className={field} type={type} value={form[name]??''} placeholder={placeholder} onChange={e=>set(name,type==='number'?Number(e.target.value):e.target.value)}/></label>;
+  const Select=({label,name,options})=><label className="block min-w-0 space-y-1"><span className="text-xs font-semibold text-slate-400">{label}</span><select className={field} value={form[name]??''} onChange={e=>set(name,e.target.value)}>{options.map(o=><option key={o[0]} value={o[0]}>{o[1]}</option>)}</select></label>;
+  const Rows=({items,keys,onDelete})=><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr>{keys.map(k=><th className="border-b border-white/10 px-3 py-3" key={k}>{k.replaceAll('_',' ')}</th>)}{onDelete&&<th className="border-b border-white/10 px-3 py-3">Action</th>}</tr></thead><tbody>{items.map((x,i)=><tr key={x.id??i} className="border-b border-white/5 text-slate-300">{keys.map(k=><td className="px-3 py-3" key={k}>{String(x[k]??'—')}</td>)}{onDelete&&<td className="px-3 py-3"><button className="text-rose-300" onClick={()=>onDelete(x)} aria-label="Delete"><Trash2 size={16}/></button></td>}</tr>)}</tbody></table>{!items.length&&<p className="py-6 text-center text-sm text-slate-500">No records found.</p>}</div>;
 
-  const loadAll = async (tokenOverride) => {
-    if (tokenOverride) window.__rsc_token = tokenOverride;
-    setLoading(true);
-    try {
-      const [d, e, t, a, p, s] = await Promise.all([
-        apiFetch(`${API_BASE}/dashboard`).then(r => r.ok ? r.json() : null),
-        apiFetch(`${API_BASE}/employees`).then(r => r.ok ? r.json() : []),
-        apiFetch(`${API_BASE}/tasks`).then(r => r.ok ? r.json() : []),
-        apiFetch(`${API_BASE}/attendance?work_date=${new Date().toISOString().slice(0, 10)}`).then(r => r.ok ? r.json() : { date: '', roster: [] }),
-        apiFetch(`${API_BASE}/business/products`).then(r => r.ok ? r.json() : []),
-        apiFetch(`${API_BASE}/business/services`).then(r => r.ok ? r.json() : []),
-      ]);
-      setDashboardData(d);
-      setEmployees(Array.isArray(e) ? e : []);
-      setTasks(Array.isArray(t) ? t : []);
-      setAttendance(a || { date: '', roster: [] });
-      setProducts(Array.isArray(p) ? p : []);
-      setServices(Array.isArray(s) ? s : []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  if(!checked)return <div className="grid min-h-screen place-items-center bg-[#080d18] text-cyan-300">Loading…</div>;
+  if(!user)return <div className="login-screen grid min-h-screen place-items-center bg-[#080d18] p-4 text-white"><form onSubmit={submitLogin} className="w-full max-w-md rounded-3xl border border-cyan-400/20 bg-slate-900/90 p-8 shadow-2xl"><img src={brandLogo} className="mb-5 h-16 w-16 rounded-xl object-contain" alt="Raw Strength"/><h1 className="text-xl font-black">Raw Strength Calisthenics</h1><p className="mb-6 mt-1 text-sm text-slate-400">Employee Audit Manager · Sign in</p>{error&&<p className="mb-4 rounded-lg bg-rose-950 p-3 text-sm text-rose-300">{error}</p>}<label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} autoComplete="username" required/></label><label className="mb-6 block text-xs text-slate-400">Password<input className={field+' mt-1'} type="password" value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} autoComplete="current-password" required/></label><button className={btn+' w-full'} disabled={busy}>{busy?'Signing in…':'Sign in'}</button></form></div>;
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoginBusy(true);
-    setLoginError('');
-    try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginForm),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Invalid username or password');
-      localStorage.setItem('rsc_auth_token', data.token);
-      window.__rsc_token = data.token;
-      setAuthToken(data.token);
-      setCurrentUser(data.user);
-      await loadAll(data.token);
-      showNotification('Signed in');
-    } catch (err) {
-      setLoginError(err.message || 'Login failed');
-    } finally {
-      setLoginBusy(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('rsc_auth_token');
-    window.__rsc_token = '';
-    setAuthToken('');
-    setCurrentUser(null);
-  };
-
-  const kpis = dashboardData?.kpis || {};
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'tasks', label: 'Task Manager', icon: CheckSquare, badge: kpis.open_tasks ?? tasks.length },
-    { id: 'attendance', label: 'Attendance', icon: CalendarCheck },
-    { id: 'employees', label: 'Employees', icon: Users, badge: kpis.total_employees ?? employees.length },
-    { id: 'business', label: 'Business / Products', icon: Briefcase },
-    { id: 'reports', label: 'Reports', icon: Printer },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
-
-  if (!authChecked) {
-    return <div className="min-h-screen bg-[#070B14] text-cyan-300 flex items-center justify-center text-sm font-semibold">Loading…</div>;
-  }
-
-  if (!currentUser || !authToken) {
-    return (
-      <div className="login-screen min-h-screen bg-[#070B14] text-slate-100 flex items-center justify-center p-4 sm:p-6">
-        <form onSubmit={handleLogin} className="login-card w-full max-w-lg rounded-3xl border border-cyan-400/20 bg-slate-900/90 p-5 sm:p-9 shadow-2xl shadow-black/40">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
-              <img src={brandLogo} alt="Raw Strength Calisthenics" className="w-full h-full rounded-[10px] object-contain" />
-            </div>
-            <div>
-              <h1 className="text-lg font-extrabold text-white break-words">Raw Strength Calisthenics</h1>
-              <p className="text-xs text-slate-400">Employee Audit Manager · Sign in</p>
-            </div>
-          </div>
-          <p className="text-sm text-slate-400 mb-5 break-words">Use the same username and password as the desktop app.</p>
-          {loginError && <div className="mb-4 text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg px-3 py-2 break-words">{loginError}</div>}
-          <label className="block text-xs font-semibold text-slate-400 mb-1">Username</label>
-          <input className="w-full mb-4 rounded-lg bg-slate-950 border border-white/10 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"
-            value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} required autoComplete="username" />
-          <label className="block text-xs font-semibold text-slate-400 mb-1">Password</label>
-          <div className="password-field relative mb-6">
-            <input type={showPassword ? 'text' : 'password'} className="w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-3 pr-24 text-base outline-none focus:border-cyan-400"
-              value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} required autoComplete="current-password" />
-            <button type="button" onClick={() => setShowPassword((visible) => !visible)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword}
-              className="password-toggle absolute inset-y-0 right-2 my-auto h-10 min-w-16 rounded-lg border border-cyan-400/50 bg-slate-800 px-3 text-sm font-bold text-cyan-200 hover:border-cyan-400/70 focus:outline-none focus:ring-2 focus:ring-cyan-400/50">
-              {showPassword ? <><EyeOff className="inline w-4 h-4 mr-1" />Hide</> : <><Eye className="inline w-4 h-4 mr-1" />Show</>}
-            </button>
-          </div>
-          <button type="submit" disabled={loginBusy}
-            className="w-full rounded-lg bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950 font-bold py-2.5 text-sm disabled:opacity-60 min-h-[44px]">
-            {loginBusy ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  return (
-    <div className="webapp-shell flex h-screen w-full bg-[#070B14] text-slate-100 overflow-hidden">
-      {notification && (
-        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-900 border border-cyan-500/40 text-cyan-300 shadow-xl">
-          <CheckCircle2 className="w-5 h-5" /><span className="text-sm font-semibold break-words">{notification}</span>
-        </div>
-      )}
-
-      {sidebarOpen && <button type="button" className="mobile-sidebar-backdrop" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} />}\n      <aside className={`webapp-sidebar ${sidebarOpen ? 'is-open w-64' : 'is-closed w-16'} transition-all duration-300 flex flex-col border-r border-white/5 bg-slate-950/80 z-20`}>
-        <div className="p-4 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 via-cyan-400 to-indigo-600 p-[1.5px]">
-              <img src={brandLogo} alt="Raw Strength Calisthenics" className="w-full h-full rounded-[10px] object-contain" />
-            </div>
-            {sidebarOpen && (
-              <div className="min-w-0">
-                <div className="font-extrabold text-sm text-white truncate">RAW STRENGTH</div>
-                <div className="text-[10px] text-cyan-400 font-semibold tracking-widest">CALISTHENICS</div>
-              </div>
-            )}
-          </div>
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Menu className="w-5 h-5" /></button>
-        </div>
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = activeTab === item.id;
-            return (
-              <button key={item.id} onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium min-h-[40px] ${active ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/40' : 'text-slate-400 hover:bg-white/5'}`}>
-                <Icon className="w-5 h-5 shrink-0" />
-                {sidebarOpen && <span className="truncate flex-1 text-left">{item.label}</span>}
-                {sidebarOpen && item.badge !== undefined && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800">{item.badge}</span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="p-3 border-t border-white/5">
-          <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-900/60 min-w-0">
-            <div className="w-8 h-8 shrink-0 rounded-lg bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center font-bold text-xs">
-              {(currentUser?.username || 'U').slice(0, 2).toUpperCase()}
-            </div>
-            {sidebarOpen && (
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold text-white truncate">{currentUser?.display_name || currentUser?.username}</div>
-                <div className="text-[10px] text-cyan-400">{(currentUser?.role || '').toUpperCase()}</div>
-                <button type="button" onClick={handleLogout} className="text-[10px] text-cyan-400/80 hover:text-cyan-300 flex items-center gap-1 mt-0.5">
-                  <LogOut className="w-3 h-3" /> Sign out
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      <div className="webapp-content flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="webapp-header h-14 px-4 border-b border-white/5 flex items-center justify-between bg-slate-950/50">
-          <button type="button" onClick={() => setSidebarOpen(true)} aria-label="Open navigation" className="mobile-menu-button p-2 rounded-lg bg-slate-900 border border-white/10 text-cyan-300"><Menu className="w-5 h-5" /></button><h1 className="text-base font-black text-white uppercase truncate">{navItems.find(n => n.id === activeTab)?.label}</h1>
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="text-xs font-mono text-cyan-300">{currentTime.toLocaleTimeString()}</div>
-            <button onClick={() => loadAll()} className="p-2 rounded-lg bg-slate-900 border border-white/10 hover:border-cyan-400/40" title="Refresh">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </header>
-
-        <main className="webapp-main flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 min-w-0">
-          {activeTab === 'dashboard' && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                ['Employees', kpis.total_employees ?? employees.length],
-                ['Present today', kpis.present_today ?? 0],
-                ['Open tasks', kpis.open_tasks ?? 0],
-                ['Completed', kpis.completed_tasks ?? 0],
-              ].map(([label, val]) => (
-                <div key={label} className="rounded-xl border border-white/10 bg-slate-900/60 p-4 min-w-0">
-                  <div className="text-xs text-slate-400 truncate">{label}</div>
-                  <div className="text-2xl font-black text-cyan-300 mt-1">{val}</div>
-                </div>
-              ))}
-              <div className="col-span-2 md:col-span-4 rounded-xl border border-white/10 bg-slate-900/40 p-4">
-                <div className="text-sm font-bold text-white mb-2">Today's tasks</div>
-                {(dashboardData?.today_tasks || tasks.slice(0, 6)).length === 0 && <p className="text-sm text-slate-500">No tasks yet.</p>}
-                <ul className="space-y-2">
-                  {(dashboardData?.today_tasks || tasks.slice(0, 6)).map((t, i) => (
-                    <li key={t.id || i} className="text-sm text-slate-300 border-b border-white/5 pb-2 break-words">
-                      <span className="font-semibold text-white">{t.title}</span>
-                      <span className="text-slate-500"> · {t.status} · {t.employee_name || ''}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'tasks' && (
-            <div className="space-y-2">
-              <div className="text-sm text-slate-400 mb-2">{tasks.length} tasks</div>
-              {tasks.map((t) => (
-                <div key={t.id} className="rounded-xl border border-white/10 bg-slate-900/50 p-3 min-w-0">
-                  <div className="font-semibold text-white break-words">{t.title}</div>
-                  <div className="text-xs text-slate-400 mt-1 break-words">{t.employee_name || '—'} · {t.status} · {t.task_date} · {t.priority}</div>
-                  {t.details && <div className="text-xs text-slate-500 mt-1 break-words whitespace-pre-wrap">{t.details}</div>}
-                </div>
-              ))}
-              {tasks.length === 0 && <p className="text-slate-500 text-sm">No tasks found.</p>}
-            </div>
-          )}
-
-          {activeTab === 'attendance' && (
-            <div className="space-y-2">
-              <div className="text-sm text-slate-400">Date: {attendance.date || '—'}</div>
-              {(attendance.roster || []).map((r, i) => (
-                <div key={r.employee_id || i} className="rounded-xl border border-white/10 bg-slate-900/50 p-3 flex justify-between gap-3 min-w-0">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-white truncate">{r.name}</div>
-                    <div className="text-xs text-slate-400">{r.department || ''} · {r.employee_code || ''}</div>
-                  </div>
-                  <div className="text-sm font-bold text-cyan-300 shrink-0">{r.status || r.attendance_status || 'Unmarked'}</div>
-                </div>
-              ))}
-              {(attendance.roster || []).length === 0 && <p className="text-slate-500 text-sm">No attendance rows.</p>}
-            </div>
-          )}
-
-          {activeTab === 'employees' && (
-            <div className="space-y-2">
-              {employees.map((e) => (
-                <div key={e.id} className="rounded-xl border border-white/10 bg-slate-900/50 p-3 min-w-0">
-                  <div className="font-semibold text-white break-words">{e.name}</div>
-                  <div className="text-xs text-slate-400 break-words">{e.employee_code} · {e.department} · {e.designation}</div>
-                  <div className="text-xs text-slate-500 break-words">{e.phone} {e.email}</div>
-                </div>
-              ))}
-              {employees.length === 0 && <p className="text-slate-500 text-sm">No employees.</p>}
-            </div>
-          )}
-
-          {activeTab === 'business' && (
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <h2 className="font-bold text-white mb-2">Products ({products.length})</h2>
-                {products.map((p) => (
-                  <div key={p.id} className="rounded-xl border border-white/10 bg-slate-900/50 p-3 mb-2 min-w-0">
-                    <div className="font-semibold text-white break-words">{p.name}</div>
-                    <div className="text-xs text-slate-400 break-words">SKU {p.sku || '—'} · {p.category}</div>
-                  </div>
-                ))}
-                {products.length === 0 && <p className="text-slate-500 text-sm">No products.</p>}
-              </div>
-              <div>
-                <h2 className="font-bold text-white mb-2">Services / Plans ({services.length})</h2>
-                {services.map((s) => (
-                  <div key={s.id} className="rounded-xl border border-white/10 bg-slate-900/50 p-3 mb-2 min-w-0">
-                    <div className="font-semibold text-white break-words">{s.name}</div>
-                    <div className="text-xs text-slate-400 break-words">{s.category} · {s.training_mode} · ₹{s.standard_price}</div>
-                  </div>
-                ))}
-                {services.length === 0 && <p className="text-slate-500 text-sm">No services.</p>}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'reports' && (
-            <div className="rounded-xl border border-white/10 bg-slate-900/50 p-4 text-sm text-slate-400 break-words">
-              Full PDF export matches the desktop Print Center. Web report APIs are under /api/reports.
-            </div>
-          )}
-
-          {activeTab === 'settings' && (
-            <div className="rounded-xl border border-white/10 bg-slate-900/50 p-4 space-y-2 text-sm text-slate-300">
-              <div className="font-bold text-white">Signed in as {currentUser?.display_name || currentUser?.username}</div>
-              <div className="text-slate-400 break-words">Role: {currentUser?.role}</div>
-              <div className="text-slate-400 break-words">Web uses the same login users when the cloud DB snapshot is pulled. Customer prospects and full invoicing expand in follow-up updates.</div>
-              <button type="button" onClick={handleLogout} className="mt-2 px-4 py-2 rounded-lg bg-slate-800 border border-white/10 text-cyan-300 min-h-[40px]">Sign out</button>
-            </div>
-          )}
-        </main>
-      </div>
+  return <div className="flex h-screen min-h-0 overflow-hidden bg-[#080d18] text-slate-100">
+    {notice&&<div className="fixed right-4 top-4 z-[90] rounded-xl border border-cyan-400/30 bg-slate-900 px-4 py-3 text-sm text-cyan-200">{notice}</div>}
+    {sidebar&&<button aria-label="Close menu" onClick={()=>setSidebar(false)} className="fixed inset-0 z-40 bg-black/60 md:hidden"/>}
+    <aside className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-white/10 bg-slate-950/95 transition-transform md:static md:translate-x-0 ${sidebar?'translate-x-0':'-translate-x-full'}`}>
+      <div className="flex items-center gap-3 border-b border-white/10 p-4"><img src={brandLogo} className="h-10 w-10 rounded-lg object-contain" alt=""/><div><b className="text-sm">RAW STRENGTH</b><p className="text-[10px] tracking-widest text-cyan-400">CALISTHENICS</p></div><button className="ml-auto md:hidden" onClick={()=>setSidebar(false)}>✕</button></div>
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">{navItems.map(([id,label,Icon])=><button key={id} onClick={()=>{setTab(id);setSidebar(false)}} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm ${tab===id?'border border-cyan-400/30 bg-cyan-400/10 text-cyan-200':'text-slate-400 hover:bg-white/5'}`}><Icon size={18}/>{label}</button>)}</nav>
+      <div className="border-t border-white/10 p-4"><p className="truncate text-sm font-bold">{user.display_name||user.username}</p><p className="text-xs text-slate-500">{user.role}</p><button onClick={logout} className="mt-3 flex items-center gap-2 text-xs text-rose-300"><LogOut size={14}/> Sign out</button></div>
+    </aside>
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/50 px-4"><div className="flex min-w-0 items-center gap-3"><button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden"><Menu size={18}/></button><div><h1 className="truncate text-sm font-black uppercase tracking-wide">{heading}</h1><p className="text-[10px] text-slate-500">Employee Audit Manager · Operations</p></div></div><div className="flex items-center gap-3"><span className="hidden text-xs text-cyan-300 sm:inline">{new Date().toLocaleString()}</span><button onClick={load} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
+      <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
+        {(tab==='home'||tab==='dashboard')&&<><div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[['Employees',data.dashboard?.kpis?.total_employees??data.employees.length],['Present today',data.dashboard?.kpis?.present_today??0],['Open tasks',data.dashboard?.kpis?.open_tasks??0],['Completed',data.dashboard?.kpis?.completed_tasks??0]].map(([l,v])=><div className={card} key={l}><p className="text-xs text-slate-400">{l}</p><p className="mt-2 text-3xl font-black text-cyan-300">{v}</p></div>)}</div><Panel title="Today's work"><Rows items={data.dashboard?.today_tasks||data.tasks.slice(0,8)} keys={['title','employee_name','status','task_date','priority']}/></Panel><Panel title="Quick actions"><div className="flex flex-wrap gap-2">{[['employees','Add employee'],['tasks','Create task'],['attendance','Mark attendance'],['reports','Generate report']].map(([t,l])=><button key={t} onClick={()=>setTab(t)} className={btn}>{l}</button>)}</div></Panel></>}
+        {tab==='employees'&&<><Panel title="Add employee"><form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/employees',form)}}><Input label="Employee name" name="name"/><Input label="Employee ID" name="employee_code"/><Input label="Department" name="department"/><Input label="Designation / Role" name="designation"/><Input label="Phone" name="phone"/><Input label="Email" name="email"/><div className="sm:col-span-2"><button className={btn}><Plus size={16}/> Add employee</button></div></form></Panel><Panel title={`Employee register · ${data.employees.length}`}><input className={field+' mb-3'} placeholder="Search employees" value={query} onChange={e=>setQuery(e.target.value)}/><Rows items={filtered(data.employees,['name','employee_code','department','designation','phone'])} keys={['name','employee_code','department','designation','phone']} onDelete={e=>del('/employees/'+e.id)}/></Panel></>}
+        {tab==='tasks'&&<><Panel title="Create task"><form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/tasks',form)}}><Input label="Task title" name="title"/><Select label="Employee" name="employee_id" options={[['','Select employee'],...data.employees.map(e=>[e.id,e.name])]}/><Input label="Task date" name="task_date" type="date"/><Select label="Priority" name="priority" options={['Low','Normal','High','Critical'].map(x=>[x,x])}/><Select label="Status" name="status" options={['Not started','In progress','Completed','On hold'].map(x=>[x,x])}/><Input label="Department" name="department"/><label className="sm:col-span-2"><span className="mb-1 block text-xs text-slate-400">Details</span><textarea className={field} rows="3" value={form.details} onChange={e=>set('details',e.target.value)}/></label><button className={btn+' sm:col-span-2'}><Plus size={16}/> Create task</button></form></Panel><Panel title={`Task manager · ${data.tasks.length} tasks`}><input className={field+' mb-3'} placeholder="Search tasks" value={query} onChange={e=>setQuery(e.target.value)}/><Rows items={filtered(data.tasks,['title','employee_name','status','department'])} keys={['title','employee_name','task_date','priority','status']} onDelete={t=>del('/tasks/'+t.id)}/></Panel></>}
+        {tab==='tracker'&&<Panel title="Employee tracker"><p className="mb-3 text-sm text-slate-400">Employee and task progress from the shared database.</p><Rows items={data.employees.map(e=>({...e,assigned_tasks:data.tasks.filter(t=>String(t.employee_id)===String(e.id)).length,open_tasks:data.tasks.filter(t=>String(t.employee_id)===String(e.id)&&t.status!=='Completed').length}))} keys={['name','employee_code','department','assigned_tasks','open_tasks']}/></Panel>}
+        {tab==='attendance'&&<><Panel title="Daily attendance"><div className="mb-3 flex flex-wrap items-center gap-3"><label className="text-xs text-slate-400">Work date<input className={field+' mt-1'} type="date" value={data.attendance.date||today()} onChange={async e=>{try{const a=await apiFetch('/attendance?work_date='+e.target.value);setData(p=>({...p,attendance:a}))}catch(err){notify(err.message)}}}/></label></div><div className="overflow-x-auto"><table className="w-full min-w-[600px] text-sm"><thead><tr className="text-left text-xs text-slate-500"><th className="p-2">Employee</th><th className="p-2">Department</th><th className="p-2">Current</th><th className="p-2">Mark status</th></tr></thead><tbody>{data.attendance.roster?.map(r=><tr key={r.employee_id} className="border-t border-white/5"><td className="p-2">{r.name}</td><td className="p-2">{r.department}</td><td className="p-2 text-cyan-300">{r.status||r.attendance_status||'Unmarked'}</td><td className="p-2"><div className="flex flex-wrap gap-1">{['Present','Absent','Leave'].map(s=><button key={s} onClick={()=>post('/attendance/mark',{employee_id:r.employee_id,work_date:data.attendance.date||today(),attendance_status:s})} className="rounded-md border border-white/10 px-2 py-1 text-xs hover:border-cyan-400">{s}</button>)}</div></td></tr>)}</tbody></table></div></Panel><Panel title="Holidays"><p className="text-sm text-slate-400">Holiday management is available through the shared desktop data model; use the EXE for advanced holiday editing until the web editor is migrated.</p></Panel></>}
+        {tab==='business'&&<><Panel title="Create order / sale"><form className="grid gap-3 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/business/orders',{customer_name:form.customer_name,order_value:Number(form.order_value),status:'Open',order_date:today()})}}><Input label="Customer name" name="customer_name"/><Input label="Order value" name="order_value" type="number"/><button className={btn+' self-end'}><Plus size={16}/> Add order</button></form><Rows items={data.orders} keys={['order_code','customer_name','status','order_date','order_value']}/></Panel><Panel title="Products"><form className="grid gap-3 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/business/products',form)}}><Input label="Product name" name="name"/><Input label="SKU" name="sku"/><Input label="Category" name="category"/><Input label="Brand" name="brand"/><Input label="Opening stock" name="opening_stock" type="number"/><Input label="Received quantity" name="received_qty" type="number"/><Input label="Selling price" name="selling_price" type="number"/><button className={btn+' self-end'}><Plus size={16}/> Add product</button></form><Rows items={data.products} keys={['name','sku','category','opening_stock','received_qty','selling_price']}/></Panel><Panel title="Services / plans"><form className="grid gap-3 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/business/services',form)}}><Input label="Service name" name="name"/><Input label="Category" name="category"/><Select label="Training mode" name="training_mode" options={['In-Person','Online','Hybrid'].map(x=>[x,x])}/><Input label="Standard price" name="standard_price" type="number"/><button className={btn+' self-end'}><Plus size={16}/> Add service</button></form><Rows items={data.services} keys={['name','category','training_mode','standard_price']}/></Panel></>}
+        {tab==='customers'&&<><Panel title="Add store / prospect"><form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/customers/prospects',form)}}><Input label="Business / store name" name="business_name"/><Input label="Contact person" name="contact_person"/><Input label="City" name="city"/><Input label="State" name="state"/><Input label="Phone" name="phone"/><Input label="Email" name="email"/><button className={btn+' sm:col-span-2'}><Plus size={16}/> Add prospect</button></form></Panel><Panel title="Store directory"><Rows items={data.prospects} keys={['business_name','contact_person','city','state','phone','email']}/></Panel><Panel title="Memberships"><form className="grid gap-3 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/business/members',{full_name:form.full_name,plan_name:form.plan_name,status:'Active'})}}><Input label="Member name" name="full_name"/><Input label="Plan" name="plan_name"/><button className={btn+' self-end'}><Plus size={16}/> Add member</button></form><Rows items={data.members} keys={['full_name','status','plan_name','phone','start_date','end_date']}/></Panel></>}
+        {tab==='reports'&&<><Panel title="Print Center"><form className="grid gap-3 sm:grid-cols-3" onSubmit={async e=>{e.preventDefault();try{const r=await apiFetch('/reports/preview',{method:'POST',body:JSON.stringify({...report,employee_id:report.employee_id?Number(report.employee_id):null})});setReportText(typeof r==='string'?r:JSON.stringify(r,null,2))}catch(err){notify(err.message)}}}><label className="text-xs text-slate-400">Report date<input className={field+' mt-1'} type="date" value={report.date} onChange={e=>setReport(p=>({...p,date:e.target.value}))}/></label><label className="text-xs text-slate-400">Report type<select className={field+' mt-1'} value={report.report_type} onChange={e=>setReport(p=>({...p,report_type:e.target.value}))}>{['Audit / EOD','Employee Productivity','Employee Attendance','Employee Details'].map(x=><option>{x}</option>)}</select></label><label className="text-xs text-slate-400">Employee<select className={field+' mt-1'} value={report.employee_id} onChange={e=>setReport(p=>({...p,employee_id:e.target.value}))}><option value="">All employees</option>{data.employees.map(e=><option value={e.id}>{e.name}</option>)}</select></label><button className={btn+' sm:col-span-3'}><Printer size={16}/> Generate preview</button></form>{reportText&&<><pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-4 text-xs text-slate-300">{reportText}</pre><button className={btn+' mt-3'} onClick={()=>window.print()}><Download size={16}/> Print / Save PDF</button></>}</Panel><Panel title="Print center summary"><pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">{JSON.stringify(data.print,null,2)}</pre></Panel></>}
+        {tab==='archive'&&<Panel title="EOD archive"><p className="text-sm text-slate-400">Archived report records are retained in the shared database. The archive browser and restore controls still require the desktop workflow migration; use the EXE for archive management.</p></Panel>}
+        {tab==='chat'&&<Panel title="Live Chat"><div className="mb-3 max-h-96 space-y-2 overflow-y-auto">{data.messages.map((m,i)=><div key={m.id||i} className="rounded-lg bg-slate-950 p-3"><b className="text-xs text-cyan-300">{m.sender_name||m.username||'User'}</b><p className="mt-1 whitespace-pre-wrap text-sm">{m.content||m.message}</p></div>)}</div><form className="flex flex-col gap-2 sm:flex-row" onSubmit={e=>{e.preventDefault();post('/chat/messages',{channel:form.channel,content:form.content,sender_name:user.display_name||user.username});set('content','')}}><input className={field} placeholder="Write a message…" value={form.content} onChange={e=>set('content',e.target.value)}/><button className={btn}>Send</button></form></Panel>}
+        {tab==='settings'&&<><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><button className="mt-3 rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300" onClick={logout}>Sign out</button></Panel><Panel title="Database and sync"><pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">{JSON.stringify(data.db,null,2)}</pre><button className={btn+' mt-3'} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Sync completed':'Sync did not complete');await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></Panel></>}
+      </main>
     </div>
-  );
+  </div>;
 }
