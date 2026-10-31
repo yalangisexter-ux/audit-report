@@ -452,16 +452,12 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
     if exact:
         return verify(exact)
 
-    # Older customer snapshots were created with SQLite's default NOCASE
-    # username uniqueness. Accept a case-insensitive match only when it maps
-    # to exactly one active account, and still verify that account's hash.
-    legacy_rows = conn.execute(
-        "SELECT * FROM auth_users WHERE username = ? COLLATE NOCASE AND active = 1",
-        (username,),
-    ).fetchall()
-    if len(legacy_rows) != 1:
-        return None
-    return verify(legacy_rows[0])
+    # Never resolve Admin and admin through NOCASE: they are separate
+    # identities with separate password hashes. The customer-only legacy
+    # alias is handled explicitly by web_login (Admin -> legacy customer row).
+    # This prevents a missing customer row from authenticating against the
+    # developer account, or vice versa.
+    return None
 
 
 api.app.router.routes[:] = [
@@ -477,7 +473,9 @@ api.app.router.routes[:] = [
 def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
     username = (req.username or "").strip()
     password = req.password or ""
-    if not username or not password:
+    if username not in ("Admin", "admin"):
+        raise HTTPException(status_code=401, detail="Use Admin or admin as the account username")
+    if not password:
         raise HTTPException(status_code=401, detail="Username and password are required")
 
     row = _find_active_login_user(conn, username, password)
