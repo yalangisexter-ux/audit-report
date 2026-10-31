@@ -21,6 +21,12 @@ from starlette.requests import Request
 
 import api_server as api
 
+try:
+    import web_session_store
+    web_session_store.install(api)
+except Exception as _session_exc:
+    print(f"[Sessions] Durable session store unavailable: {_session_exc}")
+
 PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/login",
@@ -48,12 +54,8 @@ _LAST_PULL = {
 
 
 def _public_login_name(username: str) -> str:
-    u = str(username or "")
-    if u == "Admin" or u.casefold() == "taruna":
-        return "Admin"
-    if u == "admin":
-        return "admin"
-    return u
+    value = str(username or "")
+    return value if value in ("Admin", "admin") else "Account"
 
 
 def _db_stats(db_path: Path) -> dict:
@@ -67,14 +69,10 @@ def _db_stats(db_path: Path) -> dict:
             out["employees"] = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
             out["tasks"] = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             out["usernames"] = [
-                r[0]
-                for r in conn.execute(
-                    "SELECT username FROM auth_users WHERE active=1 ORDER BY username"
-                ).fetchall()
+                _public_login_name(r[0])
+                for r in conn.execute("SELECT username FROM auth_users WHERE active=1 ORDER BY username").fetchall()
             ]
-            out["employee_names"] = [
-                r[0] for r in conn.execute("SELECT name FROM employees ORDER BY id LIMIT 20").fetchall()
-            ]
+            out["employee_names"] = []
         finally:
             conn.close()
     except Exception as exc:
@@ -172,8 +170,8 @@ def _pull_full_database() -> bool:
                 "auth_users": check.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0],
                 "employees": check.execute("SELECT COUNT(*) FROM employees").fetchone()[0],
                 "tasks": check.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],
-                "usernames": [r[0] for r in check.execute("SELECT username FROM auth_users").fetchall()],
-                "employee_names": [r[0] for r in check.execute("SELECT name FROM employees ORDER BY id LIMIT 20").fetchall()],
+                "usernames": [_public_login_name(r[0]) for r in check.execute("SELECT username FROM auth_users").fetchall()],
+                "employee_names": [],
             }
             check.close()
             if not integrity or integrity[0] != "ok":
@@ -262,100 +260,49 @@ def _force_case_sensitive_usernames(conn: sqlite3.Connection) -> None:
 
 
 def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role: str, password: str) -> None:
+    """Create a missing account only. Existing passwords and account metadata are immutable here."""
+    row = conn.execute("SELECT id FROM auth_users WHERE username=? COLLATE BINARY", (username,)).fetchone()
+    if row:
+        return
     salt, digest = desktop_app.hash_pin(password)
     now = desktop_app.now_text()
-    row = conn.execute(
-        "SELECT id FROM auth_users WHERE username = ? COLLATE BINARY",
-        (username,),
-    ).fetchone()
-    if row:
-        conn.execute(
-            """UPDATE auth_users
-               SET display_name=?, role=?, password_salt=?, password_hash=?, active=1, updated_at=?
-               WHERE id=?""",
-            (display_name, role, salt, digest, now, row[0]),
-        )
-        print(f"[Auth] Bootstrap: updated account {username!r}")
-        return
     conn.execute(
         """INSERT INTO auth_users(
-               username, display_name, role, password_salt, password_hash,
-               security_question, answer_salt, answer_hash, active, created_at, updated_at
-           ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+            username, display_name, role, password_salt, password_hash,
+            security_question, answer_salt, answer_hash, active, created_at, updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
         (username, display_name, role, salt, digest, "", "", "", now, now),
     )
-    print(f"[Auth] Bootstrap: created account {username!r}")
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Ensure Admin (customer) and admin (developer) web accounts with known passwords."""
+    """Provision missing role accounts only with explicit operator-provided secrets."""
+    customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip()
+    developer_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
+    if not customer_pwd and not developer_pwd:
+        return
     try:
         import app as desktop_app
-
         db_path = Path(db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(db_path), timeout=30)
-        conn.row_factory = sqlite3.Row
         try:
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS auth_users (
-                    id INTEGER PRIMARY KEY,
-                    username TEXT NOT NULL,
-                    display_name TEXT,
-                    role TEXT,
-                    password_salt TEXT,
-                    password_hash TEXT,
-                    security_question TEXT,
-                    answer_salt TEXT,
-                    answer_hash TEXT,
-                    active INTEGER DEFAULT 1,
-                    created_at TEXT,
-                    updated_at TEXT
-                )"""
-            )
-        except Exception:
-            pass
-        _force_case_sensitive_usernames(conn)
-
-        customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip() or "Shiva@01"
-        dev_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
-
-        try:
-            conn.execute("PRAGMA case_sensitive_like = ON")
-        except Exception:
-            pass
-        try:
-            rows = conn.execute("SELECT id, username, display_name, role FROM auth_users").fetchall()
-            for r in rows:
-                uname = r[1] if not isinstance(r, sqlite3.Row) else r["username"]
-                if str(uname) in ("admin", "Admin"):
-                    continue
-                elif str(uname).casefold() == "admin":
-                    rid = r[0] if not isinstance(r, sqlite3.Row) else r["id"]
-                    conn.execute(
-                        "UPDATE auth_users SET username=?, display_name=?, role=? WHERE id=?",
-                        ("admin", "admin (Developer / Tester)", "Developer", rid),
-                    )
-            conn.execute(
-                """DELETE FROM auth_users
-                   WHERE lower(username) IN ('admin', 'taruna')
-                     AND username NOT IN ('admin', 'Admin', 'taruna')"""
-            )
-        except Exception as exc:
-            print(f"[Auth] Case-split normalize skipped: {exc}")
-
-        _upsert_user_exact(conn, desktop_app, "Admin", "Admin (Customer)", "Admin", customer_pwd)
-        _upsert_user_exact(conn, desktop_app, "taruna", "Admin (Customer)", "Admin", customer_pwd)
-        _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer / Tester)", "Developer", dev_pwd)
-
-        conn.commit()
-        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS auth_users (
+                id INTEGER PRIMARY KEY, username TEXT NOT NULL COLLATE BINARY,
+                display_name TEXT, role TEXT, password_salt TEXT, password_hash TEXT,
+                security_question TEXT, answer_salt TEXT, answer_hash TEXT,
+                active INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT
+            )""")
+            _force_case_sensitive_usernames(conn)
+            if customer_pwd:
+                _upsert_user_exact(conn, desktop_app, "Admin", "Admin (Customer)", "Admin", customer_pwd)
+            if developer_pwd:
+                _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer / Tester)", "Developer", developer_pwd)
+            conn.commit()
+        finally:
             conn.close()
-        except Exception:
-            pass
-        print("[Auth] Bootstrap forced Admin/admin/taruna passwords for web login")
     except Exception as exc:
-        print(f"[Auth] Bootstrap failed: {exc}")
+        print(f"[Auth] Optional account provisioning skipped: {exc}")
 
 
 @api.app.get("/api/auth/status")
@@ -380,7 +327,7 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
             "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
             "error": str((_LAST_PULL or {}).get("error") or "")[:240],
         },
-        "hint": "Case-sensitive: Admin=customer (Shiva@01); admin=developer (kiran123 or Devlopershouse@1996#).",
+        "hint": "Usernames are case-sensitive. Use the password already configured for the selected account.",
     }
 
 
@@ -391,7 +338,7 @@ def web_db_info():
         stats = _db_stats(Path(desktop_app.DB_PATH))
     except Exception as exc:
         stats = {"error": str(exc)}
-    return {"pull": _LAST_PULL, "local": stats}
+    return {"pull": {"ok": bool(_LAST_PULL.get("ok")), "error": str(_LAST_PULL.get("error") or "")[:160], "auth_users": int(_LAST_PULL.get("auth_users") or 0), "employees": int(_LAST_PULL.get("employees") or 0), "tasks": int(_LAST_PULL.get("tasks") or 0)}, "local": stats}
 
 
 _LOGIN_REFRESH_LOCK = threading.Lock()
@@ -424,7 +371,7 @@ def _refresh_login_database_if_needed() -> None:
 
 
 def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
-    """Authenticate stored credentials; accept known web passwords and repair hash."""
+    """Authenticate only the exact account using its stored password hash."""
     import app as desktop_app
 
     def verify(row):
@@ -446,26 +393,7 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
     ).fetchone()
     if exact:
         ok = verify(exact)
-        if ok:
-            return ok
-        allowed = []
-        if username == "Admin":
-            allowed = ["Shiva@01"]
-        elif username == "admin":
-            allowed = ["kiran123", "Devlopershouse@1996#"]
-        elif username.casefold() == "taruna":
-            allowed = ["Shiva@01"]
-        if password in allowed:
-            new_salt, new_digest = desktop_app.hash_pin(password)
-            conn.execute(
-                "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, updated_at=? WHERE id=?",
-                (new_salt, new_digest, desktop_app.now_text(), exact["id"]),
-            )
-            conn.commit()
-            print(f"[Auth] Known password accepted for {username!r}; hash repaired")
-            return conn.execute("SELECT * FROM auth_users WHERE id=?", (exact["id"],)).fetchone()
-        return None
-
+        return ok
     return None
 
 
@@ -489,9 +417,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
 
     row = _find_active_login_user(conn, username, password)
 
-    if not row and username == "Admin":
-        row = _find_active_login_user(conn, "taruna", password)
-
     if not row:
         _refresh_login_database_if_needed()
         try:
@@ -502,8 +427,6 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
             fresh.row_factory = sqlite3.Row
             try:
                 row = _find_active_login_user(fresh, username, password)
-                if not row and username == "Admin":
-                    row = _find_active_login_user(fresh, "taruna", password)
             finally:
                 fresh.close()
         except Exception as exc:
@@ -525,7 +448,7 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         "role": "Admin" if is_customer_login else "Developer",
     }
     api.ACTIVE_SESSIONS[token] = user_info
-    print(f"[Auth] Login ok: {user_info['display_name']}")
+    print(f"[Auth] Login ok for role={user_info['role']}")
     return {"token": token, "user": user_info}
 
 
