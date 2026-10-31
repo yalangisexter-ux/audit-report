@@ -349,7 +349,7 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
             conn.close()
         except Exception:
             pass
-        print("[Auth] Bootstrap forced Admin/admin/taruna passwords for web login")
+        print("[Auth] Bootstrap completed; existing account credentials were preserved")
     except Exception as exc:
         print(f"[Auth] Bootstrap failed: {exc}")
 
@@ -420,33 +420,41 @@ def _refresh_login_database_if_needed() -> None:
 
 
 def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
-    """Authenticate case-sensitive usernames only against their stored password hash."""
+    """Authenticate stored credentials, with safe legacy username-case compatibility."""
     import app as desktop_app
 
-    row = conn.execute(
+    def verify(row):
+        if not row:
+            return None
+        salt = row["password_salt"]
+        stored = row["password_hash"]
+        if not salt or not stored:
+            return None
+        try:
+            _, digest = desktop_app.hash_pin(password, salt)
+            return row if secrets.compare_digest(str(digest), str(stored)) else None
+        except Exception:
+            return None
+
+    # Prefer an exact match. If that exact account exists, never try another
+    # account with different casing when its password is wrong.
+    exact = conn.execute(
         "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
         (username,),
     ).fetchone()
-    if not row:
+    if exact:
+        return verify(exact)
+
+    # Older customer snapshots were created with SQLite's default NOCASE
+    # username uniqueness. Accept a case-insensitive match only when it maps
+    # to exactly one active account, and still verify that account's hash.
+    legacy_rows = conn.execute(
+        "SELECT * FROM auth_users WHERE username = ? COLLATE NOCASE AND active = 1",
+        (username,),
+    ).fetchall()
+    if len(legacy_rows) != 1:
         return None
-
-    salt = row["password_salt"]
-    stored = row["password_hash"]
-
-    def ok_hash(pw: str) -> bool:
-        if not salt or not stored:
-            return False
-        try:
-            _, digest = desktop_app.hash_pin(pw, salt)
-            return secrets.compare_digest(str(digest), str(stored))
-        except Exception:
-            return False
-
-    if ok_hash(password):
-        return row
-
-    # No hard-coded password bypasses: the stored account hash is authoritative.
-    return None
+    return verify(legacy_rows[0])
 
 
 api.app.router.routes[:] = [
@@ -493,7 +501,7 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     if not row:
         raise HTTPException(
             status_code=401,
-            detail="Invalid username or password. Use exact case: Admin (customer) or admin (developer).",
+            detail="Invalid username or password. Check the account username and password, or contact the administrator for a password reset.",
         )
 
     token = secrets.token_hex(24)
