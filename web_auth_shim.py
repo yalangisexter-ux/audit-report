@@ -577,7 +577,11 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     row = _find_active_login_user(conn, username, password)
 
     if not row:
-        _refresh_login_database_if_needed()
+        # Standalone web databases must never be overwritten by the retired
+        # desktop/cloud snapshot login-recovery path.
+        standalone_mode = os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
+        if not standalone_mode:
+            _refresh_login_database_if_needed()
         try:
             import app as desktop_app
             db_path = Path(desktop_app.DB_PATH)
