@@ -22,6 +22,32 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import app as desktop_app
+
+# Web-only isolation: the browser service owns its database and never reuses the
+# desktop LocalAppData database or the desktop GitHub/Worker synchronization path.
+if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+    _web_data_dir = Path(os.environ.get("AUDIT_DATA_DIR") or (ROOT_DIR / "web-data")).expanduser().resolve()
+    _web_data_dir.mkdir(parents=True, exist_ok=True)
+    desktop_app.APP_DIR = _web_data_dir
+    desktop_app.DB_PATH = _web_data_dir / "web_employee_audit.db"
+    desktop_app.BACKUP_DIR = _web_data_dir / "backups"
+    desktop_app.EXPORT_DIR = _web_data_dir / "exports"
+    desktop_app.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    desktop_app.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    class _WebOnlySyncDisabled:
+        is_configured = False
+        is_dirty = False
+        _on_dirty_callback = None
+        def __init__(self, *args, **kwargs): pass
+        def mark_pending(self, *args, **kwargs): return False
+        def request_sync(self, *args, **kwargs): return False
+        def schedule_sync(self, *args, **kwargs): return False
+        def set_status(self, *args, **kwargs): return False
+        def close(self, *args, **kwargs): return None
+        def download_latest_snapshot(self, *args, **kwargs): return None
+    desktop_app.GitHubDatabaseSync = _WebOnlySyncDisabled
+
 from build_info import APP_VERSION
 
 app = FastAPI(
