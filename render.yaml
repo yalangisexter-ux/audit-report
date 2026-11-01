@@ -5,7 +5,7 @@ services:
     plan: free
     autoDeploy: true
     region: oregon
-    # Do NOT run npm build: Vite overwrites the operational sidebar UI in frontend/dist.
+    # The checked-in frontend/dist is the production web client; keep it intact.
     buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt
     startCommand: python -c "import os; import web_auth_shim; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
@@ -15,10 +15,10 @@ services:
         value: offscreen
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: DB_SYNC_USE_DESKTOP_DEFAULT
+      - key: WEB_STANDALONE
         value: "1"
-      - key: DB_SYNC_WORKER_URL
-        value: "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
+      - key: AUDIT_DATA_DIR
+        value: "/var/data"
       - key: WEB_REQUIRE_LOGIN
         value: "1"
       - key: SKIP_INITIAL_AUDIT_SEED
