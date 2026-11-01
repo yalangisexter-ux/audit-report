@@ -520,8 +520,8 @@ api.app.router.routes[:] = [
 def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_db)):
     username = (req.username or "").strip()
     password = req.password or ""
-    if username not in ("Admin", "admin"):
-        raise HTTPException(status_code=401, detail="Use Admin or admin as the account username")
+    if not username or len(username) > 128:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     if not password:
         raise HTTPException(status_code=401, detail="Username and password are required")
 
@@ -546,16 +546,17 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
     if not row:
         raise HTTPException(
             status_code=401,
-            detail="Invalid username or password. Use exact case: Admin (customer) or admin (developer).",
+            detail="Invalid username or password. Check the exact username, password, and account active status.",
         )
 
     token = secrets.token_hex(24)
-    is_customer_login = username == "Admin"
+    # Keep the exact account identity and role stored in this standalone
+    # database. Setup-created and admin-provisioned usernames must also work.
     user_info = {
         "id": row["id"],
-        "username": "Admin" if is_customer_login else "admin",
-        "display_name": "Admin (Customer)" if is_customer_login else "admin (Developer / Tester)",
-        "role": "Admin" if is_customer_login else "Developer",
+        "username": row["username"],
+        "display_name": row["display_name"] or row["username"],
+        "role": row["role"] or "Employee",
     }
     api.ACTIVE_SESSIONS[token] = user_info
     print(f"[Auth] Login ok for role={user_info['role']}")
