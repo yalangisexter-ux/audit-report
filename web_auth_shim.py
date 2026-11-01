@@ -593,8 +593,13 @@ async def require_api_login(request: Request, call_next):
     return await call_next(request)
 
 
-print("[Web Boot] Pulling full cloud database snapshot…")
-pulled = _pull_full_database()
+if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+    pulled = False
+    _LAST_PULL = {"ok": False, "error": "standalone web database; desktop snapshot sync disabled", "auth_users": 0, "employees": 0, "tasks": 0, "usernames": [], "employee_names": []}
+    print("[Web Boot] Standalone mode: desktop database snapshot sync is disabled")
+else:
+    print("[Web Boot] Pulling full cloud database snapshot…")
+    pulled = _pull_full_database()
 try:
     import app as desktop_app
     db_path = Path(desktop_app.DB_PATH)
@@ -614,7 +619,8 @@ print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={RE
 
 try:
     import web_ops_routes  # noqa: F401
-    print("[Web Boot] Operational routes registered")
+    import web_standalone_routes  # noqa: F401
+    print("[Web Boot] Operational and standalone database routes registered")
 except Exception as _exc:
     print(f"[Web Boot] Operational routes skipped: {_exc}")
 
