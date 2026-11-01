@@ -415,6 +415,55 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
         print(f"[Auth] Optional account provisioning skipped: {exc}")
 
 
+# Replace the generic setup route with a single-owner first-run Admin setup.
+api.app.router.routes[:] = [
+    route for route in api.app.router.routes
+    if not (
+        getattr(route, "path", None) == "/api/auth/setup"
+        and "POST" in (getattr(route, "methods", None) or set())
+    )
+]
+
+
+@api.app.post("/api/auth/setup")
+def web_initial_admin_setup(req: api.SetupRequest, conn: sqlite3.Connection = Depends(api.get_db)):
+    username = (req.username or "").strip()
+    display_name = (req.display_name or "").strip() or "Administrator"
+    password = req.password or ""
+    answer = req.security_answer or ""
+    if username != "Admin":
+        raise HTTPException(status_code=400, detail="The first administrator username must be exactly Admin.")
+    if len(password) < 10:
+        raise HTTPException(status_code=400, detail="Choose a password with at least 10 characters.")
+    if len(password) > 256 or len(answer.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Enter a valid password and security answer.")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        count = conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0]
+        if count:
+            conn.rollback()
+            raise HTTPException(status_code=409, detail="Setup is already complete. Sign in with the existing Admin account.")
+        import app as desktop_app
+        salt, digest = desktop_app.hash_pin(password)
+        answer_salt, answer_hash = desktop_app.hash_pin(answer.strip())
+        now = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
+                                      security_question, answer_salt, answer_hash, active, created_at, updated_at)
+               VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+            ("Admin", display_name, "Admin", salt, digest,
+             (req.security_question or "Recovery question").strip(), answer_salt, answer_hash, now, now),
+        )
+        conn.commit()
+        return {"success": True, "message": "Admin account created. Sign in using Admin and the password you just created."}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        print(f"[Auth] Initial Admin setup failed: {exc}")
+        raise HTTPException(status_code=500, detail="Admin setup failed. Please retry.") from exc
+
+
 @api.app.get("/api/auth/status")
 def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
     try:
