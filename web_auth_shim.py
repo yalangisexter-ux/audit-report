@@ -620,7 +620,8 @@ print(f"[Web Boot] cloud_pull={'ok' if pulled else 'FAILED'}; login_required={RE
 try:
     import web_ops_routes  # noqa: F401
     import web_standalone_routes  # noqa: F401
-    print("[Web Boot] Operational and standalone database routes registered")
+    import web_payment_routes  # noqa: F401
+    print("[Web Boot] Operational, standalone database, and payment configuration routes registered")
 except Exception as _exc:
     print(f"[Web Boot] Operational routes skipped: {_exc}")
 
