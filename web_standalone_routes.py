@@ -109,6 +109,12 @@ async def import_web_database(
         # Close this request's connection before the atomic file replacement.
         conn.close()
         os.replace(temp_path, current)
+        # Apply web-only legacy username/collation normalization to the imported DB.
+        try:
+            import web_auth_shim
+            web_auth_shim._normalize_web_login_accounts(current)
+        except Exception:
+            pass
         api.ACTIVE_SESSIONS.clear()
         return {
             "success": True,
