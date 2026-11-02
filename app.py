@@ -1,7 +1,7 @@
 import json, os, subprocess, sys, sqlite3, shutil, webbrowser, hashlib, secrets, ctypes, re, math, threading, logging, traceback
 from html import escape as html_escape
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from PySide6.QtCore import Qt, QSize, QDate, QTime, QEvent, QEasingCurve, QPropertyAnimation, QVariantAnimation, QObject, QThread, Signal, QPoint, QPointF, QRect, QRectF, QTimer
@@ -11760,7 +11760,7 @@ class MainWindow(QMainWindow):
                 start_text = earliest.isoformat()
                 end_text = today.isoformat()
                 task_rows = self.db.conn.execute(
-                    f"SELECT employee_id, progress, status FROM tasks WHERE employee_id IN ({marks}) AND task_date BETWEEN ? AND ?",
+                    f"SELECT employee_id, task_date, progress, status FROM tasks WHERE employee_id IN ({marks}) AND task_date BETWEEN ? AND ?",
                     (*ids, start_text, end_text),
                 ).fetchall()
                 attendance_rows = self.db.conn.execute(
@@ -11780,20 +11780,16 @@ class MainWindow(QMainWindow):
                 for employee in employees:
                     eid = employee["id"]
                     start = starts[eid]
-                    employee_tasks = [t for t in tasks_by_employee[eid] if start.isoformat() <= t["task_date"] <= end_text] if "task_date" in task_rows[0].keys() else tasks_by_employee[eid]
-                    valid_tasks = [t for t in employee_tasks if is_known_task_status(t["status"])]
-                    task_score = (sum(max(0, min(100, int(float(t["progress"] or 0)))) for t in valid_tasks) / len(employee_tasks)) if employee_tasks else None
-                    working_days = 0
-                    current = start
-                    while current <= today:
-                        if current.weekday() in weekdays and current.isoformat() not in holidays:
-                            working_days += 1
-                        current += timedelta(days=1)
-                    employee_attendance = attendance_by_employee[eid]
-                    scheduled = [a for a in employee_attendance if a["work_date"] >= start.isoformat() and date.fromisoformat(a["work_date"]).weekday() in weekdays and a["work_date"] not in holidays]
-                    leave_days = sum(1 for a in scheduled if a["attendance_status"] == "Leave")
-                    eligible = max(0, working_days - leave_days)
-                    present_count = sum(1 for a in scheduled if is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"] == "Unmarked" and a["check_in"]))
+                    employee_tasks = [t for t in tasks_by_employee[eid] if start.isoformat() <= t["task_date"] <= end_text]
+                    task_progress_total = 0
+                    for task in employee_tasks:
+                        if not is_known_task_status(task["status"]):
+                            continue
+                        try:
+                            task_progress_total += max(0, min(100, int(float(task["progress"] or 0))))
+                        except (TypeError, ValueError, OverflowError):
+                            continue
+                    task_score = (task_progress_total / len(employee_tasks)) if employee_tasks else None
                     attendance_score = present_count / eligible * 100 if eligible else None
                     if task_score is not None and attendance_score is not None:
                         score = round(task_score * 0.7 + attendance_score * 0.3)
