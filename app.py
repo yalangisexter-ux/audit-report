@@ -11724,20 +11724,44 @@ class MainWindow(QMainWindow):
             self.kpi_sparklines[2].set_points([0.5, 0.3, 0.4, 0.2, 0.3, 0.1, max(0.05, 1.0 - att_ratio)])
             self.kpi_sparklines[3].set_points([0.3, 0.5, 0.4, 0.6, 0.7, 0.8, 0.9])
             self.kpi_sparklines[4].set_points([0.3, 0.45, 0.5, 0.65, 0.7, 0.85, max(0.1, att_ratio)])
-        metrics = []
+        # Productivity scoring performs historical task, attendance and holiday queries.
+        # Process a small batch per event-loop turn so large employee databases cannot
+        # monopolize the GUI thread or make the dashboard/navigation appear frozen.
+        self._dashboard_productivity_queue = list(employees)
+        self._dashboard_productivity_metrics = []
+        self._dashboard_productivity_generation = getattr(self, "_dashboard_productivity_generation", 0) + 1
+        generation = self._dashboard_productivity_generation
+        self.productivity_table.setUpdatesEnabled(False)
         self.productivity_table.setRowCount(0)
-        for employee in employees:
-            metric = self.employee_productivity(employee)
-            metrics.append((employee["name"], metric["score"]))
-            values = [employee["name"], metric["start"].isoformat(), metric["working_days"], metric["present"], metric["tasks"], metric["completed"], f'{metric["score"]}%']
-            row = self.productivity_table.rowCount()
-            self.productivity_table.insertRow(row)
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter))
-                item.setToolTip(str(value))
-                self.productivity_table.setItem(row, column, item)
+        self.productivity_table.setUpdatesEnabled(True)
+        self.productivity_chart.set_values([])
+        QTimer.singleShot(0, lambda g=generation: self._refresh_dashboard_productivity_batch(g))
+
+    def _refresh_dashboard_productivity_batch(self, generation):
+        """Render at most three employee productivity rows per GUI event-loop turn."""
+        if generation != getattr(self, "_dashboard_productivity_generation", None):
+            return
+        queue = getattr(self, "_dashboard_productivity_queue", [])
+        metrics = getattr(self, "_dashboard_productivity_metrics", [])
+        self.productivity_table.setUpdatesEnabled(False)
+        try:
+            for employee in queue[:3]:
+                metric = self.employee_productivity(employee)
+                metrics.append((employee["name"], metric["score"]))
+                values = [employee["name"], metric["start"].isoformat(), metric["working_days"], metric["present"], metric["tasks"], metric["completed"], f'{metric["score"]}%']
+                row = self.productivity_table.rowCount()
+                self.productivity_table.insertRow(row)
+                for column, value in enumerate(values):
+                    item = QTableWidgetItem(str(value))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter))
+                    item.setToolTip(str(value))
+                    self.productivity_table.setItem(row, column, item)
+            del queue[:3]
+        finally:
+            self.productivity_table.setUpdatesEnabled(True)
         self.productivity_chart.set_values(metrics)
+        if queue:
+            QTimer.singleShot(10, lambda g=generation: self._refresh_dashboard_productivity_batch(g))
 
     def report_data(self, report_date, employee_id=None):
         emps=self._report_employees(employee_id)
