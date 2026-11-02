@@ -11729,6 +11729,8 @@ class MainWindow(QMainWindow):
         # monopolize the GUI thread or make the dashboard/navigation appear frozen.
         self._dashboard_productivity_queue = list(employees)
         self._dashboard_productivity_metrics = []
+        self._dashboard_productivity_prepared = False
+        self._dashboard_productivity_prepared_rows = {}
         self._dashboard_productivity_generation = getattr(self, "_dashboard_productivity_generation", 0) + 1
         generation = self._dashboard_productivity_generation
         self.productivity_table.setUpdatesEnabled(False)
@@ -11738,17 +11740,82 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda g=generation: self._refresh_dashboard_productivity_batch(g))
 
     def _refresh_dashboard_productivity_batch(self, generation):
-        """Render at most three employee productivity rows per GUI event-loop turn."""
+        """Prepare dashboard productivity using shared queries, then render tiny UI batches."""
         if generation != getattr(self, "_dashboard_productivity_generation", None):
             return
         queue = getattr(self, "_dashboard_productivity_queue", [])
         metrics = getattr(self, "_dashboard_productivity_metrics", [])
+        if not getattr(self, "_dashboard_productivity_prepared", False):
+            employees = list(queue)
+            if not employees:
+                self._dashboard_productivity_prepared = True
+            else:
+                today = date.today()
+                ids = [int(e["id"]) for e in employees]
+                marks = ",".join("?" for _ in ids)
+                starts = {}
+                for employee in employees:
+                    starts[employee["id"]] = self.tracking_start_date(employee)
+                earliest = min(starts.values())
+                start_text = earliest.isoformat()
+                end_text = today.isoformat()
+                task_rows = self.db.conn.execute(
+                    f"SELECT employee_id, progress, status FROM tasks WHERE employee_id IN ({marks}) AND task_date BETWEEN ? AND ?",
+                    (*ids, start_text, end_text),
+                ).fetchall()
+                attendance_rows = self.db.conn.execute(
+                    f"SELECT employee_id, work_date, attendance_status, check_in FROM attendance WHERE employee_id IN ({marks}) AND work_date BETWEEN ? AND ?",
+                    (*ids, start_text, end_text),
+                ).fetchall()
+                weekdays = set(self.db.working_weekdays())
+                holiday_rows = self.db.holidays_between(start_text, end_text)
+                holidays = {row["holiday_date"] for row in holiday_rows}
+                tasks_by_employee = {eid: [] for eid in ids}
+                attendance_by_employee = {eid: [] for eid in ids}
+                for item in task_rows:
+                    tasks_by_employee[item["employee_id"]].append(item)
+                for item in attendance_rows:
+                    attendance_by_employee[item["employee_id"]].append(item)
+                prepared = {}
+                for employee in employees:
+                    eid = employee["id"]
+                    start = starts[eid]
+                    employee_tasks = [t for t in tasks_by_employee[eid] if start.isoformat() <= t["task_date"] <= end_text] if "task_date" in task_rows[0].keys() else tasks_by_employee[eid]
+                    valid_tasks = [t for t in employee_tasks if is_known_task_status(t["status"])]
+                    task_score = (sum(max(0, min(100, int(float(t["progress"] or 0)))) for t in valid_tasks) / len(employee_tasks)) if employee_tasks else None
+                    working_days = 0
+                    current = start
+                    while current <= today:
+                        if current.weekday() in weekdays and current.isoformat() not in holidays:
+                            working_days += 1
+                        current += timedelta(days=1)
+                    employee_attendance = attendance_by_employee[eid]
+                    scheduled = [a for a in employee_attendance if a["work_date"] >= start.isoformat() and date.fromisoformat(a["work_date"]).weekday() in weekdays and a["work_date"] not in holidays]
+                    leave_days = sum(1 for a in scheduled if a["attendance_status"] == "Leave")
+                    eligible = max(0, working_days - leave_days)
+                    present_count = sum(1 for a in scheduled if is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"] == "Unmarked" and a["check_in"]))
+                    attendance_score = present_count / eligible * 100 if eligible else None
+                    if task_score is not None and attendance_score is not None:
+                        score = round(task_score * 0.7 + attendance_score * 0.3)
+                    elif task_score is not None:
+                        score = round(task_score)
+                    elif attendance_score is not None:
+                        score = round(attendance_score)
+                    else:
+                        score = 0
+                    completed = sum(1 for t in employee_tasks if is_explicitly_completed_task_status(t["status"]))
+                    prepared[eid] = (start, working_days, present_count, len(employee_tasks), completed, score)
+                self._dashboard_productivity_prepared_rows = prepared
+                self._dashboard_productivity_prepared = True
         self.productivity_table.setUpdatesEnabled(False)
         try:
-            for employee in queue[:3]:
-                metric = self.employee_productivity(employee)
-                metrics.append((employee["name"], metric["score"]))
-                values = [employee["name"], metric["start"].isoformat(), metric["working_days"], metric["present"], metric["tasks"], metric["completed"], f'{metric["score"]}%']
+            for employee in queue[:4]:
+                values_data = self._dashboard_productivity_prepared_rows.get(employee["id"])
+                if not values_data:
+                    continue
+                start, working_days, present_count, task_count, completed, score = values_data
+                metrics.append((employee["name"], score))
+                values = [employee["name"], start.isoformat(), working_days, present_count, task_count, completed, f"{score}%"]
                 row = self.productivity_table.rowCount()
                 self.productivity_table.insertRow(row)
                 for column, value in enumerate(values):
@@ -11756,7 +11823,7 @@ class MainWindow(QMainWindow):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter))
                     item.setToolTip(str(value))
                     self.productivity_table.setItem(row, column, item)
-            del queue[:3]
+            del queue[:4]
         finally:
             self.productivity_table.setUpdatesEnabled(True)
         self.productivity_chart.set_values(metrics)
