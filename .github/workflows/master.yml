@@ -1,6 +1,8 @@
 name: Master Build and Test
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main, feature/cloudflare-live-chat, webapp/rebuild-v2, fix/windows-exe-parity-hardening]
     paths-ignore:
