@@ -1,0 +1,1 @@
+See repository app.py for the applied fix: 1) single-query attendance for today instead of N+1, 2) productivity lookback capped at 90 days without per-employee MIN queries, 3) skip QGraphicsOpacityEffect on Dashboard tab transitions.
