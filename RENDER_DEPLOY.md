@@ -1,22 +1,31 @@
 # Deploy the standalone web edition on Render
 
-1. Connect `yalangisexter-ux/audit-report` to Render as a Blueprint.
-2. The service starts FastAPI and serves the checked-in production client in `frontend/dist`.
-3. Set `WEB_STANDALONE=1` and `AUDIT_DATA_DIR=/var/data` (already declared in `render.yaml`).
-4. Attach a persistent disk mounted at `/var/data` before using the service for real customer data. Render's free web service has ephemeral storage; a deploy or instance replacement can erase its local SQLite database. A persistent disk requires a paid Render service plan.
+1. Connect `yalangisexter-ux/audit-report` to Render as a Blueprint and apply the existing `render.yaml`.
+2. Render builds the full web application from `requirements-web.txt` and serves the checked-in production client in `frontend/dist`.
+3. The Blueprint runs the web service in standalone mode with `AUDIT_DATA_DIR=/var/data` and attaches a 10 GB persistent disk at `/var/data`.
+4. The service is intentionally configured as a single paid Starter instance. SQLite and the file-backed web session store must remain on the same persistent disk; do not scale this SQLite service horizontally.
+5. Do not change `AUDIT_DATA_DIR` to an ephemeral path, remove the persistent disk, or downgrade the service to Render Free for real customer data. Render Free filesystems are ephemeral and can cause the database and login accounts to disappear after restarts or redeployments.
 
-## Independent web database
+## Database and account persistence
 
-- The web service creates `web_employee_audit.db` under `AUDIT_DATA_DIR`.
-- The web process does not pull the desktop database snapshot and does not send web writes to the desktop database-sync Worker.
-- The Windows EXE continues using its existing LocalAppData database and updater; this web-only change does not alter the EXE.
+- The standalone web database is `/var/data/web_employee_audit.db`.
+- Web session state is stored under the same persistent data directory.
+- `WEB_STANDALONE=1` disables desktop/cloud snapshot synchronization. The web service does not pull or overwrite the web database from the desktop database-sync Worker.
+- First-admin setup is permitted only when the web database contains no active account. Once an Admin account exists, the setup endpoint rejects another setup request.
+- Keep the existing persistent disk attached when deploying new versions. Do not delete or recreate it as part of routine deploys.
+- Before any database migration or manual replacement, export a web database backup from Settings and retain a separate copy.
 - Import an existing desktop `.db` file from **Settings → Standalone Web Database → Import old database**. The import validates SQLite integrity and required tables, retains a pre-import backup, and then replaces only the web database.
-- Export a complete SQLite copy from the same Settings page. Keep downloaded exports somewhere safe.
-- After an import, sign in using credentials contained in the imported database.
+- Export a complete SQLite copy from the same Settings page. After an import, sign in using credentials contained in the imported database.
 
-## Mobile and desktop access
+## Desktop application isolation
 
-The browser interface is responsive and can be opened from a phone, tablet, or desktop browser. Use the same web URL and web account on each device. For durable multi-device use, the persistent disk requirement above must be met.
+- The Windows EXE continues using its existing LocalAppData database and updater.
+- The Render service builds and runs only the browser/web application. It does not package, replace, or publish the Windows EXE.
+- Web and desktop databases are separate unless an administrator explicitly imports a compatible desktop database through the web Settings page.
+
+## Mobile and desktop browser access
+
+The browser interface is responsive and can be opened from a phone, tablet, or desktop browser. Use the same web URL and web account on each device. All requests reach the single web service instance backed by the persistent disk.
 
 ## Local development
 
@@ -27,7 +36,6 @@ uvicorn api_server:app --host 0.0.0.0 --port 8000
 ```
 
 For local standalone testing, set `WEB_STANDALONE=1` and `AUDIT_DATA_DIR=./web-data` before starting the server.
-
 
 ## Payment gateway placeholders
 
