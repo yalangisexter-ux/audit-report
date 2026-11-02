@@ -4909,17 +4909,17 @@ class AnimatedBackground(QWidget):
             if is_light:
                 fade = 22 + int(5 * (0.5 + 0.5 * math.sin(self.phase * 0.55)))
                 if theme_name == "ocean":
-                    veil.setColorAt(0.0, QColor(240, 249, 255, 215))
-                    veil.setColorAt(1.0, QColor(224, 242, 254, 230))
+                    veil.setColorAt(0.0, QColor(240, 249, 255, 125))
+                    veil.setColorAt(1.0, QColor(224, 242, 254, 145))
                 elif theme_name == "sunset":
-                    veil.setColorAt(0.0, QColor(255, 247, 237, 215))
-                    veil.setColorAt(1.0, QColor(255, 237, 213, 230))
+                    veil.setColorAt(0.0, QColor(255, 247, 237, 125))
+                    veil.setColorAt(1.0, QColor(255, 237, 213, 145))
                 else:
-                    veil.setColorAt(0.0, QColor(255, 255, 255, 215))
-                    veil.setColorAt(1.0, QColor(248, 250, 252, 230))
+                    veil.setColorAt(0.0, QColor(255, 255, 255, 125))
+                    veil.setColorAt(1.0, QColor(248, 250, 252, 145))
             else:
-                veil.setColorAt(0.0, QColor(3, 7, 18, 215))
-                veil.setColorAt(1.0, QColor(3, 7, 18, 240))
+                veil.setColorAt(0.0, QColor(3, 7, 18, 135))
+                veil.setColorAt(1.0, QColor(3, 7, 18, 160))
             painter.fillRect(rect, veil)
         else:
             # Procedural generative live wallpapers guarantee all styles animate offline
