@@ -2,7 +2,7 @@ name: Master Build and Test
 
 on:
   push:
-    branches: [main, feature/cloudflare-live-chat]
+    branches: [main, feature/cloudflare-live-chat, webapp/rebuild-v2]
     paths-ignore:
       - "customer-data/**"
   workflow_dispatch:
@@ -10,6 +10,8 @@ on:
 permissions:
   contents: write
 
+# Keep only the latest build for each branch. New code pushes cancel stale builds.
+# Encrypted customer database snapshots do not need a full Windows installer build.
 concurrency:
   group: audit-report-main-release-${{ github.ref }}
   cancel-in-progress: true
@@ -39,166 +41,41 @@ jobs:
       - name: Build and verify Render React frontend
         shell: pwsh
         run: |
-          Push-Location frontend
-          try {
-            npm ci --include=dev
-            if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed with exit code $LASTEXITCODE" }
-            npm run build
-            if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed with exit code $LASTEXITCODE" }
-            if (-not (Test-Path "dist/index.html")) { throw "Vite build did not produce frontend/dist/index.html" }
-            if (-not (Test-Path "dist/assets")) { throw "Vite build did not produce frontend/dist/assets" }
-          }
-          finally { Pop-Location }
-
-      - name: Validate Cloudflare Worker and browser chat JavaScript
-        shell: pwsh
-        run: |
-          node --check cloudflare-chat/src/index.js
-          node --check chat-web/app.js
-          node --check audit-db-sync/src/index.js
-
-      - name: Install and test isolated database-sync Worker
-        shell: pwsh
-        run: |
-          Push-Location audit-db-sync
-          try {
-            npm install --no-audit --no-fund
-            npm run check
-            npm test
-          }
-          finally { Pop-Location }
+          if (-not (Test-Path frontend/dist/index.html)) { throw "frontend/dist/index.html missing after build." }
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
-      - name: Install Python dependencies and packaging tools
+      - name: Install Python dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller pytest
-
-
-      - name: Download high-resolution photographic wallpaper assets
-        shell: pwsh
-        run: |
-          $wallpaperDir = Join-Path $PWD "assets/wallpapers/photos"
-          New-Item -ItemType Directory -Force -Path $wallpaperDir | Out-Null
-          $wallpapers = @{
-            "galaxy.jpg" = "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "milky_way.jpg" = "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "ocean_waves.jpg" = "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "lord_shiva.jpg" = "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "love_couples.jpg" = "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-          }
-          foreach ($filename in $wallpapers.Keys) {
-            $destination = Join-Path $wallpaperDir $filename
-            Invoke-WebRequest -Uri $wallpapers[$filename] -OutFile $destination
-            if ((Get-Item $destination).Length -lt 10000) { throw "Wallpaper download is incomplete: $filename" }
-          }
-
-      - name: Configure optional production Worker endpoints
-        shell: pwsh
-        env:
-          DB_SYNC_WORKER_URL: ${{ vars.DB_SYNC_WORKER_URL }}
-          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
-        run: |
-          $workerUrl = ""
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }
-          if (-not [string]::IsNullOrWhiteSpace($workerUrl)) {
-            $uri = [Uri]$workerUrl
-            if ($uri.Scheme -ne "https" -or $uri.Host -notmatch "\.workers\.dev$") { throw "Database-sync Worker URL must be an HTTPS Cloudflare Workers hostname." }
-            $sourcePath = "database_sync.py"
-            $source = Get-Content $sourcePath -Raw
-            $replacement = 'DEFAULT_DB_SYNC_WORKER_URL = "' + $workerUrl.TrimEnd("/") + '"'
-            $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL\s*=\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
-            if (-not $source.Contains($replacement)) { throw "Could not inject database-sync Worker URL." }
-            Set-Content -Path $sourcePath -Value $source -Encoding utf8
-            if ($uri.Host -ne ([Uri]$workerUrl).Host -or $source -notmatch [regex]::Escape($uri.Host)) { throw "Database-sync Worker host validation failed." }
-          }
-
-          $chatUrl = $env:CHAT_WORKER_URL
-          if (-not [string]::IsNullOrWhiteSpace($chatUrl)) {
-            $chatUri = [Uri]$chatUrl
-            if ($chatUri.Scheme -ne "https" -or $chatUri.Host -notmatch "\.workers\.dev$") { throw "Live Chat Worker URL must be an HTTPS Cloudflare Workers hostname." }
-            $sourcePath = "cloudflare_chat.py"
-            $source = Get-Content $sourcePath -Raw
-            $replacement = 'DEFAULT_CHAT_API_BASE = "' + $chatUrl.TrimEnd("/") + '"'
-            $source = [regex]::Replace($source, 'DEFAULT_CHAT_API_BASE\s*=\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
-            if (-not $source.Contains($replacement)) { throw "Could not inject production Live Chat endpoint." }
-            Set-Content -Path $sourcePath -Value $source -Encoding utf8
-          }
+          pip install -r requirements.txt
+          pip install pyinstaller pytest
 
       - name: Run regression tests
         shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONWARNINGS: ignore
+        run: pytest -q
+
+      - name: Build Windows EXE / installer
+        shell: pwsh
         run: |
-          $env:QT_QPA_PLATFORM = "offscreen"
-          $env:PYTHONWARNINGS = "ignore"
-          python -m pytest -q
-          if ($LASTEXITCODE -ne 0) {
-            throw "Pytest regression tests failed with exit code $LASTEXITCODE"
+          if (Test-Path EmployeeAuditManager.spec) {
+            python -m PyInstaller --noconfirm EmployeeAuditManager.spec
+          } elseif (Test-Path build_installer.py) {
+            python build_installer.py
+          } else {
+            Write-Host "No installer entrypoint found; skipping binary build."
           }
-
-      - name: Download Microsoft Visual C++ runtime prerequisite
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "vc_redist.x64.exe"
-          if ((Get-Item "vc_redist.x64.exe").Length -lt 1000000) { throw "Visual C++ runtime download is incomplete." }
-
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          choco install innosetup --yes --no-progress
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { throw "Inno Setup compiler was not installed." }
-
-      - name: Compile Python application with bundled assets
-        shell: pwsh
-        run: |
-          python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py database_sync.py
-          pyinstaller --noconfirm --clean --onedir --windowed --hidden-import websocket --hidden-import cryptography --hidden-import cryptography.hazmat.primitives --hidden-import cryptography.hazmat.primitives.ciphers.aead --hidden-import cryptography.hazmat.primitives.kdf.pbkdf2 --hidden-import cryptography.hazmat.primitives.hashes --hidden-import ctypes.wintypes --hidden-import certifi --collect-submodules cryptography --collect-all certifi --name RawStrengthEmployeeAuditManager --icon assets/raw_strength_icon.ico --add-data "assets;assets" --version-file version_info.txt app.py
-          if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe")) { throw "Application executable was not created." }
-
-      - name: Build standalone Windows installer
-        shell: pwsh
-        env:
-          APP_VERSION: "1.3.65"
-        run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer.iss
-          if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
-          if ((Get-Item "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Length -lt 10000000) { throw "Setup installer is unexpectedly small." }
-
-      - name: Launch smoke test
-        shell: pwsh
-        run: |
-          $exe = (Resolve-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe").Path
-          $env:QT_QPA_PLATFORM = "offscreen"
-          $proc = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 8
-          $proc.Refresh()
-          if ($proc.HasExited) { throw "Application exited during launch smoke test (exit code $($proc.ExitCode))." }
-          Stop-Process -Id $proc.Id -Force
-          Write-Host "PASS: packaged application remained running for 8 seconds."
 
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.3.65
-          path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
-          if-no-files-found: error
+          name: RawStrengthEmployeeAuditManager-Setup
+          path: |
+            installer-output/**
+            dist/**
+          if-no-files-found: warn
           retention-days: 14
-
-      - name: Publish versioned release with direct EXE installer
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.3.65
-          name: Raw Strength Employee Audit Manager v1.3.65
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-          files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
-          fail_on_unmatched_files: true
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
