@@ -5827,7 +5827,13 @@ class MainWindow(QMainWindow):
 
     def toggle_sidebar(self):
         collapsed = self.sidebar.width() > 100
+        self._sidebar_collapsed = collapsed
         self.sidebar.setFixedWidth(76 if collapsed else 224)
+        self.sidebar.setMinimumWidth(76)
+        self.sidebar.setMaximumWidth(224)
+        if hasattr(self, "sidebar_scroll"):
+            self.sidebar_scroll.setVisible(True)
+            self.sidebar_scroll.setMinimumWidth(0)
         self._apply_responsive_layout()
         QTimer.singleShot(0, self.fit_sidebar_labels)
 
@@ -6731,6 +6737,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "bg_anim"):
             self.bg_anim.setGeometry(0, 0, self.width(), max(1, self.height()))
             self.bg_anim.init_particles()
+        if hasattr(self, "sidebar") and hasattr(self, "main_content"):
+            # Keep navigation compact enough to leave a usable page area on small displays.
+            available_width = max(480, self.width())
+            sidebar_width = 76 if getattr(self, "_sidebar_collapsed", False) else min(224, max(176, int(available_width * 0.19)))
+            self.sidebar.setFixedWidth(sidebar_width)
         self._apply_responsive_layout()
         # Main content geometry settles after QMainWindow finishes processing the
         # resize; repeat once on the event loop so first-show/maximize uses the
@@ -6804,7 +6815,13 @@ class MainWindow(QMainWindow):
         active_border = colors.get('sidebar_active_border', colors['accent'])
         active_fg = colors.get('sidebar_active_fg', '#FFFFFF')
 
+        if hasattr(self, "sidebar_scroll"):
+            self.sidebar_scroll.setVisible(True)
+            self.sidebar_scroll.setMinimumWidth(0)
         for button, title in getattr(self, "sidebar_buttons", []):
+            button.setVisible(True)
+            button.setMinimumWidth(0)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             if collapsed:
                 label = title.split("  ", 1)[0]
                 button.setText(label)
@@ -10176,24 +10193,47 @@ class MainWindow(QMainWindow):
             table.setItem(row, c, item)
 
     def refresh_all(self):
-        self.refresh_employees()
-        self.refresh_employee_filter()
-        self.refresh_task_filter()
-        self.refresh_tracker_employees()
-        self.refresh_tasks()
-        self.refresh_tracker()
-        self.refresh_attendance()
-        self.refresh_attendance_summary()
-        self.refresh_report_employees()
-        self.refresh_dashboard()
-        self.refresh_archive()
-        if hasattr(self, "refresh_home_business_snapshot"):
-            self.refresh_home_business_snapshot()
-        if hasattr(self, "business_tab") and hasattr(self.business_tab, "refresh_all"):
-            self.business_tab.refresh_all()
-        if hasattr(self, "refresh_archived_report_choices"):
-            self.refresh_archived_report_choices()
-        self.polish_tables()
+        """Refresh application views in short event-loop slices so navigation stays responsive."""
+        if getattr(self, "_refresh_queue_active", False):
+            self._refresh_queue_pending = True
+            return
+        self._refresh_queue = [
+            self.refresh_employees,
+            self.refresh_employee_filter,
+            self.refresh_task_filter,
+            self.refresh_tracker_employees,
+            self.refresh_tasks,
+            self.refresh_tracker,
+            self.refresh_attendance,
+            self.refresh_attendance_summary,
+            self.refresh_report_employees,
+            self.refresh_dashboard,
+            self.refresh_archive,
+            self.refresh_home_business_snapshot if hasattr(self, "refresh_home_business_snapshot") else None,
+            self.business_tab.refresh_all if hasattr(self, "business_tab") and hasattr(self.business_tab, "refresh_all") else None,
+            self.refresh_archived_report_choices if hasattr(self, "refresh_archived_report_choices") else None,
+            self.polish_tables,
+        ]
+        self._refresh_queue = [job for job in self._refresh_queue if callable(job)]
+        self._refresh_queue_active = True
+        self._refresh_queue_pending = False
+        QTimer.singleShot(0, self._run_refresh_queue_step)
+
+    def _run_refresh_queue_step(self):
+        """Run one refresh operation per event-loop turn; never monopolize the UI with a batch."""
+        queue = getattr(self, "_refresh_queue", [])
+        if queue:
+            job = queue.pop(0)
+            try:
+                job()
+            except Exception:
+                logging.getLogger("app").exception("Deferred UI refresh failed: %s", getattr(job, "__name__", repr(job)))
+            QTimer.singleShot(15, self._run_refresh_queue_step)
+            return
+        self._refresh_queue_active = False
+        if getattr(self, "_refresh_queue_pending", False):
+            self._refresh_queue_pending = False
+            QTimer.singleShot(50, self.refresh_all)
 
     def refresh_employees(self):
         if not hasattr(self,"emp_table"): return
