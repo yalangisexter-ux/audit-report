@@ -2,7 +2,7 @@ name: Master Build and Test
 
 on:
   push:
-    branches: [main, feature/cloudflare-live-chat]
+    branches: [main, feature/cloudflare-live-chat, webapp/rebuild-v2]
     paths-ignore:
       - "customer-data/**"
   workflow_dispatch:
