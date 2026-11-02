@@ -6990,18 +6990,14 @@ class MainWindow(QMainWindow):
                 self.customer_tab.apply_theme(theme_name)
             except Exception:
                 pass
-        # Refresh all tables and data views so existing rows get the active theme colors
-        try:
-            if hasattr(self, "refresh_all"):
-                self.refresh_all()
-            if hasattr(self, "refresh_attendance"):
-                self.refresh_attendance()
-            if hasattr(self, "refresh_attendance_summary"):
-                self.refresh_attendance_summary()
-            if hasattr(self, "refresh_dashboard"):
-                self.refresh_dashboard()
-        except Exception:
-            pass
+        # Theme changes are presentation-only. Do not re-run database-backed
+        # dashboard, attendance, and report queries here: large customer databases
+        # made a simple day/night switch appear frozen. Existing widgets are restyled
+        # by apply_content_surface_styles/apply_global_control_polish above.
+        if hasattr(self, "productivity_chart"):
+            self.productivity_chart.update()
+        if hasattr(self, "bg_anim"):
+            self.bg_anim.update()
         # Reapply title button styles so they stay visible after theme change
         if hasattr(self, "btn_min"):
             btn_style = (
