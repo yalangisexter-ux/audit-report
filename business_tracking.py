@@ -587,17 +587,36 @@ class BusinessTrackingTab(QWidget):
 
     def refresh_dashboard(self):
         c = self.db.conn
-        products = c.execute("SELECT * FROM bt_products ORDER BY name").fetchall()
-        low_stock = sum(
-            available_stock(product) <= float(product["reorder_level"] or 0)
-            for product in products
-        )
+        # Keep dashboard metrics in SQLite. Loading every product row into Python
+        # just to count products and low-stock items makes dashboard refreshes
+        # increasingly expensive as inventory grows.
+        stock_summary = c.execute("""
+            SELECT
+                COUNT(*) AS product_count,
+                COALESCE(SUM(
+                    CASE WHEN (
+                        COALESCE(opening_stock, 0)
+                        + COALESCE(received_qty, 0)
+                        - COALESCE(reserved_qty, 0)
+                        - COALESCE(dispatched_qty, 0)
+                        - COALESCE(free_qty, 0)
+                        - COALESCE(damaged_qty, 0)
+                        - COALESCE(expired_qty, 0)
+                        - COALESCE(quarantined_qty, 0)
+                        + COALESCE(returned_qty, 0)
+                    ) <= COALESCE(reorder_level, 0)
+                    THEN 1 ELSE 0 END
+                ), 0) AS low_stock_count
+            FROM bt_products
+        """).fetchone()
+        product_count = stock_summary["product_count"]
+        low_stock = stock_summary["low_stock_count"]
         orders = c.execute("SELECT COUNT(*) FROM bt_orders").fetchone()[0]
         members = c.execute("SELECT COUNT(*) FROM bt_members WHERE status='Active'").fetchone()[0]
         activities = c.execute("SELECT COUNT(*) FROM bt_activities").fetchone()[0]
 
         for key, value in {
-            "products": len(products),
+            "products": product_count,
             "low_stock": low_stock,
             "orders": orders,
             "members": members,
