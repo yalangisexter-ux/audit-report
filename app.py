@@ -5741,9 +5741,11 @@ class MainWindow(QMainWindow):
             self.set_clock_mode("analog")
         else:
             self._clock_mode = "digital"
+        # Build the complete widget tree before dispatching queued Qt events. Processing
+        # events inside this constructor can run timers/animations against partially
+        # initialized pages and has caused native Qt access violations on Windows.
         for build_fn in (self.build_home, self.build_dashboard, self.build_employees, self.build_tasks, self.build_tracker, self.build_attendance, self.build_reports, self.build_archive, self.build_settings):
             build_fn()
-            QApplication.processEvents()
         self.apply_content_surface_styles()
         # Database sync controls remain in the dedicated sync/settings area.
         self.polish_tables()
