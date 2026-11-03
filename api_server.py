@@ -27,7 +27,7 @@ import app as desktop_app
 # Render uses a persistent web working copy; encrypted synchronization is
 # managed by web_sync.py, not by the desktop application's local sync worker.
 if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-    _web_data_dir = Path(os.environ.get("AUDIT_DATA_DIR") or (ROOT_DIR / "web-data")).expanduser().resolve()
+    _web_data_dir = Path(os.environ.get("AUDIT_DATA_DIR") or ("/var/data" if Path("/var/data").is_dir() else (ROOT_DIR / "web-data"))).expanduser().resolve()
     _web_data_dir.mkdir(parents=True, exist_ok=True)
     desktop_app.APP_DIR = _web_data_dir
     desktop_app.DB_PATH = _web_data_dir / "audit_manager.db"
@@ -797,7 +797,7 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
     status = item.status or item.attendance_status or "Present"
     note = item.notes or item.attendance_note or ""
     check_in = (item.check_in or "").strip()
-    if check_in and str(status).strip().casefold() in {"absent", "unmarked", ""}:
+    if check_in and str(status).strip().casefold() in {"unmarked", ""}:
         status = "Present"
     conn.execute(
         """INSERT INTO attendance(employee_id, work_date, attendance_status, check_in, check_out, break_minutes, attendance_note, updated_at)
