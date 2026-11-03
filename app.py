@@ -1385,6 +1385,9 @@ class Database:
         CREATE TABLE IF NOT EXISTS holidays(
           holiday_date TEXT PRIMARY KEY, holiday_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS idx_tasks_employee_date ON tasks(employee_id, task_date);
+        CREATE INDEX IF NOT EXISTS idx_tasks_date_employee ON tasks(task_date, employee_id);
+        CREATE INDEX IF NOT EXISTS idx_attendance_date_employee ON attendance(work_date, employee_id);
         CREATE TABLE IF NOT EXISTS employee_groups(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT UNIQUE NOT NULL,
@@ -10384,7 +10387,6 @@ class MainWindow(QMainWindow):
             self.refresh_tasks,
             self.refresh_tracker,
             self.refresh_attendance,
-            self.refresh_attendance_summary,
             self.refresh_report_employees,
             self.refresh_dashboard,
             self.refresh_archive,
@@ -10410,6 +10412,9 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(15, self._run_refresh_queue_step)
             return
         self._refresh_queue_active = False
+        if getattr(self, "_dashboard_refresh_pending", False):
+            self._dashboard_refresh_pending = False
+            QTimer.singleShot(0, self.refresh_dashboard)
         if getattr(self, "_refresh_queue_pending", False):
             self._refresh_queue_pending = False
             QTimer.singleShot(50, self.refresh_all)
@@ -11883,6 +11888,10 @@ class MainWindow(QMainWindow):
                 self.attendance_summary_table.setItem(row_index, column, item)
 
     def refresh_dashboard(self):
+        # Coalesce dashboard refresh requests raised by child refreshes in refresh_all.
+        if getattr(self, "_refresh_queue_active", False):
+            self._dashboard_refresh_pending = True
+            return
         if not hasattr(self, "kpi_labels"):
             return
         report_date = date.today().isoformat()

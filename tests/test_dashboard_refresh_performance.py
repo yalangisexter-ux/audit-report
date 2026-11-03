@@ -1,0 +1,26 @@
+"""Regression tests for dashboard query indexes and refresh coalescing."""
+from pathlib import Path
+
+import app
+
+
+def test_dashboard_query_indexes_are_created_for_existing_database(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "dashboard-indexes.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    try:
+        task_indexes = {row["name"] for row in db.conn.execute("PRAGMA index_list(tasks)")}
+        attendance_indexes = {row["name"] for row in db.conn.execute("PRAGMA index_list(attendance)")}
+        assert "idx_tasks_employee_date" in task_indexes
+        assert "idx_tasks_date_employee" in task_indexes
+        assert "idx_attendance_date_employee" in attendance_indexes
+    finally:
+        db.conn.close()
+
+
+def test_refresh_queue_coalesces_dashboard_refresh_requests():
+    source = Path(app.__file__).read_text(encoding="utf-8")
+    assert 'self._dashboard_refresh_pending = True' in source
+    assert 'QTimer.singleShot(0, self.refresh_dashboard)' in source
+    assert 'self.refresh_attendance_summary,' not in source
