@@ -1,0 +1,196 @@
+name: Integrate feature branches and cleanup
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Integrate unique application changes onto main
+        run: |
+          set -euo pipefail
+          git fetch --all --prune
+
+          # Protect invariants on main before merges.
+          test -f installer.iss
+          test -d customer-data
+
+          # 1) customer-admin Store Directory app changes (exclude snapshots)
+          if git rev-parse --verify origin/fix/customer-admin-sync-store-directory >/dev/null 2>&1; then
+            git merge --no-commit --no-ff origin/fix/customer-admin-sync-store-directory || true
+            # Always keep main customer snapshots and installer.
+            git checkout HEAD -- customer-data installer.iss || true
+            git checkout --ours -- customer-data installer.iss 2>/dev/null || true
+            # Prefer feature Store Directory module when conflicted.
+            if [ -f customer_prospects.py ]; then
+              if grep -q '^<<<<<<<' customer_prospects.py 2>/dev/null; then
+                git checkout --theirs -- customer_prospects.py
+              fi
+            fi
+            # Prefer main hang-fix and tests when conflicted.
+            for f in app.py tests/test_role_separation.py tests/test_customer_prospects.py .github/workflows/master.yml; do
+              if [ -f "$f" ] && grep -q '^<<<<<<<' "$f" 2>/dev/null; then
+                git checkout --ours -- "$f"
+              fi
+            done
+            # Strip any leftover conflict markers by preferring ours for residual files.
+            if git diff --name-only --diff-filter=U | grep -q .; then
+              git diff --name-only --diff-filter=U | while read -r u; do
+                git checkout --ours -- "$u" || true
+                git add "$u" || true
+              done
+            fi
+            git add -A
+            if ! git diff --cached --quiet; then
+              git commit -m "merge: fix/customer-admin-sync-store-directory (app only; snapshots/installer protected)" || true
+            else
+              git merge --abort 2>/dev/null || true
+            fi
+          fi
+
+          # 2) Render persistence config
+          if git rev-parse --verify origin/fix/render-web-persistence-setup >/dev/null 2>&1; then
+            git merge --no-edit origin/fix/render-web-persistence-setup || {
+              git checkout --ours -- installer.iss customer-data 2>/dev/null || true
+              git add -A
+              git commit -m "merge: fix/render-web-persistence-setup" || true
+            }
+          fi
+
+          # 3) Windows EXE workflow hardening
+          if git rev-parse --verify origin/fix/windows-exe-parity-hardening >/dev/null 2>&1; then
+            git merge --no-edit origin/fix/windows-exe-parity-hardening || {
+              git checkout --ours -- installer.iss customer-data 2>/dev/null || true
+              git add -A
+              git commit -m "merge: fix/windows-exe-parity-hardening" || true
+            }
+          fi
+
+          # 4) Feature cleanup frontend/workflow
+          if git rev-parse --verify origin/merge/feature-cleanup-2026-11-02 >/dev/null 2>&1; then
+            git merge --no-edit origin/merge/feature-cleanup-2026-11-02 || {
+              if [ -f .github/workflows/master.yml ] && grep -q '^<<<<<<<' .github/workflows/master.yml; then
+                # Keep main packaging steps; CI triggers only main.
+                python3 - <<'PY'
+from pathlib import Path
+text = Path('.github/workflows/master.yml').read_text(encoding='utf-8')
+out=[]; lines=text.splitlines(keepends=True); i=0
+while i < len(lines):
+    if lines[i].startswith('<<<<<<<'):
+        i+=1; ours=[]
+        while i < len(lines) and not lines[i].startswith('======='):
+            ours.append(lines[i]); i+=1
+        if i < len(lines): i+=1
+        while i < len(lines) and not lines[i].startswith('>>>>>>>'):
+            i+=1
+        if i < len(lines): i+=1
+        block=''.join(ours)
+        if 'branches:' in block:
+            out.append('    branches: [main]\n')
+        else:
+            out.extend(ours)
+    else:
+        out.append(lines[i]); i+=1
+Path('.github/workflows/master.yml').write_text(''.join(out), encoding='utf-8')
+PY
+              fi
+              git checkout --ours -- installer.iss customer-data 2>/dev/null || true
+              git add -A
+              git commit -m "merge: merge/feature-cleanup-2026-11-02" || true
+            }
+          fi
+
+          # 5) Webapp rebuild frontend
+          if git rev-parse --verify origin/webapp/rebuild-v2 >/dev/null 2>&1; then
+            git merge --no-edit origin/webapp/rebuild-v2 || {
+              if [ -f .github/workflows/master.yml ] && grep -q '^<<<<<<<' .github/workflows/master.yml; then
+                python3 - <<'PY'
+from pathlib import Path
+text = Path('.github/workflows/master.yml').read_text(encoding='utf-8')
+out=[]; lines=text.splitlines(keepends=True); i=0
+while i < len(lines):
+    if lines[i].startswith('<<<<<<<'):
+        i+=1; ours=[]
+        while i < len(lines) and not lines[i].startswith('======='):
+            ours.append(lines[i]); i+=1
+        if i < len(lines): i+=1
+        while i < len(lines) and not lines[i].startswith('>>>>>>>'):
+            i+=1
+        if i < len(lines): i+=1
+        block=''.join(ours)
+        if 'branches:' in block:
+            out.append('    branches: [main]\n')
+        else:
+            out.extend(ours)
+    else:
+        out.append(lines[i]); i+=1
+Path('.github/workflows/master.yml').write_text(''.join(out), encoding='utf-8')
+PY
+              fi
+              if [ -f frontend/src/index.css ] && grep -q '^<<<<<<<' frontend/src/index.css; then
+                git checkout --theirs -- frontend/src/index.css
+              fi
+              git checkout --ours -- installer.iss customer-data 2>/dev/null || true
+              git add -A
+              git commit -m "merge: webapp/rebuild-v2" || true
+            }
+          fi
+
+          # Force CI triggers to main only after cleanup
+          if [ -f .github/workflows/master.yml ]; then
+            python3 - <<'PY'
+from pathlib import Path
+import re
+p = Path('.github/workflows/master.yml')
+t = p.read_text(encoding='utf-8')
+t2 = re.sub(r'branches:\s*\[[^\]]*\]', 'branches: [main]', t, count=2)
+if t2 != t:
+    p.write_text(t2, encoding='utf-8')
+    print('normalized workflow branch triggers to main')
+PY
+            git add .github/workflows/master.yml
+            git diff --cached --quiet || git commit -m "ci: run Master workflow on main only after branch cleanup"
+          fi
+
+          # Final protection check
+          git checkout HEAD -- installer.iss
+          git diff --quiet HEAD -- customer-data || git checkout HEAD -- customer-data
+
+      - name: Push integrated main
+        run: |
+          set -euo pipefail
+          git push origin HEAD:main
+
+      - name: Delete obsolete feature branches
+        run: |
+          set -euo pipefail
+          for b in \
+            fix/continuous-sync-web-auth-password-visibility \
+            fix/customer-admin-sync-store-directory \
+            fix/render-web-persistence-setup \
+            fix/windows-exe-parity-hardening \
+            merge/feature-cleanup-2026-11-02 \
+            webapp/rebuild-v2
+          do
+            if git rev-parse --verify "origin/$b" >/dev/null 2>&1; then
+              git push origin --delete "$b" && echo "Deleted $b" || echo "Could not delete $b"
+            else
+              echo "Branch absent: $b"
+            fi
+          done
+
+      - name: Report remaining branches
+        run: |
+          git fetch --prune
+          echo "Remaining remote branches:"
+          git branch -r
