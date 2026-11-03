@@ -6887,6 +6887,20 @@ class MainWindow(QMainWindow):
         page = self.tabs.widget(index)
         if page is None:
             return
+        # Dashboard has large tables/charts; opacity effects freeze the UI on Windows.
+        if index == 1:
+            if self._tab_animation:
+                self._tab_animation.stop()
+            if self._animated_page:
+                try:
+                    self._animated_page.setGraphicsEffect(None)
+                except Exception:
+                    pass
+            try:
+                page.setGraphicsEffect(None)
+            except Exception:
+                pass
+            return
         if self._tab_animation:
             self._tab_animation.stop()
         if self._animated_page:
@@ -11616,11 +11630,17 @@ class MainWindow(QMainWindow):
         leave = 0
         checked_in = 0
         attendance_rows = []
+        attendance_by_id = {}
+        if employees:
+            ids = [int(e["id"]) for e in employees]
+            marks = ",".join("?" for _ in ids)
+            for record in self.db.conn.execute(
+                f"SELECT employee_id, attendance_status, check_in FROM attendance WHERE work_date=? AND employee_id IN ({marks})",
+                (report_date, *ids),
+            ).fetchall():
+                attendance_by_id[int(record["employee_id"])] = record
         for employee in employees:
-            record = self.db.conn.execute(
-                "SELECT attendance_status, check_in FROM attendance WHERE employee_id=? AND work_date=?",
-                (employee["id"], report_date),
-            ).fetchone()
+            record = attendance_by_id.get(int(employee["id"]))
             status = str(record["attendance_status"] or "Unmarked").strip() if record else "Unmarked"
             check_in = record["check_in"] if record and record["check_in"] else "—"
             normalized_status = status.casefold()
@@ -11753,11 +11773,20 @@ class MainWindow(QMainWindow):
                 today = date.today()
                 ids = [int(e["id"]) for e in employees]
                 marks = ",".join("?" for _ in ids)
+                lookback_days = 90
+                range_start = today.fromordinal(max(1, today.toordinal() - lookback_days))
                 starts = {}
                 for employee in employees:
-                    starts[employee["id"]] = self.tracking_start_date(employee)
-                earliest = min(starts.values())
-                start_text = earliest.isoformat()
+                    start = None
+                    if employee["joining_date"]:
+                        try:
+                            start = date.fromisoformat(employee["joining_date"])
+                        except ValueError:
+                            start = None
+                    if start is None:
+                        start = range_start
+                    starts[employee["id"]] = max(start, range_start)
+                start_text = min(starts.values()).isoformat()
                 end_text = today.isoformat()
                 task_rows = self.db.conn.execute(
                     f"SELECT employee_id, task_date, progress, status FROM tasks WHERE employee_id IN ({marks}) AND task_date BETWEEN ? AND ?",
@@ -11790,6 +11819,14 @@ class MainWindow(QMainWindow):
                         except (TypeError, ValueError, OverflowError):
                             continue
                     task_score = (task_progress_total / len(employee_tasks)) if employee_tasks else None
+                    present_count = 0
+                    for row in attendance_by_employee.get(employee["id"], attendance_by_employee.get(int(employee["id"]), [])):
+                        status = str(row["attendance_status"] or "").strip()
+                        has_check_in = bool(str(row["check_in"] or "").strip())
+                        if is_present_attendance_status(status) or (status.casefold() in {"unmarked", ""} and has_check_in):
+                            present_count += 1
+                    working_days = self.count_working_days(start, today)
+                    eligible = max(1, working_days)
                     attendance_score = present_count / eligible * 100 if eligible else None
                     if task_score is not None and attendance_score is not None:
                         score = round(task_score * 0.7 + attendance_score * 0.3)
