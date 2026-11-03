@@ -181,6 +181,17 @@ class WebDatabaseSync:
         try:
             temp.write_bytes(payload)
             stats = validate_snapshot(temp)
+            backup_dir = self.db_path.parent / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            if self.db_path.is_file():
+                backup_path = backup_dir / ("pre-sync-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".db")
+                source = sqlite3.connect(str(self.db_path), timeout=30)
+                backup = sqlite3.connect(str(backup_path), timeout=30)
+                try:
+                    source.backup(backup)
+                finally:
+                    backup.close()
+                    source.close()
             result = merge_snapshot_databases(self.db_path, temp)
             self.last_pull = {"ok": True, "error": "", **stats, **result}
             return result
