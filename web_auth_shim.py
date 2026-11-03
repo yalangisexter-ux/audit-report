@@ -556,18 +556,16 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
 
 
 @api.app.post("/api/system/sync-now")
-def web_sync_now(user: dict = Depends(api.get_current_user)):
+def web_sync_now(
+    user: dict = Depends(api.get_current_user),
+    conn: sqlite3.Connection = Depends(api.get_db),
+):
+    manager = getattr(api, "WEB_SYNC_MANAGER", None)
+    if manager is not None:
+        return {"success": True, "sync": manager.sync_now(conn), "local": _db_stats(Path(api.desktop_app.DB_PATH))}
     ok = _pull_full_database()
-    try:
-        import app as desktop_app
-        db_path = Path(desktop_app.DB_PATH)
-        if PURGE_SEED or PURGE_DEMO:
-            _purge_junk_rows(db_path)
-        _ensure_bootstrap_admin(db_path)
-        stats = _db_stats(db_path)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Sync post-process failed: {exc}")
-    return {"success": ok, "pull": _LAST_PULL, "local": stats}
+    return {"success": ok, "pull": _LAST_PULL, "local": _db_stats(Path(api.desktop_app.DB_PATH))}
+
 
 
 @api.app.middleware("http")
