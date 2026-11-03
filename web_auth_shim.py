@@ -236,8 +236,17 @@ try:
 except Exception as _heal_boot:
     print(f"[Web Boot] force_admin_login_heal skipped: {_heal_boot}")
 
-# Force-register status in case decorator order was lost during compact restore
+# Ensure API auth routes are matched before the SPA catch-all /{full_path:path}
 try:
-    api.app.add_api_route("/api/auth/status", web_auth_status, methods=["GET"])
+    api_routes = []
+    other_routes = []
+    for route in list(api.app.router.routes):
+        path = getattr(route, "path", "") or ""
+        if path.startswith("/api") or path in ("/docs", "/openapi.json", "/redoc", "/brand-logo.png"):
+            api_routes.append(route)
+        else:
+            other_routes.append(route)
+    api.app.router.routes[:] = api_routes + other_routes
+    print(f"[Web Boot] Reordered routes: {len(api_routes)} API first, {len(other_routes)} other")
 except Exception as _reg:
-    print(f"[Web Boot] status route register: {_reg}")
+    print(f"[Web Boot] route reorder skipped: {_reg}")
