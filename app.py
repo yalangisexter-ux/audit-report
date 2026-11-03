@@ -1385,9 +1385,6 @@ class Database:
         CREATE TABLE IF NOT EXISTS holidays(
           holiday_date TEXT PRIMARY KEY, holiday_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS idx_tasks_employee_date ON tasks(employee_id, task_date);
-        CREATE INDEX IF NOT EXISTS idx_tasks_date_employee ON tasks(task_date, employee_id);
-        CREATE INDEX IF NOT EXISTS idx_attendance_date_employee ON attendance(work_date, employee_id);
         CREATE TABLE IF NOT EXISTS employee_groups(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT UNIQUE NOT NULL,
@@ -1564,6 +1561,11 @@ class Database:
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
         apply_column_migrations("attendance", attendance_migrations)
+
+        # Add performance indexes only after additive legacy-column migrations.
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_employee_date ON tasks(employee_id, task_date)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_date_employee ON tasks(task_date, employee_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date_employee ON attendance(work_date, employee_id)")
 
         c.execute(
             "UPDATE attendance SET attendance_status='Present' "

@@ -24,3 +24,14 @@ def test_refresh_queue_coalesces_dashboard_refresh_requests():
     assert 'self._dashboard_refresh_pending = True' in source
     assert 'QTimer.singleShot(0, self.refresh_dashboard)' in source
     assert 'self.refresh_attendance_summary,' not in source
+
+
+
+def test_dashboard_indexes_are_created_after_legacy_column_migrations():
+    source = Path(app.__file__).read_text(encoding="utf-8")
+    task_migration = source.index('apply_column_migrations("tasks", task_migrations)')
+    attendance_migration = source.index('apply_column_migrations("attendance", attendance_migrations)')
+    task_index = source.index("idx_tasks_employee_date")
+    attendance_index = source.index("idx_attendance_date_employee")
+    assert task_migration < task_index
+    assert attendance_migration < attendance_index
