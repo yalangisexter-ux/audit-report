@@ -11837,11 +11837,15 @@ class MainWindow(QMainWindow):
                     if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
                     and row["work_date"] not in holiday_dates
                 ]
-                holiday_count = sum(
-                    1 for holiday in holiday_dates
-                    if effective_start.isoformat() <= holiday <= end.isoformat()
-                    and date.fromisoformat(holiday).weekday() in weekdays
-                )
+                holiday_count = 0
+                for holiday in holiday_dates:
+                    if not effective_start.isoformat() <= holiday <= end.isoformat():
+                        continue
+                    try:
+                        if date.fromisoformat(holiday).weekday() in weekdays:
+                            holiday_count += 1
+                    except (TypeError, ValueError):
+                        continue
             else:
                 working = 0
                 monthly_rows = []

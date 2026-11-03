@@ -62,7 +62,7 @@ def test_attendance_summary_batches_employee_and_holiday_queries(tmp_path, monke
         assert table.item(1, 0).text() == "Tracked Employee"
         assert table.item(1, 1).text() == yesterday_text
         assert sum("FROM holidays WHERE holiday_date BETWEEN" in sql for sql in statements) == 1
-        assert sum("FROM attendance WHERE employee_id IN" in sql for sql in statements) == 1
+        assert sum("ORDER BY employee_id, work_date" in sql for sql in statements) == 1
         assert sum("MIN(work_day)" in sql for sql in statements) == 1
     finally:
         db.conn.close()
