@@ -1,0 +1,29 @@
+name: Apply attendance totals fix
+on:
+  push:
+    paths:
+      - "tools/apply_attendance_totals_fix.py"
+      - ".github/workflows/apply-attendance-totals-fix.yml"
+      - "tools/TRIGGER_ATTENDANCE_FIX"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply attendance fix
+        run: |
+          set -euo pipefail
+          python3 tools/apply_attendance_totals_fix.py
+          python3 -m py_compile app.py api_server.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py api_server.py
+          if git diff --cached --quiet; then echo No change; exit 0; fi
+          git commit -m "fix(attendance): persist Present/Absent/Leave into period totals (EXE+web)"
+          git push
