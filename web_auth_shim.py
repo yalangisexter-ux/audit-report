@@ -406,17 +406,18 @@ def web_initial_admin_setup(req: api.SetupRequest, conn: sqlite3.Connection = De
 def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
     try:
         count = conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
+        total_accounts = conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0]
         employees = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
         tasks = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
         usernames = [_public_login_name(r[0]) for r in conn.execute("SELECT username FROM auth_users WHERE active=1 ORDER BY username").fetchall()]
     except Exception:
-        count, employees, tasks, usernames = 0, 0, 0, []
+        count, total_accounts, employees, tasks, usernames = 0, 0, 0, 0, []
     return {
         "user_count": count,
         "usernames": usernames,
         "employee_count": employees,
         "task_count": tasks,
-        "setup_required": count == 0,
+        "setup_required": total_accounts == 0,
         "pull": {
             "ok": bool((_LAST_PULL or {}).get("ok")),
             "auth_users": int((_LAST_PULL or {}).get("auth_users") or 0),
