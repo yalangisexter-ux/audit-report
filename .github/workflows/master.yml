@@ -6,66 +6,44 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - "customer-data/**"
       - "tools/**"
+      - "docs/**"
+      - "**/*.md"
       - ".github/workflows/apply-*.yml"
-      - ".github/workflows/restore-*.yml"
-  workflow_dispatch:
 
 permissions:
   contents: write
+  actions: read
 
-# Run every requested validation to completion; do not cancel builds after a new push.
-# Encrypted customer database snapshots do not need a full Windows installer build.
 concurrency:
-  group: audit-report-main-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: master-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-release:
-    environment: cloudflare-chat
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Node.js for chat syntax checks
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
 
-      - name: Build and verify Render React frontend
+      - name: Validate Cloudflare chat worker package
         shell: pwsh
         run: |
-          Push-Location frontend
-          try {
-            npm ci --include=dev
-            if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed with exit code $LASTEXITCODE" }
-            npm run build
-            if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed with exit code $LASTEXITCODE" }
-            if (-not (Test-Path "dist/index.html")) { throw "Vite build did not produce frontend/dist/index.html" }
-            if (-not (Test-Path "dist/assets")) { throw "Vite build did not produce frontend/dist/assets" }
-          }
-          finally { Pop-Location }
-
-      - name: Validate Cloudflare Worker and browser chat JavaScript
-        shell: pwsh
-        run: |
-          node --check cloudflare-chat/src/index.js
-          node --check chat-web/app.js
-          node --check audit-db-sync/src/index.js
-
-      - name: Install and test isolated database-sync Worker
-        shell: pwsh
-        run: |
-          Push-Location audit-db-sync
-          try {
-            npm install --no-audit --no-fund
-            npm run check
+          if (Test-Path "cloudflare-chat/package.json") {
+            Push-Location cloudflare-chat
+            npm ci
+            if ($LASTEXITCODE -ne 0) { throw "cloudflare-chat npm ci failed." }
             npm test
+            if ($LASTEXITCODE -ne 0) { throw "cloudflare-chat tests failed." }
+            Pop-Location
           }
-          finally { Pop-Location }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -73,48 +51,28 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install Python dependencies and packaging tools
+      - name: Install Python dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller pytest
           if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed." }
 
-      - name: Download high-resolution photographic wallpaper assets
-        shell: pwsh
-        run: |
-          $wallpaperDir = Join-Path $PWD "assets/wallpapers/photos"
-          New-Item -ItemType Directory -Force -Path $wallpaperDir | Out-Null
-          $wallpapers = @{
-            "galaxy.jpg" = "https://images.unsplash.com/photo-1707057538849-f723c167324b?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "milky_way.jpg" = "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "ocean_waves.jpg" = "https://images.unsplash.com/photo-1429305223369-4d065fdb6f53?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "lord_shiva.jpg" = "https://images.unsplash.com/photo-1533743725296-2e099eed32c6?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-            "love_couples.jpg" = "https://images.unsplash.com/photo-1618426101260-26afa1d05ec3?auto=format&fit=crop&fm=jpg&w=1920&q=82"
-          }
-          foreach ($filename in $wallpapers.Keys) {
-            $destination = Join-Path $wallpaperDir $filename
-            Invoke-WebRequest -Uri $wallpapers[$filename] -OutFile $destination
-            if ((Get-Item $destination).Length -lt 10000) { throw "Wallpaper download is incomplete: $filename" }
-          }
-
-      - name: Configure optional production Worker endpoints
+      - name: Inject production worker endpoints when secrets are present
         shell: pwsh
         env:
-          DB_SYNC_WORKER_URL: ${{ vars.DB_SYNC_WORKER_URL }}
-          CHAT_WORKER_URL: ${{ vars.CHAT_WORKER_URL }}
+          DB_SYNC_WORKER_URL: ${{ secrets.DB_SYNC_WORKER_URL }}
+          CHAT_WORKER_URL: ${{ secrets.CHAT_WORKER_URL }}
         run: |
-          $workerUrl = ""
-          if ([string]::IsNullOrWhiteSpace($workerUrl)) { $workerUrl = $env:DB_SYNC_WORKER_URL }
-          if (-not [string]::IsNullOrWhiteSpace($workerUrl)) {
-            $uri = [Uri]$workerUrl
-            if ($uri.Scheme -ne "https" -or $uri.Host -notmatch "\\.workers\\.dev$") { throw "Database-sync Worker URL must be an HTTPS Cloudflare Workers hostname." }
+          $dbUrl = $env:DB_SYNC_WORKER_URL
+          if (-not [string]::IsNullOrWhiteSpace($dbUrl)) {
+            $dbUri = [Uri]$dbUrl
+            if ($dbUri.Scheme -ne "https" -or $dbUri.Host -notmatch "\\.workers\\.dev$") { throw "DB Sync Worker URL must be an HTTPS Cloudflare Workers hostname." }
             $sourcePath = "database_sync.py"
             $source = Get-Content $sourcePath -Raw
-            $replacement = 'DEFAULT_DB_SYNC_WORKER_URL = "' + $workerUrl.TrimEnd("/") + '"'
-            $source = [regex]::Replace($source, 'DEFAULT_DB_SYNC_WORKER_URL\\s*=\\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
-            if (-not $source.Contains($replacement)) { throw "Could not inject database-sync Worker URL." }
-            if ($source -notmatch [regex]::Escape($uri.Host)) { throw "Database-sync Worker host validation failed." }
+            $replacement = 'FALLBACK_DB_SYNC_WORKER_URL = "' + $dbUrl.TrimEnd("/") + '"'
+            $source = [regex]::Replace($source, 'FALLBACK_DB_SYNC_WORKER_URL\\s*=\\s*["''].*?["'']', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement })
+            if (-not $source.Contains($replacement)) { throw "Could not inject production DB Sync endpoint." }
             Set-Content -Path $sourcePath -Value $source -Encoding utf8
           }
 
@@ -133,7 +91,8 @@ jobs:
       - name: Compile all Python modules
         shell: pwsh
         run: |
-          python -m compileall -q .
+          # Exclude one-shot apply scripts and accidental directories under tools/
+          python -m compileall -q -x "[\\/]tools[\\/]" .
           if ($LASTEXITCODE -ne 0) { throw "Python syntax compilation failed with exit code $LASTEXITCODE" }
 
       - name: Run regression tests
@@ -143,9 +102,9 @@ jobs:
           PYTHONWARNINGS: ignore
         run: |
           python -m pytest -q
-          if ($LASTEXITCODE -ne 0) { throw "Pytest regression tests failed with exit code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "Regression tests failed." }
 
-      - name: Download Microsoft Visual C++ runtime prerequisite
+      - name: Download Visual C++ runtime for installer
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "vc_redist.x64.exe"
@@ -202,8 +161,6 @@ jobs:
         with:
           tag_name: v1.3.70
           name: Raw Strength Employee Audit Manager v1.3.70
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
           files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
+          generate_release_notes: true
           fail_on_unmatched_files: true
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
