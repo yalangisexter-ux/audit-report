@@ -7046,7 +7046,8 @@ class MainWindow(QMainWindow):
         if page is None:
             return
         # Dashboard has large tables/charts; opacity effects freeze the UI on Windows.
-        if index == 1:
+        # Match by index and by widget identity so future tab reordering cannot reintroduce the hang.
+        if index == 1 or page is getattr(self, "dashboard", None):
             if self._tab_animation:
                 self._tab_animation.stop()
             if self._animated_page:
@@ -12048,6 +12049,19 @@ class MainWindow(QMainWindow):
         self.productivity_chart.set_values([])
         if not employees:
             return
+        # Start the worker on the next event-loop turn so the Dashboard tab can
+        # paint KPIs/recent tables first. Business logic and scores are unchanged.
+        QTimer.singleShot(
+            0,
+            lambda current_generation=generation, current_employees=list(employees):
+            self._start_dashboard_productivity_worker(current_generation, current_employees),
+        )
+
+    def _start_dashboard_productivity_worker(self, generation, employees):
+        if getattr(self, "_is_closing", False):
+            return
+        if generation != getattr(self, "_dashboard_productivity_generation", None):
+            return
         for previous_worker in list(getattr(self, "_dashboard_productivity_workers", [])):
             if previous_worker.isRunning():
                 previous_worker.requestInterruption()
@@ -12094,7 +12108,11 @@ class MainWindow(QMainWindow):
         self._refresh_dashboard_productivity_batch(generation)
 
     def _refresh_dashboard_productivity_batch(self, generation):
-        """Render at most four prepared productivity rows per event-loop turn."""
+        """Render at most four prepared productivity rows per event-loop turn.
+
+        Chart repaint is deferred until the queue is empty so switching to the
+        Dashboard tab does not freeze while every intermediate batch repaints.
+        """
         if getattr(self, "_is_closing", False):
             return
         if generation != getattr(self, "_dashboard_productivity_generation", None):
@@ -12127,12 +12145,15 @@ class MainWindow(QMainWindow):
             del queue[:4]
         finally:
             self.productivity_table.setUpdatesEnabled(True)
-        self.productivity_chart.set_values(metrics)
+        # Only paint the chart once all rows are ready. Intermediate chart
+        # repaints were freezing the UI when many employees were present.
         if queue:
             QTimer.singleShot(
                 10, lambda current_generation=generation:
                 self._refresh_dashboard_productivity_batch(current_generation)
             )
+        else:
+            self.productivity_chart.set_values(metrics)
 
     def report_data(self, report_date, employee_id=None):
         emps=self._report_employees(employee_id)

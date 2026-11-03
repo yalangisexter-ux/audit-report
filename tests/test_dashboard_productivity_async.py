@@ -54,3 +54,30 @@ def test_dashboard_productivity_render_batch_has_no_database_queries():
     assert "execute(" not in source
     assert "count_working_days" not in source
     assert "QTimer.singleShot" in source
+
+
+def test_dashboard_productivity_chart_updates_only_after_final_batch():
+    import inspect
+    source = inspect.getsource(app.MainWindow._refresh_dashboard_productivity_batch)
+    # Chart must not repaint on intermediate batches.
+    assert "if queue:" in source
+    assert "self.productivity_chart.set_values(metrics)" in source
+    # set_values should appear only in the empty-queue branch, after the queue check.
+    chart_pos = source.rfind("self.productivity_chart.set_values(metrics)")
+    queue_pos = source.find("if queue:")
+    assert queue_pos != -1 and chart_pos != -1
+    assert queue_pos < chart_pos
+    assert "Intermediate chart" in source or "queue is empty" in source or "deferred until" in source
+
+
+def test_dashboard_tab_transition_skips_opacity_effect():
+    import inspect
+    source = inspect.getsource(app.MainWindow.animate_tab_transition)
+    assert "index == 1" in source
+    assert "dashboard" in source
+    assert "QGraphicsOpacityEffect" in source
+    # Dashboard branch must return before creating an opacity effect.
+    dash_branch = source.find("index == 1")
+    effect_pos = source.find("QGraphicsOpacityEffect")
+    assert dash_branch != -1 and effect_pos != -1
+    assert dash_branch < effect_pos
