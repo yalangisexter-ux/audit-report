@@ -11274,12 +11274,12 @@ class MainWindow(QMainWindow):
         if not eid: return error(self,"Choose an employee in the Filter employee dropdown, or select a row when All employees is selected.")
         d=self.att_date.date().toString("yyyy-MM-dd")
         if self.db.is_holiday(d): return error(self,"This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
-        if status in ("Absent", "Leave"):
-            self.db.conn.execute("UPDATE attendance SET attendance_status=?,check_in='',check_out='',updated_at=? WHERE employee_id=? AND work_date=?",(status,now_text(),eid,d))
-            if not self.db.conn.execute("SELECT 1 FROM attendance WHERE employee_id=? AND work_date=?",(eid,d)).fetchone():
-                self.db.upsert_attendance(eid,d,status=status)
+        # Always persist through upsert_attendance so INSERT/UPDATE is committed.
+        status = str(status or "").strip()
+        if status in ("Absent", "Leave", "Unmarked"):
+            self.db.upsert_attendance(eid, d, check_in="", check_out="", status=status)
         else:
-            self.db.upsert_attendance(eid,d,status=status)
+            self.db.upsert_attendance(eid, d, status=status)
         e=self.db.employee(eid)
         self.db.log("Attendance status updated",f"{e['name']}: {status} on {d}")
         self.refresh_all()
@@ -11899,10 +11899,19 @@ class MainWindow(QMainWindow):
             present = sum(
                 1 for row in monthly_rows
                 if is_present_attendance_status(row["attendance_status"])
-                or (row["attendance_status"] == "Unmarked" and row["check_in"])
+                or (
+                    str(row["attendance_status"] or "").strip().casefold() in {"unmarked", ""}
+                    and str(row["check_in"] or "").strip()
+                )
             )
-            absent = sum(1 for row in monthly_rows if row["attendance_status"] == "Absent")
-            leave = sum(1 for row in monthly_rows if row["attendance_status"] == "Leave")
+            absent = sum(
+                1 for row in monthly_rows
+                if str(row["attendance_status"] or "").strip().casefold() == "absent"
+            )
+            leave = sum(
+                1 for row in monthly_rows
+                if str(row["attendance_status"] or "").strip().casefold() == "leave"
+            )
             since = sum(
                 1 for row in attendance_by_employee[employee_id]
                 if row["work_date"] >= start_day.isoformat()
