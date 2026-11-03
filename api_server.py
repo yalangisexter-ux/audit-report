@@ -315,6 +315,13 @@ def initial_setup(req: SetupRequest, conn: sqlite3.Connection = Depends(get_db))
     count = conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0]
     if count > 0:
         raise HTTPException(status_code=400, detail="Setup has already been completed.")
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        manager = WEB_SYNC_MANAGER
+        if manager is None or not getattr(manager, "configured", False) or not bool(getattr(manager, "last_pull", {}).get("ok")):
+            raise HTTPException(
+                status_code=503,
+                detail="Admin setup is disabled until the existing encrypted customer database is verified. Check database sync configuration.",
+            )
     
     ps, ph = desktop_app.hash_pin(req.password)
     ans_salt, ans_hash = desktop_app.hash_pin(req.security_answer)
