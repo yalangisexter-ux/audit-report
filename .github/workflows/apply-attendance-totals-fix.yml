@@ -2,8 +2,6 @@ name: Apply attendance totals fix
 on:
   push:
     paths:
-      - "tools/att_apply_b64_*.txt"
-      - "tools/assemble_att_apply.py"
       - "tools/apply_attendance_totals_fix.py"
       - ".github/workflows/apply-attendance-totals-fix.yml"
       - "tools/TRIGGER_ATTENDANCE_FIX"
@@ -15,25 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble apply script if needed
-        run: |
-          set -euo pipefail
-          if [ ! -f tools/apply_attendance_totals_fix.py ] || [ -f tools/att_apply_b64_0.txt ]; then
-            python3 tools/assemble_att_apply.py
-          fi
       - name: Apply attendance fix
         run: |
           set -euo pipefail
           python3 tools/apply_attendance_totals_fix.py
-          python3 -m py_compile app.py api_server.py
+          python3 -m py_compile app.py
           grep -q "Always persist through upsert_attendance" app.py
-          grep -q "clear_times = status.casefold()" api_server.py
       - name: Commit
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.py api_server.py tools/apply_attendance_totals_fix.py
+          git add app.py
           if git diff --cached --quiet; then echo No change; exit 0; fi
-          git commit -m "fix(attendance): persist Present/Absent/Leave into period totals (EXE+web)"
+          git commit -m "fix(attendance): persist Present/Absent/Leave into period totals"
           git push
