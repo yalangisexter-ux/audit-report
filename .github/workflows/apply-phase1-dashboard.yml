@@ -1,0 +1,45 @@
+name: Apply Phase 1 dashboard
+on:
+  push:
+    paths:
+      - ".github/workflows/apply-phase1-dashboard.yml"
+      - "tools/TRIGGER_PHASE1_DASH"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch dashboard productivity
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          path = Path("api_server.py")
+          text = path.read_text(encoding="utf-8")
+          start = text.find('@app.get("/api/dashboard")')
+          if start < 0:
+              raise SystemExit("dashboard missing")
+          m = re.search(r"\n@app\.(get|post|put|delete)\(", text[start+20:])
+          end = start + 20 + m.start()
+          new_dash = Path("tools/new_dashboard_route.py").read_text(encoding="utf-8")
+          if not new_dash.endswith("\n"):
+              new_dash += "\n"
+          text = text[:start] + new_dash + text[end:]
+          if "avg_productivity" not in text:
+              raise SystemExit("patch failed")
+          path.write_text(text, encoding="utf-8")
+          print("patched", path.stat().st_size)
+          PY
+          python3 -m py_compile api_server.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api_server.py
+          if git diff --cached --quiet; then echo No change; exit 0; fi
+          git commit -m "feat(web): Phase 1 dashboard productivity KPIs (desktop formula)"
+          git push
