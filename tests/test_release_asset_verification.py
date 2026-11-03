@@ -802,3 +802,14 @@ def test_calisthenics_logo_and_brand_mark():
     logo_path = app.resource_path("assets/raw_strength_brand.png")
     assert Path(logo_path).exists()
 
+
+ 
+def test_silent_update_installer_preserves_previous_install_directory_and_data():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    installer = (root / "installer.iss").read_text(encoding="utf-8")
+    source = (root / "app.py").read_text(encoding="utf-8")
+    assert "UsePreviousAppDir=yes" in installer
+    assert "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS" in source
+    assert "The current application was left running." in source
+    assert "if result <= 32:" in source

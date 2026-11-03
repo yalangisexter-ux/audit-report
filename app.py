@@ -8306,14 +8306,28 @@ class MainWindow(QMainWindow):
                     self._update_progress.setRange(0, 0)
                     self._update_progress.setLabelText("Installing update... Please wait; the app will reopen automatically.")
                     self._update_progress.repaint()
-                args = "/SILENT /NORESTART /SP-"
+                installer_path = Path(installer_path).resolve()
+                if not installer_path.is_file():
+                    raise FileNotFoundError(f"Downloaded update installer was not found: {installer_path}")
+                # Fully suppress installer UI. Windows still shows UAC consent
+                # because the application is installed machine-wide.
+                args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS"
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None, "runas", str(installer_path), args, None, 1
                 )
                 if result <= 32:
-                    os.startfile(str(installer_path))
+                    raise OSError(
+                        f"Windows could not start the update installer (ShellExecute error {result}). "
+                        "The current application was left running."
+                    )
             else:
-                subprocess.Popen([str(installer_path), "/SILENT", "/NORESTART"], close_fds=True)
+                installer_path = Path(installer_path).resolve()
+                if not installer_path.is_file():
+                    raise FileNotFoundError(f"Downloaded update installer was not found: {installer_path}")
+                subprocess.Popen(
+                    [str(installer_path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"],
+                    close_fds=True,
+                )
             # Detached watchdog to guarantee the app reopens automatically
             try:
                 if getattr(sys, "frozen", False):

@@ -12,6 +12,7 @@ AppPublisherURL=https://github.com/yalangisexter-ux/audit-report
 AppSupportURL=https://github.com/yalangisexter-ux/audit-report
 AppUpdatesURL=https://github.com/yalangisexter-ux/audit-report
 DefaultDirName={autopf}\Raw Strength Employee Audit Manager
+UsePreviousAppDir=yes
 DefaultGroupName={#MyAppName}
 OutputDir=installer-output
 OutputBaseFilename=RawStrengthEmployeeAuditManager-Setup
