@@ -433,10 +433,27 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
 def web_db_info():
     try:
         import app as desktop_app
-        stats = _db_stats(Path(desktop_app.DB_PATH))
+        db_path = Path(desktop_app.DB_PATH)
+        stats = _db_stats(db_path)
+        stats["database_path"] = str(db_path)
     except Exception as exc:
         stats = {"error": str(exc)}
-    return {"pull": {"ok": bool(_LAST_PULL.get("ok")), "error": str(_LAST_PULL.get("error") or "")[:160], "auth_users": int(_LAST_PULL.get("auth_users") or 0), "employees": int(_LAST_PULL.get("employees") or 0), "tasks": int(_LAST_PULL.get("tasks") or 0)}, "local": stats}
+    manager = getattr(api, "WEB_SYNC_MANAGER", None)
+    return {
+        "pull": {
+            "ok": bool(_LAST_PULL.get("ok")),
+            "error": str(_LAST_PULL.get("error") or "")[:160],
+            "auth_users": int(_LAST_PULL.get("auth_users") or 0),
+            "employees": int(_LAST_PULL.get("employees") or 0),
+            "tasks": int(_LAST_PULL.get("tasks") or 0),
+        },
+        "local": stats,
+        "sync": manager.public_status() if manager is not None else {
+            "configured": False,
+            "status": "Encrypted sync manager is not initialized",
+        },
+    }
+
 
 
 _LOGIN_REFRESH_LOCK = threading.Lock()
