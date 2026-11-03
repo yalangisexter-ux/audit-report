@@ -11751,38 +11751,132 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard()
 
     def refresh_attendance_summary(self):
-        if not hasattr(self,"attendance_summary_table"): return
-        selected=datetime.strptime(self.att_date.date().toString("yyyy-MM-dd"), "%Y-%m-%d").date()
-        month_start=selected.replace(day=1)
+        if not hasattr(self, "attendance_summary_table"):
+            return
+        selected = datetime.strptime(
+            self.att_date.date().toString("yyyy-MM-dd"), "%Y-%m-%d"
+        ).date()
+        month_start = selected.replace(day=1)
         from calendar import monthrange
-        month_end=selected.replace(day=monthrange(selected.year,selected.month)[1])
-        end=min(month_end,selected,date.today())
+        month_end = selected.replace(day=monthrange(selected.year, selected.month)[1])
+        end = min(month_end, selected, date.today())
+        employees = self.db.employees(False)
         self.attendance_summary_table.setRowCount(0)
-        for e in self.db.employees(False):
-            start=self.tracking_start_date(e)
-            effective_start=max(start,month_start)
-            working=self.count_working_days(effective_start,end) if effective_start<=end else 0
-            month_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],effective_start.isoformat(),end.isoformat())).fetchall() if effective_start<=end else []
-            non_holiday_rows=[a for a in month_rows if not self.db.is_holiday(a["work_date"])]
-            present=sum(1 for a in non_holiday_rows if is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"]=="Unmarked" and a["check_in"]))
-            absent=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Absent")
-            leave=sum(1 for a in non_holiday_rows if a["attendance_status"]=="Leave")
-            def _is_working_weekday_holiday(h_item):
+        if not employees:
+            return
+
+        employee_ids = [int(employee["id"]) for employee in employees]
+        placeholders = ",".join("?" for _ in employee_ids)
+        starts = {}
+        employees_missing_join_date = []
+        for employee in employees:
+            start_day = None
+            if employee["joining_date"]:
                 try:
-                    return date.fromisoformat(h_item["holiday_date"]).weekday() in self.db.working_weekdays()
-                except (ValueError, TypeError):
-                    return False
-            holidays=sum(1 for h in self.db.holidays_between(effective_start.isoformat(),end.isoformat()) if _is_working_weekday_holiday(h)) if effective_start<=end else 0
-            since_end=min(selected,date.today())
-            since_rows=self.db.conn.execute("SELECT work_date,attendance_status,check_in FROM attendance WHERE employee_id=? AND work_date BETWEEN ? AND ?",(e["id"],start.isoformat(),since_end.isoformat())).fetchall()
-            since=sum(1 for a in since_rows if not self.db.is_holiday(a["work_date"]) and (is_present_attendance_status(a["attendance_status"]) or (a["attendance_status"]=="Unmarked" and a["check_in"])))
-            vals=[e["name"],start.isoformat(),working,present,absent,leave,holidays,since]
-            r=self.attendance_summary_table.rowCount(); self.attendance_summary_table.insertRow(r)
-            for c,v in enumerate(vals):
-                item = QTableWidgetItem(str(v))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if c == 0 else Qt.AlignmentFlag.AlignCenter))
-                item.setToolTip(str(v))
-                self.attendance_summary_table.setItem(r,c,item)
+                    start_day = date.fromisoformat(employee["joining_date"])
+                except (TypeError, ValueError):
+                    start_day = None
+            if start_day is None:
+                employees_missing_join_date.append(int(employee["id"]))
+            else:
+                starts[int(employee["id"])] = start_day
+
+        # Resolve fallback tracking starts in one grouped query, rather than
+        # scanning tasks/attendance once per employee.
+        if employees_missing_join_date:
+            missing_marks = ",".join("?" for _ in employees_missing_join_date)
+            first_rows = self.db.conn.execute(
+                f"SELECT employee_id, MIN(work_day) AS first_day FROM ("
+                f"SELECT employee_id, task_date AS work_day FROM tasks "
+                f"WHERE employee_id IN ({missing_marks}) AND task_date IS NOT NULL AND task_date<>'' "
+                f"UNION ALL "
+                f"SELECT employee_id, work_date AS work_day FROM attendance "
+                f"WHERE employee_id IN ({missing_marks}) AND work_date IS NOT NULL AND work_date<>''"
+                f") GROUP BY employee_id",
+                (*employees_missing_join_date, *employees_missing_join_date),
+            ).fetchall()
+            first_by_employee = {
+                int(row["employee_id"]): row["first_day"] for row in first_rows
+            }
+            for employee_id in employees_missing_join_date:
+                try:
+                    starts[employee_id] = date.fromisoformat(
+                        first_by_employee.get(employee_id) or date.today().isoformat()
+                    )
+                except (TypeError, ValueError):
+                    starts[employee_id] = date.today()
+
+        earliest_start = min(starts.values())
+        weekdays = self.db.working_weekdays()
+        holiday_rows = self.db.holidays_between(earliest_start.isoformat(), end.isoformat())
+        holiday_dates = {row["holiday_date"] for row in holiday_rows}
+        attendance_rows = self.db.conn.execute(
+            f"SELECT employee_id, work_date, attendance_status, check_in FROM attendance "
+            f"WHERE employee_id IN ({placeholders}) AND work_date BETWEEN ? AND ? "
+            f"ORDER BY employee_id, work_date",
+            (*employee_ids, earliest_start.isoformat(), end.isoformat()),
+        ).fetchall()
+        attendance_by_employee = {employee_id: [] for employee_id in employee_ids}
+        for row in attendance_rows:
+            attendance_by_employee[int(row["employee_id"])].append(row)
+
+        for employee in employees:
+            employee_id = int(employee["id"])
+            start_day = starts[employee_id]
+            effective_start = max(start_day, month_start)
+            if effective_start <= end:
+                working = 0
+                current_day = effective_start
+                while current_day <= end:
+                    day_text = current_day.isoformat()
+                    if current_day.weekday() in weekdays and day_text not in holiday_dates:
+                        working += 1
+                    current_day += timedelta(days=1)
+                monthly_rows = [
+                    row for row in attendance_by_employee[employee_id]
+                    if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
+                    and row["work_date"] not in holiday_dates
+                ]
+                holiday_count = sum(
+                    1 for holiday in holiday_dates
+                    if effective_start.isoformat() <= holiday <= end.isoformat()
+                    and date.fromisoformat(holiday).weekday() in weekdays
+                )
+            else:
+                working = 0
+                monthly_rows = []
+                holiday_count = 0
+
+            present = sum(
+                1 for row in monthly_rows
+                if is_present_attendance_status(row["attendance_status"])
+                or (row["attendance_status"] == "Unmarked" and row["check_in"])
+            )
+            absent = sum(1 for row in monthly_rows if row["attendance_status"] == "Absent")
+            leave = sum(1 for row in monthly_rows if row["attendance_status"] == "Leave")
+            since = sum(
+                1 for row in attendance_by_employee[employee_id]
+                if row["work_date"] >= start_day.isoformat()
+                and row["work_date"] not in holiday_dates
+                and (
+                    is_present_attendance_status(row["attendance_status"])
+                    or (row["attendance_status"] == "Unmarked" and row["check_in"])
+                )
+            )
+            values = [
+                employee["name"], start_day.isoformat(), working,
+                present, absent, leave, holiday_count, since,
+            ]
+            row_index = self.attendance_summary_table.rowCount()
+            self.attendance_summary_table.insertRow(row_index)
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignVCenter
+                    | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter)
+                )
+                item.setToolTip(str(value))
+                self.attendance_summary_table.setItem(row_index, column, item)
 
     def refresh_dashboard(self):
         if not hasattr(self, "kpi_labels"):
@@ -11923,6 +12017,9 @@ class MainWindow(QMainWindow):
         self.productivity_chart.set_values([])
         if not employees:
             return
+        for previous_worker in list(getattr(self, "_dashboard_productivity_workers", [])):
+            if previous_worker.isRunning():
+                previous_worker.requestInterruption()
         worker = DashboardProductivityWorker(generation, employees)
         if not hasattr(self, "_dashboard_productivity_workers"):
             self._dashboard_productivity_workers = []
