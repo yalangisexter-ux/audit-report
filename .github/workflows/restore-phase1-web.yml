@@ -2,8 +2,9 @@ name: Restore Phase 1 web files
 on:
   push:
     paths:
-      - "tools/restore_phase1_*.py"
       - ".github/workflows/restore-phase1-web.yml"
+      - "tools/TRIGGER_PHASE1_RESTORE"
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -11,17 +12,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Restore files
+        with:
+          fetch-depth: 0
+      - name: Restore baseline files from last good commit
         run: |
-          python3 tools/restore_phase1_render_yaml.py || true
-          python3 tools/restore_phase1_app_jsx.py || true
-          python3 tools/restore_phase1_api_server.py || true
-      - name: Commit
+          set -euo pipefail
+          # Last known good content before accidental empty push
+          git checkout be4a3518e2f165da80d6c031804e92bbf0f1b8c2 -- api_server.py frontend/src/App.jsx
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('api_server.py')
+          text = path.read_text(encoding='utf-8')
+          old_get = '''def get_db():\n    \"\"\"Create a thread-safe connection to the exact same database.\"\"\"\n    ensure_database()\n    db_path = desktop_app.DB_PATH\n    conn = sqlite3.connect(str(db_path), check_same_thread=False)\n    conn.row_factory = sqlite3.Row\n    conn.execute(\"PRAGMA foreign_keys=ON\")\n    try:\n        yield conn\n    finally:\n        conn.close()\n'''
+          new_get = '''def get_db():\n    \"\"\"Create a thread-safe connection to the exact same database.\"\"\"\n    ensure_database()\n    db_path = desktop_app.DB_PATH\n    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)\n    conn.row_factory = sqlite3.Row\n    conn.execute(\"PRAGMA foreign_keys=ON\")\n    try:\n        conn.execute(\"PRAGMA journal_mode=WAL\")\n        conn.execute(\"PRAGMA synchronous=NORMAL\")\n    except Exception:\n        pass\n    try:\n        yield conn\n    finally:\n        conn.close()\n'''
+          if old_get in text:
+              text = text.replace(old_get, new_get, 1)
+              print('patched WAL')
+          # Attendance check-in supersedes Absent
+          old_mark = '''    status = item.status or item.attendance_status or \"Present\"\n    note = item.notes or item.attendance_note or \"\"\n    conn.execute('''
+          new_mark = '''    status = item.status or item.attendance_status or \"Present\"\n    note = item.notes or item.attendance_note or \"\"\n    check_in = (item.check_in or \"\").strip()\n    if check_in and str(status).strip().casefold() in {\"absent\", \"unmarked\", \"\"}:\n        status = \"Present\"\n    conn.execute('''
+          if old_mark in text:
+              text = text.replace(old_mark, new_mark, 1)
+              print('patched attendance rule')
+          path.write_text(text, encoding='utf-8')
+          print('api bytes', path.stat().st_size)
+          PY
+      - name: Commit restored files
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add api_server.py frontend/src/App.jsx render.yaml || true
+          git add api_server.py frontend/src/App.jsx
           if git diff --cached --quiet; then echo No change; exit 0; fi
-          git commit -m "fix: restore Phase 1 web parity files"
+          git commit -m "fix: restore api_server.py and App.jsx; WAL + attendance rule"
           git push
