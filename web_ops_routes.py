@@ -39,12 +39,12 @@ def _now():
 
 @api.app.get("/api/business/orders")
 def list_business_orders(conn: sqlite3.Connection = Depends(api.get_db)):
-    return _rows(conn, "SELECT * FROM bt_orders ORDER BY id DESC LIMIT 300")
+    return _rows(conn, "SELECT id,external_order_id AS order_code,order_date,sales_channel AS channel,customer_name,contact,payment_mode,order_status AS status,discount,order_value,invoice_number,shipment_id,assigned_employee_id,updated_by,updated_at,remarks FROM bt_orders ORDER BY id DESC LIMIT 300")
 
 
 @api.app.get("/api/business/members")
 def list_business_members(conn: sqlite3.Connection = Depends(api.get_db)):
-    return _rows(conn, "SELECT * FROM bt_members ORDER BY id DESC LIMIT 300")
+    return _rows(conn, """SELECT m.id,m.name AS full_name,m.contact AS phone,m.service_id,s.name AS plan_name,m.training_mode,m.registration_date AS start_date,m.expiry_date AS end_date,m.sessions_purchased,m.sessions_completed,m.status,m.payment_status,m.invoice_ref,m.remarks FROM bt_members m LEFT JOIN bt_services s ON s.id=m.service_id ORDER BY m.id DESC LIMIT 300""")
 
 
 @api.app.get("/api/business/activities")
@@ -88,53 +88,97 @@ def create_order(body: OrderIn, conn: sqlite3.Connection = Depends(api.get_db), 
     odate = body.order_date or date.today().isoformat()
     try:
         cur = conn.execute(
-            "INSERT INTO bt_orders(order_code, customer_name, status, order_date, order_value, channel, notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-            (code, body.customer_name, body.status, odate, body.order_value, body.channel, body.notes, now, now),
+            """INSERT INTO bt_orders(external_order_id,order_date,sales_channel,customer_name,contact,order_status,order_value,updated_by,updated_at,remarks)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (code,odate,body.channel,body.customer_name.strip(),"",body.status,body.order_value,user.get("username",""),now,body.notes),
         )
         conn.commit()
-        return {"success": True, "id": cur.lastrowid, "order_code": code}
-    except Exception:
-        try:
-            cur = conn.execute(
-                "INSERT INTO bt_orders(customer_name, status, order_date, order_value) VALUES(?,?,?,?)",
-                (body.customer_name, body.status, odate, body.order_value),
-            )
-            conn.commit()
-            return {"success": True, "id": cur.lastrowid}
-        except Exception as exc2:
-            raise HTTPException(status_code=400, detail=f"Create order failed: {exc2}")
+        return {"success":True,"id":cur.lastrowid,"order_code":code}
+    except sqlite3.Error as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400,detail=f"Create order failed: {exc}") from exc
 
 
 class MemberIn(BaseModel):
     full_name: str
     status: str = "Active"
     plan_name: str = ""
+    service_id: Optional[int] = None
     phone: str = ""
+    training_mode: str = ""
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    sessions_purchased: int = 0
+    payment_status: str = "Pending"
+    invoice_ref: str = ""
     notes: str = ""
 
 
 @api.app.post("/api/business/members")
 def create_member(body: MemberIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
-    now = _now()
+    service_id=body.service_id
+    if service_id is None and body.plan_name.strip():
+        found=conn.execute("SELECT id FROM bt_services WHERE name=? COLLATE NOCASE LIMIT 1",(body.plan_name.strip(),)).fetchone()
+        service_id=found[0] if found else None
+    start=body.start_date or date.today().isoformat()
     try:
-        cur = conn.execute(
-            "INSERT INTO bt_members(full_name, name, status, plan_name, phone, start_date, end_date, notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (body.full_name, body.full_name, body.status, body.plan_name, body.phone, body.start_date or date.today().isoformat(), body.end_date or "", body.notes, now, now),
+        cur=conn.execute(
+            """INSERT INTO bt_members(name,contact,service_id,training_mode,registration_date,start_date,expiry_date,
+               sessions_purchased,status,payment_status,invoice_ref,remarks) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (body.full_name.strip(),body.phone,service_id,body.training_mode,start,start,body.end_date or "",
+             body.sessions_purchased,body.status,body.payment_status,body.invoice_ref,body.notes),
         )
         conn.commit()
-        return {"success": True, "id": cur.lastrowid}
-    except Exception:
-        try:
-            cur = conn.execute(
-                "INSERT INTO bt_members(full_name, status, plan_name, phone) VALUES(?,?,?,?)",
-                (body.full_name, body.status, body.plan_name, body.phone),
-            )
-            conn.commit()
-            return {"success": True, "id": cur.lastrowid}
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Create member failed: {exc}")
+        return {"success":True,"id":cur.lastrowid}
+    except sqlite3.Error as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400,detail=f"Create member failed: {exc}") from exc
+
+
+class OrderStatusIn(BaseModel):
+    status: str
+
+
+@api.app.patch("/api/business/orders/{order_id}")
+def update_order_status(order_id: int, body: OrderStatusIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
+    allowed={"Pending","Confirmed","Packed","Dispatched","Delivered","Completed","Cancelled","Returned"}
+    if body.status not in allowed:
+        raise HTTPException(status_code=400,detail="Invalid order status.")
+    cur=conn.execute("UPDATE bt_orders SET order_status=?,updated_by=?,updated_at=? WHERE id=?",
+        (body.status,user.get("username",""),_now(),order_id))
+    conn.commit()
+    if not cur.rowcount: raise HTTPException(status_code=404,detail="Order not found.")
+    return {"success":True}
+
+
+class ActivityIn(BaseModel):
+    employee_id: int
+    related_order_id: Optional[int] = None
+    related_service_id: Optional[int] = None
+    task_type: str = ""
+    product_id: Optional[int] = None
+    quantity: float = 0
+    unit: str = ""
+    start_time: str = ""
+    completion_time: str = ""
+    task_status: str = "Pending"
+    proof_ref: str = ""
+    remarks: str = ""
+
+
+@api.app.post("/api/business/activities")
+def create_business_activity(body: ActivityIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
+    if not conn.execute("SELECT 1 FROM employees WHERE id=? AND active=1",(body.employee_id,)).fetchone():
+        raise HTTPException(status_code=400,detail="Select an active employee.")
+    cur=conn.execute(
+        """INSERT INTO bt_activities(employee_id,related_order_id,related_service_id,task_type,product_id,quantity,
+           unit,assigned_by,start_time,completion_time,task_status,proof_ref,remarks,created_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (body.employee_id,body.related_order_id,body.related_service_id,body.task_type,body.product_id,body.quantity,
+         body.unit,user.get("username",""),body.start_time,body.completion_time,body.task_status,body.proof_ref,body.remarks,_now()),
+    )
+    conn.commit()
+    return {"success":True,"id":cur.lastrowid}
 
 
 @api.app.get("/api/customers/prospects")

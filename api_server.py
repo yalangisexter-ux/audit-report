@@ -6,6 +6,7 @@ import sys
 import json
 import sqlite3
 import secrets
+import csv
 from pathlib import Path
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
@@ -13,7 +14,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 # Ensure repo root is in python path
@@ -215,12 +216,32 @@ class ProductModel(BaseModel):
     sku: Optional[str] = ""
     category: Optional[str] = "General"
     brand: Optional[str] = ""
+    package_type: Optional[str] = ""
     base_unit: Optional[str] = "PCS"
     opening_stock: Optional[float] = 0.0
     received_qty: Optional[float] = 0.0
     reserved_qty: Optional[float] = 0.0
-    reorder_level: Optional[float] = 0.0
+    dispatched_qty: Optional[float] = 0.0
+    free_qty: Optional[float] = 0.0
+    returned_qty: Optional[float] = 0.0
+    damaged_qty: Optional[float] = 0.0
+    expired_qty: Optional[float] = 0.0
+    quarantined_qty: Optional[float] = 0.0
+    purchase_cost: Optional[float] = 0.0
     selling_price: Optional[float] = 0.0
+    reorder_level: Optional[float] = 0.0
+    batch_number: Optional[str] = ""
+    expiry_date: Optional[str] = ""
+    storage_location: Optional[str] = ""
+
+
+class StockTransactionModel(BaseModel):
+    txn_type: str
+    quantity: float
+    unit: Optional[str] = ""
+    reference: Optional[str] = ""
+    notes: Optional[str] = ""
+
 
 class ServiceModel(BaseModel):
     name: str
@@ -723,6 +744,27 @@ def delete_task(task_id: int, conn: sqlite3.Connection = Depends(get_db)):
 
 
 # --- Attendance & Working Calendar ---
+@app.get("/api/tracker")
+def employee_tracker(target_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
+    day = target_date or date.today().isoformat()
+    rows = conn.execute(
+        """SELECT e.id,e.name,e.employee_code,e.department,e.designation,
+                  COALESCE(a.attendance_status,'Unmarked') AS attendance_status,
+                  COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,
+                  COUNT(t.id) AS assigned_tasks,
+                  SUM(CASE WHEN lower(COALESCE(t.status,'')) IN ('completed','done','closed') THEN 1 ELSE 0 END) AS completed_tasks,
+                  SUM(CASE WHEN t.id IS NOT NULL AND lower(COALESCE(t.status,'')) NOT IN ('completed','done','closed') THEN 1 ELSE 0 END) AS open_tasks,
+                  COALESCE(g.target,'') AS target,COALESCE(g.target_status,'') AS target_status
+           FROM employees e
+           LEFT JOIN attendance a ON a.employee_id=e.id AND a.work_date=?
+           LEFT JOIN tasks t ON t.employee_id=e.id AND t.task_date=?
+           LEFT JOIN employee_targets g ON g.employee_id=e.id AND g.target_date=?
+           WHERE e.active=1
+           GROUP BY e.id,a.attendance_status,a.check_in,a.check_out,g.target,g.target_status
+           ORDER BY e.name COLLATE NOCASE""",(day,day,day)).fetchall()
+    return {"date":day,"employees":[dict(r) for r in rows]}
+
+
 @app.get("/api/attendance")
 def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
     selected_date = work_date or date.today().isoformat()
@@ -818,24 +860,102 @@ def delete_holiday(holiday_date: str, conn: sqlite3.Connection = Depends(get_db)
 # --- Business Tracking (Products & Services) ---
 @app.get("/api/business/products")
 def list_products(conn: sqlite3.Connection = Depends(get_db)):
-    rows = conn.execute("SELECT * FROM bt_products ORDER BY name ASC").fetchall()
+    rows = conn.execute("SELECT * FROM bt_products ORDER BY name COLLATE NOCASE ASC").fetchall()
     result = []
-    for r in rows:
-        d = dict(r)
-        d["available_stock"] = (d.get("opening_stock", 0) or 0) + (d.get("received_qty", 0) or 0) - (d.get("reserved_qty", 0) or 0)
-        result.append(d)
+    for row in rows:
+        item = dict(row)
+        item["available_stock"] = (
+            float(item.get("opening_stock") or 0) + float(item.get("received_qty") or 0)
+            - float(item.get("reserved_qty") or 0) - float(item.get("dispatched_qty") or 0)
+            - float(item.get("free_qty") or 0) - float(item.get("damaged_qty") or 0)
+            - float(item.get("expired_qty") or 0) - float(item.get("quarantined_qty") or 0)
+            + float(item.get("returned_qty") or 0)
+        )
+        item["low_stock"] = item["available_stock"] <= float(item.get("reorder_level") or 0)
+        result.append(item)
     return result
 
+
 @app.post("/api/business/products")
-def create_product(p: ProductModel, conn: sqlite3.Connection = Depends(get_db)):
+def create_product(p: ProductModel, user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    name = (p.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Product name is required.")
+    values = p.dict()
+    values["sku"] = (values.get("sku") or "").strip() or None
+    columns = ["name","sku","category","brand","package_type","base_unit","opening_stock","received_qty",
+               "reserved_qty","dispatched_qty","free_qty","returned_qty","damaged_qty","expired_qty",
+               "quarantined_qty","purchase_cost","selling_price","reorder_level","batch_number",
+               "expiry_date","storage_location","updated_by","updated_at"]
     now = desktop_app.now_text()
-    conn.execute(
-        """INSERT INTO bt_products(name, sku, category, brand, base_unit, opening_stock, received_qty, reserved_qty, reorder_level, selling_price, updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-        (p.name, p.sku, p.category, p.brand, p.base_unit, p.opening_stock, p.received_qty, p.reserved_qty, p.reorder_level, p.selling_price, now)
-    )
+    try:
+        cur = conn.execute("INSERT INTO bt_products("+",".join(columns)+") VALUES("+",".join("?" for _ in columns)+")",
+            tuple(values.get(c) if c not in ("updated_by","updated_at") else (user.get("username","") if c=="updated_by" else now) for c in columns))
+        product_id = cur.lastrowid
+        for kind, qty in (("Opening",p.opening_stock or 0),("Received",p.received_qty or 0)):
+            if qty:
+                conn.execute("INSERT INTO bt_stock_ledger(product_id,txn_type,quantity,unit,reference,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
+                    (product_id,kind,qty,p.base_unit or "PCS","Initial stock",user.get("username",""),now))
+        conn.commit()
+        return {"success": True, "id": product_id}
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail="This SKU already exists.") from exc
+
+
+@app.put("/api/business/products/{product_id}")
+def update_product(product_id: int, p: ProductModel, user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    if not conn.execute("SELECT 1 FROM bt_products WHERE id=?", (product_id,)).fetchone():
+        raise HTTPException(status_code=404, detail="Product not found.")
+    values = p.dict()
+    values["sku"] = (values.get("sku") or "").strip() or None
+    columns = ["name","sku","category","brand","package_type","base_unit","opening_stock","received_qty",
+               "reserved_qty","dispatched_qty","free_qty","returned_qty","damaged_qty","expired_qty",
+               "quarantined_qty","purchase_cost","selling_price","reorder_level","batch_number","expiry_date","storage_location"]
+    try:
+        conn.execute("UPDATE bt_products SET "+",".join(c+"=?" for c in columns)+",updated_by=?,updated_at=? WHERE id=?",
+            tuple(values.get(c) for c in columns)+(user.get("username",""),desktop_app.now_text(),product_id))
+        conn.commit()
+        return {"success": True}
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail="This SKU already exists.") from exc
+
+
+@app.get("/api/business/products/{product_id}/ledger")
+def product_stock_ledger(product_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    if not conn.execute("SELECT 1 FROM bt_products WHERE id=?", (product_id,)).fetchone():
+        raise HTTPException(status_code=404, detail="Product not found.")
+    return [dict(r) for r in conn.execute("SELECT * FROM bt_stock_ledger WHERE product_id=? ORDER BY id DESC LIMIT 500",(product_id,)).fetchall()]
+
+
+@app.post("/api/business/products/{product_id}/stock")
+def add_stock_transaction(product_id: int, item: StockTransactionModel, user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    product = conn.execute("SELECT * FROM bt_products WHERE id=?", (product_id,)).fetchone()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    kind = (item.txn_type or "").strip().title()
+    qty = float(item.quantity)
+    columns = {"Received":"received_qty","Reserved":"reserved_qty","Dispatched":"dispatched_qty","Free":"free_qty",
+               "Returned":"returned_qty","Damaged":"damaged_qty","Expired":"expired_qty","Quarantined":"quarantined_qty"}
+    if kind not in set(columns)|{"Reserve Released"} or qty <= 0:
+        raise HTTPException(status_code=400, detail="Choose a valid stock transaction and a quantity greater than zero.")
+    now = desktop_app.now_text()
+    if kind == "Reserve Released":
+        if qty > float(product["reserved_qty"] or 0):
+            raise HTTPException(status_code=400, detail="Released quantity exceeds reserved stock.")
+        conn.execute("UPDATE bt_products SET reserved_qty=reserved_qty-?,updated_at=?,updated_by=? WHERE id=?",(qty,now,user.get("username",""),product_id))
+    elif kind == "Dispatched":
+        release = min(float(product["reserved_qty"] or 0),qty)
+        conn.execute("UPDATE bt_products SET dispatched_qty=dispatched_qty+?,reserved_qty=reserved_qty-?,updated_at=?,updated_by=? WHERE id=?",(qty,release,now,user.get("username",""),product_id))
+    else:
+        col=columns[kind]
+        conn.execute(f"UPDATE bt_products SET {col}={col}+?,updated_at=?,updated_by=? WHERE id=?",(qty,now,user.get("username",""),product_id))
+    cur=conn.execute("INSERT INTO bt_stock_ledger(product_id,txn_type,quantity,unit,reference,notes,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        (product_id,kind,qty,item.unit or product["base_unit"] or "PCS",item.reference or "",item.notes or "",user.get("username",""),now))
     conn.commit()
-    return {"success": True}
+    return {"success":True,"id":cur.lastrowid}
+
 
 @app.get("/api/business/services")
 def list_services(conn: sqlite3.Connection = Depends(get_db)):
@@ -940,6 +1060,72 @@ def generate_report_preview(req: ReportOptionsModel, conn: sqlite3.Connection = 
     return {"preview_text": "\n".join(lines)}
 
 
+@app.post("/api/reports/export")
+def export_report(req: ReportOptionsModel, report_format: str = Query("pdf", alias="format"), conn: sqlite3.Connection = Depends(get_db)):
+    fmt=(report_format or "pdf").lower()
+    if fmt not in {"pdf","docx","csv"}:
+        raise HTTPException(status_code=400,detail="Supported formats are PDF, Word and CSV.")
+    preview=generate_report_preview(req,conn)["preview_text"]
+    out=Path(desktop_app.EXPORT_DIR);out.mkdir(parents=True,exist_ok=True)
+    target=out/f"Audit-Report-{req.date}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.{fmt}"
+    try:
+        if fmt=="csv":
+            with target.open("w",encoding="utf-8-sig",newline="") as f:
+                writer=csv.writer(f);writer.writerow(["Report line"]);writer.writerows([[x] for x in preview.splitlines()])
+            media="text/csv"
+        elif fmt=="docx":
+            from docx import Document
+            doc=Document();doc.add_heading("Raw Strength Calisthenics — Employee Audit Report",0)
+            for line in preview.splitlines(): doc.add_paragraph(line)
+            doc.save(str(target));media="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.platypus import SimpleDocTemplate,Preformatted
+            from reportlab.lib.styles import getSampleStyleSheet
+            safe=preview.encode("ascii","replace").decode("ascii")
+            doc=SimpleDocTemplate(str(target),pagesize=A4,rightMargin=32,leftMargin=32,topMargin=32,bottomMargin=32)
+            doc.build([Preformatted(safe,getSampleStyleSheet()["Code"])]);media="application/pdf"
+    except Exception as exc:
+        target.unlink(missing_ok=True)
+        raise HTTPException(status_code=500,detail=f"Report export failed: {exc}") from exc
+    return FileResponse(str(target),media_type=media,filename=target.name)
+
+
+@app.get("/api/archive")
+def list_archived_documents(conn: sqlite3.Connection = Depends(get_db)):
+    return [dict(r) for r in conn.execute(
+        "SELECT id,employee_id,report_date,file_name,mime_type,notes,uploaded_at,length(content) AS size_bytes FROM archived_documents ORDER BY uploaded_at DESC,id DESC LIMIT 500"
+    ).fetchall()]
+
+
+@app.post("/api/archive")
+async def upload_archived_document(file: UploadFile = File(...), report_date: str = Form(""), employee_id: Optional[int] = Form(None), notes: str = Form(""), user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    filename=Path(file.filename or "archive.bin").name
+    content=await file.read(25*1024*1024+1);await file.close()
+    if not content or len(content)>25*1024*1024:
+        raise HTTPException(status_code=413,detail="Archive file is empty or exceeds 25 MB.")
+    cur=conn.execute("INSERT INTO archived_documents(employee_id,report_date,file_name,mime_type,content,notes,uploaded_at) VALUES(?,?,?,?,?,?,?)",
+        (employee_id,report_date,filename,file.content_type or "application/octet-stream",content,notes,desktop_app.now_text()))
+    conn.commit()
+    return {"success":True,"id":cur.lastrowid}
+
+
+@app.get("/api/archive/{document_id}/download")
+def download_archived_document(document_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    row=conn.execute("SELECT file_name,mime_type,content FROM archived_documents WHERE id=?",(document_id,)).fetchone()
+    if not row: raise HTTPException(status_code=404,detail="Archived document not found.")
+    filename=Path(row["file_name"] or "archive.bin").name.replace('"',"")
+    return Response(content=bytes(row["content"]),media_type=row["mime_type"] or "application/octet-stream",
+        headers={"Content-Disposition":f'attachment; filename="{filename}"',"Cache-Control":"no-store"})
+
+
+@app.delete("/api/archive/{document_id}")
+def delete_archived_document(document_id: int, conn: sqlite3.Connection = Depends(get_db)):
+    cur=conn.execute("DELETE FROM archived_documents WHERE id=?",(document_id,));conn.commit()
+    if not cur.rowcount: raise HTTPException(status_code=404,detail="Archived document not found.")
+    return {"success":True}
+
+
 # --- Live Chat ---
 @app.get("/api/chat/messages")
 def get_chat_messages(channel: str = "general", conn: sqlite3.Connection = Depends(get_db)):
@@ -955,7 +1141,7 @@ def get_chat_messages(channel: str = "general", conn: sqlite3.Connection = Depen
     """)
     conn.commit()
     rows = conn.execute(
-        "SELECT * FROM local_chat_messages WHERE channel=? ORDER BY id ASC LIMIT 100", (channel,)
+        "SELECT id,channel,sender AS sender_name,role,content,created_at FROM local_chat_messages WHERE channel=? ORDER BY id ASC LIMIT 100", (channel,)
     ).fetchall()
     return [dict(r) for r in rows]
 

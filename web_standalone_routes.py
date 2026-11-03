@@ -109,6 +109,13 @@ async def import_web_database(
         # Close this request's connection before the atomic file replacement.
         conn.close()
         os.replace(temp_path, current)
+        # Treat an explicit import as a local data change and publish it through
+        # the existing encrypted installation-scoped transport.
+        manager = getattr(api, "WEB_SYNC_MANAGER", None)
+        if manager is not None:
+            manager.mark_pending()
+            if manager.sync is not None:
+                manager.sync.schedule_sync(1.0)
         # Apply web-only legacy username/collation normalization to the imported DB.
         try:
             import web_auth_shim

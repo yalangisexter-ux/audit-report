@@ -32,7 +32,6 @@ PUBLIC_PATHS = {
     "/api/auth/login",
     "/api/auth/setup",
     "/api/auth/status",
-    "/api/system/db-info",
     "/docs",
     "/openapi.json",
     "/redoc",

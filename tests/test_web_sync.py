@@ -50,3 +50,44 @@ def test_snapshot_validator_checks_required_tables(tmp_path):
     path = tmp_path / "snapshot.db"
     make_database(path, [])
     assert validate_snapshot(path)["employees"] == 0
+
+
+def test_merge_remaps_colliding_employee_and_task_ids_without_overwriting_local_rows(tmp_path):
+    local = tmp_path / "local-collision.db"
+    remote = tmp_path / "remote-collision.db"
+
+    schema = """
+        CREATE TABLE auth_users(id INTEGER PRIMARY KEY, username TEXT UNIQUE, updated_at TEXT, password_hash TEXT);
+        CREATE TABLE employees(id INTEGER PRIMARY KEY AUTOINCREMENT, employee_code TEXT UNIQUE, name TEXT, department TEXT, updated_at TEXT);
+        CREATE TABLE tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER, task_date TEXT, title TEXT, status TEXT, updated_at TEXT,
+                           FOREIGN KEY(employee_id) REFERENCES employees(id));
+    """
+    for path in (local, remote):
+        db = sqlite3.connect(path)
+        db.executescript(schema)
+        db.execute("INSERT INTO auth_users VALUES(1,'Admin','2026-01-01','hash')")
+        db.commit()
+        db.close()
+
+    db = sqlite3.connect(local)
+    db.execute("INSERT INTO employees VALUES(1,'EMP001','Local Employee','Ops','2026-01-01')")
+    db.execute("INSERT INTO tasks VALUES(1,1,'2026-01-03','Local task','In progress','2026-01-01')")
+    db.commit()
+    db.close()
+
+    db = sqlite3.connect(remote)
+    db.execute("INSERT INTO employees VALUES(1,'EMP002','Remote Employee','Ops','2026-01-02')")
+    db.execute("INSERT INTO tasks VALUES(1,1,'2026-01-03','Remote task','Completed','2026-01-02')")
+    db.commit()
+    db.close()
+
+    result = merge_snapshot_databases(local, remote)
+    db = sqlite3.connect(local)
+    try:
+        employees = {row[0]: row[1] for row in db.execute("SELECT id,employee_code FROM employees")}
+        tasks = db.execute("SELECT title,employee_id FROM tasks ORDER BY title").fetchall()
+        assert employees == {1: "EMP001", 2: "EMP002"}
+        assert tasks == [("Local task", 1), ("Remote task", 2)]
+        assert result["inserted"] >= 2
+    finally:
+        db.close()

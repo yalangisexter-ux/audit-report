@@ -49,72 +49,174 @@ def validate_snapshot(path: Path) -> dict:
         db.close()
 
 
-def merge_snapshot_databases(local_path: Path, remote_path: Path) -> dict:
-    """Union remote records into the local DB; newer updated_at rows win.
+def _identity_keys(table: str, columns: set[str], values: dict) -> list[str]:
+    candidates = {
+        "auth_users": [("username",)],
+        "employees": [("employee_code",), ("name", "department", "joining_date")],
+        "tasks": [("employee_id", "task_date", "title")],
+        "attendance": [("employee_id", "work_date")],
+        "bt_products": [("sku",), ("name", "category", "brand")],
+        "bt_orders": [("external_order_id",), ("order_date", "customer_name", "order_value")],
+        "bt_services": [("name", "category")],
+        "bt_members": [("name", "contact", "registration_date")],
+        "customer_prospects": [("dedupe_key",)],
+        "employee_targets": [("employee_id", "target_date")],
+        "source_reports": [("report_date", "source_filename")],
+        "archived_documents": [("file_name", "report_date", "uploaded_at")],
+        "local_chat_messages": [("channel", "sender", "content", "created_at")],
+    }.get(table, [])
+    for key in candidates:
+        if all(column in columns for column in key):
+            if all(values.get(column) not in (None, "") for column in key):
+                return list(key)
+    return []
 
-    Local-only rows are never deleted. Tables without primary keys are skipped.
-    This deliberately favors preservation over destructive snapshot replacement.
+
+def _timestamp_column(columns: set[str]) -> str | None:
+    for name in ("updated_at", "uploaded_at", "created_at", "timestamp", "updated_on"):
+        if name in columns:
+            return name
+    return None
+
+
+def _ordered_common_tables(local, remote) -> list[str]:
+    common = _tables(local) & _tables(remote)
+    dependencies = {}
+    for table in common:
+        try:
+            dependencies[table] = {
+                row[2] for row in local.execute(f"PRAGMA foreign_key_list({_q(table)})")
+                if row[2] in common and row[2] != table
+            }
+        except sqlite3.Error:
+            dependencies[table] = set()
+    ordered, visiting, visited = [], set(), set()
+
+    def visit(table):
+        if table in visited:
+            return
+        if table in visiting:
+            return
+        visiting.add(table)
+        for parent in sorted(dependencies.get(table, ())):
+            visit(parent)
+        visiting.remove(table)
+        visited.add(table)
+        ordered.append(table)
+
+    for table in sorted(common):
+        visit(table)
+    return ordered
+
+
+def merge_snapshot_databases(local_path: Path, remote_path: Path) -> dict:
+    """Safely union snapshots, remapping colliding integer IDs and child foreign keys.
+
+    Existing local-only records are never deleted. Matching records use stable natural
+    keys where available; a primary-key collision between different records receives
+    a fresh local ID instead of overwriting the local record.
     """
     local = sqlite3.connect(str(local_path), timeout=30)
     remote = sqlite3.connect(f"file:{remote_path}?mode=ro", uri=True, timeout=30)
     local.row_factory = sqlite3.Row
     remote.row_factory = sqlite3.Row
     inserted = updated = conflicts = 0
+    id_maps: dict[str, dict[object, object]] = {}
     try:
         local.execute("PRAGMA foreign_keys=OFF")
         local.execute("BEGIN IMMEDIATE")
-        for table in sorted(_tables(local) & _tables(remote)):
-            li = local.execute(f"PRAGMA table_info({_q(table)})").fetchall()
-            ri = remote.execute(f"PRAGMA table_info({_q(table)})").fetchall()
-            remote_cols = {r["name"] for r in ri}
-            cols = [r["name"] for r in li if r["name"] in remote_cols]
-            pks = [r["name"] for r in sorted(li, key=lambda x: x["pk"] or 999) if r["pk"] and r["name"] in remote_cols]
-            if not cols or not pks:
+        for table in _ordered_common_tables(local, remote):
+            local_info = local.execute(f"PRAGMA table_info({_q(table)})").fetchall()
+            remote_info = remote.execute(f"PRAGMA table_info({_q(table)})").fetchall()
+            remote_cols = {row["name"] for row in remote_info}
+            cols = [row["name"] for row in local_info if row["name"] in remote_cols]
+            primary = [row["name"] for row in sorted(local_info, key=lambda row: row["pk"] or 999) if row["pk"]]
+            if not cols or len(primary) != 1 or primary[0] not in remote_cols:
                 continue
-            col_sql = ",".join(_q(c) for c in cols)
-            marks = ",".join("?" for _ in cols)
-            for row in remote.execute(f"SELECT {col_sql} FROM {_q(table)}"):
-                values = dict(row)
-                if table == "auth_users" and "username" in cols:
+            pk = primary[0]
+            col_set = set(cols)
+            table_map = id_maps.setdefault(table, {})
+            foreign_keys = local.execute(f"PRAGMA foreign_key_list({_q(table)})").fetchall()
+            rows = remote.execute("SELECT " + ",".join(_q(c) for c in cols) + " FROM " + _q(table))
+            for remote_row in rows:
+                values = dict(remote_row)
+                remote_pk = values.get(pk)
+                # Parent rows are processed first so foreign keys can be remapped.
+                for fk in foreign_keys:
+                    child_col, parent_table, parent_col = fk[3], fk[2], fk[4]
+                    if child_col in values and parent_col == "id" and values[child_col] is not None:
+                        mapped = id_maps.get(parent_table, {}).get(values[child_col])
+                        if mapped is not None:
+                            values[child_col] = mapped
+
+                identity = _identity_keys(table, col_set, values)
+                existing = None
+                if identity:
+                    where = " AND ".join(_q(c) + " IS ?" for c in identity)
+                    params = tuple(values.get(c) for c in identity)
+                    if table == "auth_users" and identity == ["username"]:
+                        where = _q("username") + "=? COLLATE BINARY"
+                    existing = local.execute("SELECT * FROM " + _q(table) + " WHERE " + where + " LIMIT 1", params).fetchone()
+
+                if existing is None and not identity:
                     existing = local.execute(
-                        f"SELECT * FROM {_q(table)} WHERE username=? COLLATE BINARY LIMIT 1",
-                        (values.get("username"),),
+                        "SELECT * FROM " + _q(table) + " WHERE " + _q(pk) + " IS ? LIMIT 1",
+                        (remote_pk,),
                     ).fetchone()
-                else:
-                    where = " AND ".join(f"{_q(c)} IS ?" for c in pks)
-                    existing = local.execute(
-                        f"SELECT * FROM {_q(table)} WHERE {where}",
-                        tuple(values.get(c) for c in pks),
-                    ).fetchone()
-                if existing is None:
+
+                # A stable natural identity may already exist under another local ID.
+                if existing is not None:
+                    local_pk = existing[pk]
+                    if remote_pk is not None:
+                        table_map[remote_pk] = local_pk
+                    timestamp_col = _timestamp_column(col_set)
+                    if timestamp_col:
+                        remote_time = str(values.get(timestamp_col) or "")
+                        local_time = str(existing[timestamp_col] or "")
+                        if remote_time > local_time:
+                            updates = [c for c in cols if c != pk]
+                            if updates:
+                                local.execute(
+                                    "UPDATE " + _q(table) + " SET " +
+                                    ",".join(_q(c) + "=?" for c in updates) +
+                                    " WHERE " + _q(pk) + "=?",
+                                    tuple(values.get(c) for c in updates) + (local_pk,),
+                                )
+                                updated += int(local.execute("SELECT changes()").fetchone()[0] > 0)
+                    continue
+
+                insert_cols = list(cols)
+                insert_values = dict(values)
+                try:
+                    local.execute(
+                        "INSERT INTO " + _q(table) + " (" + ",".join(_q(c) for c in insert_cols) +
+                        ") VALUES (" + ",".join("?" for _ in insert_cols) + ")",
+                        tuple(insert_values.get(c) for c in insert_cols),
+                    )
+                    local_pk = local.execute("SELECT last_insert_rowid()").fetchone()[0] if pk == "id" else insert_values.get(pk)
+                    inserted += 1
+                except sqlite3.IntegrityError:
+                    # A PK collision between different rows is not an update. Allocate
+                    # a fresh local ID, then remap any remote child references.
+                    if pk not in insert_cols or not isinstance(insert_values.get(pk), int):
+                        conflicts += 1
+                        continue
+                    insert_cols = [c for c in cols if c != pk]
                     try:
                         local.execute(
-                            f"INSERT OR IGNORE INTO {_q(table)} ({col_sql}) VALUES ({marks})",
-                            tuple(values.get(c) for c in cols),
+                            "INSERT INTO " + _q(table) + " (" + ",".join(_q(c) for c in insert_cols) +
+                            ") VALUES (" + ",".join("?" for _ in insert_cols) + ")",
+                            tuple(insert_values.get(c) for c in insert_cols),
                         )
-                        inserted += int(local.execute("SELECT changes()").fetchone()[0] > 0)
+                        local_pk = local.execute("SELECT last_insert_rowid()").fetchone()[0]
+                        inserted += 1
                     except sqlite3.Error:
                         conflicts += 1
-                    continue
-                if "updated_at" not in cols:
-                    continue
-                if str(values.get("updated_at") or "") <= str(existing["updated_at"] or ""):
-                    continue
-                updates = [c for c in cols if c not in pks]
-                if table == "auth_users":
-                    updates = [c for c in updates if c != "id"]
-                    where = "username=? COLLATE BINARY"
-                    keys = (values.get("username"),)
-                else:
-                    where = " AND ".join(f"{_q(c)} IS ?" for c in pks)
-                    keys = tuple(values.get(c) for c in pks)
-                if updates:
-                    local.execute(
-                        f"UPDATE {_q(table)} SET " + ",".join(f"{_q(c)}=?" for c in updates) + f" WHERE {where}",
-                        tuple(values.get(c) for c in updates) + keys,
-                    )
-                    updated += int(local.execute("SELECT changes()").fetchone()[0] > 0)
+                        continue
+                if remote_pk is not None:
+                    table_map[remote_pk] = local_pk
         local.commit()
+        local.execute("PRAGMA foreign_keys=ON")
         return {"inserted": inserted, "updated": updated, "conflicts": conflicts}
     except Exception:
         local.rollback()
