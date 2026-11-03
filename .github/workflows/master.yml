@@ -4,14 +4,17 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feature/cloudflare-live-chat, webapp/rebuild-v2, fix/windows-exe-parity-hardening]
+    branches: [main]
     paths-ignore:
       - "customer-data/**"
+      - "tools/TRIGGER_*"
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# Keep only the latest build for each branch. New code pushes cancel stale builds.
+# Encrypted customer database snapshots do not need a full Windows installer build.
 concurrency:
   group: audit-report-main-release-${{ github.ref }}
   cancel-in-progress: true
