@@ -1,0 +1,27 @@
+name: Apply Phase 1 App UI
+on:
+  push:
+    paths:
+      - "tools/app_b64_*.txt"
+      - "tools/apply_new_app_jsx.py"
+      - ".github/workflows/apply-phase1-app.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode App.jsx
+        run: |
+          python3 tools/apply_new_app_jsx.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/App.jsx
+          if git diff --cached --quiet; then echo No change; exit 0; fi
+          git commit -m "feat(web): Phase 1 dense Employees/Tasks/Attendance/Dashboard UI"
+          git push
