@@ -1,0 +1,32 @@
+name: Apply Phase 1 parity
+on:
+  push:
+    paths:
+      - "tools/phase1_chunks/**"
+      - "tools/assemble_phase1_apply.py"
+      - ".github/workflows/apply-phase1-parity.yml"
+      - "tools/TRIGGER_PHASE1_PARITY"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble and apply
+        run: |
+          set -euo pipefail
+          python3 tools/assemble_phase1_apply.py
+          python3 tools/apply_phase1_dashboard_only.py
+          python3 tools/apply_phase1_app_only.py
+          python3 -m py_compile api_server.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api_server.py frontend/src/App.jsx
+          if git diff --cached --quiet; then echo No change; exit 0; fi
+          git commit -m "feat(web): Phase 1 dashboard productivity + dense Employees/Tasks/Attendance UI"
+          git push
