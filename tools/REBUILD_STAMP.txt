@@ -1,0 +1,3 @@
+v1.3.69 customer update rebuild
+All version pins aligned.
+Installer AppId restored for in-place upgrade from old installs.
