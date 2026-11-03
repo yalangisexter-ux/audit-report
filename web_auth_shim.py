@@ -213,20 +213,40 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
             ]
     except Exception:
         count, total_accounts, employees, tasks, usernames = 0, 0, 0, 0, []
+    manager = getattr(api, "WEB_SYNC_MANAGER", None)
+    standalone = os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
+    pull_state = getattr(manager, "last_pull", {}) if manager is not None else {}
+    sync_configured = bool(manager is not None and getattr(manager, "configured", False))
+    sync_status = str(getattr(manager, "status", "Encrypted database sync is unavailable"))
+    pull_ok = bool(pull_state.get("ok"))
+    pull_error = str(pull_state.get("error") or "")[:240]
+    # Never offer first-admin setup merely because a sync secret is missing or
+    # a remote snapshot could not be read. That can mask an existing customer DB.
+    setup_safe = (not standalone) or (sync_configured and pull_ok)
+    setup_required = total_accounts == 0 and setup_safe
+    setup_blocked_reason = ""
+    if standalone and total_accounts == 0 and not setup_safe:
+        setup_blocked_reason = (
+            "Account setup is temporarily disabled because the existing encrypted database "
+            "could not be verified. Check the Render DB_SYNC_ENCRYPTION_SECRET and database-sync "
+            "Worker connection; do not create a replacement Admin account."
+        )
     return {
         "user_count": count,
         "usernames": usernames,
         "employee_count": employees,
         "task_count": tasks,
-        "setup_required": total_accounts == 0,
+        "setup_required": setup_required,
+        "setup_blocked_reason": setup_blocked_reason,
+        "sync": {"configured": sync_configured, "status": sync_status, "error": pull_error},
         "pull": {
-            "ok": bool((_LAST_PULL or {}).get("ok")),
-            "auth_users": int((_LAST_PULL or {}).get("auth_users") or 0),
-            "employees": int((_LAST_PULL or {}).get("employees") or 0),
-            "tasks": int((_LAST_PULL or {}).get("tasks") or 0),
-            "error": str((_LAST_PULL or {}).get("error") or "")[:240],
+            "ok": pull_ok,
+            "auth_users": int(pull_state.get("auth_users") or 0),
+            "employees": int(pull_state.get("employees") or 0),
+            "tasks": int(pull_state.get("tasks") or 0),
+            "error": pull_error,
         },
-        "hint": "Use Admin / Shiva@01 (customer) or admin with the developer password. Usernames accept Admin or admin.",
+        "hint": "Sign in with the existing Admin account. First-admin setup is available only after the database has been verified as empty.",
     }
 
 
