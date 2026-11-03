@@ -87,12 +87,12 @@ def _force_case_sensitive_usernames(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_bootstrap_admin(db_path: Path) -> None:
-    """Placeholder — replaced at runtime by tools.force_admin_login_heal."""
-    print("[Auth] _ensure_bootstrap_admin placeholder (force_admin_login_heal not yet loaded)")
+    """Do not modify existing accounts or credentials during web startup."""
+    return
 
 
 def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
-    """Placeholder — replaced at runtime by tools.force_admin_login_heal."""
+    """Verify the exact stored desktop credential without mutating the account."""
     import app as desktop_app
 
     def verify(row, pwd):
