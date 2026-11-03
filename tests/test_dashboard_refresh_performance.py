@@ -41,4 +41,5 @@ def test_refresh_dashboard_runs_when_selected_as_queue_job():
     source = Path(app.__file__).read_text(encoding="utf-8")
     assert "_allow_dashboard_refresh_in_queue" in source
     assert "Coalesce concurrent dashboard refresh requests" in source
-    assert 'getattr(job, "__name__", "") == "refresh_dashboard"' in source or "job is getattr(self, "refresh_dashboard"" in source
+    assert 'getattr(job, "__name__", "") == "refresh_dashboard"' in source
+    assert "Allow the queued dashboard step itself to run fully" in source
