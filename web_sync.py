@@ -172,7 +172,7 @@ class WebDatabaseSync:
             target_installation_id=self.installation_id,
             candidate_secret=self.secret, prefer_latest=False,
         )
-        if not payload.startswith(b"SQLite format 3\\x00"):
+        if not payload.startswith(b"SQLite format 3\x00"):
             raise ValueError("Worker snapshot is not a SQLite database")
         return payload
 
