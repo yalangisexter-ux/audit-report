@@ -235,3 +235,9 @@ try:
     import tools.force_admin_login_heal  # noqa: F401
 except Exception as _heal_boot:
     print(f"[Web Boot] force_admin_login_heal skipped: {_heal_boot}")
+
+# Force-register status in case decorator order was lost during compact restore
+try:
+    api.app.add_api_route("/api/auth/status", web_auth_status, methods=["GET"])
+except Exception as _reg:
+    print(f"[Web Boot] status route register: {_reg}")
