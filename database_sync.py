@@ -12,6 +12,7 @@ import secrets
 import sqlite3
 import tempfile
 import threading
+import weakref
 import zlib
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +32,19 @@ except Exception:
 _SNAPSHOT_MAGIC = b"RSCDB1"
 _SNAPSHOT_AAD = b"RawStrengthEmployeeAuditManager:encrypted-customer-database:v1"
 _MAX_SNAPSHOT_BYTES = 60 * 1024 * 1024
+
+# Track sync managers so test teardown can stop every background worker.
+_SYNC_INSTANCES = weakref.WeakSet()
+
+
+def close_all_sync_workers(timeout=2.0):
+    """Stop all live database-sync workers during deterministic test teardown."""
+    for sync in list(_SYNC_INSTANCES):
+        try:
+            sync.close(timeout=timeout)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not close a database-sync worker")
+
 # Optional built-in GitHub token for customer installations.
 # Leave empty. A real token must never be committed; set it only in a private build
 # or via a protected deployment secret if automatic push without customer entry is required.
@@ -307,6 +321,7 @@ class GitHubDatabaseSync:
         self._closed = False
         self._thread = None
         self._sync_timer = None
+        _SYNC_INSTANCES.add(self)
 
     @property
     def has_token(self):
@@ -452,6 +467,11 @@ class GitHubDatabaseSync:
                 with self._lock:
                     self._busy = False
                 break
+            # Do not begin another queued network operation after shutdown starts.
+            with self._lock:
+                if self._closed:
+                    self._busy = False
+                    return
             try:
                 if self.is_configured:
                     self._sync_once()

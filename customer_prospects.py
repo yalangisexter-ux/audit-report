@@ -719,6 +719,22 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
             else:
                 record["maps"] = maps_value
 
+            # Upgrade generic Maps search links to include the canonical business
+            # name and known address. Keep direct place/pin URLs untouched.
+            if record.get("maps"):
+                parsed_maps = urllib.parse.urlparse(record["maps"])
+                maps_host = parsed_maps.netloc.casefold()
+                maps_params = urllib.parse.parse_qs(parsed_maps.query)
+                query_text = " ".join(maps_params.get("q", []) + maps_params.get("query", []))
+                if (
+                    (maps_host == "google.com" or maps_host.endswith(".google.com"))
+                    and query_text
+                    and record["business_name"].casefold() not in urllib.parse.unquote(query_text).casefold()
+                ):
+                    canonical_maps = google_maps_search_url(record)
+                    if canonical_maps:
+                        record["maps"] = canonical_maps
+
             p_raw = str(record.get("phone") or "").strip()
             a_raw = str(record.get("area") or "").strip()
             p_digits = re.sub(r'\D', '', p_raw)
