@@ -421,7 +421,21 @@ def test_dashboard_summaries_and_progress_widgets_remain_accurate(monkeypatch, t
         window.apply_theme("day")
         for _ in range(3):
             window.refresh_dashboard()
-        qt_app.processEvents()
+
+        # The constructor schedules a sliced refresh queue. Wait for that real
+        # event-loop work to drain instead of assuming a single processEvents()
+        # call runs every queued timer and callback.
+        import time
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            qt_app.processEvents()
+            if (
+                not getattr(window, "_refresh_queue_active", False)
+                and not getattr(window, "_dashboard_refresh_pending", False)
+                and "1 Present" in window.dashboard_attendance_summary.text()
+            ):
+                break
+            time.sleep(0.005)
 
         assert "1 Present" in window.dashboard_attendance_summary.text()
         assert "1 Absent" in window.dashboard_attendance_summary.text()
@@ -433,6 +447,15 @@ def test_dashboard_summaries_and_progress_widgets_remain_accurate(monkeypatch, t
         assert all(isinstance(bar, app.QProgressBar) and bar.toolTip() for bar in bars)
     finally:
         window.close()
+        # Allow already-posted singleShot callbacks to fire after close. They
+        # must observe the closing guard and never query the closed DB.
+        import time
+        close_deadline = time.monotonic() + 0.1
+        while time.monotonic() < close_deadline:
+            qt_app.processEvents()
+            time.sleep(0.005)
+        assert getattr(window, "_is_closing", False)
+        assert not getattr(window, "_refresh_queue_active", False)
         db.conn.close()
 
 

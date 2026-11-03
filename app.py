@@ -10064,6 +10064,12 @@ class MainWindow(QMainWindow):
         self._refresh_github_sync_status()
 
     def closeEvent(self, event):
+        # Stop deferred UI work before any database or widget teardown.
+        self._is_closing = True
+        self._refresh_queue = []
+        self._refresh_queue_active = False
+        self._refresh_queue_pending = False
+        self._dashboard_refresh_pending = False
         # Invalidate pending results and stop read-only workers before teardown.
         self._dashboard_productivity_generation = getattr(
             self, "_dashboard_productivity_generation", 0
@@ -10378,6 +10384,8 @@ class MainWindow(QMainWindow):
 
     def refresh_all(self):
         """Refresh application views in short event-loop slices so navigation stays responsive."""
+        if getattr(self, "_is_closing", False):
+            return
         if getattr(self, "_refresh_queue_active", False):
             self._refresh_queue_pending = True
             return
@@ -10404,6 +10412,12 @@ class MainWindow(QMainWindow):
 
     def _run_refresh_queue_step(self):
         """Run one refresh operation per event-loop turn; never monopolize the UI with a batch."""
+        if getattr(self, "_is_closing", False):
+            self._refresh_queue = []
+            self._refresh_queue_active = False
+            self._refresh_queue_pending = False
+            self._dashboard_refresh_pending = False
+            return
         queue = getattr(self, "_refresh_queue", [])
         if queue:
             job = queue.pop(0)
@@ -11890,6 +11904,8 @@ class MainWindow(QMainWindow):
                 self.attendance_summary_table.setItem(row_index, column, item)
 
     def refresh_dashboard(self):
+        if getattr(self, "_is_closing", False):
+            return
         # Coalesce dashboard refresh requests raised by child refreshes in refresh_all.
         if getattr(self, "_refresh_queue_active", False):
             self._dashboard_refresh_pending = True
@@ -12055,6 +12071,8 @@ class MainWindow(QMainWindow):
         worker.deleteLater()
 
     def _on_dashboard_productivity_failed(self, generation, error_text):
+        if getattr(self, "_is_closing", False):
+            return
         if generation != getattr(self, "_dashboard_productivity_generation", None):
             return
         logging.getLogger("app").error(
@@ -12068,6 +12086,8 @@ class MainWindow(QMainWindow):
             )
 
     def _on_dashboard_productivity_ready(self, generation, prepared_rows):
+        if getattr(self, "_is_closing", False):
+            return
         if generation != getattr(self, "_dashboard_productivity_generation", None):
             return
         self._dashboard_productivity_prepared_rows = prepared_rows
@@ -12075,6 +12095,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_dashboard_productivity_batch(self, generation):
         """Render at most four prepared productivity rows per event-loop turn."""
+        if getattr(self, "_is_closing", False):
+            return
         if generation != getattr(self, "_dashboard_productivity_generation", None):
             return
         queue = getattr(self, "_dashboard_productivity_queue", [])
