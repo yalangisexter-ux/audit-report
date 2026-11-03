@@ -1,0 +1,27 @@
+name: Apply dashboard every-open hang fix
+on:
+  push:
+    paths:
+      - "tools/apply_dashboard_every_open_fix.py"
+      - ".github/workflows/apply-dashboard-every-open-fix.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply fix
+        run: python3 tools/apply_dashboard_every_open_fix.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py tests/test_dashboard_productivity_async.py
+          if git diff --cached --quiet; then
+            echo "No change"
+            exit 0
+          fi
+          git commit -m "fix: dashboard every-open hang - pause wallpaper and strip page drop-shadows"
+          git push
