@@ -13,11 +13,11 @@ on:
 permissions:
   contents: write
 
-# Keep only the latest build for each branch. New code pushes cancel stale builds.
+# Run every requested validation to completion; do not cancel builds after a new push.
 # Encrypted customer database snapshots do not need a full Windows installer build.
 concurrency:
   group: audit-report-main-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -135,6 +135,12 @@ jobs:
             if (-not $source.Contains($replacement)) { throw "Could not inject production Live Chat endpoint." }
             Set-Content -Path $sourcePath -Value $source -Encoding utf8
           }
+
+      - name: Compile all Python modules
+        shell: pwsh
+        run: |
+          python -m compileall -q .
+          if ($LASTEXITCODE -ne 0) { throw "Python syntax compilation failed with exit code $LASTEXITCODE" }
 
       - name: Run regression tests
         shell: pwsh
