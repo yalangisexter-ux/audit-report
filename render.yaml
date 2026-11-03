@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: audit-report-web
+    runtime: python
+    # SQLite and the file-backed web sessions require one persistent instance.
+    # Render disks are available on paid services; Free instances are ephemeral.
+    plan: starter
+    numInstances: 1
+    autoDeploy: true
+    region: oregon
+    # Keep the existing full-featured web client and web-only FastAPI entrypoint.
+    # Do not build or replace the Windows EXE from this Render service.
+    buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt && npm --prefix frontend ci --include=dev && npm --prefix frontend run build
+    startCommand: python -c "import os; import web_auth_shim; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      - key: QT_QPA_PLATFORM
+        value: offscreen
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: WEB_STANDALONE
+        value: "1"
+      - key: AUDIT_DATA_DIR
+        value: "/var/data"
+      - key: WEB_REQUIRE_LOGIN
+        value: "1"
+      - key: SKIP_INITIAL_AUDIT_SEED
+        value: "1"
+      - key: WEB_PURGE_SEED_DATA
+        value: "0"
+      - key: WEB_PURGE_DEMO_ROSTER
+        value: "0"
+    disk:
+      name: audit-report-web-data
+      mountPath: /var/data
+      sizeGB: 10
+    healthCheckPath: /api/health
