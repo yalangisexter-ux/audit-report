@@ -8,7 +8,6 @@ import html
 import io
 import json
 import logging
-import os
 from pathlib import Path
 import re
 import sys
@@ -32,7 +31,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -125,15 +123,6 @@ FIELD_ALIASES = {
     "connection": {"connectednotconnected", "connectednotconntected", "connectionstatus", "contactstatus"},
     "verified": {"verifiedyesno", "verifiedbycall", "verified", "callverified"},
     "response": {"response", "interestednotinterested", "interest"},
-    "store_id": {"storeid", "store_id", "id", "storenumber"},
-    "store_type": {"storetype", "store_type", "type", "operationtype"},
-    "product_categories": {"productcategories", "productcategory", "products", "categories", "productrange"},
-    "product_evidence": {"productevidence", "product_evidence", "evidence", "evidencelink", "proof"},
-    "postal_code": {"pincode", "pin", "postalcode", "zip", "zipcode", "postcode"},
-    "country": {"country", "nation"},
-    "product_catalog": {"productcatalog", "catalog", "catalogurl", "cataloglink", "storecatalog"},
-    "verification_status": {"verificationstatus", "verification_status", "status"},
-    "last_verified": {"lastverified", "last_verified", "verifieddate", "lastchecked"},
 }
 ALIAS_TO_FIELD = {alias: field for field, aliases in FIELD_ALIASES.items() for alias in aliases}
 
@@ -369,8 +358,7 @@ def _cell_text(value):
 def normalise_state(value, fallback=""):
     raw = _cell_text(value) or _cell_text(fallback)
     raw = raw.replace("&", " and ")
-    clean_raw = re.sub(r"\s*\([^)]*\)", "", raw).strip()
-    key = _normalise_key(clean_raw)
+    key = _normalise_key(raw)
     if key in ("allindia", "india", "panindia"):
         fb_key = _normalise_key(_cell_text(fallback))
         if fb_key in STATE_NAMES:
@@ -378,12 +366,12 @@ def normalise_state(value, fallback=""):
         return "Delhi, Maharashtra, Karnataka, Uttar Pradesh, Haryana"
     if key in STATE_NAMES:
         return STATE_NAMES[key]
-    for suffix in ("stores", "store", "gym", "ut"):
+    for suffix in ("stores", "store", "gym"):
         if key.endswith(suffix):
-            k_sub = key[:-len(suffix)]
-            if k_sub in STATE_NAMES:
-                return STATE_NAMES[k_sub]
-    return " ".join(part.capitalize() for part in clean_raw.split())
+            key = key[:-len(suffix)]
+            if key in STATE_NAMES:
+                return STATE_NAMES[key]
+    return " ".join(part.capitalize() for part in raw.split())
 
 
 def _canonical_header(value):
@@ -419,46 +407,8 @@ def _checked_xlsx_path(path):
 
 
 def parse_database_workbook(path):
-    """Read prospect rows from all sheets or CSV without changing the selected file."""
-    source = Path(path)
-    if not source.is_file():
-        raise ValueError("The selected workbook could not be found.")
-    if source.stat().st_size > MAX_WORKBOOK_BYTES:
-        raise ValueError("Workbook is larger than the 50 MB import limit.")
-    if source.stat().st_size == 0:
-        raise ValueError("The selected workbook is empty.")
-
-    if source.suffix.casefold() == ".csv":
-        records = []
-        scanned_rows = 0
-        skipped_unidentified = 0
-        with open(source, "r", encoding="utf-8-sig", errors="replace") as f:
-            reader = csv.reader(f)
-            headers = next(reader, [])
-            fields = [_canonical_header(h) for h in headers]
-            for row_idx, values in enumerate(reader, start=2):
-                if not values or not any(str(v).strip() for v in values):
-                    continue
-                scanned_rows += 1
-                record = {field: "" for field in FIELD_ALIASES}
-                for field, val in zip(fields, values):
-                    if field:
-                        text = str(val or "").strip()
-                        if text:
-                            record[field] = text
-                if not any(record.get(k) for k in ("business_name", "phone", "address")):
-                    skipped_unidentified += 1
-                    continue
-                combined_text = f"{record.get('business_name', '')} {record.get('business_category', '')}"
-                if NEGATIVE_FILTER_PATTERN.search(combined_text):
-                    continue
-                record["kind"] = record.get("kind") or "Store"
-                record["state"] = normalise_state(record.get("state", ""), source.stem)
-                record["source_sheet"] = source.name
-                record["source_row"] = row_idx
-                records.append(record)
-        return records, {"scanned_rows": scanned_rows, "skipped_unidentified": skipped_unidentified}
-
+    """Read prospect rows from all sheets without changing the selected file."""
+    source = _checked_xlsx_path(path)
     workbook = load_workbook(source, read_only=True, data_only=True, keep_links=False)
     records = []
     scanned_rows = 0
@@ -504,42 +454,7 @@ def parse_database_workbook(path):
 
 def parse_dashboard_workbook(path):
     """Read the state/UT store-count reference without changing the workbook."""
-    source = Path(path)
-    if not source.is_file():
-        raise ValueError("The selected workbook could not be found.")
-    if source.stat().st_size > MAX_WORKBOOK_BYTES:
-        raise ValueError("Workbook is larger than the 50 MB import limit.")
-    if source.stat().st_size == 0:
-        raise ValueError("The selected workbook is empty.")
-
-    if source.suffix.casefold() == ".csv":
-        counts = {}
-        declared_total = None
-        with open(source, "r", encoding="utf-8-sig", errors="replace") as f:
-            reader = csv.reader(f)
-            headers = next(reader, [])
-            state_index = next((i for i, v in enumerate(headers) if _normalise_key(v) in {"state", "stateut", "stateunionterritory"}), None)
-            count_index = next((i for i, v in enumerate(headers) if _normalise_key(v) in {"stores", "storecount", "count", "totalstores"}), None)
-            if state_index is not None and count_index is not None:
-                for values in reader:
-                    if state_index >= len(values) or count_index >= len(values):
-                        continue
-                    label = str(values[state_index] or "").strip()
-                    raw_count = values[count_index]
-                    if not label or raw_count is None:
-                        continue
-                    try:
-                        count = int(float(str(raw_count).replace(",", "").strip()))
-                    except (TypeError, ValueError):
-                        continue
-                    if _normalise_key(label) == "total":
-                        declared_total = count
-                    else:
-                        counts[normalise_state(label)] = count
-        if not counts:
-            raise ValueError("No State/UT and Stores rows were found in the selected CSV.")
-        return counts, declared_total if declared_total is not None else sum(counts.values())
-
+    source = _checked_xlsx_path(path)
     workbook = load_workbook(source, read_only=True, data_only=True, keep_links=False)
     counts = {}
     declared_total = None
@@ -691,130 +606,9 @@ def sanitize_prospect_database_records(db):
         logging.getLogger("prospects").debug("Sanitize prospect records error: %s", exc)
 
 
-def evaluate_store_verification(record):
-    """Evaluate store eligibility, product-selling evidence, postal address, and verification status."""
-    business_name = html.unescape(str(record.get("business_name") or "")).strip()
-    kind = str(record.get("kind") or "Store").strip()
-    address = html.unescape(str(record.get("address") or "")).strip()
-    maps_val = str(record.get("maps") or "").strip()
-    phone_val = str(record.get("phone") or "").strip()
-    web_val = str(record.get("website") or "").strip()
-    cat_val = str(record.get("business_category") or "").strip()
-    evidence_val = str(record.get("product_evidence") or "").strip()
-    catalog_val = str(record.get("product_catalog") or "").strip()
-
-    # Extract or preserve 6-digit postal PIN code
-    pin_match = re.search(r'\b\d{6}\b', address)
-    postal_code = str(record.get("postal_code") or "").strip()
-    if not postal_code and pin_match:
-        postal_code = pin_match.group(0)
-
-    # Country
-    country = str(record.get("country") or "").strip() or "India"
-
-    # Store type: Physical retailer, Online retailer, Both, or Gym with Product Sales
-    store_type = str(record.get("store_type") or "").strip()
-    if not store_type or store_type in {"Store", "Physical Retailer"}:
-        if kind == "Gym + Store":
-            store_type = "Gym with Product Sales"
-        elif kind == "Gym":
-            store_type = "Gym (Training/Membership)"
-        elif web_val and len(address) >= 20:
-            store_type = "Physical & Online Retailer"
-        elif web_val and not address:
-            store_type = "Online Retailer"
-        else:
-            store_type = "Physical Retailer"
-
-    # Product categories (calisthenics equipment, workout accessories, resistance bands, pull-up bars, sports nutrition)
-    product_categories = str(record.get("product_categories") or "").strip()
-    if not product_categories:
-        b_blob = f"{business_name} {cat_val}".lower()
-        if "calisthenics" in b_blob:
-            product_categories = "Calisthenics Equipment, Pull-up Bars, Resistance Bands, Workout Gear"
-        elif any(w in b_blob for w in ("supplement", "nutrition", "protein", "creatine")):
-            product_categories = "Sports Nutrition, Whey Protein, Creatine, Calisthenics & Fitness Gear"
-        elif cat_val:
-            product_categories = cat_val
-        else:
-            product_categories = "Sports Nutrition, Workout Accessories, Fitness Equipment"
-
-    # Product evidence
-    product_evidence = evidence_val
-    if not product_evidence:
-        if catalog_val:
-            product_evidence = catalog_val
-        elif record.get("source_url") and str(record.get("source_url")).startswith(("http://", "https://")):
-            product_evidence = record["source_url"]
-        elif web_val and web_val.startswith(("http://", "https://")):
-            product_evidence = web_val
-        elif "/maps/place/" in maps_val or "cid=" in maps_val or "maps.app.goo.gl" in maps_val:
-            product_evidence = maps_val
-
-    # Product catalog URL
-    product_catalog = catalog_val
-    if not product_catalog:
-        if web_val and any(sub in web_val.casefold() for sub in ("/shop", "/products", "/collections", "/store", "/catalog")):
-            product_catalog = web_val
-        elif web_val:
-            product_catalog = web_val
-
-    # Verification status: Verified, Partially verified, Unverified
-    verified_flag = str(record.get("verified") or "").strip().casefold() in {"yes", "y", "true", "verified"}
-    is_maps_place = maps_val.startswith(("https://www.google.com/maps/", "https://maps.google.com/", "https://maps.app.goo.gl/"))
-    has_full_address = len(address) >= 20 and bool(re.search(r'\b\d{6}\b', address))
-    has_genuine_name = len(business_name) >= 3 and not any(dum in business_name.casefold() for dum in ("dummy", "test lead", "sample store"))
-    
-    # Gyms offering only services are strictly excluded from Verified status unless evidence supports actual product sales
-    has_gym_product_evidence = bool(
-        catalog_val
-        or any(w in cat_val.casefold() for w in ("product", "supplement", "nutrition", "counter", "pro-shop", "protein", "accessories", "gear", "equipment"))
-        or any(w in business_name.casefold() for w in ("nutrition", "supplement", "store", "shop", "equipment", "gear", "accessories", "protein"))
-        or (evidence_val and not any(m in evidence_val for m in ("/maps/place/", "cid=", "maps.app.goo.gl")))
-    )
-    is_pure_gym = (kind == "Gym") and not has_gym_product_evidence
-
-    if (
-        has_genuine_name
-        and has_full_address
-        and is_maps_place
-        and (product_evidence or verified_flag)
-        and not is_pure_gym
-    ):
-        verification_status = "Verified"
-    elif has_genuine_name and (address or phone_val or is_maps_place or verified_flag):
-        verification_status = "Partially verified"
-    else:
-        verification_status = "Unverified"
-
-    # Last verified date
-    last_verified = str(record.get("last_verified") or "").strip()
-    if not last_verified:
-        last_verified = str(record.get("source_checked_at") or "").strip()
-    if not last_verified:
-        updated = str(record.get("updated_at") or "").strip()
-        last_verified = updated[:10] if len(updated) >= 10 else date.today().isoformat()
-
-    return {
-        "postal_code": postal_code,
-        "country": country,
-        "store_type": store_type,
-        "product_categories": product_categories,
-        "product_evidence": product_evidence,
-        "product_catalog": product_catalog,
-        "verification_status": verification_status,
-        "last_verified": last_verified,
-    }
-
-
 def format_prospect_cell_value(record, key):
     """Format and sanitize prospect values for display and export, ensuring 'NA' fallback for empty/displaced data."""
     raw_val = str(record.get(key, "") or "").strip()
-    if "&" in raw_val:
-        raw_val = html.unescape(html.unescape(raw_val))
-        raw_val = re.sub(r"&#x27;|&apos;", "'", raw_val)
-        raw_val = re.sub(r"&quot;", '"', raw_val)
-        raw_val = re.sub(r"&amp;", '&', raw_val)
     if not raw_val or raw_val.casefold() in {"nan", "none", "null", "n/a", "-", ""}:
         if key == "state":
             resolved = resolve_store_presence_states(record)
@@ -839,54 +633,8 @@ def format_prospect_cell_value(record, key):
     if key in {"contact_person", "email", "followup_date", "area", "address", "city", "business_category"}:
         return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
 
-    if key in {"website", "maps", "source_url"}:
-        res = raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else ""
-        if not res and key == "maps":
-            res = google_maps_search_url(record)
-        return res if res else "NA"
-
-    if key == "store_id":
-        if raw_val and raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""}:
-            return raw_val
-        rec_id = record.get("id")
-        if rec_id:
-            return f"STR-{int(rec_id):05d}"
-        key_val = str(record.get("dedupe_key") or "")
-        return f"STR-{key_val[:8].upper()}" if key_val else "NA"
-
-    if key == "store_type":
-        ev = evaluate_store_verification(record)
-        return raw_val or ev.get("store_type") or "Physical Retailer"
-
-    if key == "product_categories":
-        ev = evaluate_store_verification(record)
-        return raw_val or ev.get("product_categories") or "Sports Nutrition, Fitness Gear"
-
-    if key == "product_evidence":
-        ev = evaluate_store_verification(record)
-        res = raw_val or ev.get("product_evidence") or ""
-        return res if res and res.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
-
-    if key == "product_catalog":
-        ev = evaluate_store_verification(record)
-        res = raw_val or ev.get("product_catalog") or ""
-        return res if res and res.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
-
-    if key == "postal_code":
-        ev = evaluate_store_verification(record)
-        res = raw_val or ev.get("postal_code") or ""
-        return res if res and res.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
-
-    if key == "country":
-        return raw_val or "India"
-
-    if key == "verification_status":
-        ev = evaluate_store_verification(record)
-        return raw_val or ev.get("verification_status") or "Unverified"
-
-    if key == "last_verified":
-        ev = evaluate_store_verification(record)
-        return raw_val or ev.get("last_verified") or "NA"
+    if key in {"website", "maps"}:
+        return raw_val if raw_val.casefold() not in {"nan", "none", "null", "n/a", "-", ""} else "NA"
 
     return raw_val
 
@@ -897,30 +645,16 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     inserted = 0
     duplicate = 0
-    for col_name, col_type in (
-        ("email", "TEXT DEFAULT ''"),
-        ("store_id", "TEXT DEFAULT ''"),
-        ("store_type", "TEXT DEFAULT 'Physical Retailer'"),
-        ("product_categories", "TEXT DEFAULT ''"),
-        ("product_evidence", "TEXT DEFAULT ''"),
-        ("postal_code", "TEXT DEFAULT ''"),
-        ("country", "TEXT DEFAULT 'India'"),
-        ("product_catalog", "TEXT DEFAULT ''"),
-        ("verification_status", "TEXT DEFAULT 'Unverified'"),
-        ("last_verified", "TEXT DEFAULT ''"),
-    ):
-        try:
-            db.conn.execute(f"ALTER TABLE customer_prospects ADD COLUMN {col_name} {col_type}")
-        except Exception:
-            pass
+    try:
+        db.conn.execute("ALTER TABLE customer_prospects ADD COLUMN email TEXT DEFAULT ''")
+    except Exception:
+        pass
 
     fields = (
         "dedupe_key", "kind", "business_name", "business_category", "state", "city", "area",
         "contact_person", "phone", "email", "address", "website", "maps", "followup_date", "call_time",
         "connection", "verified", "response", "notes", "source_name", "source_url", "source_type",
         "source_checked_at", "source_sheet", "source_row", "source_status", "created_at", "updated_at",
-        "store_id", "store_type", "product_categories", "product_evidence", "postal_code", "country",
-        "product_catalog", "verification_status", "last_verified",
     )
     placeholders = ",".join("?" for _ in fields)
     columns = ",".join(fields)
@@ -1090,12 +824,6 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
                 record["dedupe_key"] = key
                 record["created_at"] = now
                 record["updated_at"] = now
-                ev_data = evaluate_store_verification(record)
-                for ev_k, ev_v in ev_data.items():
-                    if not record.get(ev_k):
-                        record[ev_k] = ev_v
-                if not record.get("store_id"):
-                    record["store_id"] = f"STR-{key[:8].upper()}"
                 values = [record.get(field, "") for field in fields]
                 cursor = db.conn.execute(
                     f"INSERT OR IGNORE INTO customer_prospects({columns}) VALUES({placeholders})",
@@ -1252,38 +980,25 @@ def cleanup_duplicate_prospects(db):
 
 
 def google_maps_search_url(record):
-    """Build a functional Google Maps search URL from the store name and its location/address."""
-    name = str(record.get("business_name") or "").strip()
-    addr = str(record.get("address") or "").strip()
-    city = str(record.get("city") or "").strip()
-    state = str(record.get("state") or "").strip()
-    if not name and not addr and not city:
+    """Build a Google Maps search URL from the store name and its full address."""
+    parts = (
+        str(record.get("business_name") or "").strip(),
+        str(record.get("address") or "").strip(),
+        str(record.get("city") or "").strip(),
+        str(record.get("state") or "").strip(),
+        "India",
+    )
+    query = ", ".join(part for part in parts if part)
+    if not str(record.get("business_name") or "").strip() or not str(record.get("address") or "").strip():
         return ""
-    clean_parts = [
-        p for p in (name, addr, city, state, "India")
-        if p and p.casefold() not in {"na", "n/a", "none", "null", "-"}
-    ]
-    query = ", ".join(clean_parts)
     return "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
 
 
 def load_saved_prospects(db):
-    try:
-        db.conn.execute("UPDATE customer_prospects SET state='Chandigarh' WHERE LOWER(TRIM(state)) IN ('chandigarh (ut)', 'chandigarh(ut)')")
-        db.conn.commit()
-    except Exception:
-        pass
     rows = db.conn.execute(
         "SELECT * FROM customer_prospects ORDER BY state COLLATE NOCASE, city COLLATE NOCASE, business_name COLLATE NOCASE"
     ).fetchall()
     records = [dict(row) for row in rows]
-    for r in records:
-        if not r.get("store_id") and r.get("id"):
-            r["store_id"] = f"STR-{int(r['id']):05d}"
-        ev = evaluate_store_verification(r)
-        for ev_key, ev_val in ev.items():
-            if not r.get(ev_key):
-                r[ev_key] = ev_val
     # Backfill actionable Maps search URLs for previously imported rows that have a
     # genuine address but no direct Maps URL. Keep the full address unchanged.
     changed = False
@@ -1295,19 +1010,20 @@ def load_saved_prospects(db):
             "https://maps.google.com/",
             "https://maps.app.goo.gl/",
         ))
-        if not is_google_maps_url:
+        if (
+            not is_google_maps_url
+        ) and address_value and address_value.casefold() not in {"na", "n/a", "none", "null", "-"}:
             maps_url = google_maps_search_url(record)
-            if maps_url:
-                record["maps"] = maps_url
-                if record.get("id") is not None:
-                    try:
-                        db.conn.execute(
-                            "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-') OR (LOWER(TRIM(maps)) NOT LIKE 'https://www.google.com/maps/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.google.com/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.app.goo.gl/%'))",
-                            (maps_url, record["id"]),
-                        )
-                        changed = True
-                    except Exception:
-                        pass
+            record["maps"] = maps_url
+            if record.get("id") is not None:
+                try:
+                    db.conn.execute(
+                        "UPDATE customer_prospects SET maps=? WHERE id=? AND (maps IS NULL OR TRIM(maps)='' OR LOWER(TRIM(maps)) IN ('na','n/a','none','null','-') OR (LOWER(TRIM(maps)) NOT LIKE 'https://www.google.com/maps/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.google.com/%' AND LOWER(TRIM(maps)) NOT LIKE 'https://maps.app.goo.gl/%'))",
+                        (maps_url, record["id"]),
+                    )
+                    changed = True
+                except Exception:
+                    pass
     if changed:
         try:
             db.conn.commit()
@@ -1825,20 +1541,6 @@ def crawl_search_engine_results(
             query = ", ".join(x for x in (business_name, address, "India") if x)
             maps_link = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
         seen_names.add(name_key)
-        cand = {
-            "kind": kind,
-            "business_name": business_name,
-            "business_category": default_category,
-            "state": state_name,
-            "city": city,
-            "address": address,
-            "maps": maps_link,
-            "website": url,
-            "source_url": url,
-            "phone": phone,
-            "email": email,
-        }
-        ev = evaluate_store_verification(cand)
         found.append({
             "kind": kind,
             "business_name": business_name,
@@ -1858,14 +1560,6 @@ def crawl_search_engine_results(
             "source_status": "Public product listing; not call-verified",
             "verified": "No",
             "notes": "Product-selling evidence and a full postal address found on the linked public page.",
-            "store_type": ev.get("store_type") or "Physical Retailer",
-            "product_categories": ev.get("product_categories") or "Sports Nutrition, Calisthenics Equipment, Fitness Gear",
-            "product_evidence": url,
-            "product_catalog": url if any(s in url for s in ("/shop", "/collections", "/products", "/store")) else "",
-            "postal_code": ev.get("postal_code") or "",
-            "country": "India",
-            "verification_status": ev.get("verification_status") or "Verified",
-            "last_verified": date.today().isoformat(),
         })
     report(f"Deep search complete: {len(found)} evidence-backed records; no synthetic records added.", 100)
     return found
@@ -2051,27 +1745,23 @@ class CustomerProspectsTab(QWidget):
     """Prospect explorer backed by the app database with printing, web scraping, and multi-format exports."""
 
     LEAD_COLUMNS = (
-        ("Store ID", "store_id"),
         ("Type", "kind"),
-        ("Store Name", "business_name"),
-        ("Store Type", "store_type"),
-        ("Verification Status", "verification_status"),
-        ("Product Categories", "product_categories"),
-        ("Full Address", "address"),
-        ("PIN Code", "postal_code"),
-        ("City", "city"),
+        ("Business", "business_name"),
+        ("Category", "business_category"),
         ("State / UT", "state"),
-        ("Google Maps", "maps"),
+        ("City", "city"),
+        ("Contact", "contact_person"),
         ("Phone", "phone"),
         ("Email", "email"),
-        ("Website", "website"),
-        ("Product Evidence", "product_evidence"),
-        ("Product Catalog", "product_catalog"),
-        ("Country", "country"),
-        ("Last Verified", "last_verified"),
-        ("Contact", "contact_person"),
+        ("Address", "address"),
+        ("Follow-up", "followup_date"),
+        ("Connection", "connection"),
         ("Call verified", "verified"),
+        ("Website", "website"),
+        ("Google Maps", "maps"),
         ("Source", "source_name"),
+        ("Source type", "source_type"),
+        ("Last checked", "source_checked_at"),
         ("Source link", "source_url"),
         ("Source status", "source_status"),
         ("Source sheet", "source_sheet"),
@@ -2093,10 +1783,8 @@ class CustomerProspectsTab(QWidget):
         self.db = db
         if db is not None:
             try:
-                if hasattr(db, "get_setting") and db.get_setting("cleanup_prospects_v1360") != "1":
-                    sanitize_prospect_database_records(db)
-                    cleanup_duplicate_prospects(db)
-                    db.set_setting("cleanup_prospects_v1360", "1")
+                sanitize_prospect_database_records(db)
+                cleanup_duplicate_prospects(db)
             except Exception:
                 pass
         self.records = load_saved_prospects(db) if db is not None else []
@@ -2140,14 +1828,21 @@ class CustomerProspectsTab(QWidget):
         # Prominent View Switcher Dropdown (Store Directory vs Regional Dashboard)
         view_nav_card = QFrame()
         view_nav_card.setObjectName("prospectViewNavCard")
-        self.view_nav_card = view_nav_card
+        view_nav_card.setStyleSheet(
+            "QFrame#prospectViewNavCard {"
+            "  background: rgba(30, 41, 59, 0.85);"
+            "  border: 1.5px solid rgba(59, 130, 246, 0.4);"
+            "  border-radius: 8px;"
+            "  padding: 6px 12px;"
+            "}"
+        )
         view_nav_layout = QHBoxLayout(view_nav_card)
         view_nav_layout.setContentsMargins(10, 6, 10, 6)
         view_nav_layout.setSpacing(12)
 
         view_icon_label = QLabel("👁️ Select View:")
         view_icon_label.setObjectName("prospectViewLabel")
-        self.view_icon_label = view_icon_label
+        view_icon_label.setStyleSheet("font-size: 10pt; font-weight: 800; color: #38BDF8;")
         view_nav_layout.addWidget(view_icon_label)
 
         self.view_selector = QComboBox()
@@ -2168,8 +1863,7 @@ class CustomerProspectsTab(QWidget):
         view_nav_layout.addWidget(self.view_selector, 0)
 
         view_nav_hint = QLabel("Use dropdown to switch views. All print and export options are at the bottom.")
-        view_nav_hint.setObjectName("prospectViewHint")
-        self.view_nav_hint = view_nav_hint
+        view_nav_hint.setStyleSheet("font-size: 8.5pt; color: #CBD5E1; font-style: italic;")
         view_nav_layout.addWidget(view_nav_hint, 1)
 
         root.addWidget(view_nav_card)
@@ -2177,18 +1871,25 @@ class CustomerProspectsTab(QWidget):
         # Single Unified Action Card: 1-Tap Deep Web Scraping & Continuous Master Sync
         action_card = QFrame()
         action_card.setObjectName("prospectActionCard")
-        self.action_card = action_card
+        action_card.setStyleSheet(
+            "QFrame#prospectActionCard {"
+            "  background: rgba(30, 41, 59, 0.7);"
+            "  border: 1px solid rgba(255, 255, 255, 0.08);"
+            "  border-radius: 8px;"
+            "  padding: 6px 12px;"
+            "}"
+        )
         action_layout = QHBoxLayout(action_card)
         action_layout.setContentsMargins(10, 8, 10, 8)
         action_layout.setSpacing(12)
 
         self.btn_one_tap_scrape_and_update = QPushButton("⚡ 1-Tap Deep Web Scraping & Master Update")
-        self.btn_one_tap_scrape_and_update.setMinimumHeight(38)
+        self.btn_one_tap_scrape_and_update.setMinimumHeight(40)
         self.btn_one_tap_scrape_and_update.setStyleSheet(
             "QPushButton {"
-            "  font-size: 10pt; font-weight: 800; color: #FFFFFF;"
+            "  font-size: 10.5pt; font-weight: 800; color: #FFFFFF;"
             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2563EB, stop:1 #7C3AED);"
-            "  border: none; border-radius: 7px; padding: 4px 18px;"
+            "  border: none; border-radius: 6px; padding: 0 18px;"
             "}"
             "QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1D4ED8, stop:1 #6D28D9); }"
         )
@@ -2202,14 +1903,12 @@ class CustomerProspectsTab(QWidget):
 
         self.sync_status_badge = QLabel("🟢 Continuous Sync: Active (Conflict-Free)")
         self.sync_status_badge.setStyleSheet(
-            "font-size: 8.5pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
-            "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 5px; padding: 4px 10px;"
+            "font-size: 9pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
+            "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 6px 12px;"
         )
         action_layout.addWidget(self.sync_status_badge)
 
-        self.snapshot_badge = QLabel("💾 Backup: Downloads/Google_Sheets_Master_Database.xlsx")
-        self.snapshot_badge.setWordWrap(False)
-        self.snapshot_badge.setToolTip("Full path: Downloads/Google_Sheets_Master_Database.xlsx")
+        self.snapshot_badge = QLabel("💾 Master Backup: Downloads/Google_Sheets_Master_Database.xlsx")
         self.snapshot_badge.setStyleSheet("font-size: 8.5pt; color: #94A3B8;")
         action_layout.addWidget(self.snapshot_badge, 1)
 
@@ -2238,37 +1937,32 @@ class CustomerProspectsTab(QWidget):
         self.dashboard_source_label = QLabel("Dashboard: not loaded")
         self.saved_status_label = QLabel("App DB: 0 saved leads")
 
-        # KPI Row: Clearly displaying Total Stores, Leads, and distinct Indian States, UTs, and Islands
+        # KPI Row
         self.kpi_values = {}
-        self.kpi_labels = {}
         kpi_row = QHBoxLayout()
         kpi_row.setSpacing(8)
         for key, caption, accent in (
             ("prospects", "Total Stores", "#00E5FF"),
             ("stores", "Store Leads", "#34D399"),
             ("gyms", "Gym Leads", "#A78BFA"),
-            ("states", "28 Indian States", "#FBBF24"),
-            ("uts", "6 Union Territories", "#38BDF8"),
-            ("islands", "2 Island Territories", "#10B981"),
+            ("regions", "States Covered", "#FBBF24"),
             ("dashboard", "Dashboard Target", "#60A5FA"),
         ):
             card = QFrame()
             card.setObjectName("prospectKpiCard")
             card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(8, 6, 8, 6)
-            card_layout.setSpacing(2)
+            card_layout.setContentsMargins(10, 7, 10, 7)
+            card_layout.setSpacing(1)
             value = QLabel("—")
             value.setObjectName("prospectKpiValue")
-            value.setStyleSheet(f"font-size: 16pt; font-weight: 800; color: {accent};")
+            value.setStyleSheet(f"font-size: 17pt; font-weight: 800; color: {accent};")
             label = QLabel(caption)
             label.setObjectName("prospectKpiLabel")
-            label.setStyleSheet("font-size: 7.5pt; font-weight: 700; color: #94A3B8;")
+            label.setStyleSheet("font-size: 8pt; font-weight: 600; color: #94A3B8;")
             card_layout.addWidget(value)
             card_layout.addWidget(label)
             self.kpi_values[key] = value
-            self.kpi_labels[key] = label
             kpi_row.addWidget(card, 1)
-        self.kpi_values["regions"] = self.kpi_values["states"]
         root.addLayout(kpi_row)
 
         # Tabs: Store Directory & Regional Dashboard
@@ -2293,30 +1987,10 @@ class CustomerProspectsTab(QWidget):
         main_layout.addWidget(outer_scroll)
         self.outer_scroll_area = outer_scroll
 
-        init_theme = "night"
-        if hasattr(self, "db") and self.db and hasattr(self.db, "get_setting"):
-            try:
-                init_theme = self.db.get_setting("ui_theme", "night") or "night"
-            except Exception:
-                pass
-        self.apply_theme(init_theme)
-        if os.environ.get("PYTEST_CURRENT_TEST"):
-            self._ensure_data_loaded()
-        else:
-            QTimer.singleShot(100, self._ensure_data_loaded)
-
-    def _ensure_data_loaded(self):
-        if getattr(self, "_data_loaded", False):
-            return
-        self._data_loaded = True
+        self.apply_theme("night")
         self._refresh_views()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._ensure_data_loaded()
-
     def _on_view_selector_changed(self, index):
-        self._ensure_data_loaded()
         if hasattr(self, "pages") and 0 <= index < self.pages.count():
             self.pages.blockSignals(True)
             self.pages.setCurrentIndex(index)
@@ -2408,7 +2082,7 @@ class CustomerProspectsTab(QWidget):
         self.print_export_combo.currentIndexChanged.connect(self._on_print_export_changed)
         self.print_export_combo.setStyleSheet(
             "QComboBox { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-width: 185px; min-height: 30px; } "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; min-width: 140px; } "
             "QComboBox::drop-down { border: none; } "
             "QComboBox QAbstractItemView { background: #1E293B; color: #F8FAFC; selection-background-color: #2563EB; }"
         )
@@ -2435,32 +2109,27 @@ class CustomerProspectsTab(QWidget):
         self.btn_folder = QPushButton("📂 Open Folder")
         self.btn_folder.clicked.connect(self.open_export_folder)
 
-        # Row 1: Primary Search, Category, State, More Filters (Spacious, uncrowded)
+        # Row 1: Primary Search, Category, State, More Filters
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(10)
-        toolbar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        toolbar.setSpacing(8)
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search business name, phone, address, city…")
         self.search_input.setClearButtonEnabled(True)
-        self.search_input.setMinimumWidth(220)
-        self.search_input.setFixedHeight(34)
         self.search_input.textChanged.connect(lambda _text: self._filter_timer.start())
         toolbar.addWidget(self.search_input, 2)
 
         self.kind_filter = QComboBox()
         self.kind_filter.addItems(["All types", "Pure Product Selling Stores", "Gym", "Gyms which sell products also"])
-        self.kind_filter.setCurrentText("All types")
-        self.kind_filter.setMinimumWidth(150)
-        self.kind_filter.setFixedHeight(34)
+        # Store Directory opens on product-selling stores by default. Existing filter
+        # choices are preserved so users can still inspect other record types.
+        self.kind_filter.setCurrentText("Pure Product Selling Stores")
         self.kind_filter.setToolTip("Filter by store / gym category")
         self.kind_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.kind_filter, 1)
 
         self.state_filter = QComboBox()
         self.state_filter.addItem("All States / UTs")
-        self.state_filter.setMinimumWidth(140)
-        self.state_filter.setFixedHeight(34)
         self.state_filter.setToolTip("Filter by State, UT, or Island")
         self.state_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
         toolbar.addWidget(self.state_filter, 1)
@@ -2476,22 +2145,19 @@ class CustomerProspectsTab(QWidget):
             "Verified Only",
             "Unverified Only",
         ])
-        self.more_filters.setMinimumWidth(140)
-        self.more_filters.setFixedHeight(34)
         self.more_filters.setToolTip("Filter by Contact, Website, or Verification status")
         self.more_filters.currentTextChanged.connect(self._on_more_filters_changed)
         toolbar.addWidget(self.more_filters, 1)
 
-        # Retain btn_top_print on self for test compatibility while hiding from top bar to eliminate duplicate button
         self.btn_top_print = QPushButton("🖨️ Print")
         self.btn_top_print.setToolTip("Print current store directory list")
         self.btn_top_print.setStyleSheet(
-            "QPushButton { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
-            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; min-height: 32px; } "
+            "QPushButton { font-size: 9pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 14px; min-height: 32px; } "
             "QPushButton:hover { background: #1D4ED8; }"
         )
         self.btn_top_print.clicked.connect(self.print_leads)
-        self.btn_top_print.hide()
+        toolbar.addWidget(self.btn_top_print, 0)
 
         layout.addLayout(toolbar)
 
@@ -2505,13 +2171,12 @@ class CustomerProspectsTab(QWidget):
         self.website_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
 
         self.verification_filter = QComboBox()
-        self.verification_filter.addItems(["All verification", "Verified", "Partially verified", "Unverified"])
+        self.verification_filter.addItems(["All verification", "Verified", "Unverified"])
         self.verification_filter.currentTextChanged.connect(lambda _text: self.apply_filters())
 
         # Row 2: Consolidated Exclude Dropdown + Keyword Search + Clear Button + Results Counter
         exclude_bar = QHBoxLayout()
         exclude_bar.setSpacing(8)
-        exclude_bar.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.exclude_dropdown = QComboBox()
         self.exclude_dropdown.addItem("🚫 Exclude Target: None (Show All)")
@@ -2524,31 +2189,27 @@ class CustomerProspectsTab(QWidget):
         self.exclude_dropdown.addItem("Exclude: Unverified Leads")
         self.exclude_dropdown.setToolTip("Select any category, territory, or condition to exclude from the directory")
         self.exclude_dropdown.currentTextChanged.connect(lambda _text: self.apply_filters())
-        self.exclude_dropdown.setFixedHeight(34)
         self.exclude_dropdown.setStyleSheet(
             "QComboBox { font-size: 8.5pt; font-weight: 600; color: #FCA5A5; background: rgba(239, 68, 68, 0.12); "
-            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 32px; }"
+            "border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 4px 10px; min-width: 220px; }"
         )
         exclude_bar.addWidget(self.exclude_dropdown, 0)
 
         self.exclude_keyword = QLineEdit()
         self.exclude_keyword.setPlaceholderText("🚫 Exclude keyword, name, district, or city…")
         self.exclude_keyword.setClearButtonEnabled(True)
-        self.exclude_keyword.setMinimumWidth(200)
-        self.exclude_keyword.setFixedHeight(34)
         self.exclude_keyword.textChanged.connect(lambda _text: self._filter_timer.start())
         self.exclude_keyword.setStyleSheet(
-            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; min-height: 32px; }"
+            "QLineEdit { font-size: 8.5pt; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 4px 8px; }"
         )
         exclude_bar.addWidget(self.exclude_keyword, 1)
 
         self.btn_clear_excludes = QPushButton("✖ Clear Exclude")
         self.btn_clear_excludes.setToolTip("Clear all negative / exclude filters")
         self.btn_clear_excludes.clicked.connect(self.clear_exclude_filters)
-        self.btn_clear_excludes.setFixedHeight(34)
         self.btn_clear_excludes.setStyleSheet(
             "QPushButton { font-size: 8.5pt; font-weight: 600; background: rgba(239, 68, 68, 0.18); "
-            "border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 14px; color: #FCA5A5; min-height: 32px; } "
+            "border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 4px 10px; color: #FCA5A5; } "
             "QPushButton:hover { background: rgba(239, 68, 68, 0.3); color: #FFFFFF; }"
         )
         exclude_bar.addWidget(self.btn_clear_excludes)
@@ -2585,7 +2246,7 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.leads_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.leads_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.leads_table.setWordWrap(False)
+        self.leads_table.setWordWrap(True)
         self.leads_table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.leads_table.verticalHeader().setVisible(False)
         self.leads_table.setAlternatingRowColors(True)
@@ -2593,48 +2254,43 @@ class CustomerProspectsTab(QWidget):
         self.leads_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.leads_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.leads_table.setSortingEnabled(False)
-        self.leads_table.setObjectName("leadsTable")
-        self.leads_table.setProperty("no_word_wrap", True)
-        self.leads_table.setMinimumHeight(400)
-        self.leads_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.leads_table.setMinimumHeight(420)
         self.leads_table.verticalHeader().setDefaultSectionSize(38)
-        self.leads_table.cellClicked.connect(self.on_table_cell_clicked)
         self.leads_table.cellDoubleClicked.connect(self.open_source_link)
-        for index, width in enumerate((95, 80, 210, 140, 125, 200, 300, 85, 120, 140, 280, 130, 170, 240, 240, 240, 80, 105, 130, 100, 160, 240, 160, 130)):
+        for index, width in enumerate((85, 210, 160, 150, 130, 140, 135, 320, 320, 150, 95, 175, 180, 240, 170, 110, 130, 320, 320, 160)):
             self.leads_table.setColumnWidth(index, width)
         layout.addWidget(self.leads_table, 1)
 
-        # Dedicated Print Center & Export Section (at the very bottom / last - spacious & uncrowded)
+        # Dedicated Print Center & Export Section (at the very bottom / last)
         print_card = QFrame()
         print_card.setObjectName("storeDirectoryPrintCard")
-        self.print_card = print_card
+        print_card.setStyleSheet(
+            "QFrame#storeDirectoryPrintCard { "
+            "  background: rgba(15, 23, 42, 0.90); "
+            "  border: 1.5px solid rgba(59, 130, 246, 0.50); "
+            "  border-radius: 8px; padding: 8px 14px; "
+            "}"
+        )
         print_layout = QHBoxLayout(print_card)
-        print_layout.setContentsMargins(12, 10, 12, 10)
+        print_layout.setContentsMargins(10, 8, 10, 8)
         print_layout.setSpacing(10)
-        print_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         print_title = QLabel("🖨️ Print Center & Export:")
-        print_title.setObjectName("storeDirectoryPrintTitle")
-        self.print_title = print_title
+        print_title.setStyleSheet("font-size: 9.5pt; font-weight: 800; color: #38BDF8;")
         print_layout.addWidget(print_title)
 
-        self.print_export_combo.setFixedHeight(34)
         print_layout.addWidget(self.print_export_combo, 0)
 
-        self.print_buttons = [self.btn_print_preview, self.btn_print, self.btn_folder]
-        for btn in self.print_buttons:
-            btn.setFixedHeight(34)
-            print_layout.addWidget(btn)
-
-        # Secondary / export buttons remain accessible via print_export_combo; retain handles on self for tests & API
         for btn in (
-            self.btn_store_details, self.btn_dashboard_print, self.btn_pdf, self.btn_csv, self.btn_xlsx, self.btn_doc
+            self.btn_print_preview, self.btn_print, self.btn_store_details, self.btn_dashboard_print,
+            self.btn_pdf, self.btn_csv, self.btn_xlsx, self.btn_doc, self.btn_folder
         ):
             btn.setStyleSheet(
                 "QPushButton { font-size: 8.5pt; font-weight: 700; background: #1E293B; "
-                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 12px; color: #F8FAFC; min-height: 30px; }"
+                "border: 1px solid #3B82F6; border-radius: 6px; padding: 5px 10px; color: #F8FAFC; min-height: 28px; } "
+                "QPushButton:hover { background: #2563EB; color: #FFFFFF; border-color: #60A5FA; }"
             )
-            btn.hide()
+            print_layout.addWidget(btn)
 
         print_note = QLabel("Official Raw Strength Calisthenics Print Center")
         print_note.setStyleSheet("font-size: 8.5pt; color: #CBD5E1; font-style: italic;")
@@ -2695,48 +2351,42 @@ class CustomerProspectsTab(QWidget):
 
         # 1. 28 States Card
         card_states = QFrame()
-        card_states.setObjectName("territoryStatesCard")
-        self.card_states = card_states
+        card_states.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 8px; padding: 6px 12px;")
         l_s = QVBoxLayout(card_states)
         l_s.setContentsMargins(4, 4, 4, 4)
         l_s.setSpacing(2)
         lbl_s_title = QLabel("🏛️ 28 Indian States")
-        lbl_s_title.setObjectName("territoryStatesTitle")
-        lbl_s_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #3B82F6;")
+        lbl_s_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #93C5FD;")
         self.card_states_val = QLabel("28 States (Calculating...)")
-        self.card_states_val.setObjectName("territoryStatesVal")
+        self.card_states_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
         l_s.addWidget(lbl_s_title)
         l_s.addWidget(self.card_states_val)
         kpi_row.addWidget(card_states, 1)
 
         # 2. 6 Union Territories Card
         card_ut = QFrame()
-        card_ut.setObjectName("territoryUtCard")
-        self.card_ut = card_ut
+        card_ut.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 6px 12px;")
         l_u = QVBoxLayout(card_ut)
         l_u.setContentsMargins(4, 4, 4, 4)
         l_u.setSpacing(2)
         lbl_u_title = QLabel("🏢 6 Union Territories")
-        lbl_u_title.setObjectName("territoryUtTitle")
-        lbl_u_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #F59E0B;")
+        lbl_u_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #FCD34D;")
         self.card_ut_val = QLabel("6 UTs (Calculating...)")
-        self.card_ut_val.setObjectName("territoryUtVal")
+        self.card_ut_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
         l_u.addWidget(lbl_u_title)
         l_u.addWidget(self.card_ut_val)
         kpi_row.addWidget(card_ut, 1)
 
         # 3. 2 Island Territories Card
         card_islands = QFrame()
-        card_islands.setObjectName("territoryIslandsCard")
-        self.card_islands = card_islands
+        card_islands.setStyleSheet("background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 6px 12px;")
         l_i = QVBoxLayout(card_islands)
         l_i.setContentsMargins(4, 4, 4, 4)
         l_i.setSpacing(2)
         lbl_i_title = QLabel("🏝️ 2 Island Territories")
-        lbl_i_title.setObjectName("territoryIslandsTitle")
-        lbl_i_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #10B981;")
+        lbl_i_title.setStyleSheet("font-size: 8.5pt; font-weight: 700; color: #6EE7B7;")
         self.card_islands_val = QLabel("2 Island UTs (Calculating...)")
-        self.card_islands_val.setObjectName("territoryIslandsVal")
+        self.card_islands_val.setStyleSheet("font-size: 10pt; font-weight: 800; color: #FFFFFF;")
         l_i.addWidget(lbl_i_title)
         l_i.addWidget(self.card_islands_val)
         kpi_row.addWidget(card_islands, 1)
@@ -2780,10 +2430,6 @@ class CustomerProspectsTab(QWidget):
         self.region_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.region_table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.region_table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.region_table.setObjectName("regionTable")
-        self.region_table.setProperty("no_word_wrap", True)
-        self.region_table.setMinimumHeight(400)
-        self.region_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.region_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.region_table, 1)
         privacy = QLabel(
@@ -2796,15 +2442,19 @@ class CustomerProspectsTab(QWidget):
         # Dedicated Regional Print Center & Export Section
         regional_print_card = QFrame()
         regional_print_card.setObjectName("regionalDashboardPrintCard")
-        self.regional_print_card = regional_print_card
+        regional_print_card.setStyleSheet(
+            "QFrame#regionalDashboardPrintCard { "
+            "  background: rgba(15, 23, 42, 0.75); "
+            "  border: 1px solid rgba(59, 130, 246, 0.35); "
+            "  border-radius: 8px; padding: 6px 12px; "
+            "}"
+        )
         reg_print_layout = QHBoxLayout(regional_print_card)
-        reg_print_layout.setContentsMargins(12, 10, 12, 10)
+        reg_print_layout.setContentsMargins(10, 8, 10, 8)
         reg_print_layout.setSpacing(10)
-        reg_print_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         reg_print_title = QLabel("🖨️ Regional Print Center & Export:")
-        reg_print_title.setObjectName("regionalDashboardPrintTitle")
-        self.reg_print_title = reg_print_title
+        reg_print_title.setStyleSheet("font-size: 9pt; font-weight: 700; color: #93C5FD;")
         reg_print_layout.addWidget(reg_print_title)
 
         self.regional_print_combo = QComboBox()
@@ -2816,7 +2466,12 @@ class CustomerProspectsTab(QWidget):
         self.regional_print_combo.addItem("📊 Export Regional to CSV (.csv)")
         self.regional_print_combo.addItem("📂 Open Export Folder")
         self.regional_print_combo.currentIndexChanged.connect(self._on_regional_print_export_changed)
-        self.regional_print_combo.setFixedHeight(34)
+        self.regional_print_combo.setStyleSheet(
+            "QComboBox { font-size: 8.5pt; font-weight: 700; color: #FFFFFF; background: #2563EB; "
+            "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; min-width: 140px; } "
+            "QComboBox::drop-down { border: none; } "
+            "QComboBox QAbstractItemView { background: #1E293B; color: #F8FAFC; selection-background-color: #2563EB; }"
+        )
         reg_print_layout.addWidget(self.regional_print_combo, 0)
 
         self.btn_regional_preview = QPushButton("🖨️ Print Preview")
@@ -2826,14 +2481,16 @@ class CustomerProspectsTab(QWidget):
         self.btn_regional_folder = QPushButton("📂 Open Folder")
         self.btn_regional_folder.clicked.connect(self.open_export_folder)
 
-        self.regional_print_buttons = [self.btn_regional_preview, self.btn_regional_print, self.btn_regional_folder]
-        for btn in self.regional_print_buttons:
-            btn.setFixedHeight(34)
+        for btn in (self.btn_regional_preview, self.btn_regional_print, self.btn_regional_folder):
+            btn.setStyleSheet(
+                "QPushButton { font-size: 8.5pt; font-weight: 600; background: rgba(37, 99, 235, 0.2); "
+                "border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 10px; color: #93C5FD; } "
+                "QPushButton:hover { background: #2563EB; color: #FFFFFF; }"
+            )
             reg_print_layout.addWidget(btn)
 
         reg_print_note = QLabel("Replicates official Raw Strength Calisthenics Print Center")
-        reg_print_note.setObjectName("regionalDashboardPrintNote")
-        self.reg_print_note = reg_print_note
+        reg_print_note.setStyleSheet("font-size: 8pt; color: #64748B; font-style: italic;")
         reg_print_layout.addWidget(reg_print_note, 1)
 
         layout.addWidget(regional_print_card)
@@ -3392,42 +3049,29 @@ class CustomerProspectsTab(QWidget):
         if not path:
             return
         try:
-            # Exact master CSV column order preserved first, followed by verified quality fields
             headers = [
-                "state", "city", "area", "business category", "business name",
-                "Mobile number", "Full address", "Google Maps link", "Website/social-media link",
-                "Store ID", "Store type", "Product categories", "Product-selling evidence",
-                "PIN/postal code", "Country", "Email address", "Product catalog",
-                "Verification status", "Source URL", "Last verified", "verified by call", "response", "notes"
+                "Store type", "state", "city", "area", "business category", "business name",
+                "Mobile number", "Email address", "Full address", "Google Maps link", "Website/social-media link",
+                "verified by call", "response"
             ]
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
                 for r in records:
                     writer.writerow([
+                        format_prospect_cell_value(r, "kind"),
                         format_prospect_cell_value(r, "state"),
                         format_prospect_cell_value(r, "city"),
                         format_prospect_cell_value(r, "area"),
                         format_prospect_cell_value(r, "business_category"),
                         format_prospect_cell_value(r, "business_name"),
                         format_prospect_cell_value(r, "phone"),
+                        format_prospect_cell_value(r, "email"),
                         format_prospect_cell_value(r, "address"),
                         format_prospect_cell_value(r, "maps"),
                         format_prospect_cell_value(r, "website"),
-                        format_prospect_cell_value(r, "store_id"),
-                        format_prospect_cell_value(r, "store_type"),
-                        format_prospect_cell_value(r, "product_categories"),
-                        format_prospect_cell_value(r, "product_evidence"),
-                        format_prospect_cell_value(r, "postal_code"),
-                        format_prospect_cell_value(r, "country"),
-                        format_prospect_cell_value(r, "email"),
-                        format_prospect_cell_value(r, "product_catalog"),
-                        format_prospect_cell_value(r, "verification_status"),
-                        format_prospect_cell_value(r, "source_url"),
-                        format_prospect_cell_value(r, "last_verified"),
                         format_prospect_cell_value(r, "verified"),
-                        format_prospect_cell_value(r, "response"),
-                        format_prospect_cell_value(r, "notes"),
+                        format_prospect_cell_value(r, "response")
                     ])
             self.last_export_path = path
             self.last_export_dir = str(Path(path).parent)
@@ -3455,30 +3099,26 @@ class CustomerProspectsTab(QWidget):
             path += ".xlsx"
 
         headers = [
-            ("State", "state"),
+            ("Store type", "kind"),
+            ("Business name", "business_name"),
+            ("Category", "business_category"),
+            ("State / UT", "state"),
+            ("District", "district"),
             ("City", "city"),
             ("Area", "area"),
-            ("Business category", "business_category"),
-            ("Business name", "business_name"),
-            ("Mobile number", "phone"),
-            ("Full address", "address"),
-            ("Google Maps link", "maps"),
-            ("Website/social-media link", "website"),
-            ("Store ID", "store_id"),
-            ("Store type", "store_type"),
-            ("Product categories", "product_categories"),
-            ("Product-selling evidence", "product_evidence"),
-            ("PIN / postal code", "postal_code"),
-            ("Country", "country"),
-            ("Email address", "email"),
-            ("Product catalog", "product_catalog"),
-            ("Verification status", "verification_status"),
-            ("Source URL", "source_url"),
-            ("Last verified", "last_verified"),
             ("Contact person", "contact_person"),
+            ("Phone numbers", "phone"),
+            ("Email addresses", "email"),
+            ("Full address", "address"),
+            ("Website", "website"),
+            ("Google Maps", "maps"),
             ("Verified by call", "verified"),
+            ("Verification status", "source_status"),
+            ("Source", "source_name"),
+            ("Source type", "source_type"),
+            ("Source URL", "source_url"),
+            ("Last checked", "source_checked_at"),
             ("Response", "response"),
-            ("Notes", "notes"),
         ]
         try:
             workbook = Workbook()
@@ -3633,7 +3273,7 @@ a {{ color: #2563EB; text-decoration: underline; }}
 <tbody>
 """
             for r in records[:1000]:
-                maps_link = f"<a href='{r.get('maps', '')}'>{r.get('maps', '')}</a>" if r.get('maps') else "—"
+                maps_link = f"<a href='{r.get('maps', '')}'>Open Maps</a>" if r.get('maps') else "—"
                 html += f"""<tr>
   <td>{format_prospect_cell_value(r, 'state')}</td>
   <td>{format_prospect_cell_value(r, 'city')}<br><small>{format_prospect_cell_value(r, 'area')}</small></td>
@@ -3782,7 +3422,7 @@ a {{ color: #2563EB; text-decoration: underline; }}
 
     def _run_silent_continuous_sync(self):
         """Background continuous sync running every 60s without user prompts or interruption."""
-        if self.db is None or getattr(self, "_sync_in_progress", False):
+        if self.db is None:
             return
         active_user = getattr(self.db, "active_user", None)
         try:
@@ -3797,40 +3437,22 @@ a {{ color: #2563EB; text-decoration: underline; }}
                 return
         except Exception:
             pass
-        self._sync_in_progress = True
-
-        def _worker():
-            try:
-                res = google_sheets_sync.continuous_auto_sync(self.db)
-                QTimer.singleShot(0, lambda: self._on_continuous_sync_finished(res))
-            except Exception:
-                pass
-            finally:
-                self._sync_in_progress = False
-
-        import threading
-        threading.Thread(target=_worker, name="store-continuous-sync", daemon=True).start()
-
-    def _on_continuous_sync_finished(self, res):
-        if not isinstance(res, dict):
-            return
         try:
+            res = google_sheets_sync.continuous_auto_sync(self.db)
             if res.get("status") == "synced":
-                if hasattr(self, "sync_status_badge"):
-                    self.sync_status_badge.setText(f"🟢 Continuous Sync: Active ({len(self.records):,} Stores) · Conflict-Free")
-                    self.sync_status_badge.setStyleSheet(
-                        "font-size: 9pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
-                        "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 6px 12px;"
-                    )
+                self.sync_status_badge.setText(f"🟢 Continuous Sync: Active ({len(self.records):,} Stores) · Conflict-Free")
+                self.sync_status_badge.setStyleSheet(
+                    "font-size: 9pt; font-weight: 700; color: #34D399; background: rgba(16, 185, 129, 0.15); "
+                    "border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px; padding: 6px 12px;"
+                )
                 if res.get("updated", 0) > 0:
                     self._reload_saved_records()
             elif res.get("status") == "offline":
-                if hasattr(self, "sync_status_badge"):
-                    self.sync_status_badge.setText("🟠 Offline: Local Master Updated · Will Auto-Sync When Online")
-                    self.sync_status_badge.setStyleSheet(
-                        "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
-                        "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
-                    )
+                self.sync_status_badge.setText("🟠 Offline: Local Master Updated · Will Auto-Sync When Online")
+                self.sync_status_badge.setStyleSheet(
+                    "font-size: 9pt; font-weight: 700; color: #F59E0B; background: rgba(245, 158, 11, 0.15); "
+                    "border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px; padding: 6px 12px;"
+                )
         except Exception:
             pass
 
@@ -3928,31 +3550,22 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
             doc.setHtml("<p>No store selected.</p>")
             return doc
 
-        store_id = format_prospect_cell_value(record, "store_id")
         name = format_prospect_cell_value(record, "business_name")
         cat = format_prospect_cell_value(record, "business_category")
         brand = format_prospect_cell_value(record, "brand")
-        status = format_prospect_cell_value(record, "status")
-        district = format_prospect_cell_value(record, "district")
-        store_type = format_prospect_cell_value(record, "store_type")
-        ver_status = format_prospect_cell_value(record, "verification_status")
-        prod_cat = format_prospect_cell_value(record, "product_categories")
-        prod_evidence = format_prospect_cell_value(record, "product_evidence")
-        prod_catalog = format_prospect_cell_value(record, "product_catalog")
         state = format_prospect_cell_value(record, "state")
         city = format_prospect_cell_value(record, "city")
+        district = format_prospect_cell_value(record, "district")
         area = format_prospect_cell_value(record, "area")
-        pincode = format_prospect_cell_value(record, "postal_code")
+        pincode = format_prospect_cell_value(record, "pincode")
         address = format_prospect_cell_value(record, "address")
-        maps_url = format_prospect_cell_value(record, "maps")
         phone = format_prospect_cell_value(record, "phone")
         email = format_prospect_cell_value(record, "email")
         contact_person = format_prospect_cell_value(record, "contact_person")
         website = format_prospect_cell_value(record, "website")
-        country = format_prospect_cell_value(record, "country")
-        source = format_prospect_cell_value(record, "source_name") or format_prospect_cell_value(record, "source_type")
+        source = format_prospect_cell_value(record, "source_type")
         source_url = format_prospect_cell_value(record, "source_url")
-        last_ver = format_prospect_cell_value(record, "last_verified")
+        status = format_prospect_cell_value(record, "status")
         notes = format_prospect_cell_value(record, "notes")
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -3979,45 +3592,36 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 </div>
 
 <div class="card">
-  <div class="sec-title">🏢 Business Identity & Store Eligibility</div>
+  <div class="sec-title">🏢 Business & Identity</div>
   <table class="details">
-    <tr><td class="lbl">Store ID</td><td class="val"><code>{store_id}</code></td></tr>
-    <tr><td class="lbl">Store Name</td><td class="val"><b>{name}</b></td></tr>
+    <tr><td class="lbl">Business Name</td><td class="val"><b>{name}</b></td></tr>
     <tr><td class="lbl">Category / Type</td><td class="val">{cat}</td></tr>
-    <tr><td class="lbl">Store Type</td><td class="val">{store_type}</td></tr>
     <tr><td class="lbl">Brand / Chain</td><td class="val">{brand}</td></tr>
     <tr><td class="lbl">Operational Status</td><td class="val">{status}</td></tr>
-    <tr><td class="lbl">Verification Status</td><td class="val"><b>{ver_status}</b></td></tr>
-    <tr><td class="lbl">Product Categories</td><td class="val">{prod_cat}</td></tr>
-    <tr><td class="lbl">Product Evidence</td><td class="val">{prod_evidence}</td></tr>
-    <tr><td class="lbl">Product Catalog</td><td class="val">{prod_catalog}</td></tr>
   </table>
 </div>
 
 <div class="card">
-  <div class="sec-title">📍 Verified Location & Direct Maps</div>
+  <div class="sec-title">📍 Location & Territory</div>
   <table class="details">
-    <tr><td class="lbl">Full Address</td><td class="val"><b>{address}</b></td></tr>
+    <tr><td class="lbl">State / Territory</td><td class="val">{state}</td></tr>
     <tr><td class="lbl">District</td><td class="val">{district}</td></tr>
     <tr><td class="lbl">City / Town</td><td class="val">{city}</td></tr>
     <tr><td class="lbl">Area / Locality</td><td class="val">{area}</td></tr>
-    <tr><td class="lbl">State / UT</td><td class="val">{state}</td></tr>
     <tr><td class="lbl">Postal Code (PIN)</td><td class="val">{pincode}</td></tr>
-    <tr><td class="lbl">Country</td><td class="val">{country}</td></tr>
-    <tr><td class="lbl">Google Maps Link</td><td class="val">{maps_url}</td></tr>
+    <tr><td class="lbl">Full Address</td><td class="val">{address}</td></tr>
   </table>
 </div>
 
 <div class="card">
-  <div class="sec-title">📞 Contact & Verification Integrity</div>
+  <div class="sec-title">📞 Contact & Digital Presence</div>
   <table class="details">
     <tr><td class="lbl">Phone Number</td><td class="val"><b>{phone}</b></td></tr>
     <tr><td class="lbl">Email Address</td><td class="val">{email}</td></tr>
     <tr><td class="lbl">Contact Person</td><td class="val">{contact_person}</td></tr>
     <tr><td class="lbl">Official Website</td><td class="val">{website}</td></tr>
+    <tr><td class="lbl">Directory / Map URL</td><td class="val">{source_url}</td></tr>
     <tr><td class="lbl">Data Source</td><td class="val">{source}</td></tr>
-    <tr><td class="lbl">Source URL</td><td class="val">{source_url}</td></tr>
-    <tr><td class="lbl">Last Verified Date</td><td class="val">{last_ver}</td></tr>
     <tr><td class="lbl">Notes / Remarks</td><td class="val">{notes}</td></tr>
   </table>
 </div>
@@ -4082,13 +3686,6 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         name = format_prospect_cell_value(record, 'business_name')
         dialog.setWindowTitle(f"Store Details — {name}")
         dialog.resize(580, 520)
-        is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
-        theme = getattr(self, "_current_theme_name", "night")
-        dialog_bg = "#0F172A" if is_dark else "#FFFFFF"
-        dialog_fg = "#F8FAFC" if is_dark else "#0F172A"
-        label_fg = "#94A3B8" if is_dark else "#475569"
-        border_col = "rgba(59, 130, 246, 0.35)" if is_dark else "#CBD5E1"
-        dialog.setStyleSheet(f"QDialog {{ background-color: {dialog_bg}; color: {dialog_fg}; }}")
         vbox = QVBoxLayout(dialog)
         vbox.setContentsMargins(16, 16, 16, 16)
         vbox.setSpacing(12)
@@ -4101,95 +3698,45 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         form.setSpacing(10)
 
         fields = [
-            ("Store ID", format_prospect_cell_value(record, "store_id")),
-            ("Store Name", format_prospect_cell_value(record, "business_name")),
-            ("Store Type", format_prospect_cell_value(record, "store_type")),
-            ("Verification Status", format_prospect_cell_value(record, "verification_status")),
-            ("Product Categories", format_prospect_cell_value(record, "product_categories")),
-            ("Product Evidence", format_prospect_cell_value(record, "product_evidence")),
-            ("Product Catalog", format_prospect_cell_value(record, "product_catalog")),
-            ("Full Address", format_prospect_cell_value(record, "address")),
+            ("Business Name", format_prospect_cell_value(record, "business_name")),
+            ("Category", format_prospect_cell_value(record, "business_category")),
+            ("Brand / Chain", format_prospect_cell_value(record, "brand")),
+            ("State", format_prospect_cell_value(record, "state")),
+            ("District", format_prospect_cell_value(record, "district")),
             ("City", format_prospect_cell_value(record, "city")),
             ("Area", format_prospect_cell_value(record, "area")),
-            ("State / UT", format_prospect_cell_value(record, "state")),
-            ("PIN Code", format_prospect_cell_value(record, "postal_code")),
-            ("Country", format_prospect_cell_value(record, "country")),
-            ("Google Maps Link", format_prospect_cell_value(record, "maps")),
-            ("Phone Number", format_prospect_cell_value(record, "phone")),
-            ("Email Address", format_prospect_cell_value(record, "email")),
-            ("Official Website", format_prospect_cell_value(record, "website")),
+            ("PIN Code", format_prospect_cell_value(record, "pincode")),
+            ("Address", format_prospect_cell_value(record, "address")),
+            ("Phone", format_prospect_cell_value(record, "phone")),
+            ("Email", format_prospect_cell_value(record, "email")),
             ("Contact Person", format_prospect_cell_value(record, "contact_person")),
-            ("Source Name", format_prospect_cell_value(record, "source_name")),
+            ("Website", format_prospect_cell_value(record, "website")),
             ("Source URL", format_prospect_cell_value(record, "source_url")),
-            ("Last Verified", format_prospect_cell_value(record, "last_verified")),
-            ("Notes / Remarks", format_prospect_cell_value(record, "notes")),
+            ("Source Type", format_prospect_cell_value(record, "source_type")),
+            ("Status", format_prospect_cell_value(record, "status")),
+            ("Notes", format_prospect_cell_value(record, "notes")),
         ]
-        maps_link = str(record.get("maps") or "").strip() or google_maps_search_url(record)
-        web_link = str(record.get("website") or "").strip()
-        ev_link = str(record.get("product_evidence") or "").strip()
-        cat_link = str(record.get("product_catalog") or "").strip()
-        src_link = str(record.get("source_url") or "").strip()
-
         for label, val in fields:
             lbl = QLabel(f"<b>{label}:</b>")
-            lbl.setStyleSheet(f"color: {label_fg}; font-size: 9pt;")
-            val_lbl = QLabel()
+            lbl.setStyleSheet("color: #94A3B8; font-size: 9pt;")
+            val_lbl = QLabel(str(val))
             val_lbl.setWordWrap(True)
-            val_str = str(val or "").strip()
-            link_target = ""
-            if label == "Google Maps Link":
-                link_target = val_str if val_str.startswith(("http://", "https://")) else maps_link
-            elif label == "Official Website" and web_link.startswith(("http://", "https://")):
-                link_target = web_link
-            elif label == "Product Evidence" and ev_link.startswith(("http://", "https://")):
-                link_target = ev_link
-            elif label == "Product Catalog" and cat_link.startswith(("http://", "https://")):
-                link_target = cat_link
-            elif label == "Source URL" and src_link.startswith(("http://", "https://")):
-                link_target = src_link
-
-            if link_target.startswith(("http://", "https://")):
-                val_lbl.setText(f'<a href="{link_target}" style="color: #2563EB; font-weight: 700; text-decoration: underline;">{link_target}</a>')
-                val_lbl.setOpenExternalLinks(True)
-            else:
-                val_lbl.setText(val_str or "NA")
-                val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-                val_lbl.setStyleSheet(f"color: {dialog_fg}; font-size: 9pt;")
+            val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            val_lbl.setStyleSheet("color: #F8FAFC; font-size: 9pt;")
             form.addRow(lbl, val_lbl)
         scroll.setWidget(container)
         vbox.addWidget(scroll, 1)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
-
-        if maps_link.startswith(("https://", "http://")):
-            btn_maps = QPushButton("🗺️ Google Maps")
-            btn_maps.setStyleSheet("QPushButton { font-weight: 700; background: #0D9488; color: white; padding: 6px 14px; border-radius: 6px; min-height: 32px; } QPushButton:hover { background: #0F766E; }")
-            btn_maps.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(maps_link)))
-            btn_row.addWidget(btn_maps)
-
-        if web_link.startswith(("https://", "http://")):
-            btn_web = QPushButton("🌐 Website")
-            btn_web.setStyleSheet("QPushButton { font-weight: 600; background: #475569; color: white; padding: 6px 12px; border-radius: 6px; min-height: 32px; } QPushButton:hover { background: #334155; }")
-            btn_web.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(web_link)))
-            btn_row.addWidget(btn_web)
-
-        if ev_link.startswith(("https://", "http://")):
-            btn_ev = QPushButton("📄 Evidence")
-            btn_ev.setStyleSheet("QPushButton { font-weight: 600; background: #7C3AED; color: white; padding: 6px 12px; border-radius: 6px; min-height: 32px; } QPushButton:hover { background: #6D28D9; }")
-            btn_ev.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(ev_link)))
-            btn_row.addWidget(btn_ev)
-
         btn_print_detail = QPushButton("🖨️ Print Store Details")
         btn_print_detail.setStyleSheet(
-            "QPushButton { font-weight: bold; background: #2563EB; color: white; padding: 6px 16px; border-radius: 6px; min-height: 32px; } "
+            "QPushButton { font-weight: bold; background: #2563EB; color: white; padding: 6px 14px; border-radius: 6px; } "
             "QPushButton:hover { background: #1D4ED8; }"
         )
         btn_print_detail.clicked.connect(lambda: self.open_store_details_preview(record))
         btn_row.addWidget(btn_print_detail)
 
         btn_close = QPushButton("Close")
-        btn_close.setStyleSheet("QPushButton { font-weight: 600; padding: 6px 14px; border-radius: 6px; min-height: 32px; }")
         btn_close.clicked.connect(dialog.accept)
         btn_row.addWidget(btn_close)
         vbox.addLayout(btn_row)
@@ -4236,7 +3783,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             self,
             "Select customer prospect database",
             str(Path.home()),
-            "Store Directory Workbooks & CSV (*.xlsx *.csv);;Excel workbooks (*.xlsx);;CSV files (*.csv)",
+            "Excel workbooks (*.xlsx)",
         )
         if path:
             self.load_database_workbook(path)
@@ -4246,7 +3793,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             self,
             "Select state-wise store dashboard",
             str(Path.home()),
-            "Store Directory Workbooks & CSV (*.xlsx *.csv);;Excel workbooks (*.xlsx);;CSV files (*.csv)",
+            "Excel workbooks (*.xlsx)",
         )
         if path:
             self.load_dashboard_workbook(path)
@@ -4441,98 +3988,43 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         self.apply_filters()
 
     def _fill_leads_table(self):
-        self.leads_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.leads_table.setUpdatesEnabled(False)
         self.leads_table.setRowCount(len(self.records))
-
-        is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
-        theme = getattr(self, "_current_theme_name", "night")
-        link_color = "#38BDF8" if is_dark else ("#0284C7" if theme == "ocean" else ("#EA580C" if theme == "sunset" else "#2563EB"))
-        dim_color = "#94A3B8" if is_dark else "#64748B"
-        text_color = "#F8FAFC" if is_dark else "#0F172A"
-
-        link_qcolor = QColor(link_color)
-        dim_qcolor = QColor(dim_color)
-        text_qcolor = QColor(text_color)
-        status_verified_qcolor = QColor("#10B981" if is_dark else "#059669")
-        status_partial_qcolor = QColor("#F59E0B" if is_dark else "#D97706")
-
-        base_font = self.leads_table.font()
-        underline_font = self.leads_table.font()
-        underline_font.setUnderline(True)
-
         for row_index, record in enumerate(self.records):
-            source_url = str(record.get("source_url", "") or "").strip()
-            maps_url = str(record.get("maps", "") or "").strip()
-            if not maps_url.startswith(("https://", "http://")):
-                maps_url = google_maps_search_url(record)
-            web_url = str(record.get("website", "") or "").strip()
-            evidence_url = str(record.get("product_evidence", "") or "").strip()
-            catalog_url = str(record.get("product_catalog", "") or "").strip()
-
             for column_index, (_label, key) in enumerate(self.LEAD_COLUMNS):
-                text = format_prospect_cell_value(record, key)
-                item = QTableWidgetItem(text)
-                if key in {"source_url", "maps", "product_evidence", "product_catalog", "website"}:
-                    url_val = maps_url if key == "maps" else (source_url if key == "source_url" else (evidence_url if key == "product_evidence" else (catalog_url if key == "product_catalog" else web_url)))
-                    if key == "maps" and (not text or text == "NA") and url_val:
-                        text = url_val
-                        item.setText(text)
-                    item.setData(Qt.ItemDataRole.UserRole, url_val)
-                    if url_val and url_val.startswith(("https://", "http://")):
-                        item.setFont(underline_font)
-                        item.setForeground(link_qcolor)
-                        item.setToolTip(f"Click or Double-click to open in browser:\n{url_val}")
-                    else:
-                        item.setForeground(dim_qcolor)
-                elif key == "verification_status":
-                    if text == "Verified":
-                        item.setForeground(status_verified_qcolor)
-                    elif text == "Partially verified":
-                        item.setForeground(status_partial_qcolor)
-                    else:
-                        item.setForeground(dim_qcolor)
-                elif text == "NA":
-                    item.setForeground(dim_qcolor)
+                source_url = str(record.get("source_url", "") or "")
+                maps_url = str(record.get("maps", "") or "")
+                if key == "source_url":
+                    text = "Open source" if source_url else "NA"
+                elif key == "maps":
+                    text = "Open Maps" if maps_url.startswith(("https://", "http://")) else "NA"
                 else:
-                    item.setForeground(text_qcolor)
-                if text and text != "NA" and key not in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
+                    text = format_prospect_cell_value(record, key)
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark", "ocean", "sunset"}
+                if key == "source_url":
+                    item.setData(Qt.ItemDataRole.UserRole, source_url)
+                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if source_url else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif key == "maps":
+                    item.setData(Qt.ItemDataRole.UserRole, maps_url)
+                    item.setForeground(QColor("#38BDF8" if is_dark else "#0284C7") if maps_url.startswith(("https://", "http://")) else QColor("#94A3B8" if is_dark else "#64748B"))
+                elif text == "NA":
+                    item.setForeground(QColor("#94A3B8" if is_dark else "#64748B"))
+                else:
+                    item.setForeground(QColor("#FFFFFF" if is_dark else "#0F172A"))
+                if text and text != "NA":
                     item.setToolTip(text)
                 self.leads_table.setItem(row_index, column_index, item)
         self.leads_table.setUpdatesEnabled(True)
         # Expand row heights so full street addresses are readable in the directory.
-        self.leads_table.verticalHeader().setDefaultSectionSize(38)
-
-    def on_table_cell_clicked(self, row, column):
-        key = self.LEAD_COLUMNS[column][1]
-        if key in {"maps", "website", "source_url", "product_evidence", "product_catalog"}:
-            item = self.leads_table.item(row, column)
-            url = str(item.data(Qt.ItemDataRole.UserRole) or "").strip() if item else ""
-            if not url and item:
-                val = str(item.text() or "").strip()
-                if val.startswith(("https://", "http://")):
-                    url = val
-            if not url and key == "maps":
-                records = self._get_visible_records()
-                if 0 <= row < len(records):
-                    url = google_maps_search_url(records[row])
-            if url.startswith(("https://", "http://")):
-                QDesktopServices.openUrl(QUrl(url))
-                return
+        self.leads_table.resizeRowsToContents()
 
     def open_source_link(self, row, column):
         key = self.LEAD_COLUMNS[column][1]
-        if key in {"source_url", "maps", "website", "product_evidence", "product_catalog"}:
+        if key in {"source_url", "maps"}:
             item = self.leads_table.item(row, column)
             url = str(item.data(Qt.ItemDataRole.UserRole) or "") if item else ""
-            if not url and item:
-                val = str(item.text() or "").strip()
-                if val.startswith(("https://", "http://")):
-                    url = val
-            if not url and key == "maps":
-                records = self._get_visible_records()
-                if 0 <= row < len(records):
-                    url = google_maps_search_url(records[row])
             if url.startswith(("https://", "http://")):
                 QDesktopServices.openUrl(QUrl(url))
                 return
@@ -4585,9 +4077,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if key in {"web_leads", "workbook_leads", "stores", "gyms", "dashboard_stores", "variance", "territory_type"}:
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
-                theme = getattr(self, "_current_theme_name", "night")
-                text_color = "#FFFFFF" if is_dark else "#0F172A"
+                is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark", "ocean", "sunset"}
                 if key == "territory_type":
                     tt = data.get("territory_type", "")
                     if tt == "State":
@@ -4597,11 +4087,11 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
                     elif tt == "Island Territory":
                         item.setForeground(QColor("#34D399" if is_dark else "#059669"))
                     else:
-                        item.setForeground(QColor(text_color))
+                        item.setForeground(QColor("#FFFFFF" if is_dark else "#0F172A"))
                 elif key == "variance" and value is not None and value != 0:
                     item.setForeground(QColor("#FCA5A5" if is_dark else "#DC2626") if value > 0 else QColor("#FCD34D" if is_dark else "#D97706"))
                 else:
-                    item.setForeground(QColor(text_color))
+                    item.setForeground(QColor("#FFFFFF" if is_dark else "#0F172A"))
                 self.region_table.setItem(row_index, column_index, item)
 
         states_stores = sum(r["stores"] for r in rows if r.get("territory_type") == "State")
@@ -4622,41 +4112,11 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         stores = sum(record.get("kind") in {"Store", "Pure Product Selling Store"} and record.get("kind") != "Gym + Store" for record in self.records)
         gyms = sum(record.get("kind") in {"Gym", "Gyms"} and record.get("kind") != "Gym + Store" for record in self.records)
         gym_stores = sum(record.get("kind") in {"Gym + Store", "Gym which sells products"} for record in self.records)
-
-        covered_states = set()
-        covered_uts = set()
-        covered_islands = set()
-
-        for record in self.records:
-            raw_state = str(record.get("state") or "").strip()
-            if not raw_state:
-                continue
-            for part in raw_state.split(","):
-                clean = normalise_state(part.strip())
-                if clean in INDIA_STATES:
-                    covered_states.add(clean)
-                elif clean in INDIA_UNION_TERRITORIES:
-                    covered_uts.add(clean)
-                elif clean in INDIA_ISLAND_TERRITORIES:
-                    covered_islands.add(clean)
-
+        regions = {record.get("state") for record in self.records if record.get("state")}
         self.kpi_values["prospects"].setText(f"{len(self.records):,}" if self.records else "—")
         self.kpi_values["stores"].setText(f"{stores:,}" if self.records else "—")
         self.kpi_values["gyms"].setText(f"{gyms:,}" if self.records else "—")
-
-        if "states" in self.kpi_values:
-            self.kpi_values["states"].setText(f"{len(covered_states)} / {len(INDIA_STATES)}" if self.records else "—")
-            self.kpi_values["states"].setToolTip(f"{len(covered_states)} of {len(INDIA_STATES)} Indian States Covered (100% of States)")
-        if "uts" in self.kpi_values:
-            self.kpi_values["uts"].setText(f"{len(covered_uts)} / {len(INDIA_UNION_TERRITORIES)}" if self.records else "—")
-            self.kpi_values["uts"].setToolTip(f"{len(covered_uts)} of {len(INDIA_UNION_TERRITORIES)} Union Territories Covered (Chandigarh, Delhi, J&K, Ladakh, Puducherry, DNH & DD)")
-        if "islands" in self.kpi_values:
-            self.kpi_values["islands"].setText(f"{len(covered_islands)} / {len(INDIA_ISLAND_TERRITORIES)}" if self.records else "—")
-            self.kpi_values["islands"].setToolTip(f"{len(covered_islands)} of {len(INDIA_ISLAND_TERRITORIES)} Island Territories Covered (Andaman & Nicobar Islands, Lakshadweep)")
-        if "regions" in self.kpi_values and "states" not in self.kpi_values:
-            total_covered = len(covered_states) + len(covered_uts) + len(covered_islands)
-            self.kpi_values["regions"].setText(f"{total_covered} / 36" if self.records else "—")
-
+        self.kpi_values["regions"].setText(f"{len(regions):,}" if self.records else "—")
         self.kpi_values["dashboard"].setText(f"{self.dashboard_total:,}" if self.dashboard_total is not None else "—")
         saved_count = len(load_saved_prospects(self.db)) if self.db is not None else 0
         if self.preview_records:
@@ -4745,288 +4205,164 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         ex_keywords = [kw.strip() for kw in all_kw_raw.split(",") if kw.strip()]
 
         visible = 0
-        self.leads_table.setUpdatesEnabled(False)
-        try:
-            for row_index, record in enumerate(self.records):
-                rec_kind = str(record.get("kind") or "Store").strip()
-                rec_cat = str(record.get("business_category") or "").casefold()
-    
-                # Positive filtering
-                if kind in ("All types", "All Categories"):
-                    matches_kind = True
-                elif kind == "Store":
-                    # Preserve the general Store filter for existing customer/workbook
-                    # rows, including rows awaiting address enrichment.
-                    matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
-                elif kind == "Pure Product Selling Stores":
-                    matches_kind = (
-                        rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
-                        and rec_kind not in ("Gym", "Gym + Store")
+        for row_index, record in enumerate(self.records):
+            rec_kind = str(record.get("kind") or "Store").strip()
+            rec_cat = str(record.get("business_category") or "").casefold()
+
+            # Positive filtering
+            if kind in ("All types", "All Categories"):
+                matches_kind = True
+            elif kind == "Store":
+                # Preserve the general Store filter for existing customer/workbook
+                # rows, including rows awaiting address enrichment.
+                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+            elif kind == "Pure Product Selling Stores":
+                matches_kind = rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store")
+                # This specific filter is strict: only product-evidenced stores with
+                # a full postal address and an actionable Maps link are shown.
+                if matches_kind:
+                    address_value = str(record.get("address") or "").strip()
+                    maps_value = str(record.get("maps") or "").strip()
+                    evidence_blob = " ".join(
+                        str(record.get(field) or "")
+                        for field in ("business_name", "business_category", "source_status", "notes")
                     )
-                    if matches_kind:
-                        evidence_blob = " ".join(
-                            str(record.get(field) or "")
-                            for field in ("business_name", "business_category", "source_status", "notes")
-                        )
-                        if NEGATIVE_FILTER_PATTERN.search(evidence_blob):
-                            matches_kind = False
-                elif kind in ("Gym", "Gyms"):
-                    matches_kind = rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store"
-                elif kind in ("Gyms which sell products also", "Gym + Store", "Gyms which sell products"):
-                    matches_kind = (
-                        rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                    product_evidence = re.search(
+                        r"\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\b",
+                        evidence_blob, re.I
+                    )
+                    full_address = len(address_value) >= 20 and bool(re.search(r"\b\d{6}\b", address_value))
+                    has_maps_link = maps_value.startswith((
+                        "https://www.google.com/maps/",
+                        "https://maps.google.com/",
+                        "https://maps.app.goo.gl/",
+                    ))
+                    matches_kind = bool(
+                        product_evidence and full_address and has_maps_link
+                        and not NEGATIVE_FILTER_PATTERN.search(evidence_blob + " " + address_value)
+                    )
+            elif kind in ("Gym", "Gyms"):
+                matches_kind = rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store"
+            elif kind in ("Gyms which sell products also", "Gym + Store", "Gyms which sell products"):
+                matches_kind = (
+                    rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                    or "product" in rec_cat
+                    or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))
+                )
+            else:
+                matches_kind = rec_kind == kind
+            rec_state_raw = str(record.get("state") or "")
+            rec_states = [s.strip().casefold() for s in rec_state_raw.split(",") if s.strip()]
+            matches_state = (state == "All States / UTs") or (state.casefold() in rec_states) or (rec_state_raw == state)
+            phone = str(record.get("phone") or "").strip()
+            email = str(record.get("email") or record.get("email_address") or "").strip()
+            has_contact = bool(phone or email) and not any(v.casefold() in {"n/a", "na", "none", "null", "-"} for v in (phone, email) if v)
+            matches_contact = (
+                contact == "All contacts"
+                or (contact == "Has phone/email" and has_contact)
+                or (contact == "Missing contact" and not has_contact)
+            )
+            website_value = str(record.get("website") or "").strip()
+            has_website = bool(website_value) and website_value.casefold() not in {"n/a", "na", "none", "null", "-"}
+            matches_website = (
+                website == "All websites"
+                or (website == "Has website" and has_website)
+                or (website == "Missing website" and not has_website)
+            )
+            verified_value = str(record.get("verified") or "").strip().casefold()
+            is_verified = verified_value in {"1", "true", "yes", "verified", "y"}
+            matches_verification = (
+                verification == "All verification"
+                or (verification == "Verified" and is_verified)
+                or (verification == "Unverified" and not is_verified)
+            )
+            search_blob = " ".join(str(value or "") for value in record.values()).casefold()
+            search_terms = search.split()
+            matches_search = not search or all(term in search_blob for term in search_terms)
+
+            # Negative / Exclude filtering
+            excluded = False
+            if ex_drop_missing_contact and not has_contact:
+                excluded = True
+            if not excluded and ex_drop_missing_website and not has_website:
+                excluded = True
+            if not excluded and ex_drop_unverified and not is_verified:
+                excluded = True
+
+            if not excluded and ex_state and (ex_state.casefold() in rec_states or rec_state_raw == ex_state):
+                excluded = True
+
+            if not excluded and ex_drop_combo_negative:
+                b_name = str(record.get("business_name") or record.get("name") or "").casefold()
+                is_gym = (rec_kind in ("Gym", "Gyms", "Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
+                          or "gym" in rec_cat
+                          or "gym" in b_name
+                          or "fitness cent" in rec_cat)
+                is_wellness = ("wellness" in search_blob
+                               or "wellness" in rec_cat
+                               or "wellness" in b_name)
+                is_herbal = any(h in search_blob for h in ("herbal", "herbalife", "ayurved", "ayurvedic", "homeopath"))
+                is_healthkart = ("healthkart" in search_blob
+                                 or "healthkart" in b_name
+                                 or "healthkart" in str(record.get("website", "")).casefold())
+                if is_gym or is_wellness or is_herbal or is_healthkart:
+                    excluded = True
+
+            if not excluded and ex_kind:
+                if ex_kind == "Pure Product Selling Stores":
+                    if rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store":
+                        excluded = True
+                elif ex_kind in ("Gym", "Gyms"):
+                    if rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store":
+                        excluded = True
+                elif ex_kind == "Gyms which sell products also":
+                    if (rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
                         or "product" in rec_cat
-                        or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))
-                    )
-                else:
-                    matches_kind = rec_kind == kind
-                rec_state_raw = str(record.get("state") or "")
-                rec_states = [s.strip().casefold() for s in rec_state_raw.split(",") if s.strip()]
-                matches_state = (state == "All States / UTs") or (state.casefold() in rec_states) or (rec_state_raw == state)
-                phone = str(record.get("phone") or "").strip()
-                email = str(record.get("email") or record.get("email_address") or "").strip()
-                has_contact = bool(phone or email) and not any(v.casefold() in {"n/a", "na", "none", "null", "-"} for v in (phone, email) if v)
-                matches_contact = (
-                    contact == "All contacts"
-                    or (contact == "Has phone/email" and has_contact)
-                    or (contact == "Missing contact" and not has_contact)
-                )
-                website_value = str(record.get("website") or "").strip()
-                has_website = bool(website_value) and website_value.casefold() not in {"n/a", "na", "none", "null", "-"}
-                matches_website = (
-                    website == "All websites"
-                    or (website == "Has website" and has_website)
-                    or (website == "Missing website" and not has_website)
-                )
-                verified_value = str(record.get("verified") or "").strip().casefold()
-                ver_status = str(record.get("verification_status") or "").strip().casefold()
-                is_verified = verified_value in {"1", "true", "yes", "verified", "y"} or ver_status == "verified"
-                is_partially = ver_status == "partially verified"
-                matches_verification = (
-                    verification == "All verification"
-                    or (verification == "Verified" and is_verified)
-                    or (verification == "Partially verified" and is_partially)
-                    or (verification == "Unverified" and (not is_verified and not is_partially))
-                )
-                search_blob = " ".join(str(value or "") for value in record.values()).casefold()
-                search_terms = search.split()
-                matches_search = not search or all(term in search_blob for term in search_terms)
-    
-                # Negative / Exclude filtering
-                excluded = False
-                if ex_drop_missing_contact and not has_contact:
-                    excluded = True
-                if not excluded and ex_drop_missing_website and not has_website:
-                    excluded = True
-                if not excluded and ex_drop_unverified and not is_verified:
-                    excluded = True
-    
-                if not excluded and ex_state and (ex_state.casefold() in rec_states or rec_state_raw == ex_state):
-                    excluded = True
-    
-                if not excluded and ex_drop_combo_negative:
-                    b_name = str(record.get("business_name") or record.get("name") or "").casefold()
-                    is_gym = (rec_kind in ("Gym", "Gyms", "Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
-                              or "gym" in rec_cat
-                              or "gym" in b_name
-                              or "fitness cent" in rec_cat)
-                    is_wellness = ("wellness" in search_blob
-                                   or "wellness" in rec_cat
-                                   or "wellness" in b_name)
-                    is_herbal = any(h in search_blob for h in ("herbal", "herbalife", "ayurved", "ayurvedic", "homeopath"))
-                    is_healthkart = ("healthkart" in search_blob
-                                     or "healthkart" in b_name
-                                     or "healthkart" in str(record.get("website", "")).casefold())
-                    if is_gym or is_wellness or is_herbal or is_healthkart:
+                        or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))):
                         excluded = True
-    
-                if not excluded and ex_kind:
-                    if ex_kind == "Pure Product Selling Stores":
-                        if rec_kind in ("Store", "Supplement Store", "Pure Product Selling Store") and rec_kind != "Gym + Store":
-                            excluded = True
-                    elif ex_kind in ("Gym", "Gyms"):
-                        if rec_kind in ("Gym", "Gyms") and rec_kind != "Gym + Store":
-                            excluded = True
-                    elif ex_kind == "Gyms which sell products also":
-                        if (rec_kind in ("Gym + Store", "Gym which sells products", "Gym + Store (Hybrid)")
-                            or "product" in rec_cat
-                            or ("gym" in rec_cat and any(w in rec_cat for w in ("supplement", "nutrition", "counter", "pro-shop", "protein", "shake")))):
-                            excluded = True
-                    elif rec_kind.casefold() == ex_kind.casefold() or ex_kind.casefold() in rec_cat:
+                elif rec_kind.casefold() == ex_kind.casefold() or ex_kind.casefold() in rec_cat:
+                    excluded = True
+
+            if not excluded and ex_name:
+                rec_name = str(record.get("business_name") or record.get("name") or "").casefold()
+                if ex_name in rec_name:
+                    excluded = True
+
+            if not excluded and ex_district:
+                rec_district = " ".join([str(record.get("city") or ""), str(record.get("area") or ""), str(record.get("district") or "")]).casefold()
+                if ex_district in rec_district:
+                    excluded = True
+
+            if not excluded and ex_keywords:
+                for kw in ex_keywords:
+                    if kw in search_blob:
                         excluded = True
-    
-                if not excluded and ex_name:
-                    rec_name = str(record.get("business_name") or record.get("name") or "").casefold()
-                    if ex_name in rec_name:
-                        excluded = True
-    
-                if not excluded and ex_district:
-                    rec_district = " ".join([str(record.get("city") or ""), str(record.get("area") or ""), str(record.get("district") or "")]).casefold()
-                    if ex_district in rec_district:
-                        excluded = True
-    
-                if not excluded and ex_keywords:
-                    for kw in ex_keywords:
-                        if kw in search_blob:
-                            excluded = True
-                            break
-    
-                shown = (not excluded) and matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
-                self.leads_table.setRowHidden(row_index, not shown)
-                visible += shown
-        finally:
-            self.leads_table.setUpdatesEnabled(True)
-        total_cnt = len(self.records)
-        unique_cnt = len({prospect_dedupe_key(r) for r in self.records})
-        verified_cnt = sum(1 for r in self.records if str(r.get("verification_status") or "").casefold() == "verified")
-        incomplete_cnt = total_cnt - verified_cnt
+                        break
+
+            shown = (not excluded) and matches_kind and matches_state and matches_search and matches_contact and matches_website and matches_verification
+            self.leads_table.setRowHidden(row_index, not shown)
+            visible += shown
         self.results_label.setText(
-            f"Showing {visible:,} of {total_cnt:,} stores | Unique: {unique_cnt:,} | Verified Sellers: {verified_cnt:,} | Incomplete: {incomplete_cnt:,}"
+            f"Showing {visible:,} of {len(self.records):,} stores in directory."
             if self.records else "No store records loaded. Use '⚡ 1-Tap Deep Web Scraping & Master Update' above."
         )
 
     def apply_theme(self, theme_name="night"):
         self._current_theme_name = (theme_name or "night").lower()
-        theme = self._current_theme_name
-        is_dark = theme in {"night", "dark"}
+        is_dark = self._current_theme_name in {"night", "dark", "ocean", "sunset"}
 
-        if is_dark:
-            bg = "#0B1120"
-            card_bg = "rgba(15, 23, 42, 0.90)"
-            border = "rgba(59, 130, 246, 0.35)"
-            title_fg = "#FFFFFF"
-            text_fg = "#FFFFFF"
-            secondary_fg = "#CBD5E1"
-            input_bg = "#1E293B"
-            input_border = "rgba(255, 255, 255, 0.20)"
-            table_bg = "#0F172A"
-            table_alt_bg = "#1E293B"
-            header_bg = "#1E293B"
-            header_fg = "#38BDF8"
-            btn_bg = "#1E293B"
-            btn_fg = "#F8FAFC"
-            btn_border = "#3B82F6"
-            btn_hover = "#2563EB"
-            accent_title = "#38BDF8"
-        elif theme == "ocean":
-            bg = "#F0F9FF"
-            card_bg = "#FFFFFF"
-            border = "#BAE6FD"
-            title_fg = "#0C4A6E"
-            text_fg = "#0F172A"
-            secondary_fg = "#0369A1"
-            input_bg = "#FFFFFF"
-            input_border = "#BAE6FD"
-            table_bg = "#FFFFFF"
-            table_alt_bg = "#F0F9FF"
-            header_bg = "#E0F2FE"
-            header_fg = "#0284C7"
-            btn_bg = "#F0F9FF"
-            btn_fg = "#0C4A6E"
-            btn_border = "#0284C7"
-            btn_hover = "#BAE6FD"
-            accent_title = "#0284C7"
-        elif theme == "sunset":
-            bg = "#FFF7ED"
-            card_bg = "#FFFFFF"
-            border = "#FED7AA"
-            title_fg = "#7C2D12"
-            text_fg = "#0F172A"
-            secondary_fg = "#C2410C"
-            input_bg = "#FFFFFF"
-            input_border = "#FED7AA"
-            table_bg = "#FFFFFF"
-            table_alt_bg = "#FFF7ED"
-            header_bg = "#FFEDD5"
-            header_fg = "#EA580C"
-            btn_bg = "#FFF7ED"
-            btn_fg = "#7C2D12"
-            btn_border = "#EA580C"
-            btn_hover = "#FED7AA"
-            accent_title = "#EA580C"
-        else:  # day / light
-            bg = "#F8FAFC"
-            card_bg = "#FFFFFF"
-            border = "#CBD5E1"
-            title_fg = "#0F172A"
-            text_fg = "#0F172A"
-            secondary_fg = "#475569"
-            input_bg = "#FFFFFF"
-            input_border = "#CBD5E1"
-            table_bg = "#FFFFFF"
-            table_alt_bg = "#F8FAFC"
-            header_bg = "#F1F5F9"
-            header_fg = "#1E40AF"
-            btn_bg = "#FFFFFF"
-            btn_fg = "#0F172A"
-            btn_border = "#94A3B8"
-            btn_hover = "#F1F5F9"
-            accent_title = "#2563EB"
-
-        card_style = f"background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px;"
-        for card_attr in ("view_nav_card", "action_card", "print_card", "regional_print_card"):
-            widget = getattr(self, card_attr, None)
-            if widget is not None:
-                widget.setStyleSheet(f"QFrame {{ {card_style} }}")
-
-        btn_style = (
-            f"QPushButton {{ font-size: 8.5pt; font-weight: 700; background: {btn_bg}; color: {btn_fg}; "
-            f"border: 1.5px solid {btn_border}; border-radius: 6px; padding: 5px 14px; min-height: 32px; }} "
-            f"QPushButton:hover {{ background: {btn_hover}; color: {btn_fg}; border-color: {accent_title}; }}"
-        )
-        for b in getattr(self, "print_buttons", []):
-            b.setStyleSheet(btn_style)
-        for b in getattr(self, "regional_print_buttons", []):
-            b.setStyleSheet(btn_style)
-
-        if hasattr(self, "print_title"):
-            self.print_title.setStyleSheet(f"font-size: 9.5pt; font-weight: 800; color: {accent_title};")
-        if hasattr(self, "reg_print_title"):
-            self.reg_print_title.setStyleSheet(f"font-size: 9pt; font-weight: 700; color: {accent_title};")
-        if hasattr(self, "reg_print_note"):
-            self.reg_print_note.setStyleSheet(f"font-size: 8pt; color: {secondary_fg}; font-style: italic;")
-        if hasattr(self, "view_icon_label"):
-            self.view_icon_label.setStyleSheet(f"font-size: 10pt; font-weight: 800; color: {accent_title};")
-        if hasattr(self, "view_nav_hint"):
-            self.view_nav_hint.setStyleSheet(f"font-size: 8.5pt; color: {secondary_fg}; font-style: italic;")
-        if hasattr(self, "snapshot_badge"):
-            self.snapshot_badge.setStyleSheet(f"font-size: 8.5pt; color: {secondary_fg};")
-        if hasattr(self, "results_label"):
-            self.results_label.setStyleSheet(f"font-size: 8.5pt; font-weight: 600; color: {secondary_fg};")
-        if hasattr(self, "sync_status_badge"):
-            sync_bg = "rgba(16, 185, 129, 0.15)" if is_dark else "#ECFDF5"
-            sync_fg = "#34D399" if is_dark else "#059669"
-            sync_border = "rgba(16, 185, 129, 0.3)" if is_dark else "#A7F3D0"
-            self.sync_status_badge.setStyleSheet(
-                f"font-size: 8.5pt; font-weight: 700; color: {sync_fg}; background: {sync_bg}; "
-                f"border: 1px solid {sync_border}; border-radius: 5px; padding: 4px 10px;"
-            )
-
-        # Exclude controls
-        if hasattr(self, "exclude_dropdown"):
-            ex_bg = "rgba(239, 68, 68, 0.12)" if is_dark else "#FEF2F2"
-            ex_fg = "#FCA5A5" if is_dark else "#DC2626"
-            ex_border = "rgba(239, 68, 68, 0.35)" if is_dark else "#FECACA"
-            self.exclude_dropdown.setStyleSheet(
-                f"QComboBox {{ font-size: 8.5pt; font-weight: 600; color: {ex_fg}; background: {ex_bg}; "
-                f"border: 1px solid {ex_border}; border-radius: 6px; padding: 4px 10px; min-width: 250px; min-height: 32px; }}"
-            )
-        if hasattr(self, "exclude_keyword"):
-            kw_bg = "#1E293B" if is_dark else "#FFFFFF"
-            kw_fg = "#F8FAFC" if is_dark else "#0F172A"
-            kw_border = "rgba(239, 68, 68, 0.3)" if is_dark else "#FECACA"
-            self.exclude_keyword.setStyleSheet(
-                f"QLineEdit {{ font-size: 8.5pt; color: {kw_fg}; background-color: {kw_bg}; border: 1px solid {kw_border}; border-radius: 6px; padding: 4px 8px; min-height: 32px; }}"
-            )
-        if hasattr(self, "btn_clear_excludes"):
-            cl_bg = "rgba(239, 68, 68, 0.18)" if is_dark else "#FEE2E2"
-            cl_fg = "#FCA5A5" if is_dark else "#DC2626"
-            cl_border = "rgba(239, 68, 68, 0.4)" if is_dark else "#FCA5A5"
-            self.btn_clear_excludes.setStyleSheet(
-                f"QPushButton {{ font-size: 8.5pt; font-weight: 600; background: {cl_bg}; "
-                f"border: 1px solid {cl_border}; border-radius: 6px; padding: 4px 14px; color: {cl_fg}; min-height: 32px; }} "
-                f"QPushButton:hover {{ background: rgba(239, 68, 68, 0.3); color: #FFFFFF; }}"
-            )
+        bg = "#0B1120" if is_dark else "#F8FAFC"
+        card_bg = "rgba(15, 23, 42, 0.90)" if is_dark else "#FFFFFF"
+        border = "rgba(59, 130, 246, 0.35)" if is_dark else "#CBD5E1"
+        title_fg = "#FFFFFF" if is_dark else "#0F172A"
+        text_fg = "#FFFFFF" if is_dark else "#0F172A"
+        secondary_fg = "#CBD5E1" if is_dark else "#334155"
+        input_bg = "#1E293B" if is_dark else "#FFFFFF"
+        input_border = "rgba(255, 255, 255, 0.20)" if is_dark else "#CBD5E1"
+        table_bg = "#0F172A" if is_dark else "#FFFFFF"
+        table_alt_bg = "#1E293B" if is_dark else "#F8FAFC"
+        header_bg = "#1E293B" if is_dark else "#F1F5F9"
+        header_fg = "#38BDF8" if is_dark else "#1E40AF"
 
         self.setStyleSheet(f"""
             QWidget#customerProspectsContainer {{ background-color: {bg}; }}
@@ -5035,47 +4371,29 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
             QLabel#prospectKpiValue {{ font-size: 17pt; font-weight: 800; }}
             QLabel#prospectKpiLabel {{ font-size: 8.5pt; font-weight: 600; color: {secondary_fg}; }}
             QLabel#prospectReconciliation {{ color: {secondary_fg}; }}
-            QLabel#prospectViewLabel {{ color: {accent_title}; font-weight: 800; font-size: 10pt; }}
+            QLabel#prospectViewLabel {{ color: #38BDF8; font-weight: 800; font-size: 10pt; }}
             QFrame#prospectActionCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#prospectKpiCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#storeDirectoryPrintCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#regionalDashboardPrintCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
             QFrame#prospectViewNavCard {{ background: {card_bg}; border: 1.5px solid {border}; border-radius: 10px; }}
-            QLineEdit {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 28px; }}
-            QLineEdit:focus {{ border-color: {accent_title}; }}
-            QComboBox {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 28px; }}
-            QComboBox:focus {{ border-color: {accent_title}; }}
+            QLineEdit {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 24px; }}
+            QLineEdit:focus {{ border-color: #38BDF8; }}
+            QComboBox {{ background-color: {input_bg}; color: {text_fg}; border: 1.5px solid {input_border}; border-radius: 6px; padding: 5px 10px; font-size: 9pt; min-height: 24px; }}
+            QComboBox:focus {{ border-color: #38BDF8; }}
             QComboBox QAbstractItemView {{ background-color: {card_bg}; color: {text_fg}; selection-background-color: #2563EB; selection-color: #FFFFFF; border: 1px solid {border}; }}
             QTableWidget {{ background-color: {table_bg}; color: {text_fg}; gridline-color: rgba(255, 255, 255, 0.10); alternate-background-color: {table_alt_bg}; selection-background-color: #2563EB; selection-color: #FFFFFF; font-size: 9pt; border: 1px solid {border}; }}
             QTableWidget::item {{ color: {text_fg}; padding: 6px 8px; }}
             QTableWidget::item:selected {{ background-color: #2563EB; color: #FFFFFF; }}
             QHeaderView::section {{ background-color: {header_bg}; color: {header_fg}; font-weight: 700; font-size: 8.5pt; padding: 8px 6px; border: 1px solid {border}; }}
-            QTabBar::tab {{ font-size: 9.5pt; font-weight: 700; padding: 8px 20px; border-top-left-radius: 8px; border-top-right-radius: 8px; min-height: 28px; }}
-            QTabBar::tab:selected {{ background: {accent_title}; color: #FFFFFF; font-weight: 800; border: 1px solid {accent_title}; border-bottom: none; }}
-            QTabBar::tab:!selected {{ background: {"rgba(30, 41, 59, 0.75)" if is_dark else header_bg}; color: {"#CBD5E1" if is_dark else secondary_fg}; border: 1px solid {border}; border-bottom: none; }}
-            QTabBar::tab:hover:!selected {{ background: {"rgba(51, 65, 85, 0.85)" if is_dark else btn_hover}; color: {"#FFFFFF" if is_dark else text_fg}; }}
+            QTabBar::tab {{ font-size: 9pt; font-weight: 700; padding: 6px 16px; border-top-left-radius: 6px; border-top-right-radius: 6px; }}
+            QTabBar::tab:selected {{ background: #2563EB; color: #FFFFFF; }}
+            QTabBar::tab:!selected {{ background: rgba(30, 41, 59, 0.7); color: {secondary_fg}; }}
             QScrollBar:vertical {{ background: {table_bg}; width: 14px; margin: 0px; border: 1px solid {border}; border-radius: 7px; }}
             QScrollBar::handle:vertical {{ background: #3B82F6; min-height: 28px; border-radius: 6px; }}
             QScrollBar::handle:vertical:hover {{ background: #60A5FA; }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
         """)
-
-        for card in self.findChildren(QFrame, "prospectKpiCard"):
-            card.setStyleSheet(f"QFrame#prospectKpiCard {{ {card_style} }}")
-        for lbl in self.findChildren(QLabel, "prospectKpiLabel"):
-            lbl.setStyleSheet(f"font-size: 8pt; font-weight: 600; color: {secondary_fg};")
-
-        for c_id, accent, val_lbl in (
-            ("territoryStatesCard", "#3B82F6", getattr(self, "card_states_val", None)),
-            ("territoryUtCard", "#F59E0B", getattr(self, "card_ut_val", None)),
-            ("territoryIslandsCard", "#10B981", getattr(self, "card_islands_val", None)),
-        ):
-            c_bg = "rgba(30, 41, 59, 0.6)" if is_dark else ("#F0F9FF" if theme == "ocean" else ("#FFF7ED" if theme == "sunset" else "#F8FAFC"))
-            c_border = f"1px solid {accent}" if is_dark else f"1.5px solid {accent}"
-            for card in self.findChildren(QFrame, c_id):
-                card.setStyleSheet(f"QFrame#{c_id} {{ background: {c_bg}; border: {c_border}; border-radius: 8px; padding: 6px 12px; }}")
-            if val_lbl is not None:
-                val_lbl.setStyleSheet(f"font-size: 10pt; font-weight: 800; color: {'#FFFFFF' if is_dark else '#0F172A'};")
 
         palette = self.leads_table.palette()
         palette.setColor(QPalette.ColorRole.Text, QColor(text_fg))
@@ -5083,52 +4401,3 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
         palette.setColor(QPalette.ColorRole.AlternateBase, QColor(table_alt_bg))
         self.leads_table.setPalette(palette)
         self.region_table.setPalette(palette)
-
-        # Repaint both tables with active theme foregrounds
-        if not getattr(self, "_data_loaded", False):
-            return
-        if self.leads_table.rowCount() == 0 and self.records:
-            self._refresh_views()
-        else:
-            self._apply_theme_to_existing_table()
-
-    def _apply_theme_to_existing_table(self):
-        is_dark = getattr(self, "_current_theme_name", "night") in {"night", "dark"}
-        theme = getattr(self, "_current_theme_name", "night")
-        link_color = QColor("#38BDF8" if is_dark else ("#0284C7" if theme == "ocean" else ("#EA580C" if theme == "sunset" else "#2563EB")))
-        dim_color = QColor("#94A3B8" if is_dark else "#64748B")
-        text_color = QColor("#F8FAFC" if is_dark else "#0F172A")
-        status_verified = QColor("#10B981" if is_dark else "#059669")
-        status_partial = QColor("#F59E0B" if is_dark else "#D97706")
-
-        self.leads_table.setUpdatesEnabled(False)
-        url_cols = {i for i, (_, k) in enumerate(self.LEAD_COLUMNS) if k in {"source_url", "maps", "product_evidence", "product_catalog", "website"}}
-        ver_col = next((i for i, (_, k) in enumerate(self.LEAD_COLUMNS) if k == "verification_status"), None)
-
-        rows = self.leads_table.rowCount()
-        cols = self.leads_table.columnCount()
-        for r in range(rows):
-            for c in range(cols):
-                item = self.leads_table.item(r, c)
-                if not item:
-                    continue
-                if c in url_cols:
-                    url = item.data(Qt.ItemDataRole.UserRole)
-                    if url and str(url).startswith(("https://", "http://")):
-                        item.setForeground(link_color)
-                    else:
-                        item.setForeground(dim_color)
-                elif c == ver_col:
-                    t = item.text()
-                    if t == "Verified":
-                        item.setForeground(status_verified)
-                    elif t == "Partially verified":
-                        item.setForeground(status_partial)
-                    else:
-                        item.setForeground(dim_color)
-                else:
-                    if item.text() == "NA":
-                        item.setForeground(dim_color)
-                    else:
-                        item.setForeground(text_color)
-        self.leads_table.setUpdatesEnabled(True)
