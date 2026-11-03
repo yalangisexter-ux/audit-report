@@ -287,84 +287,23 @@ def _pull_full_database() -> bool:
 
 
 def _force_case_sensitive_usernames(conn: sqlite3.Connection) -> None:
-    """Ensure auth_users.username can hold both Admin and admin (BINARY)."""
-    try:
-        conn.execute("PRAGMA foreign_keys=OFF")
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS auth_users_bin (
-                id INTEGER PRIMARY KEY,
-                username TEXT NOT NULL COLLATE BINARY,
-                display_name TEXT,
-                role TEXT,
-                password_salt TEXT,
-                password_hash TEXT,
-                security_question TEXT,
-                answer_salt TEXT,
-                answer_hash TEXT,
-                active INTEGER DEFAULT 1,
-                created_at TEXT,
-                updated_at TEXT
-            )"""
-        )
-        conn.execute("DELETE FROM auth_users_bin")
-        conn.execute(
-            """INSERT INTO auth_users_bin(
-                   id, username, display_name, role, password_salt, password_hash,
-                   security_question, answer_salt, answer_hash, active, created_at, updated_at)
-               SELECT id, username, display_name, role, password_salt, password_hash,
-                      security_question, answer_salt, answer_hash, active, created_at, updated_at
-               FROM auth_users"""
-        )
-        conn.execute("DROP TABLE auth_users")
-        conn.execute("ALTER TABLE auth_users_bin RENAME TO auth_users")
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_username_bin ON auth_users(username)"
-        )
-        conn.execute("PRAGMA foreign_keys=ON")
-        print("[Auth] auth_users username collation forced to BINARY")
-    except Exception as exc:
-        print(f"[Auth] BINARY username migration skipped: {exc}")
+    """Compatibility no-op: web startup must never drop or rebuild auth_users."""
+    return
 
 
 def _normalize_web_login_accounts(db_path: Path) -> None:
-    """Migrate legacy customer login label to Admin without changing credentials.
-
-    Runs after the desktop Database initializer so its legacy NOCASE username
-    provisioning cannot collapse the two web identities. The EXE code is untouched.
-    """
+    """Read-only account verification; preserve usernames, roles, salts and hashes."""
     if not db_path.is_file():
         return
     conn = sqlite3.connect(str(db_path), timeout=30)
     try:
-        conn.row_factory = sqlite3.Row
-        _force_case_sensitive_usernames(conn)
-        # Older desktop databases used "taruna" as the customer account name.
-        # Rename that exact legacy row only when the web customer name is absent.
-        customer = conn.execute(
-            "SELECT id FROM auth_users WHERE username=? COLLATE BINARY LIMIT 1", ("Admin",)
-        ).fetchone()
-        legacy_customer = conn.execute(
-            "SELECT id FROM auth_users WHERE username=? COLLATE BINARY LIMIT 1", ("taruna",)
-        ).fetchone()
-        if customer is None and legacy_customer is not None:
-            conn.execute(
-                "UPDATE auth_users SET username=?, display_name=?, role=?, updated_at=? WHERE id=?",
-                ("Admin", "Admin (Customer)", "Admin", datetime.now().isoformat(timespec="seconds"), legacy_customer["id"]),
-            )
-            print("[Auth] Migrated legacy customer account label to Admin; password hash preserved")
-        conn.commit()
         rows = conn.execute(
-            "SELECT username, active, length(password_salt) AS salt_len, length(password_hash) AS hash_len "
-            "FROM auth_users WHERE username IN ('Admin','admin') COLLATE BINARY"
+            "SELECT username, active, length(password_salt), length(password_hash) "
+            "FROM auth_users ORDER BY id"
         ).fetchall()
-        for row in rows:
-            print(
-                f"[Auth] Account check: {row['username']} active={int(row['active'] or 0)} "
-                f"salt_present={bool(row['salt_len'])} hash_present={bool(row['hash_len'])}"
-            )
+        print("[Auth] Existing account records preserved: " + str(len(rows)))
     except Exception as exc:
-        conn.rollback()
-        print(f"[Auth] Web account normalization failed: {exc}")
+        print(f"[Auth] Account verification skipped: {exc}")
     finally:
         conn.close()
 
