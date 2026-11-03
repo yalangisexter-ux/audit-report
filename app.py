@@ -7046,15 +7046,22 @@ class MainWindow(QMainWindow):
         if page is None:
             return
         is_dashboard = index == 1 or page is getattr(self, "dashboard", None)
-        # Live wallpaper paint under a dense translucent Dashboard page freezes Windows
-        # on every open. Pause particles while Dashboard is visible; resume elsewhere.
+        # Customer requirement: keep live wallpaper and button/card drop-shadows.
+        # On Dashboard only, slow the particle timer (still animated) so Windows does
+        # not freeze while the dense page composites over the wallpaper.
         if hasattr(self, "bg_anim") and hasattr(self.bg_anim, "timer"):
             if is_dashboard:
-                self.bg_anim.timer.stop()
-            elif not self.bg_anim.timer.isActive():
-                self.bg_anim.timer.start(80)
-        # Dashboard has large tables/charts; opacity effects freeze the UI on Windows.
-        # Match by index and by widget identity so future tab reordering cannot reintroduce the hang.
+                if not self.bg_anim.timer.isActive():
+                    self.bg_anim.timer.start(200)
+                else:
+                    self.bg_anim.timer.setInterval(200)
+            else:
+                if not self.bg_anim.timer.isActive():
+                    self.bg_anim.timer.start(80)
+                else:
+                    self.bg_anim.timer.setInterval(80)
+        # Skip only the page-level opacity transition on Dashboard (not customer shadows).
+        # Full-page QGraphicsOpacityEffect on this dense tab freezes Windows on every open.
         if is_dashboard:
             if self._tab_animation:
                 self._tab_animation.stop()
@@ -7065,18 +7072,6 @@ class MainWindow(QMainWindow):
                     pass
             try:
                 page.setGraphicsEffect(None)
-            except Exception:
-                pass
-            # Strip residual opacity/shadow effects that force offscreen rasterization
-            # of the whole page when the tab becomes visible.
-            try:
-                for child in page.findChildren(QWidget):
-                    effect = child.graphicsEffect()
-                    if effect is not None and isinstance(effect, (QGraphicsOpacityEffect, QGraphicsDropShadowEffect)):
-                        # Keep interaction feedback available via stylesheet only on this page.
-                        child.setGraphicsEffect(None)
-                        if hasattr(child, "_interaction_feedback"):
-                            child._interaction_feedback = None
             except Exception:
                 pass
             return
@@ -10286,18 +10281,10 @@ class MainWindow(QMainWindow):
             if widget.objectName() in ("titleBtnMin", "titleBtnMax", "titleBtnClose"):
                 continue
             targets.append(widget)
-        dashboard_page = getattr(self, "dashboard", None)
+        # Customer requirement: keep InteractionFeedback / drop-shadows on Dashboard
+        # buttons and cards. Hang mitigation is handled by skipping page-level opacity
+        # transitions and throttling wallpaper interval on Dashboard only.
         for widget in targets:
-            # Drop-shadow effects on the dense Dashboard page force expensive
-            # off-screen compositing on every tab open (Windows freeze).
-            if dashboard_page is not None and (
-                widget is dashboard_page or dashboard_page.isAncestorOf(widget)
-            ):
-                if widget.graphicsEffect() is not None:
-                    widget.setGraphicsEffect(None)
-                if hasattr(widget, "_interaction_feedback"):
-                    widget._interaction_feedback = None
-                continue
             feedback = getattr(widget, "_interaction_feedback", None)
             if feedback is not None:
                 feedback.set_accent(accent)

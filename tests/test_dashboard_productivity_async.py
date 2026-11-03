@@ -73,28 +73,31 @@ def test_dashboard_productivity_chart_updates_only_after_final_batch():
 def test_dashboard_tab_transition_skips_opacity_effect():
     import inspect
     source = inspect.getsource(app.MainWindow.animate_tab_transition)
-    assert "index == 1" in source
+    assert "is_dashboard" in source or "index == 1" in source
     assert "dashboard" in source
     assert "QGraphicsOpacityEffect" in source
     # Dashboard branch must return before creating an opacity effect.
-    dash_branch = source.find("index == 1")
+    dash_branch = source.find("is_dashboard")
+    if dash_branch == -1:
+        dash_branch = source.find("index == 1")
     effect_pos = source.find("QGraphicsOpacityEffect")
     assert dash_branch != -1 and effect_pos != -1
     assert dash_branch < effect_pos
 
 
-def test_dashboard_open_pauses_live_wallpaper_and_strips_page_effects():
+def test_dashboard_keeps_customer_wallpaper_and_drop_shadows():
+    """Customer visuals stay enabled; only page-level opacity transition is skipped."""
     import inspect
-    source = inspect.getsource(app.MainWindow.animate_tab_transition)
-    assert "bg_anim.timer.stop()" in source
-    assert "QGraphicsDropShadowEffect" in source
-    assert "isAncestorOf" in source or "findChildren" in source
-    assert "is_dashboard" in source
-
-
-def test_interaction_animations_skip_dashboard_drop_shadows():
-    import inspect
-    source = inspect.getsource(app.MainWindow.apply_interaction_animations)
-    assert "dashboard" in source
-    assert "isAncestorOf" in source
-    assert "Drop-shadow effects on the dense Dashboard page" in source or "off-screen compositing" in source
+    anim = inspect.getsource(app.MainWindow.animate_tab_transition)
+    inter = inspect.getsource(app.MainWindow.apply_interaction_animations)
+    # Live wallpaper remains running (throttled, not stopped hard-only).
+    assert "setInterval(200)" in anim or "timer.start(200)" in anim
+    assert "setInterval(80)" in anim or "timer.start(80)" in anim
+    # Must not strip child drop-shadows on open.
+    assert "child.setGraphicsEffect(None)" not in anim
+    # InteractionFeedback must still be applied (not skipped for dashboard).
+    assert "InteractionFeedback(widget, accent)" in inter
+    assert "Drop-shadow effects on the dense Dashboard page" not in inter
+    # Page-level opacity transition still skipped for Dashboard.
+    assert "is_dashboard" in anim
+    assert "QGraphicsOpacityEffect" in anim
