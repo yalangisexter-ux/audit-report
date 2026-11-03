@@ -2,6 +2,10 @@ name: Integrate feature branches and cleanup
 
 on:
   workflow_dispatch: {}
+  push:
+    paths:
+      - "tools/TRIGGER_INTEGRATION"
+      - ".github/workflows/integrate-and-cleanup-branches.yml"
 
 permissions:
   contents: write
