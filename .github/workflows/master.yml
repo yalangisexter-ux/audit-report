@@ -33,14 +33,6 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Build Render React frontend
-        shell: pwsh
-        run: |
-          npm --prefix frontend ci --include=dev
-          if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
-          npm --prefix frontend run build
-          if ($LASTEXITCODE -ne 0) { throw "Frontend production build failed." }
-
       - name: Build and verify Render React frontend
         shell: pwsh
         run: |
@@ -142,7 +134,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
           PYTHONWARNINGS: ignore
         run: |
-          python -m pytest -q
+          python -m pytest -vv -ra
           if ($LASTEXITCODE -ne 0) { throw "Pytest regression tests failed with exit code $LASTEXITCODE" }
 
       - name: Download Microsoft Visual C++ runtime prerequisite
