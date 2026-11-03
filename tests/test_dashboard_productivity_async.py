@@ -81,3 +81,20 @@ def test_dashboard_tab_transition_skips_opacity_effect():
     effect_pos = source.find("QGraphicsOpacityEffect")
     assert dash_branch != -1 and effect_pos != -1
     assert dash_branch < effect_pos
+
+
+def test_dashboard_open_pauses_live_wallpaper_and_strips_page_effects():
+    import inspect
+    source = inspect.getsource(app.MainWindow.animate_tab_transition)
+    assert "bg_anim.timer.stop()" in source
+    assert "QGraphicsDropShadowEffect" in source
+    assert "isAncestorOf" in source or "findChildren" in source
+    assert "is_dashboard" in source
+
+
+def test_interaction_animations_skip_dashboard_drop_shadows():
+    import inspect
+    source = inspect.getsource(app.MainWindow.apply_interaction_animations)
+    assert "dashboard" in source
+    assert "isAncestorOf" in source
+    assert "Drop-shadow effects on the dense Dashboard page" in source or "off-screen compositing" in source
