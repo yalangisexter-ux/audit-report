@@ -32,7 +32,11 @@ export default function App() {
   const [query,setQuery]=useState('');
   const [form,setForm]=useState({name:'',employee_code:'',department:'',designation:'',phone:'',email:'',title:'',task_date:today(),employee_id:'',priority:'Normal',status:'Not started',details:'',sku:'',category:'General',brand:'',base_unit:'PCS',package_type:'',opening_stock:0,received_qty:0,reserved_qty:0,dispatched_qty:0,free_qty:0,returned_qty:0,damaged_qty:0,expired_qty:0,quarantined_qty:0,purchase_cost:0,reorder_level:0,selling_price:0,batch_number:'',expiry_date:'',storage_location:'',training_mode:'Offline',session_duration:60,num_sessions:1,plan_validity:30,standard_price:0,customer_name:'',order_value:0,full_name:'',plan_name:'',business_name:'',city:'',state:'',contact_person:'',content:'',channel:'general'});
   const [report,setReport]=useState({date:today(),report_type:'Audit / EOD',employee_id:''});
-  const [reportText,setReportText]=useState('');\n  const [stockTxn,setStockTxn]=useState({product_id:'',txn_type:'Received',quantity:1,unit:'PCS',reference:'',notes:''});\n  const [holiday,setHoliday]=useState({holiday_date:today(),holiday_name:''});\n  const [archiveFile,setArchiveFile]=useState(null);\n  const [archiveNotes,setArchiveNotes]=useState('');
+  const [reportText,setReportText]=useState('');
+  const [stockTxn,setStockTxn]=useState({product_id:'',txn_type:'Received',quantity:1,unit:'PCS',reference:'',notes:''});
+  const [holiday,setHoliday]=useState({holiday_date:today(),holiday_name:''});
+  const [archiveFile,setArchiveFile]=useState(null);
+  const [archiveNotes,setArchiveNotes]=useState('');
 
   const apiFetch=async(path,options={})=>{
     const headers={...(options.headers||{})};
@@ -65,7 +69,8 @@ export default function App() {
   const logout=()=>{localStorage.removeItem('rsc_auth_token');setToken('');setUser(null);setData({dashboard:null,employees:[],tasks:[],attendance:{date:today(),roster:[]},products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,db:null,tracker:[],holidays:[],archive:[]})};
   const set=(key,value)=>setForm(p=>({...p,[key]:value}));
   const post=async(path,payload)=>{await apiFetch(path,{method:'POST',body:JSON.stringify(payload)});await load();notify('Saved successfully');};
-  const del=async(path)=>{if(!window.confirm('Delete this record?'))return;await apiFetch(path,{method:'DELETE'});await load();notify('Record deleted')};\n  const download=async(path,filename)=>{const res=await fetch(API+path,{headers:{Authorization:'Bearer '+(token||localStorage.getItem('rsc_auth_token')||'')}});if(!res.ok)throw new Error('Download failed ('+res.status+')');const blob=await res.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename||'download';a.click();URL.revokeObjectURL(url)};
+  const del=async(path)=>{if(!window.confirm('Delete this record?'))return;await apiFetch(path,{method:'DELETE'});await load();notify('Record deleted')};
+  const download=async(path,filename)=>{const res=await fetch(API+path,{headers:{Authorization:'Bearer '+(token||localStorage.getItem('rsc_auth_token')||'')}});if(!res.ok)throw new Error('Download failed ('+res.status+')');const blob=await res.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename||'download';a.click();URL.revokeObjectURL(url)};
   const filtered=(items,keys)=>items.filter(x=>keys.some(k=>String(x[k]??'').toLowerCase().includes(query.toLowerCase())));
   const employeeOptions=data.employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>);
   const heading=navItems.find(x=>x[0]===tab)?.[1]||'Home';
