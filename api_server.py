@@ -23,19 +23,28 @@ if str(ROOT_DIR) not in sys.path:
 
 import app as desktop_app
 
-# Web-only isolation: the browser service owns its database and never reuses the
-# desktop LocalAppData database or the desktop GitHub/Worker synchronization path.
+# Render uses a persistent web working copy; encrypted synchronization is
+# managed by web_sync.py, not by the desktop application's local sync worker.
 if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
     _web_data_dir = Path(os.environ.get("AUDIT_DATA_DIR") or (ROOT_DIR / "web-data")).expanduser().resolve()
     _web_data_dir.mkdir(parents=True, exist_ok=True)
     desktop_app.APP_DIR = _web_data_dir
-    desktop_app.DB_PATH = _web_data_dir / "web_employee_audit.db"
+    desktop_app.DB_PATH = _web_data_dir / "audit_manager.db"
+    _legacy_web_db = _web_data_dir / "web_employee_audit.db"
+    if not desktop_app.DB_PATH.exists() and _legacy_web_db.is_file():
+        _src = sqlite3.connect(str(_legacy_web_db), timeout=30)
+        _dst = sqlite3.connect(str(desktop_app.DB_PATH), timeout=30)
+        try:
+            _src.backup(_dst)
+        finally:
+            _dst.close()
+            _src.close()
     desktop_app.BACKUP_DIR = _web_data_dir / "backups"
     desktop_app.EXPORT_DIR = _web_data_dir / "exports"
     desktop_app.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     desktop_app.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    class _WebOnlySyncDisabled:
+    class _WebOnlyDesktopSyncDisabled:
         is_configured = False
         is_dirty = False
         _on_dirty_callback = None
@@ -46,7 +55,7 @@ if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
         def set_status(self, *args, **kwargs): return False
         def close(self, *args, **kwargs): return None
         def download_latest_snapshot(self, *args, **kwargs): return None
-    desktop_app.GitHubDatabaseSync = _WebOnlySyncDisabled
+    desktop_app.GitHubDatabaseSync = _WebOnlyDesktopSyncDisabled
 
 from build_info import APP_VERSION
 
@@ -66,6 +75,7 @@ app.add_middleware(
 )
 
 _DB_INITIALIZED = False
+WEB_SYNC_MANAGER = None
 
 def ensure_database():
     global _DB_INITIALIZED
@@ -86,10 +96,17 @@ def ensure_database():
         _DB_INITIALIZED = True
 
 def get_db():
-    """Create a thread-safe connection to the exact same database."""
+    """Create a thread-safe connection and mark committed web changes for sync."""
     ensure_database()
     db_path = desktop_app.DB_PATH
-    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
+    factory = sqlite3.Connection
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        try:
+            from database_sync import SyncableSQLiteConnection
+            factory = SyncableSQLiteConnection
+        except Exception:
+            factory = sqlite3.Connection
+    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30, factory=factory)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     try:
@@ -97,6 +114,9 @@ def get_db():
         conn.execute("PRAGMA synchronous=NORMAL")
     except Exception:
         pass
+    manager = WEB_SYNC_MANAGER
+    if manager is not None and getattr(manager, "configured", False) and hasattr(conn, "set_commit_callback"):
+        conn.set_commit_callback(manager.mark_pending)
     try:
         yield conn
     finally:
