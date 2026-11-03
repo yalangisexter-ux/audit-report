@@ -11,7 +11,7 @@ services:
     # Keep the existing full-featured web client and web-only FastAPI entrypoint.
     # Do not build or replace the Windows EXE from this Render service.
     buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt && npm --prefix frontend ci --include=dev && npm --prefix frontend run build
-    startCommand: python -c "import os; import web_auth_shim; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
+    startCommand: python -c "import os; import web_auth_shim; import tools.force_admin_login_heal; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.8"
