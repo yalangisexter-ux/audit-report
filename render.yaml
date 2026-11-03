@@ -21,6 +21,12 @@ services:
         value: "1"
       - key: WEB_STANDALONE
         value: "1"
+      - key: DB_SYNC_WORKER_URL
+        value: "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
+      - key: DB_SYNC_INSTALLATION_ID
+        value: "c4cf201d3c68e2fcaf60aa05fd423d9a"
+      - key: DB_SYNC_ENCRYPTION_SECRET
+        sync: false
       - key: AUDIT_DATA_DIR
         value: "/var/data"
       - key: WEB_REQUIRE_LOGIN
