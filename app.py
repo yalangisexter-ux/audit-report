@@ -10454,7 +10454,16 @@ class MainWindow(QMainWindow):
         if queue:
             job = queue.pop(0)
             try:
-                job()
+                # refresh_dashboard coalesces concurrent calls while the queue is
+                # active. Allow the queued dashboard step itself to run fully.
+                if job is getattr(self, "refresh_dashboard", None) or getattr(job, "__name__", "") == "refresh_dashboard":
+                    self._allow_dashboard_refresh_in_queue = True
+                    try:
+                        job()
+                    finally:
+                        self._allow_dashboard_refresh_in_queue = False
+                else:
+                    job()
             except Exception:
                 logging.getLogger("app").exception("Deferred UI refresh failed: %s", getattr(job, "__name__", repr(job)))
             QTimer.singleShot(15, self._run_refresh_queue_step)
@@ -11938,8 +11947,12 @@ class MainWindow(QMainWindow):
     def refresh_dashboard(self):
         if getattr(self, "_is_closing", False):
             return
-        # Coalesce dashboard refresh requests raised by child refreshes in refresh_all.
-        if getattr(self, "_refresh_queue_active", False):
+        # Coalesce concurrent dashboard refresh requests from other refresh methods
+        # while the sliced refresh queue is running. The queue's own dashboard job
+        # must still execute (see _allow_dashboard_refresh_in_queue).
+        if getattr(self, "_refresh_queue_active", False) and not getattr(
+            self, "_allow_dashboard_refresh_in_queue", False
+        ):
             self._dashboard_refresh_pending = True
             return
         if not hasattr(self, "kpi_labels"):
