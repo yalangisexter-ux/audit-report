@@ -1,0 +1,27 @@
+name: Restore customer dashboard visuals
+on:
+  push:
+    paths:
+      - "tools/apply_restore_customer_dashboard_visuals.py"
+      - ".github/workflows/apply-restore-customer-dashboard-visuals.yml"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply
+        run: python3 tools/apply_restore_customer_dashboard_visuals.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.py tests/test_dashboard_productivity_async.py
+          if git diff --cached --quiet; then
+            echo "No change"
+            exit 0
+          fi
+          git commit -m "fix: restore customer live wallpaper and dashboard drop-shadows; throttle only"
+          git push
