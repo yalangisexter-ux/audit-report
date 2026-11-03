@@ -4211,6 +4211,159 @@ class MiniSparkline(QWidget):
         painter.end()
 
 
+_ACTIVE_DASHBOARD_PRODUCTIVITY_WORKERS = set()
+
+
+class DashboardProductivityWorker(QThread):
+    """Calculate dashboard productivity off the GUI thread using a read-only DB connection."""
+    result_ready = Signal(int, object)
+    failed = Signal(int, str)
+
+    def __init__(self, generation, employees, parent=None):
+        super().__init__(parent)
+        self.generation = generation
+        self.employees = [
+            {"id": int(employee["id"]), "name": str(employee["name"] or ""),
+             "joining_date": employee["joining_date"] or ""}
+            for employee in employees
+        ]
+        self.result_data = None
+        self.error_text = ""
+
+    def run(self):
+        connection = None
+        try:
+            if not self.employees:
+                self.result_data = {}
+                self.result_ready.emit(self.generation, self.result_data)
+                return
+            database_uri = Path(DB_PATH).resolve().as_uri() + "?mode=ro"
+            connection = sqlite3.connect(database_uri, uri=True, timeout=1)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only=ON")
+            connection.set_progress_handler(
+                lambda: 1 if self.isInterruptionRequested() else 0, 1000
+            )
+            today = date.today()
+            range_start = today.fromordinal(max(1, today.toordinal() - 90))
+            employee_ids = [employee["id"] for employee in self.employees]
+            placeholders = ",".join("?" for _ in employee_ids)
+            starts = {}
+            for employee in self.employees:
+                start = None
+                if employee["joining_date"]:
+                    try:
+                        start = date.fromisoformat(employee["joining_date"])
+                    except (TypeError, ValueError):
+                        start = None
+                starts[employee["id"]] = max(start or range_start, range_start)
+            start_text = min(starts.values()).isoformat()
+            end_text = today.isoformat()
+
+            task_rows = connection.execute(
+                f"SELECT employee_id, task_date, progress, status FROM tasks "
+                f"WHERE employee_id IN ({placeholders}) AND task_date BETWEEN ? AND ?",
+                (*employee_ids, start_text, end_text),
+            ).fetchall()
+            if self.isInterruptionRequested():
+                return
+            attendance_rows = connection.execute(
+                f"SELECT employee_id, work_date, attendance_status, check_in FROM attendance "
+                f"WHERE employee_id IN ({placeholders}) AND work_date BETWEEN ? AND ?",
+                (*employee_ids, start_text, end_text),
+            ).fetchall()
+            if self.isInterruptionRequested():
+                return
+            holiday_rows = connection.execute(
+                "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",
+                (start_text, end_text),
+            ).fetchall()
+            setting = connection.execute(
+                "SELECT value FROM settings WHERE key='working_weekdays'"
+            ).fetchone()
+            try:
+                weekdays = {
+                    int(value) for value in (setting["value"] if setting else "0,1,2,3,4").split(",")
+                    if value.strip()
+                }
+            except (TypeError, ValueError):
+                weekdays = {0, 1, 2, 3, 4}
+            holidays = {row["holiday_date"] for row in holiday_rows}
+            tasks_by_employee = {employee_id: [] for employee_id in employee_ids}
+            attendance_by_employee = {employee_id: [] for employee_id in employee_ids}
+            for item in task_rows:
+                tasks_by_employee[item["employee_id"]].append(item)
+            for item in attendance_rows:
+                attendance_by_employee[item["employee_id"]].append(item)
+
+            prepared = {}
+            for employee in self.employees:
+                if self.isInterruptionRequested():
+                    return
+                employee_id = employee["id"]
+                start = starts[employee_id]
+                start_text_for_employee = start.isoformat()
+                employee_tasks = [
+                    task for task in tasks_by_employee[employee_id]
+                    if start_text_for_employee <= task["task_date"] <= end_text
+                ]
+                task_progress_total = 0
+                for task in employee_tasks:
+                    if not is_known_task_status(task["status"]):
+                        continue
+                    try:
+                        task_progress_total += max(0, min(100, int(float(task["progress"] or 0))))
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                task_score = task_progress_total / len(employee_tasks) if employee_tasks else None
+                present_count = 0
+                for attendance in attendance_by_employee[employee_id]:
+                    status = str(attendance["attendance_status"] or "").strip()
+                    has_check_in = bool(str(attendance["check_in"] or "").strip())
+                    if is_present_attendance_status(status) or (
+                        status.casefold() in {"unmarked", ""} and has_check_in
+                    ):
+                        present_count += 1
+
+                # Match count_working_days exactly while sharing one holiday query
+                # across all employees instead of issuing one query per employee.
+                working_days = 0
+                current_day = start
+                while current_day <= today:
+                    day_text = current_day.isoformat()
+                    if current_day.weekday() in weekdays and day_text not in holidays:
+                        working_days += 1
+                    current_day += timedelta(days=1)
+                eligible = max(1, working_days)
+                attendance_score = present_count / eligible * 100 if eligible else None
+                if task_score is not None and attendance_score is not None:
+                    score = round(task_score * 0.7 + attendance_score * 0.3)
+                elif task_score is not None:
+                    score = round(task_score)
+                elif attendance_score is not None:
+                    score = round(attendance_score)
+                else:
+                    score = 0
+                completed = sum(
+                    1 for task in employee_tasks
+                    if is_explicitly_completed_task_status(task["status"])
+                )
+                prepared[employee_id] = (
+                    start, working_days, present_count, len(employee_tasks), completed, score
+                )
+            self.result_data = prepared
+            self.result_ready.emit(self.generation, prepared)
+        except Exception as exc:
+            self.error_text = f"{type(exc).__name__}: {exc}"
+            self.failed.emit(self.generation, self.error_text)
+        finally:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+
+
 class ProductivityChart(QWidget):
     """Lightweight native Qt bar chart; no charting dependency is required."""
     PALETTES = {
@@ -9906,6 +10059,18 @@ class MainWindow(QMainWindow):
         self._refresh_github_sync_status()
 
     def closeEvent(self, event):
+        # Invalidate pending results and stop read-only workers before teardown.
+        self._dashboard_productivity_generation = getattr(
+            self, "_dashboard_productivity_generation", 0
+        ) + 1
+        dashboard_workers = list(getattr(self, "_dashboard_productivity_workers", []))
+        for worker in dashboard_workers:
+            worker.requestInterruption()
+        for worker in dashboard_workers:
+            if not worker.wait(2000):
+                logging.getLogger("app").warning(
+                    "Dashboard productivity worker is still stopping during window close."
+                )
         timer = getattr(self, "github_sync_status_timer", None)
         if timer is not None:
             timer.stop()
@@ -11744,116 +11909,85 @@ class MainWindow(QMainWindow):
             self.kpi_sparklines[2].set_points([0.5, 0.3, 0.4, 0.2, 0.3, 0.1, max(0.05, 1.0 - att_ratio)])
             self.kpi_sparklines[3].set_points([0.3, 0.5, 0.4, 0.6, 0.7, 0.8, 0.9])
             self.kpi_sparklines[4].set_points([0.3, 0.45, 0.5, 0.65, 0.7, 0.85, max(0.1, att_ratio)])
-        # Productivity scoring performs historical task, attendance and holiday queries.
-        # Process a small batch per event-loop turn so large employee databases cannot
-        # monopolize the GUI thread or make the dashboard/navigation appear frozen.
+        # Historical productivity reads and calculations run off the GUI thread.
+        self._dashboard_productivity_generation = getattr(
+            self, "_dashboard_productivity_generation", 0
+        ) + 1
+        generation = self._dashboard_productivity_generation
         self._dashboard_productivity_queue = list(employees)
         self._dashboard_productivity_metrics = []
-        self._dashboard_productivity_prepared = False
         self._dashboard_productivity_prepared_rows = {}
-        self._dashboard_productivity_generation = getattr(self, "_dashboard_productivity_generation", 0) + 1
-        generation = self._dashboard_productivity_generation
         self.productivity_table.setUpdatesEnabled(False)
         self.productivity_table.setRowCount(0)
         self.productivity_table.setUpdatesEnabled(True)
         self.productivity_chart.set_values([])
-        QTimer.singleShot(0, lambda g=generation: self._refresh_dashboard_productivity_batch(g))
+        if not employees:
+            return
+        worker = DashboardProductivityWorker(generation, employees)
+        if not hasattr(self, "_dashboard_productivity_workers"):
+            self._dashboard_productivity_workers = []
+        self._dashboard_productivity_workers.append(worker)
+        _ACTIVE_DASHBOARD_PRODUCTIVITY_WORKERS.add(worker)
+        worker.result_ready.connect(self._on_dashboard_productivity_ready)
+        worker.failed.connect(self._on_dashboard_productivity_failed)
+        worker.finished.connect(
+            lambda current=worker: self._cleanup_dashboard_productivity_worker(current)
+        )
+        worker.start()
+
+    def _cleanup_dashboard_productivity_worker(self, worker):
+        workers = getattr(self, "_dashboard_productivity_workers", [])
+        if worker in workers:
+            workers.remove(worker)
+        _ACTIVE_DASHBOARD_PRODUCTIVITY_WORKERS.discard(worker)
+        worker.deleteLater()
+
+    def _on_dashboard_productivity_failed(self, generation, error_text):
+        if generation != getattr(self, "_dashboard_productivity_generation", None):
+            return
+        logging.getLogger("app").error(
+            "Dashboard productivity background calculation failed: %s", error_text
+        )
+        self.productivity_chart.set_values([])
+        if hasattr(self, "statusBar"):
+            self.statusBar().showMessage(
+                "Dashboard productivity could not be refreshed. Other dashboard data remains available.",
+                8000,
+            )
+
+    def _on_dashboard_productivity_ready(self, generation, prepared_rows):
+        if generation != getattr(self, "_dashboard_productivity_generation", None):
+            return
+        self._dashboard_productivity_prepared_rows = prepared_rows
+        self._refresh_dashboard_productivity_batch(generation)
 
     def _refresh_dashboard_productivity_batch(self, generation):
-        """Prepare dashboard productivity using shared queries, then render tiny UI batches."""
+        """Render at most four prepared productivity rows per event-loop turn."""
         if generation != getattr(self, "_dashboard_productivity_generation", None):
             return
         queue = getattr(self, "_dashboard_productivity_queue", [])
         metrics = getattr(self, "_dashboard_productivity_metrics", [])
-        if not getattr(self, "_dashboard_productivity_prepared", False):
-            employees = list(queue)
-            if not employees:
-                self._dashboard_productivity_prepared = True
-            else:
-                today = date.today()
-                ids = [int(e["id"]) for e in employees]
-                marks = ",".join("?" for _ in ids)
-                lookback_days = 90
-                range_start = today.fromordinal(max(1, today.toordinal() - lookback_days))
-                starts = {}
-                for employee in employees:
-                    start = None
-                    if employee["joining_date"]:
-                        try:
-                            start = date.fromisoformat(employee["joining_date"])
-                        except ValueError:
-                            start = None
-                    if start is None:
-                        start = range_start
-                    starts[employee["id"]] = max(start, range_start)
-                start_text = min(starts.values()).isoformat()
-                end_text = today.isoformat()
-                task_rows = self.db.conn.execute(
-                    f"SELECT employee_id, task_date, progress, status FROM tasks WHERE employee_id IN ({marks}) AND task_date BETWEEN ? AND ?",
-                    (*ids, start_text, end_text),
-                ).fetchall()
-                attendance_rows = self.db.conn.execute(
-                    f"SELECT employee_id, work_date, attendance_status, check_in FROM attendance WHERE employee_id IN ({marks}) AND work_date BETWEEN ? AND ?",
-                    (*ids, start_text, end_text),
-                ).fetchall()
-                weekdays = set(self.db.working_weekdays())
-                holiday_rows = self.db.holidays_between(start_text, end_text)
-                holidays = {row["holiday_date"] for row in holiday_rows}
-                tasks_by_employee = {eid: [] for eid in ids}
-                attendance_by_employee = {eid: [] for eid in ids}
-                for item in task_rows:
-                    tasks_by_employee[item["employee_id"]].append(item)
-                for item in attendance_rows:
-                    attendance_by_employee[item["employee_id"]].append(item)
-                prepared = {}
-                for employee in employees:
-                    eid = employee["id"]
-                    start = starts[eid]
-                    employee_tasks = [t for t in tasks_by_employee[eid] if start.isoformat() <= t["task_date"] <= end_text]
-                    task_progress_total = 0
-                    for task in employee_tasks:
-                        if not is_known_task_status(task["status"]):
-                            continue
-                        try:
-                            task_progress_total += max(0, min(100, int(float(task["progress"] or 0))))
-                        except (TypeError, ValueError, OverflowError):
-                            continue
-                    task_score = (task_progress_total / len(employee_tasks)) if employee_tasks else None
-                    present_count = 0
-                    for row in attendance_by_employee.get(employee["id"], attendance_by_employee.get(int(employee["id"]), [])):
-                        status = str(row["attendance_status"] or "").strip()
-                        has_check_in = bool(str(row["check_in"] or "").strip())
-                        if is_present_attendance_status(status) or (status.casefold() in {"unmarked", ""} and has_check_in):
-                            present_count += 1
-                    working_days = self.count_working_days(start, today)
-                    eligible = max(1, working_days)
-                    attendance_score = present_count / eligible * 100 if eligible else None
-                    if task_score is not None and attendance_score is not None:
-                        score = round(task_score * 0.7 + attendance_score * 0.3)
-                    elif task_score is not None:
-                        score = round(task_score)
-                    elif attendance_score is not None:
-                        score = round(attendance_score)
-                    else:
-                        score = 0
-                    completed = sum(1 for t in employee_tasks if is_explicitly_completed_task_status(t["status"]))
-                    prepared[eid] = (start, working_days, present_count, len(employee_tasks), completed, score)
-                self._dashboard_productivity_prepared_rows = prepared
-                self._dashboard_productivity_prepared = True
+        prepared = getattr(self, "_dashboard_productivity_prepared_rows", {})
         self.productivity_table.setUpdatesEnabled(False)
         try:
             for employee in queue[:4]:
-                values_data = self._dashboard_productivity_prepared_rows.get(employee["id"])
-                if not values_data:
+                values_data = prepared.get(int(employee["id"]))
+                if values_data is None:
                     continue
                 start, working_days, present_count, task_count, completed, score = values_data
                 metrics.append((employee["name"], score))
-                values = [employee["name"], start.isoformat(), working_days, present_count, task_count, completed, f"{score}%"]
+                values = [
+                    employee["name"], start.isoformat(), working_days,
+                    present_count, task_count, completed, f"{score}%",
+                ]
                 row = self.productivity_table.rowCount()
                 self.productivity_table.insertRow(row)
                 for column, value in enumerate(values):
                     item = QTableWidgetItem(str(value))
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter))
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignVCenter
+                        | (Qt.AlignmentFlag.AlignLeft if column == 0 else Qt.AlignmentFlag.AlignCenter)
+                    )
                     item.setToolTip(str(value))
                     self.productivity_table.setItem(row, column, item)
             del queue[:4]
@@ -11861,7 +11995,10 @@ class MainWindow(QMainWindow):
             self.productivity_table.setUpdatesEnabled(True)
         self.productivity_chart.set_values(metrics)
         if queue:
-            QTimer.singleShot(10, lambda g=generation: self._refresh_dashboard_productivity_batch(g))
+            QTimer.singleShot(
+                10, lambda current_generation=generation:
+                self._refresh_dashboard_productivity_batch(current_generation)
+            )
 
     def report_data(self, report_date, employee_id=None):
         emps=self._report_employees(employee_id)
