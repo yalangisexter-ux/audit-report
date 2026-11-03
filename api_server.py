@@ -78,7 +78,7 @@ _DB_INITIALIZED = False
 WEB_SYNC_MANAGER = None
 
 def ensure_database():
-    global _DB_INITIALIZED
+    global _DB_INITIALIZED, WEB_SYNC_MANAGER
     if not _DB_INITIALIZED:
         try:
             db = desktop_app.Database()
@@ -94,6 +94,14 @@ def ensure_database():
         except Exception:
             pass
         _DB_INITIALIZED = True
+        if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+            try:
+                from web_sync import WebDatabaseSync
+                WEB_SYNC_MANAGER = WebDatabaseSync(desktop_app.DB_PATH)
+                WEB_SYNC_MANAGER.bootstrap()
+                WEB_SYNC_MANAGER.start_polling()
+            except Exception as exc:
+                print(f"[Web Sync] Initialization skipped: {exc}")
 
 def get_db():
     """Create a thread-safe connection and mark committed web changes for sync."""
