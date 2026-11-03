@@ -1,0 +1,27 @@
+name: Fix two prospect tests
+on:
+  push:
+    paths:
+      - "tools/fix_two_prospect_tests.py"
+      - ".github/workflows/fix-two-prospect-tests.yml"
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply test patches
+        run: python3 tools/fix_two_prospect_tests.py
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_customer_prospects.py
+          if git diff --cached --quiet; then
+            echo "No change"
+            exit 0
+          fi
+          git commit -m "test: fix 2 Store Directory assertions (product filter evidence + maps URL)"
+          git push
