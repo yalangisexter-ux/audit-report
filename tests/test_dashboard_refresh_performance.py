@@ -26,7 +26,6 @@ def test_refresh_queue_coalesces_dashboard_refresh_requests():
     assert 'self.refresh_attendance_summary,' not in source
 
 
-
 def test_dashboard_indexes_are_created_after_legacy_column_migrations():
     source = Path(app.__file__).read_text(encoding="utf-8")
     task_migration = source.index('apply_column_migrations("tasks", task_migrations)')
@@ -39,7 +38,7 @@ def test_dashboard_indexes_are_created_after_legacy_column_migrations():
 
 def test_refresh_dashboard_runs_when_selected_as_queue_job():
     source = Path(app.__file__).read_text(encoding="utf-8")
-    assert "_allow_dashboard_refresh_in_queue" in source
-    assert "Coalesce concurrent dashboard refresh requests" in source
+    assert "def refresh_dashboard(self, force=False)" in source
+    assert "job(force=True)" in source
     assert 'getattr(job, "__name__", "") == "refresh_dashboard"' in source
-    assert "Allow the queued dashboard step itself to run fully" in source
+    assert "Bound methods are not identity-stable" in source

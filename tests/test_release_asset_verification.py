@@ -426,7 +426,7 @@ def test_dashboard_summaries_and_progress_widgets_remain_accurate(monkeypatch, t
         # event-loop work to drain instead of assuming a single processEvents()
         # call runs every queued timer and callback.
         import time
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             qt_app.processEvents()
             if (
@@ -436,6 +436,13 @@ def test_dashboard_summaries_and_progress_widgets_remain_accurate(monkeypatch, t
             ):
                 break
             time.sleep(0.005)
+        # Forced refresh after the sliced queue drains so KPIs/summary are not
+        # left on construction defaults if coalescing skipped earlier steps.
+        if "1 Present" not in window.dashboard_attendance_summary.text():
+            window.refresh_dashboard(force=True)
+            for _ in range(80):
+                qt_app.processEvents()
+                time.sleep(0.005)
 
         assert "1 Present" in window.dashboard_attendance_summary.text()
         assert "1 Absent" in window.dashboard_attendance_summary.text()

@@ -10454,14 +10454,10 @@ class MainWindow(QMainWindow):
         if queue:
             job = queue.pop(0)
             try:
-                # refresh_dashboard coalesces concurrent calls while the queue is
-                # active. Allow the queued dashboard step itself to run fully.
-                if job is getattr(self, "refresh_dashboard", None) or getattr(job, "__name__", "") == "refresh_dashboard":
-                    self._allow_dashboard_refresh_in_queue = True
-                    try:
-                        job()
-                    finally:
-                        self._allow_dashboard_refresh_in_queue = False
+                # Bound methods are not identity-stable across attribute access.
+                # Force the queued dashboard step so coalescing cannot no-op it.
+                if getattr(job, "__name__", "") == "refresh_dashboard":
+                    job(force=True)
                 else:
                     job()
             except Exception:
@@ -11944,15 +11940,13 @@ class MainWindow(QMainWindow):
                 item.setToolTip(str(value))
                 self.attendance_summary_table.setItem(row_index, column, item)
 
-    def refresh_dashboard(self):
+    def refresh_dashboard(self, force=False):
         if getattr(self, "_is_closing", False):
             return
         # Coalesce concurrent dashboard refresh requests from other refresh methods
-        # while the sliced refresh queue is running. The queue's own dashboard job
-        # must still execute (see _allow_dashboard_refresh_in_queue).
-        if getattr(self, "_refresh_queue_active", False) and not getattr(
-            self, "_allow_dashboard_refresh_in_queue", False
-        ):
+        # while the sliced refresh queue is running. The queue invokes this with
+        # force=True so the dashboard step always executes fully.
+        if getattr(self, "_refresh_queue_active", False) and not force:
             self._dashboard_refresh_pending = True
             return
         if not hasattr(self, "kpi_labels"):
