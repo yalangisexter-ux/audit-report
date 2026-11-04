@@ -11912,7 +11912,7 @@ class MainWindow(QMainWindow):
                     row for row in attendance_by_employee[employee_id]
                     if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
                     and row["work_date"] not in holiday_dates
-                    and self.self._is_attendance_scheduled_workday(row["work_date"], weekdays)
+                    and self._is_attendance_scheduled_workday(row["work_date"], weekdays)
                 ]
                 holiday_count = 0
                 for holiday in holiday_dates:
