@@ -434,6 +434,12 @@ def get_recovery_question(req: RecoveryQuestionRequest, conn: sqlite3.Connection
         "SELECT security_question, answer_salt, answer_hash FROM auth_users WHERE username=? COLLATE BINARY AND active=1",
         (username,),
     ).fetchone()
+    if row is None:
+        matches = conn.execute(
+            "SELECT security_question, answer_salt, answer_hash FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+            (username,),
+        ).fetchall()
+        row = matches[0] if len(matches) == 1 else None
     if not row or not row["security_question"] or not row["answer_salt"] or not row["answer_hash"]:
         raise HTTPException(status_code=404, detail="No password-recovery question is configured for this active account. Contact an Admin.")
     return {"security_question": row["security_question"]}
@@ -446,6 +452,11 @@ def reset_account_password(req: PasswordResetRequest, conn: sqlite3.Connection =
     row = conn.execute(
         "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1", (username,)
     ).fetchone()
+    if row is None:
+        matches = conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)
+        ).fetchall()
+        row = matches[0] if len(matches) == 1 else None
     if not row or not row["answer_salt"] or not row["answer_hash"]:
         raise HTTPException(status_code=400, detail="Password recovery is unavailable for this account. Contact an Admin.")
     _, answer_hash = desktop_app.hash_pin(answer, row["answer_salt"])
