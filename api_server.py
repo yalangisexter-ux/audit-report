@@ -489,6 +489,12 @@ def set_auth_user_active(user_id: int, item: AccountActiveRequest,
         raise HTTPException(status_code=404, detail="Account not found")
     if str(target["role"]).casefold() == "developer" and str(user.get("role") or "").casefold() != "developer":
         raise HTTPException(status_code=403, detail="Only a Developer can change a Developer account")
+    if not item.active and str(target["role"]).casefold() == "admin":
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (user_id,)
+        ).fetchone()[0]
+        if remaining < 1:
+            raise HTTPException(status_code=409, detail="The last active Admin account cannot be deactivated")
     conn.execute("UPDATE auth_users SET active=?,updated_at=? WHERE id=?",
                  (1 if item.active else 0, desktop_app.now_text(), user_id))
     if not item.active and os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
