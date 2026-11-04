@@ -1317,8 +1317,16 @@ if DIST_DIR.exists():
             raise HTTPException(status_code=404, detail="API endpoint not found")
         file_path = DIST_DIR / full_path
         if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(DIST_DIR / "index.html")
+            # Vite emits content-hashed assets; those may be cached immutably.
+            # SPA documents must revalidate so browsers cannot keep an obsolete
+            # login bundle after a web-only deployment.
+            if file_path.suffix.lower() in {".js", ".css", ".woff", ".woff2", ".png", ".jpg", ".svg"}:
+                return FileResponse(file_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+            return FileResponse(file_path, headers={"Cache-Control": "no-store, max-age=0, must-revalidate"})
+        return FileResponse(
+            DIST_DIR / "index.html",
+            headers={"Cache-Control": "no-store, max-age=0, must-revalidate"},
+        )
 else:
     @app.get("/")
     def index_placeholder():
