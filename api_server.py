@@ -789,7 +789,7 @@ def delete_task(task_id: int, conn: sqlite3.Connection = Depends(get_db)):
 
 # --- Attendance & Working Calendar ---
 @app.get("/api/attendance")
-def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
+def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db), user: dict = Depends(get_current_user)):
     selected_date = work_date or date.today().isoformat()
     try:
         selected_date = date.fromisoformat(str(selected_date)).isoformat()
@@ -818,7 +818,7 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
     }
 
 @app.post("/api/attendance/mark")
-def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depends(get_db)):
+def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depends(get_db), user: dict = Depends(get_current_user)):
     """Persist one employee's attendance for the explicitly selected working date."""
     now = desktop_app.now_text()
     work_date = str(item.work_date or date.today().isoformat()).strip()
@@ -826,6 +826,10 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
         work_date = date.fromisoformat(work_date).isoformat()
     except ValueError:
         raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
+
+    holiday = conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (work_date,)).fetchone()
+    if holiday:
+        raise HTTPException(status_code=409, detail="This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
 
     employee = conn.execute("SELECT id FROM employees WHERE id=?", (item.employee_id,)).fetchone()
     if employee is None:
@@ -840,6 +844,10 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
     ).fetchone()
 
     status = str(item.status or item.attendance_status or "Present").strip()
+    allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
+    if status.casefold() not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave or Unmarked.")
+    status = allowed_statuses[status.casefold()]
     note = (
         item.notes if "notes" in fields_set else
         item.attendance_note if "attendance_note" in fields_set else
@@ -858,6 +866,10 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
         else int(old["break_minutes"] or 0) if old else 0
     )
 
+    if check_in and not desktop_app.valid_hhmm(check_in):
+        raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
+    if check_out and not desktop_app.valid_hhmm(check_out):
+        raise HTTPException(status_code=422, detail="Check-out must use 24-hour HH:MM format.")
     if status.casefold() in {"absent", "leave", "unmarked"}:
         check_in = check_out = ""
     elif (check_in or check_out) and not desktop_app.is_present_attendance_status(status):

@@ -24,6 +24,15 @@ try:
     business_tracking.setup_business_tables(_test_db.conn)
 except Exception:
     pass
+_test_db.conn.execute(
+    """INSERT OR IGNORE INTO auth_users(
+           username,display_name,role,password_salt,password_hash,
+           security_question,answer_salt,answer_hash,active,created_at,updated_at
+       ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+    ("api-test-bootstrap", "API Test Admin", "Admin", "salt", "hash",
+     "First school", "salt", "hash", "2026-01-01", "2026-01-01"),
+)
+_test_db.conn.commit()
 if hasattr(_test_db, "close_github_sync"):
     _test_db.close_github_sync(timeout=0)
 if hasattr(_test_db, "conn") and _test_db.conn:
@@ -334,3 +343,119 @@ def test_api_account_registration_and_recovery_are_safe():
         assert secrets.compare_digest(expected, row[1])
     finally:
         connection.close()
+
+
+
+def _api_test_workday():
+    from datetime import date, timedelta
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    connection.row_factory = sqlite3.Row
+    try:
+        setting = connection.execute(
+            "SELECT value FROM settings WHERE key='working_weekdays'"
+        ).fetchone()
+        try:
+            weekdays = {int(value) for value in (setting["value"] if setting else "0,1,2,3,4").split(",") if value.strip()}
+        except (TypeError, ValueError):
+            weekdays = {0, 1, 2, 3, 4}
+        holidays = {
+            row["holiday_date"]
+            for row in connection.execute("SELECT holiday_date FROM holidays").fetchall()
+        }
+    finally:
+        connection.close()
+    candidate = date.today()
+    for _ in range(45):
+        if candidate.weekday() in weekdays and candidate.isoformat() not in holidays:
+            return candidate
+        candidate -= timedelta(days=1)
+    raise AssertionError("Could not find a scheduled non-holiday workday for attendance API tests")
+
+
+def test_api_attendance_summary_matches_desktop_workday_rules():
+    work_day = _api_test_workday()
+    employee = client.post("/api/employees", json={
+        "name": "Attendance Summary Parity Test",
+        "employee_code": "ATT-SUM-" + work_day.strftime("%Y%m%d"),
+        "joining_date": work_day.isoformat(),
+        "department": "Testing",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+
+    marked = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_day.isoformat(),
+        "attendance_status": "Present",
+        "check_in": "09:00",
+        "check_out": "17:00",
+    })
+    assert marked.status_code == 200
+
+    response = client.get("/api/attendance/summary", params={"work_date": work_day.isoformat()})
+    assert response.status_code == 200
+    summary = next(row for row in response.json()["rows"] if row["employee_id"] == employee_id)
+    assert summary["start_date"] == work_day.isoformat()
+    assert summary["work_days"] == 1
+    assert summary["present"] == 1
+    assert summary["absent"] == 0
+    assert summary["leave"] == 0
+    assert summary["holidays"] == 0
+    assert summary["total_present"] == 1
+
+
+def test_api_attendance_bulk_edit_is_atomic_and_validates_times():
+    work_day = _api_test_workday()
+    employee = client.post("/api/employees", json={
+        "name": "Attendance Bulk Edit Test",
+        "employee_code": "ATT-BULK-" + work_day.strftime("%Y%m%d"),
+        "joining_date": work_day.isoformat(),
+        "department": "Testing",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+
+    initial = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_day.isoformat(),
+        "attendance_status": "Present",
+        "check_in": "09:00",
+        "check_out": "17:00",
+        "attendance_note": "Initial note",
+    })
+    assert initial.status_code == 200
+
+    bulk = client.post("/api/attendance/bulk-edit", json={
+        "work_date": work_day.isoformat(),
+        "employee_ids": [employee_id],
+        "apply_status": True,
+        "status": "Leave",
+        "apply_remarks": True,
+        "remarks": "Bulk leave",
+    })
+    assert bulk.status_code == 200
+    assert bulk.json()["updated"] == 1
+
+    roster = client.get("/api/attendance", params={"work_date": work_day.isoformat()})
+    assert roster.status_code == 200
+    row = next(item for item in roster.json()["roster"] if item["employee_id"] == employee_id)
+    assert row["attendance_status"] == "Leave"
+    assert row["check_in"] == ""
+    assert row["check_out"] == ""
+    assert row["attendance_note"] == "Bulk leave"
+
+    invalid_time = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_day.isoformat(),
+        "attendance_status": "Present",
+        "check_in": "9:00",
+    })
+    assert invalid_time.status_code == 422
+
+    missing_checkin = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_day.isoformat(),
+        "attendance_status": "Present",
+        "check_out": "17:00",
+    })
+    assert missing_checkin.status_code == 422

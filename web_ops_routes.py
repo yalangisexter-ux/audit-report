@@ -274,3 +274,265 @@ def print_center_summary(report_date: Optional[str] = None, conn: sqlite3.Connec
         "attendance": attendance,
         "note": "Live web summary from the shared database.",
     }
+
+
+class AttendanceBulkEditModel(BaseModel):
+    work_date: str
+    employee_ids: list[int]
+    apply_status: bool = False
+    status: str = "Present"
+    apply_check_in: bool = False
+    check_in: str = ""
+    apply_check_out: bool = False
+    check_out: str = ""
+    apply_remarks: bool = False
+    remarks: str = ""
+
+
+@api.app.post("/api/attendance/bulk-edit")
+def bulk_edit_attendance(
+    body: AttendanceBulkEditModel,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    try:
+        work_date = date.fromisoformat(str(body.work_date).strip()).isoformat()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
+
+    employee_ids = list(dict.fromkeys(int(value) for value in body.employee_ids if int(value) > 0))
+    if not employee_ids:
+        raise HTTPException(status_code=422, detail="Select at least one employee.")
+    if len(employee_ids) > 1000:
+        raise HTTPException(status_code=422, detail="Bulk attendance is limited to 1000 employees.")
+    if not any((body.apply_status, body.apply_check_in, body.apply_check_out, body.apply_remarks)):
+        raise HTTPException(status_code=422, detail="Select at least one field to apply.")
+
+    holiday = conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (work_date,)).fetchone()
+    if holiday:
+        raise HTTPException(status_code=409, detail="This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
+
+    allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
+    selected_status = str(body.status or "").strip()
+    if body.apply_status and selected_status.casefold() not in allowed_statuses:
+        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave or Unmarked.")
+    if body.apply_check_in and body.check_in and not api.desktop_app.valid_hhmm(body.check_in):
+        raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
+    if body.apply_check_out and body.check_out and not api.desktop_app.valid_hhmm(body.check_out):
+        raise HTTPException(status_code=422, detail="Check-out must use 24-hour HH:MM format.")
+
+    now = api.desktop_app.now_text()
+    updated = 0
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for employee_id in employee_ids:
+            employee = conn.execute(
+                "SELECT id FROM employees WHERE id=? AND active=1", (employee_id,)
+            ).fetchone()
+            if employee is None:
+                raise HTTPException(status_code=404, detail=f"Active employee {employee_id} was not found.")
+
+            old = conn.execute(
+                "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+                (employee_id, work_date),
+            ).fetchone()
+            status = (
+                allowed_statuses[selected_status.casefold()]
+                if body.apply_status
+                else str(old["attendance_status"] or "Unmarked") if old else "Unmarked"
+            )
+            check_in = (
+                str(body.check_in or "").strip()
+                if body.apply_check_in
+                else str(old["check_in"] or "").strip() if old else ""
+            )
+            check_out = (
+                str(body.check_out or "").strip()
+                if body.apply_check_out
+                else str(old["check_out"] or "").strip() if old else ""
+            )
+            remarks = (
+                str(body.remarks or "").strip()
+                if body.apply_remarks
+                else str(old["attendance_note"] or "") if old else ""
+            )
+            break_minutes = int(old["break_minutes"] or 0) if old else 0
+
+            if status.casefold() in {"absent", "leave", "unmarked"}:
+                check_in = check_out = ""
+            elif (check_in or check_out) and not api.desktop_app.is_present_attendance_status(status):
+                status = "Present"
+            if check_out and not check_in:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Employee {employee_id}: check-out requires a check-in.",
+                )
+
+            conn.execute(
+                """INSERT INTO attendance(
+                       employee_id, work_date, attendance_status, check_in, check_out,
+                       break_minutes, attendance_note, updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?)
+                   ON CONFLICT(employee_id, work_date) DO UPDATE SET
+                       attendance_status=excluded.attendance_status,
+                       check_in=excluded.check_in,
+                       check_out=excluded.check_out,
+                       break_minutes=excluded.break_minutes,
+                       attendance_note=excluded.attendance_note,
+                       updated_at=excluded.updated_at""",
+                (employee_id, work_date, status, check_in, check_out, break_minutes, remarks, now),
+            )
+            updated += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    return {"success": True, "updated": updated, "work_date": work_date}
+
+
+@api.app.get("/api/attendance/summary")
+def attendance_summary(
+    work_date: Optional[str] = None,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    try:
+        selected = date.fromisoformat(str(work_date or date.today().isoformat())).replace()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
+
+    month_start = selected.replace(day=1)
+    end = min(selected, date.today())
+    employees = _rows(
+        conn,
+        "SELECT id, name, joining_date FROM employees WHERE active=1 ORDER BY name COLLATE NOCASE",
+    )
+    if not employees:
+        return {"date": selected.isoformat(), "month_start": month_start.isoformat(), "through_date": end.isoformat(), "rows": []}
+
+    employee_ids = [int(employee["id"]) for employee in employees]
+    starts = {}
+    missing_join_dates = []
+    for employee in employees:
+        try:
+            starts[int(employee["id"])] = date.fromisoformat(str(employee.get("joining_date") or ""))
+        except (TypeError, ValueError):
+            missing_join_dates.append(int(employee["id"]))
+
+    if missing_join_dates:
+        marks = ",".join("?" for _ in missing_join_dates)
+        first_rows = conn.execute(
+            f"""SELECT employee_id, MIN(work_day) AS first_day FROM (
+                    SELECT employee_id, task_date AS work_day FROM tasks
+                    WHERE employee_id IN ({marks}) AND task_date IS NOT NULL AND task_date<>''
+                    UNION ALL
+                    SELECT employee_id, work_date AS work_day FROM attendance
+                    WHERE employee_id IN ({marks}) AND work_date IS NOT NULL AND work_date<>''
+                ) GROUP BY employee_id""",
+            (*missing_join_dates, *missing_join_dates),
+        ).fetchall()
+        first_by_employee = {int(row["employee_id"]): row["first_day"] for row in first_rows}
+        for employee_id in missing_join_dates:
+            try:
+                starts[employee_id] = date.fromisoformat(
+                    first_by_employee.get(employee_id) or date.today().isoformat()
+                )
+            except (TypeError, ValueError):
+                starts[employee_id] = date.today()
+
+    raw_weekdays = conn.execute(
+        "SELECT value FROM settings WHERE key=?", ("working_weekdays",)
+    ).fetchone()
+    try:
+        weekdays = {int(value) for value in str(raw_weekdays["value"] if raw_weekdays else "0,1,2,3,4").split(",") if value.strip()}
+        if not weekdays or any(value < 0 or value > 6 for value in weekdays):
+            raise ValueError("invalid working weekdays")
+    except (TypeError, ValueError):
+        weekdays = {0, 1, 2, 3, 4}
+
+    earliest_start = min(starts.values())
+    holiday_rows = _rows(
+        conn,
+        "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",
+        (earliest_start.isoformat(), end.isoformat()),
+    )
+    holiday_dates = {str(row["holiday_date"]) for row in holiday_rows}
+    marks = ",".join("?" for _ in employee_ids)
+    attendance_rows = _rows(
+        conn,
+        f"""SELECT employee_id, work_date, attendance_status, check_in
+            FROM attendance WHERE employee_id IN ({marks}) AND work_date BETWEEN ? AND ?
+            ORDER BY employee_id, work_date""",
+        (*employee_ids, earliest_start.isoformat(), end.isoformat()),
+    )
+    attendance_by_employee = {employee_id: [] for employee_id in employee_ids}
+    for row in attendance_rows:
+        attendance_by_employee[int(row["employee_id"])].append(row)
+
+    summary_rows = []
+    for employee in employees:
+        employee_id = int(employee["id"])
+        start_day = starts[employee_id]
+        effective_start = max(start_day, month_start)
+        if effective_start <= end:
+            working = sum(
+                1 for offset in range((end - effective_start).days + 1)
+                if (effective_start + __import__("datetime").timedelta(days=offset)).weekday() in weekdays
+                and (effective_start + __import__("datetime").timedelta(days=offset)).isoformat() not in holiday_dates
+            )
+            monthly_rows = []
+            for row in attendance_by_employee[employee_id]:
+                try:
+                    row_day = date.fromisoformat(str(row["work_date"]))
+                except (TypeError, ValueError):
+                    continue
+                if effective_start <= row_day <= end and row_day.isoformat() not in holiday_dates and row_day.weekday() in weekdays:
+                    monthly_rows.append(row)
+            holiday_count = sum(
+                1 for holiday in holiday_dates
+                if effective_start.isoformat() <= holiday <= end.isoformat()
+                and date.fromisoformat(holiday).weekday() in weekdays
+            )
+        else:
+            working = 0
+            monthly_rows = []
+            holiday_count = 0
+
+        def is_present(row):
+            status = str(row.get("attendance_status") or "").strip()
+            return api.desktop_app.is_present_attendance_status(status) or (
+                status.casefold() in {"unmarked", ""}
+                and bool(str(row.get("check_in") or "").strip())
+            )
+
+        present = sum(1 for row in monthly_rows if is_present(row))
+        absent = sum(1 for row in monthly_rows if str(row.get("attendance_status") or "").strip().casefold() == "absent")
+        leave = sum(1 for row in monthly_rows if str(row.get("attendance_status") or "").strip().casefold() == "leave")
+        total_present = 0
+        for row in attendance_by_employee[employee_id]:
+            try:
+                row_day = date.fromisoformat(str(row["work_date"]))
+            except (TypeError, ValueError):
+                continue
+            if start_day <= row_day <= end and row_day.isoformat() not in holiday_dates and row_day.weekday() in weekdays and is_present(row):
+                total_present += 1
+
+        summary_rows.append({
+            "employee_id": employee_id,
+            "employee_name": employee["name"],
+            "start_date": start_day.isoformat(),
+            "work_days": working,
+            "present": present,
+            "absent": absent,
+            "leave": leave,
+            "holidays": holiday_count,
+            "total_present": total_present,
+        })
+
+    return {
+        "date": selected.isoformat(),
+        "month_start": month_start.isoformat(),
+        "through_date": end.isoformat(),
+        "rows": summary_rows,
+    }
