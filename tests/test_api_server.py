@@ -929,6 +929,8 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     csv_response = client.post("/api/reports/export", json={**base_payload, "output_format": "csv"})
     assert csv_response.status_code == 200
     assert csv_response.headers["content-type"].startswith("text/csv")
+    assert csv_response.headers["cache-control"] == "no-store, no-cache, must-revalidate"
+    assert csv_response.headers["x-content-type-options"] == "nosniff"
     assert csv_response.content.startswith(b"\xef\xbb\xbf")
     assert b"Report Export " in csv_response.content
 
