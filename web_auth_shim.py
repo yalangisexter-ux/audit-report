@@ -233,13 +233,14 @@ def web_auth_status(conn: sqlite3.Connection = Depends(api.get_db)):
     # Never offer first-admin setup merely because a sync secret is missing or
     # a remote snapshot could not be read. That can mask an existing customer DB.
     setup_safe = (not standalone) or (sync_configured and pull_ok)
-    setup_required = total_accounts == 0 and setup_safe
+    allow_first_admin_setup = os.environ.get("WEB_ALLOW_FIRST_ADMIN_SETUP", "0").strip().lower() in ("1", "true", "yes")
+    setup_required = total_accounts == 0 and setup_safe and (not standalone or allow_first_admin_setup)
     setup_blocked_reason = ""
-    if standalone and total_accounts == 0 and not setup_safe:
+    if standalone and total_accounts == 0 and (not setup_safe or not allow_first_admin_setup):
         setup_blocked_reason = (
-            "Account setup is temporarily disabled because the existing encrypted database "
-            "could not be verified. Check the Render DB_SYNC_ENCRYPTION_SECRET and database-sync "
-            "Worker connection; do not create a replacement Admin account."
+            "Existing customer accounts have not been verified. Sign-in is available, but first-admin "
+            "setup is disabled to protect customer data. Configure the correct installation snapshot "
+            "and explicitly enable WEB_ALLOW_FIRST_ADMIN_SETUP only for a confirmed new installation."
         )
     return {
         "user_count": count,
