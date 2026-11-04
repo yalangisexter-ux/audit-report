@@ -944,3 +944,45 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
     assert pdf_response.content.startswith(b"%PDF-")
+
+def test_web_business_products_and_print_center_use_full_stock_ledger():
+    import secrets
+
+    client.get("/api/health")
+    sku = "STOCK-" + secrets.token_hex(4).upper()
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    connection.row_factory = sqlite3.Row
+    try:
+        business_tracking.setup_business_tables(connection)
+        connection.execute(
+            """INSERT INTO bt_products(
+                sku,name,category,brand,base_unit,opening_stock,received_qty,
+                reserved_qty,dispatched_qty,free_qty,returned_qty,damaged_qty,
+                expired_qty,quarantined_qty,reorder_level,selling_price,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                sku, "Ledger Stock Regression", "QA", "Raw Strength", "PCS",
+                100, 50, 10, 20, 5, 3, 2, 1, 4, 10, 25, "2026-11-05 00:00:00",
+            ),
+        )
+        connection.commit()
+
+        products_response = client.get("/api/business/products")
+        assert products_response.status_code == 200
+        product = next(row for row in products_response.json() if row["sku"] == sku)
+        assert product["available_stock"] == 111
+
+        report = api_server._build_report_preview(
+            api_server.ReportOptionsModel(
+                date=date.today().isoformat(),
+                report_type="Audit / EOD",
+                options={"business_products": True},
+            ),
+            connection,
+        )
+        assert "Ledger Stock Regression" in report["preview_text"]
+        assert " | 111 | " in report["preview_text"]
+    finally:
+        connection.execute("DELETE FROM bt_products WHERE sku=?", (sku,))
+        connection.commit()
+        connection.close()
