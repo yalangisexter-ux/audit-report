@@ -737,6 +737,10 @@ def is_attendance_scheduled_workday(day_text, weekdays):
         return False
 
 
+# Backward-compatible alias for callers and tests using the former private name.
+_is_attendance_scheduled_workday = is_attendance_scheduled_workday
+
+
 def calculate_net_working_hours(check_in, check_out, break_minutes=0):
     """Calculate net working hours string from check-in, check-out, and break minutes."""
     if not check_in or not check_out:
@@ -11832,6 +11836,9 @@ class MainWindow(QMainWindow):
             return date.fromisoformat(str(day_text)).weekday() in weekdays
         except (TypeError, ValueError):
             return False
+
+    # Preserve the original method name for older internal callers.
+    _is_attendance_scheduled_workday = is_attendance_scheduled_workday
 
     def refresh_attendance_summary(self):
         if not hasattr(self, "attendance_summary_table"):

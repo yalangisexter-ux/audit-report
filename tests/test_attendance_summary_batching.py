@@ -8,6 +8,15 @@ from PySide6.QtWidgets import QApplication, QDateEdit, QTableWidget
 import app
 
 
+def test_workday_helper_keeps_legacy_names_compatible():
+    monday = "2026-11-02"
+    weekdays = [0, 1, 2, 3, 4]
+    assert app.is_attendance_scheduled_workday(monday, weekdays)
+    assert app._is_attendance_scheduled_workday(monday, weekdays)
+    assert app.MainWindow._is_attendance_scheduled_workday(monday, weekdays)
+    assert not app._is_attendance_scheduled_workday("not-a-date", weekdays)
+
+
 def test_attendance_summary_batches_employee_and_holiday_queries(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     qt_app = QApplication.instance() or QApplication([])
