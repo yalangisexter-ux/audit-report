@@ -3075,7 +3075,7 @@ class LoginDialog(QDialog):
         uname = raw_username.lower()
         if uname in ("admin / taruna", "admin/taruna", "taruna"):
             target_username = "taruna"
-        elif uname == "admin":
+        elif raw_username == "admin":
             target_username = "admin"
         else:
             target_username = raw_username
