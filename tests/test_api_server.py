@@ -313,12 +313,12 @@ def test_api_account_registration_and_recovery_are_safe():
     finally:
         connection.close()
 
-    question = client.post("/api/auth/recovery-question", json={"username": username})
+    question = client.post("/api/auth/recovery-question", json={"username": username.upper()})
     assert question.status_code == 200
     assert question.json()["security_question"] == payload["security_question"]
 
     reset = client.post("/api/auth/password-reset", json={
-        "username": username,
+        "username": username.upper(),
         "security_answer": "  green   valley ",
         "new_password": "NewPass456",
     })
