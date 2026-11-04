@@ -2926,6 +2926,8 @@ class AccountRegistrationDialog(QDialog):
             return error(self, "The passwords do not match.")
         if len(answer) < 2:
             return error(self, "Enter a recovery answer you can remember.")
+        if not self.db.conn.execute("SELECT 1 FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1").fetchone():
+            return error(self, "An active Admin must complete initial setup before new account registration.")
         if self.db.conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
             return error(self, "That username already exists.")
         ps, ph = hash_pin(password); ans_salt, ans_hash = hash_pin(answer)
