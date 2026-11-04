@@ -283,6 +283,7 @@ def test_api_account_registration_and_recovery_are_safe():
             "INSERT OR IGNORE INTO auth_users(username,display_name,role,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)",
             ("test-admin", "Test Admin", "Admin", "salt", "hash", "First school", "salt", "hash", "2026-01-01", "2026-01-01"),
         )
+        connection.execute("UPDATE auth_users SET role='Admin',active=1 WHERE username='test-admin'")
         connection.commit()
     finally:
         connection.close()
