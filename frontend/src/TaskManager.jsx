@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, CheckSquare, Square, ExternalLink, Link2, Save, X, RefreshCw } from 'lucide-react';
 
 const field = 'w-full min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400';
@@ -23,7 +23,7 @@ function customRowsFrom(task) {
   return [];
 }
 
-function TaskFields({value,onChange,employees,customRows,setCustomRows}) {
+function TaskFields({value,onChange,employees,customRows,setCustomRows,lockAssignment=false,lockDate=false}) {
   const update = (key,next) => onChange(previous => {
     const updated = {...previous,[key]:next};
     if (key === 'status' && next === 'Completed') updated.progress = 100;
@@ -42,8 +42,8 @@ function TaskFields({value,onChange,employees,customRows,setCustomRows}) {
   const updateRow = (index,key,next) => setCustomRows(rows=>rows.map((row,i)=>i===index?{...row,[key]:next}:row));
   const addRow = key => setCustomRows(rows=>[...rows,{key:key||'',value:''}]);
   return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-    <label className="text-xs text-slate-400">Task date<input className={field+' mt-1'} type="date" required value={value.task_date||today()} onChange={e=>update('task_date',e.target.value)}/></label>
-    <label className="text-xs text-slate-400">Employee *<select className={field+' mt-1'} required value={value.employee_id??''} onChange={e=>update('employee_id',e.target.value)}><option value="">Select employee</option>{employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} ({employee.employee_code||employee.id})</option>)}</select></label>
+    <label className="text-xs text-slate-400">Task date<input className={field+' mt-1'} type="date" required disabled={lockDate} value={value.task_date||today()} onChange={e=>update('task_date',e.target.value)}/></label>
+    <label className="text-xs text-slate-400">Employee *<select className={field+' mt-1'} required disabled={lockAssignment} value={value.employee_id??''} onChange={e=>update('employee_id',e.target.value)}><option value="">Select employee</option>{employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} ({employee.employee_code||employee.id})</option>)}</select></label>
     <label className="text-xs text-slate-400">Department / section<input className={field+' mt-1'} value={value.department??''} onChange={e=>update('department',e.target.value)} placeholder="Select or enter department"/></label>
     <label className="text-xs text-slate-400 md:col-span-2 xl:col-span-3">Assigned task *<input className={field+' mt-1'} required value={value.title??''} onChange={e=>update('title',e.target.value)} placeholder="Enter assigned task title / description"/></label>
     <label className="text-xs text-slate-400">Due time<input className={field+' mt-1'} type="time" value={value.due_time??''} onChange={e=>update('due_time',e.target.value)}/></label>
@@ -65,13 +65,19 @@ function TaskFields({value,onChange,employees,customRows,setCustomRows}) {
   </div>;
 }
 
-export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReload,notify}) {
+export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReload,notify,mode='manager'}) {
+  const trackerMode = mode === 'tracker';
   const [form,setForm] = useState(emptyTask);
+  const [createOpen,setCreateOpen] = useState(!trackerMode);
   const [customRows,setCustomRows] = useState([]);
   const [editing,setEditing] = useState(null);
   const [editForm,setEditForm] = useState(emptyTask);
   const [editRows,setEditRows] = useState([]);
-  const [filters,setFilters] = useState({date:today(),employee:'all',status:'all',priority:'all',department:'all',search:''});
+  const [filters,setFilters] = useState(()=>({date:today(),employee:trackerMode?'':'all',status:'all',priority:'all',department:'all',search:''}));
+  useEffect(()=>{
+    if(!trackerMode)return;
+    setForm(previous=>({...previous,task_date:filters.date,employee_id:filters.employee||''}));
+  },[trackerMode,filters.date,filters.employee]);
   const [selected,setSelected] = useState([]);
   const [bulkOpen,setBulkOpen] = useState(false);
   const [bulk,setBulk] = useState({
@@ -84,6 +90,7 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
   const visibleTasks = useMemo(()=>{
     const term=filters.search.trim().toLowerCase();
     return (tasks||[]).filter(task=>{
+      if(trackerMode && !filters.employee)return false;
       if(filters.date!=='all' && String(task.task_date||'')!==filters.date)return false;
       if(filters.employee!=='all' && String(task.employee_id)!==filters.employee)return false;
       if(filters.status!=='all' && String(task.status||'')!==filters.status)return false;
@@ -93,7 +100,7 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
       const haystack=[task.id,task.title,task.employee_name,task.employee_code,task.department,task.status,task.priority,task.next_action,task.manager_note,task.proof_url,custom].join(' ').toLowerCase();
       return !term || haystack.includes(term);
     }).sort((a,b)=>String(b.task_date||'').localeCompare(String(a.task_date||''))||Number(b.id)-Number(a.id));
-  },[tasks,filters]);
+  },[tasks,filters,trackerMode]);
   const updateFilter=(key,value)=>{setFilters(previous=>({...previous,[key]:value}));setSelected([]);};
   const refresh=async()=>{try{await onReload();notify('Task list refreshed');}catch(error){notify(error.message);}};
   const saveCreate=async event=>{
@@ -102,7 +109,7 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
     const payload={...form,employee_id:Number(form.employee_id),progress:Number(form.progress)||0,expose_link:form.expose_link?1:0,custom_values:customRows.filter(row=>row.key.trim()||row.value.trim()).map(row=>({key:row.key.trim(),value:row.value.trim()}))};
     payload.manager_note=payload.next_action||'';
     if(payload.status==='Completed')payload.progress=100;
-    try{await apiFetch('/tasks',{method:'POST',body:JSON.stringify(payload)});setForm(emptyTask());setCustomRows([]);await onReload();notify('Task created successfully');}
+    try{await apiFetch('/tasks',{method:'POST',body:JSON.stringify(payload)});const reset=emptyTask();if(trackerMode){reset.task_date=filters.date;reset.employee_id=filters.employee;setCreateOpen(false);}setForm(reset);setCustomRows([]);await onReload();notify('Task created successfully');}
     catch(error){notify(error.message);}
   };
   const openEdit=task=>{
@@ -137,6 +144,12 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
     if(!webLinks.length){notify(links.length?'This proof is a local file path and is not directly accessible from the browser.':'No proof link has been entered.');return;}
     webLinks.forEach((url,index)=>window.open(url,'_blank','noopener,noreferrer'));
   };
+  const beginCreate=()=>{
+    if(trackerMode&&!filters.employee){notify('Select an employee first.');return;}
+    const next=emptyTask();
+    if(trackerMode){next.task_date=filters.date;next.employee_id=filters.employee;}
+    setForm(next);setCustomRows([]);setCreateOpen(true);
+  };
   const selectVisible=()=>{
     const ids=visibleTasks.map(task=>Number(task.id));
     setSelected(current=>ids.length&&ids.every(id=>current.includes(id))?current.filter(id=>!ids.includes(id)):[...new Set([...current,...ids])]);
@@ -154,12 +167,45 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
   const inProgress=visibleTasks.filter(task=>['in progress','partially completed'].includes(String(task.status||'').toLowerCase())).length;
   const pending=visibleTasks.filter(task=>['not started','pending','pending review','blocked'].includes(String(task.status||'').toLowerCase())).length;
   const customCount=visibleTasks.filter(task=>customRowsFrom(task).length>0).length;
+  const trackerSummary=useMemo(()=>{
+    const status=task=>String(task.status??'').trim().toLowerCase();
+    const completed=visibleTasks.filter(task=>['completed','submitted'].includes(status(task))).length;
+    const blocked=visibleTasks.filter(task=>status(task)==='blocked').length;
+    const inProgress=visibleTasks.filter(task=>status(task)==='in progress').length;
+    const pending=visibleTasks.filter(task=>!['completed','submitted','cancelled','blocked','in progress'].includes(status(task))).length;
+    const average=visibleTasks.length?Math.round(visibleTasks.reduce((total,task)=>total+(Number(task.progress)||0),0)/visibleTasks.length):0;
+    return {total:visibleTasks.length,completed,inProgress,pending,blocked,average};
+  },[visibleTasks]);
   const bulkField=(key,label,type='text',options=[])=><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulk[key].apply} onChange={e=>setBulk(previous=>({...previous,[key]:{...previous[key],apply:e.target.checked}}))}/> Apply {label}</span>{type==='select'?<select className={field} value={bulk[key].value} onChange={e=>setBulk(previous=>({...previous,[key]:{...previous[key],value:e.target.value}}))}>{options.map(option=><option key={option||'__blank'} value={option}>{option||'Not selected'}</option>)}</select>:type==='checkbox'?<input type="checkbox" checked={Boolean(bulk[key].value)} onChange={e=>setBulk(previous=>({...previous,[key]:{...previous[key],value:e.target.checked}}))}/>:type==='textarea'?<textarea className={field} rows="2" value={bulk[key].value} onChange={e=>setBulk(previous=>({...previous,[key]:{...previous[key],value:e.target.value}}))}/>:<input className={field} type={type} value={bulk[key].value} onChange={e=>setBulk(previous=>({...previous,[key]:{...previous[key],value:e.target.value}}))}/>}</label>;
   return <div className="space-y-4">
-    <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-white">Create new task</h2><p className="text-xs text-slate-500">Assignment, target/progress, evidence and custom tracking.</p></div><span className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-200">New assignment</span></div>
-      <form onSubmit={saveCreate}><TaskFields value={form} onChange={setForm} employees={employees} customRows={customRows} setCustomRows={setCustomRows}/><div className="mt-4 flex justify-end"><button className={btn} disabled={!employees.length}><Plus size={16}/> Create task</button></div></form>
-    </section>
+    {(!trackerMode || createOpen) && <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-white">{trackerMode?'Add task for selected employee':'Create new task'}</h2><p className="text-xs text-slate-500">Assignment, target/progress, evidence and custom tracking.</p></div><div className="flex items-center gap-2"><span className="rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-200">New assignment</span>{trackerMode&&<button type="button" onClick={()=>setCreateOpen(false)} className="rounded-lg border border-white/10 px-3 py-1 text-xs text-slate-300">Close</button>}</div></div>
+      <form onSubmit={saveCreate}><TaskFields value={form} onChange={setForm} employees={employees} customRows={customRows} setCustomRows={setCustomRows} lockAssignment={trackerMode} lockDate={trackerMode}/><div className="mt-4 flex justify-end"><button className={btn} disabled={!employees.length || (trackerMode&&!filters.employee)}><Plus size={16}/> Create task</button></div></form>
+    </section>}
+    {trackerMode && <>
+      <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="min-w-[220px] flex-1 text-xs text-slate-400">Employee<select className={field+' mt-1'} value={filters.employee} onChange={e=>updateFilter('employee',e.target.value)}><option value="">Select employee</option>{employees.map(employee=><option key={employee.id} value={employee.id}>{employee.name} ({employee.employee_code||employee.id})</option>)}</select></label>
+          <label className="min-w-[160px] text-xs text-slate-400">Task date<input className={field+' mt-1'} type="date" value={filters.date} onChange={e=>updateFilter('date',e.target.value)}/></label>
+          <button type="button" onClick={refresh} className="rounded-lg border border-white/10 px-3 py-2.5 text-sm text-cyan-200"><RefreshCw size={15} className="inline"/> Refresh</button>
+          <button type="button" onClick={beginCreate} disabled={!filters.employee} className={btn}><Plus size={15}/> Add task</button>
+        </div>
+      </section>
+      <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-bold text-white">Employee Activity &amp; Progression</h2><p className="text-xs text-slate-500">Daily assignment progression and status logs.</p></div><span className="text-xs text-slate-500">{employees.find(employee=>String(employee.id)===filters.employee)?.name||'No employee selected'}</span></div>
+        <p className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-sm text-slate-200">{filters.employee?(trackerSummary.total+' tasks · '+trackerSummary.completed+' completed/submitted · '+trackerSummary.inProgress+' in progress · '+trackerSummary.pending+' pending · '+trackerSummary.blocked+' blocked'):'Select an employee to view assigned tasks.'}</p>
+        <div className="mt-3 flex items-center gap-3"><span className="whitespace-nowrap text-xs text-slate-400">Average task progress: {trackerSummary.average}%</span><div role="progressbar" aria-label="Average task progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={trackerSummary.average} className="h-3 flex-1 overflow-hidden rounded-full bg-slate-950"><div className="h-full rounded-full bg-cyan-400 transition-all" style={{width:trackerSummary.average+'%'}}/></div></div>
+        <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-xs"><thead className="bg-slate-950 text-[10px] uppercase text-slate-500"><tr>{['Task ID','Task','Priority','Status','Progress','Due time','Proof link','Manager remarks','Actions'].map(label=><th key={label} className="border-b border-white/10 px-3 py-3">{label}</th>)}</tr></thead><tbody>{visibleTasks.map(task=>{
+          const links=String(task.proof_url||'').split(/\r?\n/).map(value=>value.trim()).filter(Boolean);
+          return <tr key={task.id} className="border-b border-white/5 align-top text-slate-300">
+            <td className="px-3 py-3">{task.id}</td><td className="max-w-64 px-3 py-3"><b className="text-white">{task.title}</b>{task.details&&<p className="mt-1 whitespace-pre-wrap text-slate-500">{task.details}</p>}</td><td className="px-3 py-3">{task.priority||'Normal'}</td><td className="px-3 py-3">{String(task.status??'').trim()||'Not selected'}</td><td className="px-3 py-3">{Number(task.progress)||0}%</td><td className="px-3 py-3 whitespace-nowrap">{task.due_time||'—'}</td>
+            <td className="max-w-48 px-3 py-3">{links.length?links.map((link,index)=><div key={index} className="truncate">{/^https?:\/\//i.test(link)?<a href={link} target="_blank" rel="noreferrer" className="text-cyan-300 underline">Proof {index+1} <ExternalLink size={10} className="inline"/></a>:<span title={link}>{link}</span>}</div>):'—'}</td>
+            <td className="max-w-48 px-3 py-3 whitespace-pre-wrap">{task.manager_note||task.next_action||'—'}</td><td className="px-3 py-3"><div className="flex flex-col gap-2"><button type="button" onClick={()=>openEdit(task)} className="text-left text-cyan-300"><Pencil size={12} className="inline"/> Edit</button><button type="button" onClick={()=>openProof(task)} className="text-left text-cyan-300"><Link2 size={12} className="inline"/> Open proof</button>{canDelete&&<button type="button" onClick={()=>deleteTask(task)} className="text-left text-rose-300"><Trash2 size={12} className="inline"/> Delete</button>}</div></td>
+          </tr>;
+        })}</tbody></table>{!visibleTasks.length&&<p className="py-8 text-center text-sm text-slate-500">{filters.employee?'No tasks assigned to this employee on the selected date.':'Choose an employee to view assigned tasks.'}</p>}</div>
+      </section>
+    </>}
+    {!trackerMode && (
     <section className="rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-bold text-white">Task Manager · {visibleTasks.length} tasks</h2><p className="text-xs text-slate-500">Select one or more tasks to edit, open evidence, or apply bulk updates.</p></div><button type="button" onClick={refresh} className="rounded-lg border border-white/10 px-3 py-2 text-sm text-cyan-200"><RefreshCw size={15}/> Refresh</button></div>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -189,6 +235,7 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
         </tr>;
       })}</tbody></table>{!visibleTasks.length&&<p className="py-8 text-center text-sm text-slate-500">No tasks match the selected filters.</p>}</div>
     </section>
+    )}
     {editing&&<div className="fixed inset-0 z-[110] grid place-items-center overflow-y-auto bg-black/75 p-4"><section className="my-6 w-full max-w-5xl rounded-2xl border border-cyan-400/20 bg-slate-900 p-5 shadow-2xl"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold text-white">Edit Task #{editing.id}</h2><p className="text-xs text-slate-500">Submitted at: {editing.submitted_at||'Not submitted yet'} · Original submission time is preserved.</p></div><button type="button" onClick={()=>setEditing(null)} className="text-slate-400"><X size={18}/></button></div><form onSubmit={saveEdit}><TaskFields value={editForm} onChange={setEditForm} employees={employees} customRows={editRows} setCustomRows={setEditRows}/><div className="mt-5 flex justify-end gap-2"><button type="button" className="rounded-lg border border-white/10 px-4 py-2 text-sm" onClick={()=>setEditing(null)}>Cancel</button><button className={btn}><Save size={15}/> Update task</button></div></form></section></div>}
   </div>;
 }
