@@ -345,10 +345,16 @@ class WebDatabaseSync:
                         code = str(row[columns.index("employee_code")] or "").strip().casefold() if "employee_code" in columns else ""
                         name = str(row[columns.index("name")] or "").strip().casefold() if "name" in columns else ""
                         return code, name
-                    local_ids = {key for row in local_rows for key in identity(row, list(local_cols)) if key}
-                    remote_ids = {key for row in remote_rows for key in identity(row, list(remote_cols)) if key}
-                    if not local_ids or not remote_ids or not (local_ids & remote_ids):
-                        print(f"[Web Sync] Legacy snapshot {legacy_id[:8]} rejected: employee identities do not match")
+                    local_identity_rows = [identity(row, local_cols) for row in local_rows]
+                    remote_identity_rows = [identity(row, remote_cols) for row in remote_rows]
+                    local_codes = {code for code, _ in local_identity_rows if code}
+                    remote_codes = {code for code, _ in remote_identity_rows if code}
+                    local_names = {name for _, name in local_identity_rows if name}
+                    remote_names = {name for _, name in remote_identity_rows if name}
+                    code_overlap = local_codes & remote_codes
+                    name_overlap = local_names & remote_names
+                    if not code_overlap and len(name_overlap) < 2:
+                        print(f"[Web Sync] Legacy snapshot {legacy_id[:8]} rejected: employee identities do not match strongly enough")
                         continue
                 finally:
                     remote.close()
