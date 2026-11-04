@@ -93,7 +93,7 @@ test("push and pull are installation-scoped and return raw encrypted bytes", asy
     const snapshot = Buffer.from("encrypted snapshot bytes");
     const push = await worker.fetch(new Request("https://worker/push", { method: "POST", headers: { Authorization: "Bearer " + tokenA, "Content-Type": "application/json" }, body: JSON.stringify({ content: snapshot.toString("base64") }) }), env);
     assert.equal(push.status, 200);
-    assert.match(github.commitMessages[0], /\\[skip render\\]/i);
+    assert.ok(github.commitMessages[0].includes("[skip render]"));
     assert.ok(github.files.has("customer-data/" + installA + ".db.enc"));
     assert.equal(github.files.has("customer-data/" + installB + ".db.enc"), false);
     const pull = await worker.fetch(new Request("https://worker/pull", { method: "POST", headers: { Authorization: "Bearer " + tokenA, "Content-Type": "application/json" }, body: "{}" }), env);
