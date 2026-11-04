@@ -844,7 +844,7 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
     note = item.notes or item.attendance_note or ""
     check_in = (item.check_in or "").strip()
     check_out = (item.check_out or "").strip()
-    if check_in and status.casefold() in {"absent", "unmarked", ""}:
+    if check_in and status.casefold() in {"unmarked", ""}:
         status = "Present"
     if status.casefold() in {"absent", "leave", "unmarked"}:
         check_in, check_out = "", ""
