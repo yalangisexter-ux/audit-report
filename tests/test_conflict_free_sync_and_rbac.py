@@ -273,6 +273,58 @@ def test_conflict_free_snapshot_merge_unifies_records_without_data_loss(tmp_path
     local_conn.close()
 
 
+def test_attendance_merge_uses_newest_status_and_preserves_explicit_time_clears(tmp_path):
+    local_conn = sqlite3.connect(tmp_path / "attendance_local.db")
+    local_conn.row_factory = sqlite3.Row
+    setup_test_schema(local_conn)
+    local_conn.execute(
+        "INSERT INTO employees (id, name, employee_code, created_at) VALUES (1, 'Alice', 'EMP-A', '2026-01-01')"
+    )
+    local_conn.execute(
+        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, attendance_status, attendance_note, updated_at)
+           VALUES(1, '2026-11-03', '', '', 'Absent', 'Marked absent', '2026-11-04 12:00:00')"""
+    )
+    local_conn.execute(
+        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, attendance_status, attendance_note, updated_at)
+           VALUES(1, '2026-11-04', '09:00', '18:00', 'Present', 'Worked', '2026-11-04 10:00:00')"""
+    )
+    local_conn.commit()
+
+    remote_conn = sqlite3.connect(tmp_path / "attendance_remote.db")
+    remote_conn.row_factory = sqlite3.Row
+    setup_test_schema(remote_conn)
+    remote_conn.execute(
+        "INSERT INTO employees (id, name, employee_code, created_at) VALUES (50, 'Alice', 'EMP-A', '2026-01-01')"
+    )
+    # An older Present snapshot must not undo the newer local Absent update.
+    remote_conn.execute(
+        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, attendance_status, attendance_note, updated_at)
+           VALUES(50, '2026-11-03', '09:00', '18:00', 'Present', 'Old snapshot', '2026-11-04 11:00:00')"""
+    )
+    # A newer remote Absent update must clear previously saved local times.
+    remote_conn.execute(
+        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, attendance_status, attendance_note, updated_at)
+           VALUES(50, '2026-11-04', '', '', 'Absent', 'Remote absence', '2026-11-04 11:00:00')"""
+    )
+    remote_conn.commit()
+    remote_conn.close()
+
+    app.merge_remote_database_snapshot(local_conn, tmp_path / "attendance_remote.db")
+    rows = {
+        row["work_date"]: row
+        for row in local_conn.execute(
+            "SELECT work_date, check_in, check_out, attendance_status FROM attendance"
+        ).fetchall()
+    }
+    assert rows["2026-11-03"]["attendance_status"] == "Absent"
+    assert rows["2026-11-03"]["check_in"] == ""
+    assert rows["2026-11-03"]["check_out"] == ""
+    assert rows["2026-11-04"]["attendance_status"] == "Absent"
+    assert rows["2026-11-04"]["check_in"] == ""
+    assert rows["2026-11-04"]["check_out"] == ""
+    local_conn.close()
+
+
 def test_dirty_sync_callback_triggers_on_mark_pending(tmp_path):
     callback_fired = False
 
