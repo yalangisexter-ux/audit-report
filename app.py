@@ -8344,7 +8344,7 @@ class MainWindow(QMainWindow):
                     raise FileNotFoundError(f"Downloaded update installer was not found: {installer_path}")
                 # Fully suppress installer UI. Windows still shows UAC consent
                 # because the application is installed machine-wide.
-                args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS"
+                args = f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /DATA_DIR="{APP_DIR}"'
                 result = ctypes.windll.shell32.ShellExecuteW(
                     None, "runas", str(installer_path), args, None, 1
                 )

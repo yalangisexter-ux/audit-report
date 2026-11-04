@@ -40,11 +40,12 @@ Name: "{autodesktop}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#My
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent runasoriginaluser
 
 [Code]
 var
 	InstallDirectory: String;
+	DataDirectory: String;
 	PendingBackupDirectory: String;
 	StableBackupDirectory: String;
 	RecoveryScriptPath: String;
@@ -76,11 +77,19 @@ begin
 	Sleep(750);
 end;
 
+function GetCustomerDataDirectory: String;
+begin
+	Result := ExpandConstant('{param:DATA_DIR|}');
+	if Result = '' then
+		Result := ExpandConstant('{localappdata}\EmployeeAuditManager');
+end;
+
 function InitializeSetup: Boolean;
 begin
 	InstallDirectory := ExpandConstant('{autopf}\Raw Strength Employee Audit Manager');
-	PendingBackupDirectory := ExpandConstant('{localappdata}\EmployeeAuditManager\pending-update-backup');
-	StableBackupDirectory := ExpandConstant('{localappdata}\EmployeeAuditManager\previous-version');
+	DataDirectory := GetCustomerDataDirectory;
+	PendingBackupDirectory := AddBackslash(DataDirectory) + 'pending-update-backup';
+	StableBackupDirectory := AddBackslash(DataDirectory) + 'previous-version';
 	TransactionBackupReady := False;
 	TransactionInstallSucceeded := False;
 	Result := True;
@@ -93,8 +102,9 @@ begin
 	Result := '';
 	NeedsRestart := False;
 	InstallDirectory := ExpandConstant('{app}');
-	PendingBackupDirectory := ExpandConstant('{localappdata}\EmployeeAuditManager\pending-update-backup');
-	StableBackupDirectory := ExpandConstant('{localappdata}\EmployeeAuditManager\previous-version');
+	DataDirectory := GetCustomerDataDirectory;
+	PendingBackupDirectory := AddBackslash(DataDirectory) + 'pending-update-backup';
+	StableBackupDirectory := AddBackslash(DataDirectory) + 'previous-version';
 	RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');
 	if DirExists(InstallDirectory) and FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
 	begin
@@ -123,7 +133,7 @@ begin
 		RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');
 		ExtractTemporaryFile('update_recovery.ps1');
 		ExtraArguments := ' -ExpectedVersion ' + AddQuotes('{#MyAppVersion}') +
-			' -DataDir ' + AddQuotes(ExpandConstant('{localappdata}\EmployeeAuditManager'));
+			' -DataDir ' + AddQuotes(DataDirectory);
 		if not RunRecoveryScript('launch-check', ExtraArguments, ResultCode) or (ResultCode <> 0) then
 		begin
 			if TransactionBackupReady then
@@ -143,9 +153,9 @@ begin
 	end
 	else if CurStep = ssDone then
 	begin
+		// The original, unelevated updater process relaunches the app after Setup exits.
+		// Interactive installs use the [Run] entry with runasoriginaluser.
 		TransactionInstallSucceeded := True;
-		// Always relaunch after a successful install/update so the user returns to the app.
-		Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, ResultCode);
 	end;
 end;
 

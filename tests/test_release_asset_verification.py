@@ -816,7 +816,11 @@ def test_silent_update_installer_preserves_previous_install_directory_and_data()
     assert "UsePreviousAppDir=yes" in installer
     assert "create_pre_migration_backup(database_path, BACKUP_DIR)" in source
     assert '"database_backup": str(database_backup_path) if database_backup_path else ""' in source
-    assert "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS" in source
+    assert "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /DATA_DIR=" in source
+    assert "runasoriginaluser" in installer
+    assert "ExpandConstant('{param:DATA_DIR|}')" in installer
+    assert "AddQuotes(DataDirectory)" in installer
+    assert "Always relaunch after a successful install/update" not in installer
     assert "The current application was left running." in source
     assert "if result <= 32:" in source
 
