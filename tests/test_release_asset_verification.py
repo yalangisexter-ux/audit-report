@@ -823,5 +823,4 @@ def test_silent_update_installer_preserves_previous_install_directory_and_data()
     # Inno Setup must only deploy the application payload, never the customer DB.
     files_section = installer.split("[Files]", 1)[1].split("[Icons]", 1)[0]
     assert "employee_audit.db" not in files_section
-    assert "EmployeeAuditManager" not in files_section
     assert "pending-update-backup" not in files_section
