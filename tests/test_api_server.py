@@ -873,6 +873,7 @@ def test_web_print_center_preview_applies_employee_exclusion_and_field_options()
         "name": "Report Included " + suffix,
         "employee_code": "RPT-IN-" + suffix,
         "notes": "PRIVATE_INCLUDED_NOTE",
+        "email": "report-in-" + suffix.lower() + "@example.test",
     })
     excluded = client.post("/api/employees", json={
         "name": "Report Excluded " + suffix,

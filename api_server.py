@@ -1287,7 +1287,7 @@ def _build_report_preview(req, conn):
             status = str(row["status"] or "Unmarked")
             totals[status] = totals.get(status, 0) + 1
         if opts["attendance_summary"]:
-            present = sum(count for status, count in totals.items() if _report_is_present(status))
+            present = sum(1 for row in rows if _report_is_present(row["status"], row["check_in"]))
             absent = sum(count for status, count in totals.items() if status.lower() == "absent")
             leave = sum(count for status, count in totals.items() if status.lower() == "leave")
             lines.append(f"SUMMARY: Present {present} | Absent {absent} | Leave {leave} | Employees {len(rows)}")
@@ -1742,11 +1742,15 @@ def export_report(
                 story.append(Spacer(1, 2 * mm))
                 continue
             clean = line.replace("■ ", "EMPLOYEE: ").replace("•", "-").replace("—", "-")
-            safe = escape(clean)
-            safe = url_pattern.sub(
-                lambda match: '<link href="' + escape(match.group(0), {"'": "&#39;", '"': "&quot;"}) + '" color="blue">' + escape(match.group(0)) + "</link>",
-                safe,
-            )
+            parts = []
+            cursor = 0
+            for match in url_pattern.finditer(clean):
+                parts.append(escape(clean[cursor:match.start()]))
+                url = match.group(0)
+                parts.append('<link href="' + escape(url, {"'": "&#39;", '"': "&quot;"}) + '" color="blue">' + escape(url) + "</link>")
+                cursor = match.end()
+            parts.append(escape(clean[cursor:]))
+            safe = "".join(parts)
             if clean.isupper() or clean.startswith("EMPLOYEE:") or clean.startswith("DAILY SUMMARY"):
                 story.append(Paragraph("<b>" + safe + "</b>", styles["Heading3"]))
             else:
