@@ -10,7 +10,7 @@ services:
     region: oregon
     # Keep the existing full-featured web client and web-only FastAPI entrypoint.
     # Do not build or replace the Windows EXE from this Render service.
-    buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt && npm --prefix frontend ci --include=dev && npm --prefix frontend run build
+    buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt && npm --prefix frontend ci --include=dev && rm -rf frontend/dist && npm --prefix frontend run build && python -c "from pathlib import Path; p=Path('frontend/dist/index.html'); s=p.read_text(encoding='utf-8'); assert '/assets/' in s and 'loginView' not in s, 'React production bundle was not generated; refusing to deploy stale legacy frontend'"
     startCommand: python -c "import os; import web_auth_shim; import tools.force_admin_login_heal; import uvicorn; uvicorn.run('api_server:app', host='0.0.0.0', port=int(os.environ.get('PORT', '8000')), proxy_headers=True, forwarded_allow_ips='*')"
     envVars:
       - key: PYTHON_VERSION
