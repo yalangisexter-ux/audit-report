@@ -15,7 +15,7 @@ python run_web.py
 
 ### Key Features
 - **Modern Cyberpunk/Executive Glassmorphism:** Deep navy gradients, glowing card HUDs, dynamic telemetry clocks, and sleek neon scrollbars.
-- **Dynamic Custom Task Tracking:** Add arbitrary key-value tracking fields (e.g., `Tracked By`, `Equipment`, `Inspection Result`, etc.) directly inside both Create Task and Edit Task modals.
+- **Dynamic Custom Task Tracking:** The web Task Manager now exposes arbitrary key-value tracking fields (e.g., `Tracked By`, `Equipment`, `Inspection Result`) in create/edit forms, alongside target/actual quantities, extended statuses, evidence links, selective bulk editing and role-checked deletion.
 - **Editable Department:** Free-text editable department field with auto-completion from existing organizational units.
 - **Responsive Dialog Modals:** Center-anchored with max-height limits and internal scrolling to prevent modals from hiding under taskbars or screen edges.
 - **Silent Background Sync HUD:** Real-time green auto-sync badge without disruptive loading screens or UI blocking.

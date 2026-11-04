@@ -60,8 +60,16 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - Added API regression tests for complete employee fields, section rename propagation to tasks, section and employee ordering, role restrictions, and backup-before-permanent-delete.
 - CI, EXE release, legacy upgrade, Render deployment and side-by-side verification against a representative customer database remain pending. Do not mark this row Complete until all gates pass.
 
-## Next parity milestone — Task Manager
+## Task Manager milestone — implementation added; verification pending
 
-- Compare every desktop TaskDialog field and custom tracking value with the web create/edit form.
-- Verify target/actual quantity, due time, priority, all extended statuses, submitted timestamp preservation, proof URL/note, manager note, expose-link behavior, bulk editing, filtering and role restrictions.
-- Preserve task IDs, employee links, historical dates and existing evidence URLs.
+- Replaced the limited web task form with a dedicated responsive Task Manager matching the desktop TaskDialog's assignment, department, target/actual quantity, progress, priority, extended status, proof URL, expose-link, next-action and dynamic custom key/value fields. Optional details, due time and proof notes are also editable without dropping existing values.
+- Added desktop-style date/employee filtering, status/priority/department filters, search, selection, Select All, bulk editing, proof-link opening, task KPI cards and Admin/Developer-only deletion controls.
+- Added authenticated task list/create/update/bulk-edit/delete API dependencies. Task deletion enforces Admin/Developer; bulk edit updates only selected fields and runs transactionally.
+- API writes now preserve the first submitted/completed timestamp, set it on the first Submitted/Completed transition, keep target/actual and custom values intact, and return 404 for missing tasks. Task date and due-time inputs are validated.
+- Added regression tests for the full task-field round trip, custom key/value persistence, filter behavior, submitted timestamp preservation, selective bulk updates and deletion permissions.
+- This milestone is not Complete until the regression suite, React build, Windows EXE installer/legacy database-preservation test, Render deployment and side-by-side verification against the same representative customer database all pass.
+
+## Next parity milestone — Employee Tracker
+
+- Compare the desktop employee/date selector, task summary/progress, task table and add/edit/delete/open-proof actions with the web tracker.
+- Preserve the shared Task Manager permission and evidence-link behavior; do not create a second task data model.

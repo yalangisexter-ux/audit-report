@@ -259,6 +259,11 @@ class TaskModel(BaseModel):
     category: Optional[str] = None
     notes: Optional[str] = None
 
+
+class TaskBulkEditModel(BaseModel):
+    task_ids: List[int]
+    updates: Dict[str, Any]
+
 class AttendanceMarkModel(BaseModel):
     employee_id: int
     work_date: Optional[str] = None
@@ -702,6 +707,59 @@ def delete_employee(emp_id: int, conn: sqlite3.Connection = Depends(get_db), use
 
 
 # --- Tasks ---
+def _task_custom_values(value):
+    if value is None:
+        return ""
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
+def _validate_task_fields(task):
+    title = str(task.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Task title is required.")
+    task_date = str(task.task_date or date.today().isoformat()).strip()
+    try:
+        task_date = date.fromisoformat(task_date).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Task date must use YYYY-MM-DD format.")
+    due_time = str(task.due_time or "").strip()
+    if due_time:
+        try:
+            datetime.strptime(due_time, "%H:%M")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Due time must use HH:MM format.")
+    progress = int(task.progress or 0)
+    if progress < 0 or progress > 100:
+        raise HTTPException(status_code=422, detail="Task progress must be between 0 and 100.")
+    status = str(task.status or "Not started").strip()
+    if status == "Completed":
+        progress = 100
+    next_action = str(task.next_action or task.manager_note or "").strip()
+    manager_note = str(task.manager_note or task.next_action or "").strip()
+    custom_source = task.custom_values if task.custom_values is not None else task.custom_fields
+    return {
+        "employee_id": int(task.employee_id or 1),
+        "task_date": task_date,
+        "title": title,
+        "department": str(task.department or task.category or "").strip(),
+        "details": str(task.details or task.notes or "").strip(),
+        "due_time": due_time,
+        "priority": str(task.priority or "Normal").strip(),
+        "status": status,
+        "progress": progress,
+        "target_qty": str(task.target_qty or "").strip(),
+        "actual_qty": str(task.actual_qty or "").strip(),
+        "next_action": next_action,
+        "proof_url": str(task.proof_url or "").strip(),
+        "proof_note": str(task.proof_note or "").strip(),
+        "manager_note": manager_note,
+        "expose_link": 1 if bool(task.expose_link) else 0,
+        "custom_values": _task_custom_values(custom_source),
+    }
+
+
 @app.get("/api/tasks")
 def list_tasks(
     employee_id: Optional[int] = None,
@@ -709,7 +767,8 @@ def list_tasks(
     status: Optional[str] = None,
     priority: Optional[str] = None,
     department: Optional[str] = None,
-    conn: sqlite3.Connection = Depends(get_db)
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     query = """
         SELECT t.*, e.name as employee_name, e.employee_code
@@ -722,6 +781,10 @@ def list_tasks(
         query += " AND t.employee_id=?"
         params.append(employee_id)
     if task_date:
+        try:
+            task_date = date.fromisoformat(str(task_date)).isoformat()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="task_date must use YYYY-MM-DD format.")
         query += " AND t.task_date=?"
         params.append(task_date)
     if status:
@@ -733,93 +796,189 @@ def list_tasks(
     if department:
         query += " AND t.department=?"
         params.append(department)
-        
+
     query += " ORDER BY t.task_date DESC, t.id DESC"
     rows = conn.execute(query, params).fetchall()
-    
     result = []
-    for r in rows:
-        d = dict(r)
-        # Parse custom values JSON or string
-        cv = d.get("custom_values") or ""
-        parsed_cv = []
-        if cv:
+    for row in rows:
+        item = dict(row)
+        raw = item.get("custom_values") or ""
+        parsed = []
+        if raw:
             try:
-                parsed_cv = json.loads(cv)
-                if not isinstance(parsed_cv, list):
-                    parsed_cv = [{"key": k, "value": v} for k, v in desktop_app.parse_custom_values(cv)]
+                decoded = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(decoded, list):
+                    parsed = decoded
+                else:
+                    parsed = [{"key": key, "value": value} for key, value in desktop_app.parse_custom_values(decoded)]
             except Exception:
-                parsed_cv = [{"key": k, "value": v} for k, v in desktop_app.parse_custom_values(cv)]
-        d["custom_fields"] = parsed_cv
-        result.append(d)
-        
+                parsed = [{"key": key, "value": value} for key, value in desktop_app.parse_custom_values(raw)]
+        item["custom_fields"] = parsed
+        result.append(item)
     return result
 
+
 @app.post("/api/tasks")
-def create_task(task: TaskModel, conn: sqlite3.Connection = Depends(get_db)):
+def create_task(
+    task: TaskModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     now = desktop_app.now_text()
-    t_date = task.task_date or date.today().isoformat()
-    t_dept = task.department or task.category or ""
-    t_details = task.details or task.notes or ""
-    cv_source = task.custom_values if task.custom_values is not None else task.custom_fields
-    
-    # Format custom_values as JSON string
-    custom_val_str = ""
-    if cv_source:
-        if isinstance(cv_source, (list, dict)):
-            custom_val_str = json.dumps(cv_source)
-        elif isinstance(cv_source, str):
-            custom_val_str = cv_source
-            
-    emp_id = task.employee_id or 1
+    values = _validate_task_fields(task)
+    submitted_at = now if values["status"] in ("Submitted", "Completed") else ""
     cursor = conn.execute(
-        """INSERT INTO tasks(employee_id, task_date, title, department, details, due_time, priority, status,
-                             progress, target_qty, actual_qty, next_action, proof_url, proof_note,
-                             manager_note, expose_link, custom_values, created_at, updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (emp_id, t_date, task.title.strip(), t_dept, t_details, task.due_time or "",
-         task.priority or "Normal", task.status or "Not started", task.progress or 0,
-         task.target_qty or "", task.actual_qty or "", task.next_action or "",
-         task.proof_url or "", task.proof_note or "", task.manager_note or "",
-         task.expose_link or 0, custom_val_str, now, now)
+        """INSERT INTO tasks(
+               employee_id, task_date, title, department, details, due_time, priority, status,
+               progress, target_qty, actual_qty, next_action, proof_url, proof_note,
+               submitted_at, manager_note, expose_link, custom_values, created_at, updated_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            values["employee_id"], values["task_date"], values["title"], values["department"],
+            values["details"], values["due_time"], values["priority"], values["status"],
+            values["progress"], values["target_qty"], values["actual_qty"], values["next_action"],
+            values["proof_url"], values["proof_note"], submitted_at, values["manager_note"],
+            values["expose_link"], values["custom_values"], now, now,
+        ),
     )
     conn.commit()
-    return {"id": cursor.lastrowid, "success": True, "status": task.status or "Not started", "progress": task.progress or 0}
+    return {
+        "id": cursor.lastrowid,
+        "success": True,
+        "status": values["status"],
+        "progress": values["progress"],
+        "submitted_at": submitted_at,
+    }
+
 
 @app.put("/api/tasks/{task_id}")
-def update_task(task_id: int, task: TaskModel, conn: sqlite3.Connection = Depends(get_db)):
+def update_task(
+    task_id: int,
+    task: TaskModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    existing = conn.execute("SELECT submitted_at FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Task not found.")
     now = desktop_app.now_text()
-    t_date = task.task_date or date.today().isoformat()
-    t_dept = task.department or task.category or ""
-    t_details = task.details or task.notes or ""
-    cv_source = task.custom_values if task.custom_values is not None else task.custom_fields
-
-    custom_val_str = ""
-    if cv_source:
-        if isinstance(cv_source, (list, dict)):
-            custom_val_str = json.dumps(cv_source)
-        elif isinstance(cv_source, str):
-            custom_val_str = cv_source
-
-    emp_id = task.employee_id or 1
+    values = _validate_task_fields(task)
+    submitted_at = (existing["submitted_at"] or "").strip()
+    if not submitted_at and values["status"] in ("Submitted", "Completed"):
+        submitted_at = now
     conn.execute(
-        """UPDATE tasks SET employee_id=?, task_date=?, title=?, department=?, details=?, due_time=?,
-                           priority=?, status=?, progress=?, target_qty=?, actual_qty=?, next_action=?,
-                           proof_url=?, proof_note=?, manager_note=?, expose_link=?, custom_values=?,
-                           updated_at=?
+        """UPDATE tasks SET
+               employee_id=?, task_date=?, title=?, department=?, details=?, due_time=?, priority=?,
+               status=?, progress=?, target_qty=?, actual_qty=?, next_action=?, proof_url=?, proof_note=?,
+               submitted_at=?, manager_note=?, expose_link=?, custom_values=?, updated_at=?
            WHERE id=?""",
-        (emp_id, t_date, task.title.strip(), t_dept, t_details, task.due_time or "",
-         task.priority or "Normal", task.status or "Not started", task.progress or 0,
-         task.target_qty or "", task.actual_qty or "", task.next_action or "",
-         task.proof_url or "", task.proof_note or "", task.manager_note or "",
-         task.expose_link or 0, custom_val_str, now, task_id)
+        (
+            values["employee_id"], values["task_date"], values["title"], values["department"],
+            values["details"], values["due_time"], values["priority"], values["status"],
+            values["progress"], values["target_qty"], values["actual_qty"], values["next_action"],
+            values["proof_url"], values["proof_note"], submitted_at, values["manager_note"],
+            values["expose_link"], values["custom_values"], now, task_id,
+        ),
     )
     conn.commit()
-    return {"id": task_id, "success": True, "status": task.status, "progress": task.progress}
+    return {
+        "id": task_id,
+        "success": True,
+        "status": values["status"],
+        "progress": values["progress"],
+        "submitted_at": submitted_at,
+    }
+
+
+@app.post("/api/tasks/bulk-edit")
+def bulk_edit_tasks(
+    payload: TaskBulkEditModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    task_ids = list(dict.fromkeys(int(value) for value in payload.task_ids))
+    if not task_ids:
+        raise HTTPException(status_code=422, detail="Select at least one task.")
+    if len(task_ids) > 500:
+        raise HTTPException(status_code=422, detail="A bulk edit can update at most 500 tasks.")
+    updates = dict(payload.updates or {})
+    allowed = {
+        "title", "department", "details", "due_time", "priority", "status", "progress",
+        "target_qty", "actual_qty", "next_action", "proof_url", "proof_note",
+        "manager_note", "expose_link", "custom_values",
+    }
+    unknown = set(updates) - allowed
+    if unknown:
+        raise HTTPException(status_code=422, detail="Unsupported bulk task field(s): " + ", ".join(sorted(unknown)))
+    if not updates:
+        raise HTTPException(status_code=422, detail="Choose at least one field to update.")
+    if "title" in updates and not str(updates["title"] or "").strip():
+        raise HTTPException(status_code=422, detail="Task title cannot be blank.")
+    if "progress" in updates:
+        try:
+            updates["progress"] = int(updates["progress"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Task progress must be a whole number.")
+        if updates["progress"] < 0 or updates["progress"] > 100:
+            raise HTTPException(status_code=422, detail="Task progress must be between 0 and 100.")
+    if "expose_link" in updates:
+        updates["expose_link"] = 1 if bool(updates["expose_link"]) else 0
+    if "custom_values" in updates:
+        updates["custom_values"] = _task_custom_values(updates["custom_values"])
+    if "next_action" in updates and "manager_note" not in updates:
+        updates["manager_note"] = updates["next_action"]
+    elif "manager_note" in updates and "next_action" not in updates:
+        updates["next_action"] = updates["manager_note"]
+    if updates.get("status") == "Completed":
+        updates["progress"] = 100
+
+    marks = ",".join("?" for _ in task_ids)
+    rows = conn.execute(
+        f"SELECT id, submitted_at FROM tasks WHERE id IN ({marks})",
+        task_ids,
+    ).fetchall()
+    if len(rows) != len(task_ids):
+        raise HTTPException(status_code=404, detail="One or more selected tasks no longer exist.")
+
+    now = desktop_app.now_text()
+    conn.execute("SAVEPOINT task_bulk_edit")
+    try:
+        for row in rows:
+            per_task = dict(updates)
+            existing_submitted = (row["submitted_at"] or "").strip()
+            if "status" in per_task and per_task["status"] in ("Submitted", "Completed") and not existing_submitted:
+                per_task["submitted_at"] = now
+            else:
+                per_task["submitted_at"] = existing_submitted
+            per_task["updated_at"] = now
+            columns = list(per_task)
+            assignments = ", ".join(column + "=?" for column in columns)
+            conn.execute(
+                f"UPDATE tasks SET {assignments} WHERE id=?",
+                [per_task[column] for column in columns] + [int(row["id"])],
+            )
+        conn.execute("RELEASE SAVEPOINT task_bulk_edit")
+        conn.commit()
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT task_bulk_edit")
+        conn.execute("RELEASE SAVEPOINT task_bulk_edit")
+        conn.commit()
+        raise
+    return {"success": True, "updated": len(rows)}
+
 
 @app.delete("/api/tasks/{task_id}")
-def delete_task(task_id: int, conn: sqlite3.Connection = Depends(get_db)):
-    conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+def delete_task(
+    task_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    role = str((user or {}).get("role", "")).strip().casefold()
+    if role not in {"admin", "developer"}:
+        raise HTTPException(status_code=403, detail="Only an Admin or Developer account can delete tasks.")
+    cursor = conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Task not found.")
     conn.commit()
     return {"success": True}
 

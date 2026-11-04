@@ -592,3 +592,174 @@ def test_employee_directory_role_permissions_and_safe_permanent_delete(tmp_path,
     finally:
         api_server.app.dependency_overrides.clear()
         api_server.app.dependency_overrides.update(original_overrides)
+
+
+def test_task_api_round_trips_desktop_fields_and_preserves_submission_timestamp():
+    import secrets
+    import sqlite3
+
+    employee = client.post("/api/employees", json={
+        "name": "Task Parity Employee",
+        "employee_code": "TASK-PARITY-" + secrets.token_hex(3).upper(),
+        "department": "Operations",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+    task_date = "2026-11-05"
+    payload = {
+        "employee_id": employee_id,
+        "task_date": task_date,
+        "title": "Full task parity regression",
+        "department": "Operations",
+        "details": "Task description retained",
+        "due_time": "17:45",
+        "priority": "Urgent",
+        "status": "Completed",
+        "progress": 75,
+        "target_qty": "12",
+        "actual_qty": "12",
+        "proof_url": "https://example.test/evidence/one\nhttps://example.test/evidence/two",
+        "proof_note": "Two evidence links",
+        "next_action": "Review evidence",
+        "manager_note": "Review evidence",
+        "expose_link": 1,
+        "custom_values": [
+            {"key": "Tracked By", "value": "QA"},
+            {"key": "Equipment", "value": "Rig 4"},
+        ],
+    }
+    created = client.post("/api/tasks", json=payload)
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+    assert created.json()["progress"] == 100
+    assert created.json()["submitted_at"]
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.execute("UPDATE tasks SET submitted_at=? WHERE id=?", ("2026-10-30 09:15:00", task_id))
+        connection.commit()
+    finally:
+        connection.close()
+
+    updated_payload = {**payload, "status": "Completed", "progress": 100, "proof_note": "Verified"}
+    updated = client.put(f"/api/tasks/{task_id}", json=updated_payload)
+    assert updated.status_code == 200
+    assert updated.json()["submitted_at"] == "2026-10-30 09:15:00"
+
+    filtered = client.get(f"/api/tasks?employee_id={employee_id}&task_date={task_date}")
+    assert filtered.status_code == 200
+    row = next(item for item in filtered.json() if item["id"] == task_id)
+    assert row["due_time"] == "17:45"
+    assert row["details"] == "Task description retained"
+    assert row["target_qty"] == "12" and row["actual_qty"] == "12"
+    assert row["proof_note"] == "Verified"
+    assert row["expose_link"] == 1
+    assert row["submitted_at"] == "2026-10-30 09:15:00"
+    custom = {item["key"]: item["value"] for item in row["custom_fields"]}
+    assert custom == {"Tracked By": "QA", "Equipment": "Rig 4"}
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+        connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_task_bulk_edit_changes_only_selected_fields_and_sets_submission_time():
+    import secrets
+    import sqlite3
+
+    employee = client.post("/api/employees", json={
+        "name": "Task Bulk Parity Employee",
+        "employee_code": "TASK-BULK-" + secrets.token_hex(3).upper(),
+        "department": "Operations",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+    created_ids = []
+    for title in ("Bulk task one", "Bulk task two", "Untouched task"):
+        created = client.post("/api/tasks", json={
+            "employee_id": employee_id,
+            "task_date": "2026-11-05",
+            "title": title,
+            "target_qty": "25",
+            "actual_qty": "4",
+            "priority": "Low",
+            "status": "Not started",
+            "next_action": "Original follow-up",
+            "custom_values": [{"key": "Client", "value": "Keep this value"}],
+        })
+        assert created.status_code == 200
+        created_ids.append(created.json()["id"])
+
+    result = client.post("/api/tasks/bulk-edit", json={
+        "task_ids": created_ids[:2],
+        "updates": {"status": "Completed", "next_action": "Bulk follow-up", "expose_link": True},
+    })
+    assert result.status_code == 200
+    assert result.json()["updated"] == 2
+    rows = client.get("/api/tasks?employee_id=" + str(employee_id)).json()
+    by_id = {row["id"]: row for row in rows}
+    for task_id in created_ids[:2]:
+        row = by_id[task_id]
+        assert row["status"] == "Completed" and row["progress"] == 100
+        assert row["target_qty"] == "25" and row["actual_qty"] == "4"
+        assert row["next_action"] == "Bulk follow-up"
+        assert row["manager_note"] == "Bulk follow-up"
+        assert row["expose_link"] == 1
+        assert row["submitted_at"]
+        assert row["custom_fields"][0]["value"] == "Keep this value"
+    untouched = by_id[created_ids[2]]
+    assert untouched["status"] == "Not started"
+    assert untouched["target_qty"] == "25" and untouched["actual_qty"] == "4"
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.executemany("DELETE FROM tasks WHERE id=?", [(task_id,) for task_id in created_ids])
+        connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_task_delete_is_restricted_to_admin_and_developer():
+    import secrets
+
+    employee = client.post("/api/employees", json={
+        "name": "Task Permission Employee",
+        "employee_code": "TASK-RBAC-" + secrets.token_hex(3).upper(),
+        "department": "Operations",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+    created = client.post("/api/tasks", json={
+        "employee_id": employee_id,
+        "task_date": "2026-11-05",
+        "title": "Task deletion permission regression",
+    })
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+    original_overrides = dict(api_server.app.dependency_overrides)
+    try:
+        api_server.app.dependency_overrides[api_server.get_current_user] = lambda: {
+            "id": 991001, "username": "task-staff-test", "display_name": "Task Staff Test", "role": "Staff"
+        }
+        denied = client.delete(f"/api/tasks/{task_id}")
+        assert denied.status_code == 403
+        api_server.app.dependency_overrides[api_server.get_current_user] = lambda: {
+            "id": 991002, "username": "task-admin-test", "display_name": "Task Admin Test", "role": "Admin"
+        }
+        allowed = client.delete(f"/api/tasks/{task_id}")
+        assert allowed.status_code == 200
+    finally:
+        api_server.app.dependency_overrides.clear()
+        api_server.app.dependency_overrides.update(original_overrides)
+    import sqlite3
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        connection.commit()
+    finally:
+        connection.close()
