@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths-ignore:
       - "customer-data/**"
+      - "frontend/dist/**"
       - "tools/**"
       - ".github/workflows/apply-*.yml"
       - ".github/workflows/restore-*.yml"
@@ -48,6 +49,26 @@ jobs:
             if (-not (Test-Path "dist/assets")) { throw "Vite build did not produce frontend/dist/assets" }
           }
           finally { Pop-Location }
+
+      - name: Publish built React frontend for the existing Render Python service
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/dist
+          if (git diff --cached --quiet) {
+            Write-Host "Frontend production bundle is already current."
+            exit 0
+          }
+          git commit -m "Publish freshly built web frontend bundle"
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            git pull --rebase origin main
+            if ($LASTEXITCODE -ne 0) { throw "Could not rebase frontend bundle onto latest main." }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 4) { throw "Could not publish frontend bundle after four attempts." }
+            Start-Sleep -Seconds 3
+          }
 
       - name: Validate Cloudflare Worker and browser chat JavaScript
         shell: pwsh
