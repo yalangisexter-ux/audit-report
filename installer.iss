@@ -31,6 +31,7 @@ RestartApplications=no
 Source: "dist\RawStrengthEmployeeAuditManager\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "update_recovery.ps1"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "resolve_customer_data_dir.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
 Name: "{group}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"
@@ -78,18 +79,42 @@ begin
 end;
 
 function GetCustomerDataDirectory: String;
+var
+	ScriptPath: String;
+	OutputPath: String;
+	ResultCode: Integer;
 begin
-	Result := ExpandConstant('{param:DATA_DIR|}');
-	if Result = '' then
+	Result := Trim(ExpandConstant('{param:DATA_DIR|}'));
+	if Result <> '' then
+		Exit;
+
+	// Very old clients do not pass DATA_DIR. Resolve the interactive user's
+	// actual profile instead of using the elevated administrator's LOCALAPPDATA.
+	ScriptPath := ExpandConstant('{tmp}\resolve_customer_data_dir.ps1');
+	OutputPath := ExpandConstant('{tmp}\rsc_customer_data_dir.txt');
+	DeleteFile(OutputPath);
+	ExtractTemporaryFile('resolve_customer_data_dir.ps1');
+	if Exec(RecoveryPowerShellPath, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) + ' -OutputFile ' + AddQuotes(OutputPath), '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) and LoadStringFromFile(OutputPath, Result) then
+	begin
+		Result := Trim(Result);
+		if Result <> '' then
+			Exit;
+	end;
+
+	// A fresh install has no previous customer data to locate. For an existing
+	// installation, fail closed rather than accidentally selecting the admin profile.
+	if FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
+		Result := ''
+	else
 		Result := ExpandConstant('{localappdata}\EmployeeAuditManager');
 end;
 
 function InitializeSetup: Boolean;
 begin
 	InstallDirectory := ExpandConstant('{autopf}\Raw Strength Employee Audit Manager');
-	DataDirectory := GetCustomerDataDirectory;
-	PendingBackupDirectory := AddBackslash(DataDirectory) + 'pending-update-backup';
-	StableBackupDirectory := AddBackslash(DataDirectory) + 'previous-version';
+	DataDirectory := Trim(ExpandConstant('{param:DATA_DIR|}'));
+	PendingBackupDirectory := '';
+	StableBackupDirectory := '';
 	TransactionBackupReady := False;
 	TransactionInstallSucceeded := False;
 	Result := True;
@@ -103,6 +128,11 @@ begin
 	NeedsRestart := False;
 	InstallDirectory := ExpandConstant('{app}');
 	DataDirectory := GetCustomerDataDirectory;
+	if DataDirectory = '' then
+	begin
+		Result := 'Could not identify the original customer Windows profile. The update was stopped to protect the existing database. Please retry the update from the installed application.';
+		Exit;
+	end;
 	PendingBackupDirectory := AddBackslash(DataDirectory) + 'pending-update-backup';
 	StableBackupDirectory := AddBackslash(DataDirectory) + 'previous-version';
 	RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');

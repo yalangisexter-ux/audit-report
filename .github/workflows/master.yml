@@ -221,7 +221,8 @@ jobs:
           $databaseHashBefore = (Get-FileHash -LiteralPath $env:RSC_TEST_DATABASE -Algorithm SHA256).Hash
 
           $latestSetup = (Resolve-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Path
-          $latestArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /DATA_DIR="' + $dataDir + '"'
+          # Deliberately omit DATA_DIR to simulate the v1.1.74 updater, which launches Setup without custom parameters.
+          $latestArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS'
           $upgrade = Start-Process -FilePath $latestSetup -ArgumentList $latestArgs -Wait -PassThru
           if ($upgrade.ExitCode -ne 0) { throw "Latest installer failed to upgrade v1.1.74 (exit code $($upgrade.ExitCode))." }
 

@@ -814,6 +814,8 @@ def test_silent_update_installer_preserves_previous_install_directory_and_data()
     source = (root / "app.py").read_text(encoding="utf-8")
     assert "AppId={{4A2A33C8-8C51-4CF5-A6B0-8D5F9F9A42D1}" in installer
     assert "UsePreviousAppDir=yes" in installer
+    assert "resolve_customer_data_dir.ps1" in installer
+    assert "original customer Windows profile" in installer
     assert "create_pre_migration_backup(database_path, BACKUP_DIR)" in source
     assert '"database_backup": str(database_backup_path) if database_backup_path else ""' in source
     assert "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /DATA_DIR=" in source
@@ -836,6 +838,6 @@ def test_release_workflow_runs_real_legacy_installer_upgrade_without_touching_cu
     assert "Verify legacy v1.1.74 in-place upgrade preserves customer database" in workflow
     assert "releases/download/v1.1.74/RawStrengthEmployeeAuditManager-Setup.exe" in workflow
     assert "19bde24215df6c9276417b5e42d655c3b15ec3ee1cb8dce8a948769c0684aef8" in workflow
-    assert "/DATA_DIR=" in workflow
+    assert "Deliberately omit DATA_DIR" in workflow
     assert "databaseHashAfter -ne $databaseHashBefore" in workflow
     assert "KEEP_EXISTING_CUSTOMER_DATA" in workflow
