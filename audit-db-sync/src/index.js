@@ -190,15 +190,8 @@ async function handlePull(request, env) {
     });
   }
 
-  if (response.status === 404 && !preferLatest) {
-    const fallbackPath = await resolveLatestSnapshotPath(env);
-    if (fallbackPath) {
-      response = await fetch(githubContentsUrl(env, fallbackPath), {
-        method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
-      });
-    }
-  }
-
+  // Exact installation pulls must never fall back to another customer's latest snapshot.
+  // Latest-snapshot discovery is an explicit operation only.
   if (response.status === 404) return json({ error: "No remote snapshot for this installation" }, 404);
   if (!response.ok) return json({ error: "Could not retrieve the encrypted snapshot" }, 502);
   const length = Number(response.headers.get("Content-Length") || 0);
