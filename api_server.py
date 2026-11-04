@@ -6,7 +6,6 @@ import sys
 import json
 import sqlite3
 import secrets
-import csv
 from pathlib import Path
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
@@ -14,7 +13,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 # Ensure repo root is in python path
@@ -24,28 +23,19 @@ if str(ROOT_DIR) not in sys.path:
 
 import app as desktop_app
 
-# Render uses a persistent web working copy; encrypted synchronization is
-# managed by web_sync.py, not by the desktop application's local sync worker.
+# Web-only isolation: the browser service owns its database and never reuses the
+# desktop LocalAppData database or the desktop GitHub/Worker synchronization path.
 if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-    _web_data_dir = Path(os.environ.get("AUDIT_DATA_DIR") or ("/var/data" if Path("/var/data").is_dir() else (ROOT_DIR / "web-data"))).expanduser().resolve()
+    _web_data_dir = Path(os.environ.get("AUDIT_DATA_DIR") or (ROOT_DIR / "web-data")).expanduser().resolve()
     _web_data_dir.mkdir(parents=True, exist_ok=True)
     desktop_app.APP_DIR = _web_data_dir
-    desktop_app.DB_PATH = _web_data_dir / "audit_manager.db"
-    _legacy_web_db = _web_data_dir / "web_employee_audit.db"
-    if not desktop_app.DB_PATH.exists() and _legacy_web_db.is_file():
-        _src = sqlite3.connect(str(_legacy_web_db), timeout=30)
-        _dst = sqlite3.connect(str(desktop_app.DB_PATH), timeout=30)
-        try:
-            _src.backup(_dst)
-        finally:
-            _dst.close()
-            _src.close()
+    desktop_app.DB_PATH = _web_data_dir / "web_employee_audit.db"
     desktop_app.BACKUP_DIR = _web_data_dir / "backups"
     desktop_app.EXPORT_DIR = _web_data_dir / "exports"
     desktop_app.BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     desktop_app.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    class _WebOnlyDesktopSyncDisabled:
+    class _WebOnlySyncDisabled:
         is_configured = False
         is_dirty = False
         _on_dirty_callback = None
@@ -56,7 +46,7 @@ if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
         def set_status(self, *args, **kwargs): return False
         def close(self, *args, **kwargs): return None
         def download_latest_snapshot(self, *args, **kwargs): return None
-    desktop_app.GitHubDatabaseSync = _WebOnlyDesktopSyncDisabled
+    desktop_app.GitHubDatabaseSync = _WebOnlySyncDisabled
 
 from build_info import APP_VERSION
 
@@ -76,10 +66,9 @@ app.add_middleware(
 )
 
 _DB_INITIALIZED = False
-WEB_SYNC_MANAGER = None
 
 def ensure_database():
-    global _DB_INITIALIZED, WEB_SYNC_MANAGER
+    global _DB_INITIALIZED
     if not _DB_INITIALIZED:
         try:
             db = desktop_app.Database()
@@ -88,51 +77,19 @@ def ensure_database():
                 business_tracking.setup_business_tables(db.conn)
             except Exception:
                 pass
-            if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-                from web_db_migrations import ensure_case_sensitive_auth_users
-                if ensure_case_sensitive_auth_users(desktop_app.DB_PATH):
-                    print("[Web DB] Migrated auth_users to exact case-sensitive usernames; all credentials preserved")
-            if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-                db.conn.execute("""
-                    CREATE TABLE IF NOT EXISTS web_auth_sessions (
-                        token_hash TEXT PRIMARY KEY,
-                        user_id INTEGER NOT NULL,
-                        created_at TEXT NOT NULL,
-                        expires_at TEXT NOT NULL,
-                        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
-                    )
-                """)
-                db.conn.execute("CREATE INDEX IF NOT EXISTS idx_web_auth_sessions_expiry ON web_auth_sessions(expires_at)")
-                db.conn.commit()
             if hasattr(db, "close_github_sync"):
                 db.close_github_sync(timeout=0)
             if hasattr(db, "conn") and db.conn:
                 db.conn.close()
-        except Exception as exc:
-            print(f"[Web DB] Initialization/migration failed: {exc}")
-            raise
+        except Exception:
+            pass
         _DB_INITIALIZED = True
-        if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-            try:
-                from web_sync import WebDatabaseSync
-                WEB_SYNC_MANAGER = WebDatabaseSync(desktop_app.DB_PATH)
-                WEB_SYNC_MANAGER.bootstrap()
-                WEB_SYNC_MANAGER.start_polling()
-            except Exception as exc:
-                print(f"[Web Sync] Initialization skipped: {exc}")
 
 def get_db():
-    """Create a thread-safe connection and mark committed web changes for sync."""
+    """Create a thread-safe connection to the exact same database."""
     ensure_database()
     db_path = desktop_app.DB_PATH
-    factory = sqlite3.Connection
-    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-        try:
-            from database_sync import SyncableSQLiteConnection
-            factory = SyncableSQLiteConnection
-        except Exception:
-            factory = sqlite3.Connection
-    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30, factory=factory)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     try:
@@ -140,9 +97,6 @@ def get_db():
         conn.execute("PRAGMA synchronous=NORMAL")
     except Exception:
         pass
-    manager = WEB_SYNC_MANAGER
-    if manager is not None and getattr(manager, "configured", False) and hasattr(conn, "set_commit_callback"):
-        conn.set_commit_callback(manager.mark_pending)
     try:
         yield conn
     finally:
@@ -157,17 +111,7 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
         scheme, _, value = authorization.partition(" ")
         if scheme.lower() == "bearer":
             token = value.strip()
-    if token and os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-        token_hash = __import__("hashlib").sha256(token.encode("utf-8")).hexdigest()
-        session = conn.execute(
-            """SELECT u.id, u.username, u.display_name, u.role
-               FROM web_auth_sessions s JOIN auth_users u ON u.id=s.user_id
-               WHERE s.token_hash=? AND s.expires_at>? AND u.active=1""",
-            (token_hash, datetime.now().isoformat(timespec="seconds")),
-        ).fetchone()
-        if session:
-            return dict(session)
-    elif token and token in ACTIVE_SESSIONS:
+    if token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
     if os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes"):
         raise HTTPException(status_code=401, detail="Login required")
@@ -243,32 +187,12 @@ class ProductModel(BaseModel):
     sku: Optional[str] = ""
     category: Optional[str] = "General"
     brand: Optional[str] = ""
-    package_type: Optional[str] = ""
     base_unit: Optional[str] = "PCS"
     opening_stock: Optional[float] = 0.0
     received_qty: Optional[float] = 0.0
     reserved_qty: Optional[float] = 0.0
-    dispatched_qty: Optional[float] = 0.0
-    free_qty: Optional[float] = 0.0
-    returned_qty: Optional[float] = 0.0
-    damaged_qty: Optional[float] = 0.0
-    expired_qty: Optional[float] = 0.0
-    quarantined_qty: Optional[float] = 0.0
-    purchase_cost: Optional[float] = 0.0
-    selling_price: Optional[float] = 0.0
     reorder_level: Optional[float] = 0.0
-    batch_number: Optional[str] = ""
-    expiry_date: Optional[str] = ""
-    storage_location: Optional[str] = ""
-
-
-class StockTransactionModel(BaseModel):
-    txn_type: str
-    quantity: float
-    unit: Optional[str] = ""
-    reference: Optional[str] = ""
-    notes: Optional[str] = ""
-
+    selling_price: Optional[float] = 0.0
 
 class ServiceModel(BaseModel):
     name: str
@@ -330,19 +254,7 @@ def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
         "display_name": row["display_name"] or row["username"],
         "role": row["role"],
     }
-    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-        import hashlib
-        from datetime import timedelta
-        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        created_at = datetime.now()
-        conn.execute(
-            "INSERT INTO web_auth_sessions(token_hash, user_id, created_at, expires_at) VALUES(?,?,?,?)",
-            (token_hash, row["id"], created_at.isoformat(timespec="seconds"),
-             (created_at + timedelta(days=30)).isoformat(timespec="seconds")),
-        )
-        conn.commit()
-    else:
-        ACTIVE_SESSIONS[token] = user_info
+    ACTIVE_SESSIONS[token] = user_info
     return {"token": token, "user": user_info}
 
 @app.get("/api/auth/me")
@@ -354,13 +266,6 @@ def initial_setup(req: SetupRequest, conn: sqlite3.Connection = Depends(get_db))
     count = conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0]
     if count > 0:
         raise HTTPException(status_code=400, detail="Setup has already been completed.")
-    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-        manager = WEB_SYNC_MANAGER
-        if manager is None or not getattr(manager, "configured", False) or not bool(getattr(manager, "last_pull", {}).get("ok")):
-            raise HTTPException(
-                status_code=503,
-                detail="Admin setup is disabled until the existing encrypted customer database is verified. Check database sync configuration.",
-            )
     
     ps, ph = desktop_app.hash_pin(req.password)
     ans_salt, ans_hash = desktop_app.hash_pin(req.security_answer)
@@ -379,196 +284,62 @@ def initial_setup(req: SetupRequest, conn: sqlite3.Connection = Depends(get_db))
 # --- Dashboard Analytics ---
 @app.get("/api/dashboard")
 def get_dashboard(conn: sqlite3.Connection = Depends(get_db)):
-    """KPI + productivity scores matching desktop refresh_dashboard / worker formulas."""
-    from datetime import timedelta
+    today_str = date.today().isoformat()
+    
+    total_employees = conn.execute("SELECT COUNT(*) FROM employees WHERE active=1").fetchone()[0]
+    present_today = conn.execute(
+        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND attendance_status='Present'", (today_str,)
+    ).fetchone()[0]
+    absent_today = conn.execute(
+        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND attendance_status='Absent'", (today_str,)
+    ).fetchone()[0]
+    leave_today = conn.execute(
+        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND attendance_status='Leave'", (today_str,)
+    ).fetchone()[0]
+    checkins_today = conn.execute(
+        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND check_in != ''", (today_str,)
+    ).fetchone()[0]
+    open_tasks = conn.execute(
+        "SELECT COUNT(*) FROM tasks WHERE task_date=? AND status IN ('Not started', 'In progress')", (today_str,)
+    ).fetchone()[0]
+    completed_tasks = conn.execute(
+        "SELECT COUNT(*) FROM tasks WHERE task_date=? AND status='Completed'", (today_str,)
+    ).fetchone()[0]
 
-    today = date.today()
-    today_str = today.isoformat()
-    range_start = date.fromordinal(max(1, today.toordinal() - 90))
+    # Attendance percentage
+    att_rate = round((present_today / total_employees * 100), 1) if total_employees > 0 else 0.0
 
-    employees = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT id, name, joining_date, active FROM employees WHERE active=1 ORDER BY name ASC"
-        ).fetchall()
-    ]
-    total_employees = len(employees)
-
-    att_by_id = {}
-    if employees:
-        ids = [int(e["id"]) for e in employees]
-        marks = ",".join("?" for _ in ids)
-        for record in conn.execute(
-            f"SELECT employee_id, attendance_status, check_in, check_out FROM attendance "
-            f"WHERE work_date=? AND employee_id IN ({marks})",
-            (today_str, *ids),
-        ).fetchall():
-            att_by_id[int(record["employee_id"])] = dict(record)
-
-    present_today = absent_today = leave_today = checkins_today = 0
-    attendance_roster = []
-    for emp in employees:
-        rec = att_by_id.get(int(emp["id"]))
-        status = str((rec or {}).get("attendance_status") or "Unmarked").strip()
-        check_in = str((rec or {}).get("check_in") or "").strip()
-        check_out = str((rec or {}).get("check_out") or "").strip()
-        has_check_in = bool(check_in)
-        normalized = status.casefold()
-        if desktop_app.is_present_attendance_status(status) or (
-            normalized in {"unmarked", ""} and has_check_in
-        ):
-            if normalized == "unmarked":
-                status = "Present"
-            present_today += 1
-            if has_check_in:
-                checkins_today += 1
-        elif normalized == "absent":
-            status = "Absent"
-            absent_today += 1
-        elif normalized == "leave":
-            status = "Leave"
-            leave_today += 1
-        else:
-            status = "Not checked" if normalized in {"unmarked", "", "not checked"} else status
-        attendance_roster.append(
-            {
-                "employee_id": emp["id"],
-                "name": emp["name"],
-                "status": status,
-                "check_in": check_in or "—",
-                "check_out": check_out or "—",
-            }
-        )
-    not_checked_today = max(0, total_employees - present_today - absent_today - leave_today)
-
-    tasks_today = [
-        dict(r)
-        for r in conn.execute(
-            """SELECT t.id, t.title, t.status, t.progress, t.due_time, t.priority, e.name as employee_name
-               FROM tasks t LEFT JOIN employees e ON t.employee_id = e.id
-               WHERE t.task_date=? ORDER BY t.id DESC LIMIT 12""",
-            (today_str,),
-        ).fetchall()
-    ]
-    day_statuses = [r["status"] for r in conn.execute("SELECT status FROM tasks WHERE task_date=?", (today_str,)).fetchall()]
-    open_tasks = sum(
-        1 for st in day_statuses
-        if not desktop_app.is_explicitly_completed_task_status(st)
-        and not desktop_app.is_cancelled_task_status(st)
-    )
-    completed_tasks = sum(1 for st in day_statuses if desktop_app.is_explicitly_completed_task_status(st))
-
-    productivity = []
-    avg_productivity = 0.0
-    if employees:
-        ids = [int(e["id"]) for e in employees]
-        marks = ",".join("?" for _ in ids)
-        starts = {}
-        for emp in employees:
-            start = None
-            if emp.get("joining_date"):
-                try:
-                    start = date.fromisoformat(str(emp["joining_date"]))
-                except (TypeError, ValueError):
-                    start = None
-            starts[int(emp["id"])] = max(start or range_start, range_start)
-        start_text = min(starts.values()).isoformat()
-        end_text = today_str
-        task_rows = conn.execute(
-            f"SELECT employee_id, task_date, progress, status FROM tasks "
-            f"WHERE employee_id IN ({marks}) AND task_date BETWEEN ? AND ?",
-            (*ids, start_text, end_text),
-        ).fetchall()
-        attendance_rows = conn.execute(
-            f"SELECT employee_id, work_date, attendance_status, check_in FROM attendance "
-            f"WHERE employee_id IN ({marks}) AND work_date BETWEEN ? AND ?",
-            (*ids, start_text, end_text),
-        ).fetchall()
-        holiday_rows = conn.execute(
-            "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",
-            (start_text, end_text),
-        ).fetchall()
-        setting = conn.execute("SELECT value FROM settings WHERE key='working_weekdays'").fetchone()
-        try:
-            weekdays = {
-                int(v)
-                for v in ((setting["value"] if setting else "0,1,2,3,4") or "0,1,2,3,4").split(",")
-                if str(v).strip()
-            }
-        except (TypeError, ValueError):
-            weekdays = {0, 1, 2, 3, 4}
-        holidays = {row["holiday_date"] for row in holiday_rows}
-        tasks_by = {i: [] for i in ids}
-        att_by = {i: [] for i in ids}
-        for item in task_rows:
-            tasks_by[int(item["employee_id"])].append(item)
-        for item in attendance_rows:
-            att_by[int(item["employee_id"])].append(item)
-        scores = []
-        for emp in employees:
-            eid = int(emp["id"])
-            start = starts[eid]
-            start_emp = start.isoformat()
-            emp_tasks = [t for t in tasks_by[eid] if start_emp <= str(t["task_date"]) <= end_text]
-            task_progress_total = 0
-            known = 0
-            for task in emp_tasks:
-                if not desktop_app.is_known_task_status(task["status"]):
-                    continue
-                known += 1
-                try:
-                    task_progress_total += max(0, min(100, int(float(task["progress"] or 0))))
-                except (TypeError, ValueError, OverflowError):
-                    continue
-            task_score = (task_progress_total / known) if known else None
-            present_count = 0
-            for attendance in att_by[eid]:
-                st = str(attendance["attendance_status"] or "").strip()
-                has_ci = bool(str(attendance["check_in"] or "").strip())
-                if desktop_app.is_present_attendance_status(st) or (
-                    st.casefold() in {"unmarked", ""} and has_ci
-                ):
-                    present_count += 1
-            working_days = 0
-            current_day = start
-            while current_day <= today:
-                day_text = current_day.isoformat()
-                if current_day.weekday() in weekdays and day_text not in holidays:
-                    working_days += 1
-                current_day += timedelta(days=1)
-            eligible = max(1, working_days)
-            attendance_score = present_count / eligible * 100 if eligible else None
-            if task_score is not None and attendance_score is not None:
-                score = round(task_score * 0.7 + attendance_score * 0.3)
-            elif task_score is not None:
-                score = round(task_score)
-            elif attendance_score is not None:
-                score = round(attendance_score)
-            else:
-                score = 0
-            completed = sum(
-                1 for task in emp_tasks if desktop_app.is_explicitly_completed_task_status(task["status"])
-            )
-            scores.append(score)
-            productivity.append(
-                {
-                    "employee_id": eid,
-                    "name": emp["name"],
-                    "score": score,
-                    "working_days": working_days,
-                    "present_count": present_count,
-                    "task_count": len(emp_tasks),
-                    "completed": completed,
-                    "tracking_start": start_emp,
-                }
-            )
-        avg_productivity = round(sum(scores) / len(scores), 1) if scores else 0.0
-
-    att_rate = round((present_today / total_employees * 100), 1) if total_employees else 0.0
+    # Recent employees
     recent_employees = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT id, employee_code, name, department, designation, active FROM employees ORDER BY id DESC LIMIT 8"
+        dict(r) for r in conn.execute(
+            "SELECT id, employee_code, name, department, designation, active FROM employees ORDER BY id DESC LIMIT 5"
+        ).fetchall()
+    ]
+
+    # Today's tasks with employee names
+    today_tasks = [
+        dict(r) for r in conn.execute(
+            """SELECT t.id, t.title, t.status, t.progress, t.due_time, t.priority, e.name as employee_name
+               FROM tasks t
+               LEFT JOIN employees e ON t.employee_id = e.id
+               WHERE t.task_date=?
+               ORDER BY t.id DESC LIMIT 6""",
+            (today_str,)
+        ).fetchall()
+    ]
+
+    # Attendance roster summary
+    attendance_roster = [
+        dict(r) for r in conn.execute(
+            """SELECT e.id as employee_id, e.name, e.employee_code, e.department,
+                      COALESCE(a.attendance_status, 'Unmarked') as status,
+                      COALESCE(a.check_in, '') as check_in,
+                      COALESCE(a.check_out, '') as check_out
+               FROM employees e
+               LEFT JOIN attendance a ON e.id = a.employee_id AND a.work_date=?
+               WHERE e.active=1
+               ORDER BY e.name ASC LIMIT 6""",
+            (today_str,)
         ).fetchall()
     ]
 
@@ -579,24 +350,18 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db)):
             "present_today": present_today,
             "absent_today": absent_today,
             "leave_today": leave_today,
-            "not_checked_today": not_checked_today,
             "open_tasks": open_tasks,
             "completed_tasks": completed_tasks,
             "checkins_today": checkins_today,
             "attendance_rate": att_rate,
-            "avg_productivity": avg_productivity,
         },
         "recent_employees": recent_employees,
-        "today_tasks": tasks_today,
-        "attendance_roster": attendance_roster[:12],
-        "productivity": productivity,
-        "attendance_summary": (
-            f"{att_rate}% checked in\n"
-            f"{present_today} Present  ·  {absent_today} Absent  ·  "
-            f"{leave_today} Leave  ·  {not_checked_today} Not checked"
-        ),
+        "today_tasks": today_tasks,
+        "attendance_roster": attendance_roster,
     }
 
+
+# --- Employees ---
 @app.get("/api/employees")
 def list_employees(
     search: Optional[str] = None,
@@ -790,27 +555,6 @@ def delete_task(task_id: int, conn: sqlite3.Connection = Depends(get_db)):
 
 
 # --- Attendance & Working Calendar ---
-@app.get("/api/tracker")
-def employee_tracker(target_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
-    day = target_date or date.today().isoformat()
-    rows = conn.execute(
-        """SELECT e.id,e.name,e.employee_code,e.department,e.designation,
-                  COALESCE(a.attendance_status,'Unmarked') AS attendance_status,
-                  COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,
-                  COUNT(t.id) AS assigned_tasks,
-                  SUM(CASE WHEN lower(COALESCE(t.status,'')) IN ('completed','done','closed') THEN 1 ELSE 0 END) AS completed_tasks,
-                  SUM(CASE WHEN t.id IS NOT NULL AND lower(COALESCE(t.status,'')) NOT IN ('completed','done','closed') THEN 1 ELSE 0 END) AS open_tasks,
-                  COALESCE(g.target,'') AS target,COALESCE(g.target_status,'') AS target_status
-           FROM employees e
-           LEFT JOIN attendance a ON a.employee_id=e.id AND a.work_date=?
-           LEFT JOIN tasks t ON t.employee_id=e.id AND t.task_date=?
-           LEFT JOIN employee_targets g ON g.employee_id=e.id AND g.target_date=?
-           WHERE e.active=1
-           GROUP BY e.id,a.attendance_status,a.check_in,a.check_out,g.target,g.target_status
-           ORDER BY e.name COLLATE NOCASE""",(day,day,day)).fetchall()
-    return {"date":day,"employees":[dict(r) for r in rows]}
-
-
 @app.get("/api/attendance")
 def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
     selected_date = work_date or date.today().isoformat()
@@ -840,25 +584,22 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
 def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depends(get_db)):
     now = desktop_app.now_text()
     work_date = item.work_date or date.today().isoformat()
-    status = str(item.status or item.attendance_status or "Present").strip() or "Present"
+    status = item.status or item.attendance_status or "Present"
     note = item.notes or item.attendance_note or ""
     check_in = (item.check_in or "").strip()
-    check_out = (item.check_out or "").strip()
-    if check_in and status.casefold() in {"unmarked", ""}:
+    if check_in and str(status).strip().casefold() in {"absent", "unmarked", ""}:
         status = "Present"
-    if status.casefold() in {"absent", "leave", "unmarked"}:
-        check_in, check_out = "", ""
     conn.execute(
         """INSERT INTO attendance(employee_id, work_date, attendance_status, check_in, check_out, break_minutes, attendance_note, updated_at)
            VALUES(?,?,?,?,?,?,?,?)
            ON CONFLICT(employee_id, work_date) DO UPDATE SET
                attendance_status=excluded.attendance_status,
-               check_in=excluded.check_in,
-               check_out=excluded.check_out,
+               check_in=CASE WHEN excluded.check_in != '' THEN excluded.check_in ELSE attendance.check_in END,
+               check_out=CASE WHEN excluded.check_out != '' THEN excluded.check_out ELSE attendance.check_out END,
                break_minutes=excluded.break_minutes,
                attendance_note=excluded.attendance_note,
                updated_at=excluded.updated_at""",
-        (item.employee_id, work_date, status, check_in, check_out, item.break_minutes or 0, note, now)
+        (item.employee_id, work_date, status, item.check_in or "", item.check_out or "", item.break_minutes or 0, note, now)
     )
     conn.commit()
     return {"success": True}
@@ -909,102 +650,24 @@ def delete_holiday(holiday_date: str, conn: sqlite3.Connection = Depends(get_db)
 # --- Business Tracking (Products & Services) ---
 @app.get("/api/business/products")
 def list_products(conn: sqlite3.Connection = Depends(get_db)):
-    rows = conn.execute("SELECT * FROM bt_products ORDER BY name COLLATE NOCASE ASC").fetchall()
+    rows = conn.execute("SELECT * FROM bt_products ORDER BY name ASC").fetchall()
     result = []
-    for row in rows:
-        item = dict(row)
-        item["available_stock"] = (
-            float(item.get("opening_stock") or 0) + float(item.get("received_qty") or 0)
-            - float(item.get("reserved_qty") or 0) - float(item.get("dispatched_qty") or 0)
-            - float(item.get("free_qty") or 0) - float(item.get("damaged_qty") or 0)
-            - float(item.get("expired_qty") or 0) - float(item.get("quarantined_qty") or 0)
-            + float(item.get("returned_qty") or 0)
-        )
-        item["low_stock"] = item["available_stock"] <= float(item.get("reorder_level") or 0)
-        result.append(item)
+    for r in rows:
+        d = dict(r)
+        d["available_stock"] = (d.get("opening_stock", 0) or 0) + (d.get("received_qty", 0) or 0) - (d.get("reserved_qty", 0) or 0)
+        result.append(d)
     return result
 
-
 @app.post("/api/business/products")
-def create_product(p: ProductModel, user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
-    name = (p.name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Product name is required.")
-    values = p.dict()
-    values["sku"] = (values.get("sku") or "").strip() or None
-    columns = ["name","sku","category","brand","package_type","base_unit","opening_stock","received_qty",
-               "reserved_qty","dispatched_qty","free_qty","returned_qty","damaged_qty","expired_qty",
-               "quarantined_qty","purchase_cost","selling_price","reorder_level","batch_number",
-               "expiry_date","storage_location","updated_by","updated_at"]
+def create_product(p: ProductModel, conn: sqlite3.Connection = Depends(get_db)):
     now = desktop_app.now_text()
-    try:
-        cur = conn.execute("INSERT INTO bt_products("+",".join(columns)+") VALUES("+",".join("?" for _ in columns)+")",
-            tuple(values.get(c) if c not in ("updated_by","updated_at") else (user.get("username","") if c=="updated_by" else now) for c in columns))
-        product_id = cur.lastrowid
-        for kind, qty in (("Opening",p.opening_stock or 0),("Received",p.received_qty or 0)):
-            if qty:
-                conn.execute("INSERT INTO bt_stock_ledger(product_id,txn_type,quantity,unit,reference,created_by,created_at) VALUES(?,?,?,?,?,?,?)",
-                    (product_id,kind,qty,p.base_unit or "PCS","Initial stock",user.get("username",""),now))
-        conn.commit()
-        return {"success": True, "id": product_id}
-    except sqlite3.IntegrityError as exc:
-        conn.rollback()
-        raise HTTPException(status_code=409, detail="This SKU already exists.") from exc
-
-
-@app.put("/api/business/products/{product_id}")
-def update_product(product_id: int, p: ProductModel, user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
-    if not conn.execute("SELECT 1 FROM bt_products WHERE id=?", (product_id,)).fetchone():
-        raise HTTPException(status_code=404, detail="Product not found.")
-    values = p.dict()
-    values["sku"] = (values.get("sku") or "").strip() or None
-    columns = ["name","sku","category","brand","package_type","base_unit","opening_stock","received_qty",
-               "reserved_qty","dispatched_qty","free_qty","returned_qty","damaged_qty","expired_qty",
-               "quarantined_qty","purchase_cost","selling_price","reorder_level","batch_number","expiry_date","storage_location"]
-    try:
-        conn.execute("UPDATE bt_products SET "+",".join(c+"=?" for c in columns)+",updated_by=?,updated_at=? WHERE id=?",
-            tuple(values.get(c) for c in columns)+(user.get("username",""),desktop_app.now_text(),product_id))
-        conn.commit()
-        return {"success": True}
-    except sqlite3.IntegrityError as exc:
-        conn.rollback()
-        raise HTTPException(status_code=409, detail="This SKU already exists.") from exc
-
-
-@app.get("/api/business/products/{product_id}/ledger")
-def product_stock_ledger(product_id: int, conn: sqlite3.Connection = Depends(get_db)):
-    if not conn.execute("SELECT 1 FROM bt_products WHERE id=?", (product_id,)).fetchone():
-        raise HTTPException(status_code=404, detail="Product not found.")
-    return [dict(r) for r in conn.execute("SELECT * FROM bt_stock_ledger WHERE product_id=? ORDER BY id DESC LIMIT 500",(product_id,)).fetchall()]
-
-
-@app.post("/api/business/products/{product_id}/stock")
-def add_stock_transaction(product_id: int, item: StockTransactionModel, user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
-    product = conn.execute("SELECT * FROM bt_products WHERE id=?", (product_id,)).fetchone()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found.")
-    kind = (item.txn_type or "").strip().title()
-    qty = float(item.quantity)
-    columns = {"Received":"received_qty","Reserved":"reserved_qty","Dispatched":"dispatched_qty","Free":"free_qty",
-               "Returned":"returned_qty","Damaged":"damaged_qty","Expired":"expired_qty","Quarantined":"quarantined_qty"}
-    if kind not in set(columns)|{"Reserve Released"} or qty <= 0:
-        raise HTTPException(status_code=400, detail="Choose a valid stock transaction and a quantity greater than zero.")
-    now = desktop_app.now_text()
-    if kind == "Reserve Released":
-        if qty > float(product["reserved_qty"] or 0):
-            raise HTTPException(status_code=400, detail="Released quantity exceeds reserved stock.")
-        conn.execute("UPDATE bt_products SET reserved_qty=reserved_qty-?,updated_at=?,updated_by=? WHERE id=?",(qty,now,user.get("username",""),product_id))
-    elif kind == "Dispatched":
-        release = min(float(product["reserved_qty"] or 0),qty)
-        conn.execute("UPDATE bt_products SET dispatched_qty=dispatched_qty+?,reserved_qty=reserved_qty-?,updated_at=?,updated_by=? WHERE id=?",(qty,release,now,user.get("username",""),product_id))
-    else:
-        col=columns[kind]
-        conn.execute(f"UPDATE bt_products SET {col}={col}+?,updated_at=?,updated_by=? WHERE id=?",(qty,now,user.get("username",""),product_id))
-    cur=conn.execute("INSERT INTO bt_stock_ledger(product_id,txn_type,quantity,unit,reference,notes,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)",
-        (product_id,kind,qty,item.unit or product["base_unit"] or "PCS",item.reference or "",item.notes or "",user.get("username",""),now))
+    conn.execute(
+        """INSERT INTO bt_products(name, sku, category, brand, base_unit, opening_stock, received_qty, reserved_qty, reorder_level, selling_price, updated_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (p.name, p.sku, p.category, p.brand, p.base_unit, p.opening_stock, p.received_qty, p.reserved_qty, p.reorder_level, p.selling_price, now)
+    )
     conn.commit()
-    return {"success":True,"id":cur.lastrowid}
-
+    return {"success": True}
 
 @app.get("/api/business/services")
 def list_services(conn: sqlite3.Connection = Depends(get_db)):
@@ -1109,72 +772,6 @@ def generate_report_preview(req: ReportOptionsModel, conn: sqlite3.Connection = 
     return {"preview_text": "\n".join(lines)}
 
 
-@app.post("/api/reports/export")
-def export_report(req: ReportOptionsModel, report_format: str = Query("pdf", alias="format"), conn: sqlite3.Connection = Depends(get_db)):
-    fmt=(report_format or "pdf").lower()
-    if fmt not in {"pdf","docx","csv"}:
-        raise HTTPException(status_code=400,detail="Supported formats are PDF, Word and CSV.")
-    preview=generate_report_preview(req,conn)["preview_text"]
-    out=Path(desktop_app.EXPORT_DIR);out.mkdir(parents=True,exist_ok=True)
-    target=out/f"Audit-Report-{req.date}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.{fmt}"
-    try:
-        if fmt=="csv":
-            with target.open("w",encoding="utf-8-sig",newline="") as f:
-                writer=csv.writer(f);writer.writerow(["Report line"]);writer.writerows([[x] for x in preview.splitlines()])
-            media="text/csv"
-        elif fmt=="docx":
-            from docx import Document
-            doc=Document();doc.add_heading("Raw Strength Calisthenics — Employee Audit Report",0)
-            for line in preview.splitlines(): doc.add_paragraph(line)
-            doc.save(str(target));media="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        else:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.platypus import SimpleDocTemplate,Preformatted
-            from reportlab.lib.styles import getSampleStyleSheet
-            safe=preview.encode("ascii","replace").decode("ascii")
-            doc=SimpleDocTemplate(str(target),pagesize=A4,rightMargin=32,leftMargin=32,topMargin=32,bottomMargin=32)
-            doc.build([Preformatted(safe,getSampleStyleSheet()["Code"])]);media="application/pdf"
-    except Exception as exc:
-        target.unlink(missing_ok=True)
-        raise HTTPException(status_code=500,detail=f"Report export failed: {exc}") from exc
-    return FileResponse(str(target),media_type=media,filename=target.name)
-
-
-@app.get("/api/archive")
-def list_archived_documents(conn: sqlite3.Connection = Depends(get_db)):
-    return [dict(r) for r in conn.execute(
-        "SELECT id,employee_id,report_date,file_name,mime_type,notes,uploaded_at,length(content) AS size_bytes FROM archived_documents ORDER BY uploaded_at DESC,id DESC LIMIT 500"
-    ).fetchall()]
-
-
-@app.post("/api/archive")
-async def upload_archived_document(file: UploadFile = File(...), report_date: str = Form(""), employee_id: Optional[int] = Form(None), notes: str = Form(""), user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
-    filename=Path(file.filename or "archive.bin").name
-    content=await file.read(25*1024*1024+1);await file.close()
-    if not content or len(content)>25*1024*1024:
-        raise HTTPException(status_code=413,detail="Archive file is empty or exceeds 25 MB.")
-    cur=conn.execute("INSERT INTO archived_documents(employee_id,report_date,file_name,mime_type,content,notes,uploaded_at) VALUES(?,?,?,?,?,?,?)",
-        (employee_id,report_date,filename,file.content_type or "application/octet-stream",content,notes,desktop_app.now_text()))
-    conn.commit()
-    return {"success":True,"id":cur.lastrowid}
-
-
-@app.get("/api/archive/{document_id}/download")
-def download_archived_document(document_id: int, conn: sqlite3.Connection = Depends(get_db)):
-    row=conn.execute("SELECT file_name,mime_type,content FROM archived_documents WHERE id=?",(document_id,)).fetchone()
-    if not row: raise HTTPException(status_code=404,detail="Archived document not found.")
-    filename=Path(row["file_name"] or "archive.bin").name.replace('"',"")
-    return Response(content=bytes(row["content"]),media_type=row["mime_type"] or "application/octet-stream",
-        headers={"Content-Disposition":f'attachment; filename="{filename}"',"Cache-Control":"no-store"})
-
-
-@app.delete("/api/archive/{document_id}")
-def delete_archived_document(document_id: int, conn: sqlite3.Connection = Depends(get_db)):
-    cur=conn.execute("DELETE FROM archived_documents WHERE id=?",(document_id,));conn.commit()
-    if not cur.rowcount: raise HTTPException(status_code=404,detail="Archived document not found.")
-    return {"success":True}
-
-
 # --- Live Chat ---
 @app.get("/api/chat/messages")
 def get_chat_messages(channel: str = "general", conn: sqlite3.Connection = Depends(get_db)):
@@ -1190,7 +787,7 @@ def get_chat_messages(channel: str = "general", conn: sqlite3.Connection = Depen
     """)
     conn.commit()
     rows = conn.execute(
-        "SELECT id,channel,sender AS sender_name,role,content,created_at FROM local_chat_messages WHERE channel=? ORDER BY id ASC LIMIT 100", (channel,)
+        "SELECT * FROM local_chat_messages WHERE channel=? ORDER BY id ASC LIMIT 100", (channel,)
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1351,16 +948,8 @@ if DIST_DIR.exists():
             raise HTTPException(status_code=404, detail="API endpoint not found")
         file_path = DIST_DIR / full_path
         if file_path.is_file():
-            # Vite emits content-hashed assets; those may be cached immutably.
-            # SPA documents must revalidate so browsers cannot keep an obsolete
-            # login bundle after a web-only deployment.
-            if file_path.suffix.lower() in {".js", ".css", ".woff", ".woff2", ".png", ".jpg", ".svg"}:
-                return FileResponse(file_path, headers={"Cache-Control": "public, max-age=31536000, immutable"})
-            return FileResponse(file_path, headers={"Cache-Control": "no-store, max-age=0, must-revalidate"})
-        return FileResponse(
-            DIST_DIR / "index.html",
-            headers={"Cache-Control": "no-store, max-age=0, must-revalidate"},
-        )
+            return FileResponse(file_path)
+        return FileResponse(DIST_DIR / "index.html")
 else:
     @app.get("/")
     def index_placeholder():
