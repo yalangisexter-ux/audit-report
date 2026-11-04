@@ -2883,6 +2883,67 @@ class ForgotPasswordDialog(QDialog):
         self.accept()
 
 
+
+class AccountRegistrationDialog(QDialog):
+    """Self-service Staff registration; an Admin must activate the account."""
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.created = False
+        self.setWindowTitle("Create new account")
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.username = QLineEdit()
+        self.display_name = QLineEdit()
+        self.password = password_field("8+ characters with letters and numbers")
+        self.confirm = password_field("Confirm password")
+        self.question = QComboBox(); self.question.addItems(SECURITY_QUESTIONS)
+        self.answer = QLineEdit(); self.answer.setEchoMode(QLineEdit.Password)
+        form.addRow("Username", self.username)
+        form.addRow("Display name", self.display_name)
+        form.addRow("Password", self.password)
+        form.addRow("Confirm password", self.confirm)
+        form.addRow("Recovery question", self.question)
+        form.addRow("Recovery answer", self.answer)
+        layout.addLayout(form)
+        note = QLabel("New accounts are created with Staff access and remain pending until an Admin activates them.")
+        note.setWordWrap(True); note.setProperty("mutedText", True); layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.create_account); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def create_account(self):
+        username = self.username.text().strip()
+        display_name = self.display_name.text().strip()
+        password = self.password.field.text()
+        answer = normalized_answer(self.answer.text())
+        if not username or len(username) > 64 or not display_name:
+            return error(self, "Enter a valid username and display name.")
+        if not password_is_strong(password):
+            return error(self, "Use at least 8 characters with a letter and a number.")
+        if password != self.confirm.field.text():
+            return error(self, "The passwords do not match.")
+        if len(answer) < 2:
+            return error(self, "Enter a recovery answer you can remember.")
+        if self.db.conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+            return error(self, "That username already exists.")
+        ps, ph = hash_pin(password); ans_salt, ans_hash = hash_pin(answer)
+        now = now_text()
+        try:
+            self.db.conn.execute(
+                "INSERT INTO auth_users(username,display_name,role,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,?,?)",
+                (username, display_name, "Staff", ps, ph, self.question.currentText(), ans_salt, ans_hash, now, now),
+            )
+            self.db.conn.commit()
+            self.db.log("Account registration requested", username)
+        except sqlite3.IntegrityError:
+            return error(self, "That username already exists.")
+        self.created = True
+        info(self, "Account request submitted. An Admin must activate it before sign-in.")
+        self.accept()
+
+
 def password_field(placeholder="Enter password"):
     """Create a password field with a show/hide toggle button."""
     container = QWidget()
@@ -2990,12 +3051,17 @@ class LoginDialog(QDialog):
         forgot.setFlat(True)
         forgot.setToolTip("Reset password using recovery question")
         forgot.clicked.connect(self.forgot_password)
+        create_account = QPushButton("Create account")
+        create_account.setFlat(True)
+        create_account.setToolTip("Request a Staff account; an Admin must activate it")
+        create_account.clicked.connect(self.create_account)
         change = QPushButton("Change password")
         change.setFlat(True)
         change.setToolTip("Change password for an existing account")
         change.clicked.connect(self.change_password)
         links.addStretch(1)
         links.addWidget(forgot)
+        links.addWidget(create_account)
         links.addWidget(change)
         links.addStretch(1)
         layout.addLayout(links)
@@ -3030,6 +3096,10 @@ class LoginDialog(QDialog):
 
     def forgot_password(self):
         dialog = ForgotPasswordDialog(self.db, self)
+        dialog.exec()
+
+    def create_account(self):
+        dialog = AccountRegistrationDialog(self.db, self)
         dialog.exec()
 
     def change_password(self):
