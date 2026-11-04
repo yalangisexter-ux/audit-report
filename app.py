@@ -3080,12 +3080,22 @@ class LoginDialog(QDialog):
         else:
             target_username = raw_username
 
-        row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (target_username,)).fetchone()
+        row = self.db.conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1", (target_username,)
+        ).fetchone()
         if not row:
-            row = self.db.conn.execute(
-                "SELECT * FROM auth_users WHERE (username=? OR display_name LIKE ?) COLLATE NOCASE AND active=1",
-                (raw_username, f"%{raw_username}%")
-            ).fetchone()
+            username_matches = self.db.conn.execute(
+                "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (target_username,)
+            ).fetchall()
+            if len(username_matches) == 1:
+                row = username_matches[0]
+        if not row:
+            display_matches = self.db.conn.execute(
+                "SELECT * FROM auth_users WHERE display_name LIKE ? COLLATE NOCASE AND active=1",
+                (f"%{raw_username}%",)
+            ).fetchall()
+            if len(display_matches) == 1:
+                row = display_matches[0]
         if not row:
             return error(self, "Invalid username or password.")
         _, digest = hash_pin(self.password.text(), row["password_salt"])
