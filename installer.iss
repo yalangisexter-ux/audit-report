@@ -83,6 +83,7 @@ var
 	ScriptPath: String;
 	OutputPath: String;
 	ResultCode: Integer;
+	OutputLines: TArrayOfString;
 begin
 	Result := Trim(ExpandConstant('{param:DATA_DIR|}'));
 	if Result <> '' then
@@ -94,9 +95,9 @@ begin
 	OutputPath := ExpandConstant('{tmp}\rsc_customer_data_dir.txt');
 	DeleteFile(OutputPath);
 	ExtractTemporaryFile('resolve_customer_data_dir.ps1');
-	if Exec(RecoveryPowerShellPath, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) + ' -OutputFile ' + AddQuotes(OutputPath), '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) and LoadStringFromFile(OutputPath, Result) then
+	if Exec(RecoveryPowerShellPath, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) + ' -OutputFile ' + AddQuotes(OutputPath), '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) and LoadStringsFromFile(OutputPath, OutputLines) and (GetArrayLength(OutputLines) > 0) then
 	begin
-		Result := Trim(Result);
+		Result := Trim(OutputLines[0]);
 		if Result <> '' then
 			Exit;
 	end;
