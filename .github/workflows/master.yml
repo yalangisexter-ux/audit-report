@@ -198,6 +198,42 @@ jobs:
           if (-not (Test-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe")) { throw "Setup installer was not created." }
           if ((Get-Item "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Length -lt 10000000) { throw "Setup installer is unexpectedly small." }
 
+      - name: Verify legacy v1.1.74 in-place upgrade preserves customer database
+        shell: pwsh
+        run: |
+          $legacySetup = Join-Path $env:RUNNER_TEMP "RawStrengthEmployeeAuditManager-Setup-v1.1.74.exe"
+          Invoke-WebRequest -Uri "https://github.com/yalangisexter-ux/audit-report/releases/download/v1.1.74/RawStrengthEmployeeAuditManager-Setup.exe" -OutFile $legacySetup
+          $legacyHash = (Get-FileHash -LiteralPath $legacySetup -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($legacyHash -ne "19bde24215df6c9276417b5e42d655c3b15ec3ee1cb8dce8a948769c0684aef8") { throw "Legacy v1.1.74 installer checksum mismatch." }
+
+          $legacyInstall = Start-Process -FilePath $legacySetup -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait -PassThru
+          if ($legacyInstall.ExitCode -ne 0) { throw "Legacy v1.1.74 installer failed with exit code $($legacyInstall.ExitCode)." }
+
+          $installDir = Join-Path $env:ProgramFiles "Raw Strength Employee Audit Manager"
+          $installedExe = Join-Path $installDir "RawStrengthEmployeeAuditManager.exe"
+          if (-not (Test-Path -LiteralPath $installedExe)) { throw "Legacy installer did not create the expected install directory." }
+
+          $dataDir = Join-Path $env:LOCALAPPDATA "EmployeeAuditManager"
+          New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+          $env:RSC_TEST_DATABASE = Join-Path $dataDir "employee_audit.db"
+          python -c 'import os,sqlite3; p=os.environ["RSC_TEST_DATABASE"]; c=sqlite3.connect(p); c.execute("CREATE TABLE employees(id INTEGER PRIMARY KEY, employee_name TEXT)"); c.execute("INSERT INTO employees(id,employee_name) VALUES(1,?)",("Legacy Customer Employee",)); c.execute("CREATE TABLE customer_upgrade_sentinel(value TEXT NOT NULL)"); c.execute("INSERT INTO customer_upgrade_sentinel(value) VALUES(?)",("KEEP_EXISTING_CUSTOMER_DATA",)); c.commit(); c.close()'
+          if ($LASTEXITCODE -ne 0) { throw "Could not seed the legacy customer database." }
+          $databaseHashBefore = (Get-FileHash -LiteralPath $env:RSC_TEST_DATABASE -Algorithm SHA256).Hash
+
+          $latestSetup = (Resolve-Path "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Path
+          $latestArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /DATA_DIR="' + $dataDir + '"'
+          $upgrade = Start-Process -FilePath $latestSetup -ArgumentList $latestArgs -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw "Latest installer failed to upgrade v1.1.74 (exit code $($upgrade.ExitCode))." }
+
+          if (-not (Test-Path -LiteralPath $installedExe)) { throw "In-place upgrade removed the previous install directory." }
+          $productVersion = (Get-Item -LiteralPath $installedExe).VersionInfo.ProductVersion
+          if (-not $productVersion.StartsWith("1.3.74")) { throw "Wrong executable version after upgrade: $productVersion" }
+          $databaseHashAfter = (Get-FileHash -LiteralPath $env:RSC_TEST_DATABASE -Algorithm SHA256).Hash
+          if ($databaseHashAfter -ne $databaseHashBefore) { throw "Installer changed the existing customer database file." }
+          python -c 'import os,sqlite3; c=sqlite3.connect(os.environ["RSC_TEST_DATABASE"]); assert c.execute("PRAGMA integrity_check").fetchone()[0]=="ok"; assert c.execute("SELECT employee_name FROM employees WHERE id=1").fetchone()[0]=="Legacy Customer Employee"; assert c.execute("SELECT value FROM customer_upgrade_sentinel").fetchone()[0]=="KEEP_EXISTING_CUSTOMER_DATA"; c.close()'
+          if ($LASTEXITCODE -ne 0) { throw "Existing customer database data or integrity did not survive the upgrade." }
+          Write-Host "PASS: v1.1.74 upgraded in place to v1.3.74; original customer DB hash and records are unchanged."
+
       - name: Launch smoke test
         shell: pwsh
         run: |

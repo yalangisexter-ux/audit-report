@@ -828,3 +828,14 @@ def test_silent_update_installer_preserves_previous_install_directory_and_data()
     files_section = installer.split("[Files]", 1)[1].split("[Icons]", 1)[0]
     assert "employee_audit.db" not in files_section
     assert "pending-update-backup" not in files_section
+
+
+def test_release_workflow_runs_real_legacy_installer_upgrade_without_touching_customer_db():
+    from pathlib import Path
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    assert "Verify legacy v1.1.74 in-place upgrade preserves customer database" in workflow
+    assert "releases/download/v1.1.74/RawStrengthEmployeeAuditManager-Setup.exe" in workflow
+    assert "19bde24215df6c9276417b5e42d655c3b15ec3ee1cb8dce8a948769c0684aef8" in workflow
+    assert "/DATA_DIR=" in workflow
+    assert "databaseHashAfter -ne $databaseHashBefore" in workflow
+    assert "KEEP_EXISTING_CUSTOMER_DATA" in workflow
