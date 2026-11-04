@@ -12,7 +12,8 @@ import shutil
 import threading
 import time
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
+import hashlib
 from pathlib import Path
 
 os.environ.setdefault("SKIP_INITIAL_AUDIT_SEED", "1")
@@ -166,7 +167,21 @@ def web_login(req: api.LoginRequest, conn: sqlite3.Connection = Depends(api.get_
         "display_name": row["display_name"] or row["username"],
         "role": row["role"] or "Employee",
     }
-    api.ACTIVE_SESSIONS[token] = user_info
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        created_at = datetime.now()
+        conn.execute(
+            "INSERT INTO web_auth_sessions(token_hash, user_id, created_at, expires_at) VALUES(?,?,?,?)",
+            (
+                token_hash,
+                row["id"],
+                created_at.isoformat(timespec="seconds"),
+                (created_at + timedelta(days=30)).isoformat(timespec="seconds"),
+            ),
+        )
+        conn.commit()
+    else:
+        api.ACTIVE_SESSIONS[token] = user_info
     print(f"[Auth] Login ok for role={user_info['role']}")
     return {"token": token, "user": user_info}
 
