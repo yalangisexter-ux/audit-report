@@ -845,9 +845,10 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
 
     status = str(item.status or item.attendance_status or "Present").strip()
     allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
-    if status.casefold() not in allowed_statuses:
-        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave or Unmarked.")
-    status = allowed_statuses[status.casefold()]
+    if status.casefold() in allowed_statuses:
+        status = allowed_statuses[status.casefold()]
+    elif not desktop_app.is_present_attendance_status(status):
+        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave, Unmarked or a recognized worked-day detail status.")
     note = (
         item.notes if "notes" in fields_set else
         item.attendance_note if "attendance_note" in fields_set else

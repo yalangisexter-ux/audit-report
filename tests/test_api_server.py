@@ -459,3 +459,38 @@ def test_api_attendance_bulk_edit_is_atomic_and_validates_times():
         "check_out": "17:00",
     })
     assert missing_checkin.status_code == 422
+
+
+
+def test_api_attendance_preserves_recognized_worked_day_detail_statuses():
+    import secrets
+    work_day = _api_test_workday()
+    employee = client.post("/api/employees", json={
+        "name": "Attendance Detail Status Test",
+        "employee_code": "ATT-DETAIL-" + secrets.token_hex(3).upper(),
+        "joining_date": work_day.isoformat(),
+        "department": "Testing",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+
+    check_in = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_day.isoformat(),
+        "attendance_status": "Late Check-in",
+        "check_in": "09:15",
+    })
+    assert check_in.status_code == 200
+    assert check_in.json()["attendance"]["attendance_status"] == "Late Check-in"
+
+    check_out = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_day.isoformat(),
+        "attendance_status": "Late Check-in",
+        "check_out": "17:00",
+    })
+    assert check_out.status_code == 200
+    saved = check_out.json()["attendance"]
+    assert saved["attendance_status"] == "Late Check-in"
+    assert saved["check_in"] == "09:15"
+    assert saved["check_out"] == "17:00"

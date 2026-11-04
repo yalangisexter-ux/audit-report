@@ -1,7 +1,7 @@
 """Operational APIs for web parity — EXE untouched."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -398,7 +398,7 @@ def attendance_summary(
     user: dict = Depends(api.get_current_user),
 ):
     try:
-        selected = date.fromisoformat(str(work_date or date.today().isoformat())).replace()
+        selected = date.fromisoformat(str(work_date or date.today().isoformat()))
     except ValueError:
         raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
 
@@ -478,8 +478,8 @@ def attendance_summary(
         if effective_start <= end:
             working = sum(
                 1 for offset in range((end - effective_start).days + 1)
-                if (effective_start + __import__("datetime").timedelta(days=offset)).weekday() in weekdays
-                and (effective_start + __import__("datetime").timedelta(days=offset)).isoformat() not in holiday_dates
+                if (effective_start + timedelta(days=offset)).weekday() in weekdays
+                and (effective_start + timedelta(days=offset)).isoformat() not in holiday_dates
             )
             monthly_rows = []
             for row in attendance_by_employee[employee_id]:
