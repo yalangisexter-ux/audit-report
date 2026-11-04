@@ -973,6 +973,52 @@ def create_service(s: ServiceModel, conn: sqlite3.Connection = Depends(get_db)):
 # --- Reports & Print Center ---
 @app.post("/api/reports/preview")
 def generate_report_preview(req: ReportOptionsModel, conn: sqlite3.Connection = Depends(get_db)):
+    report_type = (req.report_type or "Audit / EOD").strip()
+    if report_type == "Employee Attendance":
+        params = [req.date]
+        scope = ""
+        if req.employee_id:
+            scope = " AND e.id=?"
+            params.append(req.employee_id)
+        rows = conn.execute("""SELECT e.name,e.employee_code,e.department,
+            COALESCE(a.attendance_status,'Unmarked') AS status,
+            COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,
+            COALESCE(a.break_minutes,0) AS break_minutes,COALESCE(a.attendance_note,'') AS notes
+            FROM employees e LEFT JOIN attendance a ON a.employee_id=e.id AND a.work_date=?
+            WHERE e.active=1""" + scope + " ORDER BY e.name", params).fetchall()
+        lines = [f"RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", f"Date: {req.date}", ""]
+        totals = {}
+        for r in rows:
+            totals[r["status"]] = totals.get(r["status"], 0) + 1
+            lines.append(f"{r['name']} [{r['employee_code'] or 'N/A'}] | {r['department'] or 'General'} | {r['status']} | In: {r['check_in'] or '--:--'} | Out: {r['check_out'] or '--:--'} | Break: {r['break_minutes']} min | {r['notes']}")
+        lines.extend(["", "SUMMARY: " + " | ".join(f"{k}: {v}" for k,v in sorted(totals.items()))])
+        return {"preview_text":"\n".join(lines),"report_type":report_type,"record_count":len(rows)}
+    if report_type == "Employee Details":
+        params = []
+        scope = ""
+        if req.employee_id:
+            scope = " AND id=?"
+            params.append(req.employee_id)
+        rows = conn.execute("SELECT employee_code,name,department,designation,phone,email,joining_date,active,notes FROM employees WHERE 1=1" + scope + " ORDER BY name", params).fetchall()
+        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE DETAILS", f"Generated: {datetime.now().isoformat(timespec='seconds')}", ""]
+        for r in rows:
+            lines.extend([f"{r['name']} [{r['employee_code'] or 'N/A'}]", f"Department: {r['department'] or 'General'} | Designation: {r['designation'] or 'Staff'}", f"Phone: {r['phone'] or ''} | Email: {r['email'] or ''}", f"Joining date: {r['joining_date'] or ''} | Status: {'Active' if r['active'] else 'Inactive'}", f"Notes: {r['notes'] or ''}", ""])
+        return {"preview_text":"\n".join(lines),"report_type":report_type,"record_count":len(rows)}
+    if report_type == "Employee Productivity":
+        params = [req.date]
+        scope = ""
+        if req.employee_id:
+            scope = " AND e.id=?"
+            params.append(req.employee_id)
+        rows = conn.execute("""SELECT e.name,e.employee_code,COUNT(t.id) AS assigned,
+            SUM(CASE WHEN lower(COALESCE(t.status,'')) IN ('completed','done','closed') THEN 1 ELSE 0 END) AS completed,
+            ROUND(AVG(COALESCE(t.progress,0)),1) AS avg_progress
+            FROM employees e LEFT JOIN tasks t ON t.employee_id=e.id AND t.task_date=?
+            WHERE e.active=1""" + scope + " GROUP BY e.id ORDER BY e.name", params).fetchall()
+        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE PRODUCTIVITY", f"Date: {req.date}", ""]
+        for r in rows:
+            lines.append(f"{r['name']} [{r['employee_code'] or 'N/A'}] | Assigned: {r['assigned']} | Completed: {r['completed'] or 0} | Average progress: {r['avg_progress'] or 0}%")
+        return {"preview_text":"\n".join(lines),"report_type":report_type,"record_count":len(rows)}
     # Standard EOD options default mapping
     opts = {
         "identity": True, "tasks": True, "details": True, "due_time": True,
