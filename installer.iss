@@ -1,5 +1,5 @@
 #define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
-#define MyAppVersion "1.3.72"
+#define MyAppVersion "1.3.73"
 #define MyAppPublisher "Raw Strength Calisthenics"
 #define MyAppExeName "RawStrengthEmployeeAuditManager.exe"
 

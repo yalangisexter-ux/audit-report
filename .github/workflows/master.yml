@@ -191,7 +191,7 @@ jobs:
       - name: Build standalone Windows installer
         shell: pwsh
         env:
-          APP_VERSION: "1.3.72"
+          APP_VERSION: "1.3.73"
         run: |
           & "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe" installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
@@ -213,7 +213,7 @@ jobs:
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.3.72
+          name: RawStrengthEmployeeAuditManager-Setup-v1.3.73
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
@@ -224,16 +224,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         run: |
-          $tag = "v1.3.72"
+          $tag = "v1.3.73"
           $asset = "installer-output/RawStrengthEmployeeAuditManager-Setup.exe"
           $published = $false
           for ($attempt = 1; $attempt -le 4; $attempt++) {
             gh release view $tag *> $null
             if ($LASTEXITCODE -eq 0) {
-              gh release edit $tag --title "Raw Strength Employee Audit Manager v1.3.72" --target $env:GITHUB_SHA
+              gh release edit $tag --title "Raw Strength Employee Audit Manager v1.3.73" --target $env:GITHUB_SHA
             }
             else {
-              gh release create $tag $asset --title "Raw Strength Employee Audit Manager v1.3.72" --generate-notes --target $env:GITHUB_SHA
+              gh release create $tag $asset --title "Raw Strength Employee Audit Manager v1.3.73" --generate-notes --target $env:GITHUB_SHA
             }
             if ($LASTEXITCODE -eq 0) {
               gh release upload $tag $asset --clobber
