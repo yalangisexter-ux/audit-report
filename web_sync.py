@@ -232,7 +232,7 @@ class WebDatabaseSync:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.worker_url = (os.environ.get("DB_SYNC_WORKER_URL") or DEFAULT_WORKER).strip().rstrip("/")
         self.installation_id = (os.environ.get("DB_SYNC_INSTALLATION_ID") or DEFAULT_INSTALLATION).strip().lower()
-        self.secret = (os.environ.get("DB_SYNC_ENCRYPTION_SECRET") or "Devlopershouse@1996#").strip()
+        self.secret = (os.environ.get("DB_SYNC_ENCRYPTION_SECRET") or "").strip()
         self.credentials_path = self.db_path.parent / "web_sync_device.json"
         self.lock = threading.RLock()
         self.stop_event = threading.Event()

@@ -91,3 +91,15 @@ def test_merge_remaps_colliding_employee_and_task_ids_without_overwriting_local_
         assert result["inserted"] >= 2
     finally:
         db.close()
+
+
+def test_web_sync_requires_explicit_encryption_secret(tmp_path, monkeypatch):
+    from web_sync import WebDatabaseSync
+
+    monkeypatch.delenv("DB_SYNC_ENCRYPTION_SECRET", raising=False)
+    monkeypatch.setenv("DB_SYNC_INSTALLATION_ID", "080717e78653166d64cd2bcf72c75c76")
+    monkeypatch.setenv("DB_SYNC_WORKER_URL", "https://raw-strength-audit-db-sync.yalangisexter.workers.dev")
+    manager = WebDatabaseSync(tmp_path / "web.db")
+    assert manager.configured is False
+    assert manager.bootstrap() is False
+    assert "DB_SYNC_ENCRYPTION_SECRET" in manager.last_pull["error"]

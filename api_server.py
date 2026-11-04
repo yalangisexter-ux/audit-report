@@ -66,30 +66,89 @@ app.add_middleware(
 )
 
 _DB_INITIALIZED = False
+WEB_SYNC_MANAGER = None
+
 
 def ensure_database():
-    global _DB_INITIALIZED
-    if not _DB_INITIALIZED:
+    """Initialize the persistent web DB, then restore its installation snapshot."""
+    global _DB_INITIALIZED, WEB_SYNC_MANAGER
+    if _DB_INITIALIZED:
+        return
+
+    db = None
+    try:
+        db = desktop_app.Database()
         try:
-            db = desktop_app.Database()
+            import business_tracking
+            business_tracking.setup_business_tables(db.conn)
+        except Exception as exc:
+            print(f"[Web DB] Business-table setup note: {exc}")
+
+        standalone = os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
+        if standalone:
+            from web_db_migrations import ensure_case_sensitive_auth_users
+            if ensure_case_sensitive_auth_users(desktop_app.DB_PATH):
+                print("[Web DB] Migrated auth_users to exact case-sensitive usernames; credentials preserved")
+            db.conn.execute(
+                """CREATE TABLE IF NOT EXISTS web_auth_sessions (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+                )"""
+            )
+            db.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_web_auth_sessions_expiry ON web_auth_sessions(expires_at)"
+            )
+            db.conn.commit()
+    except Exception as exc:
+        print(f"[Web DB] Initialization/migration failed: {exc}")
+        raise
+    finally:
+        if db is not None:
             try:
-                import business_tracking
-                business_tracking.setup_business_tables(db.conn)
+                if hasattr(db, "close_github_sync"):
+                    db.close_github_sync(timeout=0)
+            except Exception as exc:
+                print(f"[Web DB] Desktop sync shutdown note: {exc}")
+            try:
+                if getattr(db, "conn", None):
+                    db.conn.close()
             except Exception:
                 pass
-            if hasattr(db, "close_github_sync"):
-                db.close_github_sync(timeout=0)
-            if hasattr(db, "conn") and db.conn:
-                db.conn.close()
-        except Exception:
-            pass
-        _DB_INITIALIZED = True
+
+    _DB_INITIALIZED = True
+    if standalone:
+        try:
+            from web_sync import WebDatabaseSync
+            WEB_SYNC_MANAGER = WebDatabaseSync(desktop_app.DB_PATH)
+            restored = WEB_SYNC_MANAGER.bootstrap()
+            print(
+                "[Web Sync] Initial snapshot restore "
+                + ("verified" if restored else "not verified")
+                + f"; status={WEB_SYNC_MANAGER.status}; counts={WEB_SYNC_MANAGER.last_pull}"
+            )
+            WEB_SYNC_MANAGER.start_polling()
+        except Exception as exc:
+            print(f"[Web Sync] Initialization failed: {exc}")
+            WEB_SYNC_MANAGER = None
+
 
 def get_db():
-    """Create a thread-safe connection to the exact same database."""
+    """Create a thread-safe connection and mark committed web changes for encrypted sync."""
     ensure_database()
     db_path = desktop_app.DB_PATH
-    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
+    factory = sqlite3.Connection
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        try:
+            from database_sync import SyncableSQLiteConnection
+            factory = SyncableSQLiteConnection
+        except Exception as exc:
+            print(f"[Web Sync] Commit callback unavailable: {exc}")
+    conn = sqlite3.connect(
+        str(db_path), check_same_thread=False, timeout=30, factory=factory
+    )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     try:
@@ -97,6 +156,9 @@ def get_db():
         conn.execute("PRAGMA synchronous=NORMAL")
     except Exception:
         pass
+    manager = WEB_SYNC_MANAGER
+    if manager is not None and getattr(manager, "configured", False) and hasattr(conn, "set_commit_callback"):
+        conn.set_commit_callback(manager.mark_pending)
     try:
         yield conn
     finally:
@@ -111,11 +173,22 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
         scheme, _, value = authorization.partition(" ")
         if scheme.lower() == "bearer":
             token = value.strip()
-    if token and token in ACTIVE_SESSIONS:
+    standalone = os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
+    if token and standalone:
+        token_hash = __import__("hashlib").sha256(token.encode("utf-8")).hexdigest()
+        session = conn.execute(
+            """SELECT u.id, u.username, u.display_name, u.role
+               FROM web_auth_sessions s
+               JOIN auth_users u ON u.id=s.user_id
+               WHERE s.token_hash=? AND s.expires_at>? AND u.active=1""",
+            (token_hash, datetime.now().isoformat(timespec="seconds")),
+        ).fetchone()
+        if session:
+            return dict(session)
+    elif token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
     if os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes"):
         raise HTTPException(status_code=401, detail="Login required")
-    # Non-web local development may use the first account; production web boot requires a token.
     row = conn.execute("SELECT id, username, display_name, role FROM auth_users WHERE active=1 ORDER BY id ASC LIMIT 1").fetchone()
     if row:
         return dict(row)
@@ -263,6 +336,21 @@ def get_me(user: Dict[str, Any] = Depends(get_current_user)):
 
 @app.post("/api/auth/setup")
 def initial_setup(req: SetupRequest, conn: sqlite3.Connection = Depends(get_db)):
+    standalone = os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
+    if standalone:
+        manager = WEB_SYNC_MANAGER
+        verified_empty_snapshot = bool(
+            manager is not None
+            and getattr(manager, "configured", False)
+            and bool(getattr(manager, "last_pull", {}).get("ok"))
+            and int(getattr(manager, "last_pull", {}).get("auth_users") or 0) == 0
+        )
+        explicitly_allowed = os.environ.get("WEB_ALLOW_FIRST_ADMIN_SETUP", "0").strip().lower() in ("1", "true", "yes")
+        if not (verified_empty_snapshot and explicitly_allowed):
+            raise HTTPException(
+                status_code=403,
+                detail="First-admin setup is disabled until an empty customer snapshot is verified and WEB_ALLOW_FIRST_ADMIN_SETUP is explicitly enabled.",
+            )
     count = conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0]
     if count > 0:
         raise HTTPException(status_code=400, detail="Setup has already been completed.")

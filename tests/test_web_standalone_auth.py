@@ -76,3 +76,57 @@ def test_standalone_login_token_authenticates_protected_api(tmp_path, monkeypatc
             stored.close()
     finally:
         api.app.dependency_overrides.pop(api.get_db, None)
+
+
+def test_standalone_setup_is_blocked_without_verified_empty_snapshot(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("WEB_STANDALONE", "1")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_ALLOW_FIRST_ADMIN_SETUP", "1")
+    monkeypatch.setattr(
+        api,
+        "WEB_SYNC_MANAGER",
+        SimpleNamespace(configured=False, last_pull={"ok": False, "auth_users": 0}),
+    )
+    db_path = tmp_path / "standalone-setup.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, role TEXT,
+            password_salt TEXT, password_hash TEXT, security_question TEXT,
+            answer_salt TEXT, answer_hash TEXT, active INTEGER, created_at TEXT, updated_at TEXT
+        )"""
+    )
+    conn.commit()
+    conn.close()
+
+    def override_get_db():
+        db = sqlite3.connect(db_path, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api.app.dependency_overrides[api.get_db] = override_get_db
+    try:
+        client = TestClient(api.app)
+        response = client.post(
+            "/api/auth/setup",
+            json={
+                "username": "Admin",
+                "display_name": "Administrator",
+                "password": "New-Password-For-Test",
+                "security_question": "Test question",
+                "security_answer": "Test answer",
+            },
+        )
+        assert response.status_code == 403, response.text
+        stored = sqlite3.connect(db_path)
+        try:
+            assert stored.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0
+        finally:
+            stored.close()
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
