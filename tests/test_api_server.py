@@ -270,3 +270,67 @@ def test_api_system_updates(monkeypatch):
     assert "latest_version" in data
     assert "has_update" in data
     assert "github_releases_url" in data
+
+
+def test_api_account_registration_and_recovery_are_safe():
+    import sqlite3
+    import secrets
+
+    username = "web-reg-" + secrets.token_hex(4)
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.execute(
+            "INSERT OR IGNORE INTO auth_users(username,display_name,role,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)",
+            ("test-admin", "Test Admin", "Admin", "salt", "hash", "First school", "salt", "hash", "2026-01-01", "2026-01-01"),
+        )
+        connection.execute("UPDATE auth_users SET role='Admin',active=1 WHERE username='test-admin'")
+        connection.commit()
+    finally:
+        connection.close()
+
+    payload = {
+        "username": username,
+        "display_name": "Web Registration Test",
+        "password": "TestPass123",
+        "security_question": "What was the name of your first school?",
+        "security_answer": "Green Valley",
+    }
+    created = client.post("/api/auth/register", json=payload)
+    assert created.status_code == 200
+    assert created.json()["pending_approval"] is True
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        row = connection.execute(
+            "SELECT role,active,password_salt,password_hash FROM auth_users WHERE username=?",
+            (username,),
+        ).fetchone()
+        assert row[0] == "Staff"
+        assert row[1] == 0
+        assert row[2] and row[3]
+        connection.execute("UPDATE auth_users SET active=1 WHERE username=?", (username,))
+        connection.commit()
+    finally:
+        connection.close()
+
+    question = client.post("/api/auth/recovery-question", json={"username": username.upper()})
+    assert question.status_code == 200
+    assert question.json()["security_question"] == payload["security_question"]
+
+    reset = client.post("/api/auth/password-reset", json={
+        "username": username.upper(),
+        "security_answer": "  green   valley ",
+        "new_password": "NewPass456",
+    })
+    assert reset.status_code == 200
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        row = connection.execute(
+            "SELECT password_salt,password_hash FROM auth_users WHERE username=?",
+            (username,),
+        ).fetchone()
+        _, expected = desktop_app.hash_pin("NewPass456", row[0])
+        assert secrets.compare_digest(expected, row[1])
+    finally:
+        connection.close()

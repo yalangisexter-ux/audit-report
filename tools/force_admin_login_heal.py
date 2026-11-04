@@ -54,10 +54,17 @@ def apply_admin_login_heal() -> None:
             conn.close()
 
     def find(conn, username: str, password: str):
+        # Prefer exact casing; permit a case variant only when it identifies one account.
         row = conn.execute(
             "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
             (username,),
         ).fetchone()
+        if row is None:
+            candidates = conn.execute(
+                "SELECT * FROM auth_users WHERE username = ? COLLATE NOCASE AND active = 1",
+                (username,),
+            ).fetchall()
+            row = candidates[0] if len(candidates) == 1 else None
         if not row:
             return None
         salt = row["password_salt"]

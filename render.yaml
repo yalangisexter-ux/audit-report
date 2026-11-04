@@ -40,6 +40,8 @@ services:
         value: "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
       - key: DB_SYNC_INSTALLATION_ID
         value: "c4cf201d3c68e2fcaf60aa05fd423d9a"
+      - key: DB_SYNC_LEGACY_INSTALLATION_IDS
+        value: "080717e78653166d64cd2bcf72c75c76"
       - key: DB_SYNC_ENCRYPTION_SECRET
         sync: false
       - key: AUDIT_DATA_DIR

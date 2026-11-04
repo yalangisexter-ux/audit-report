@@ -109,13 +109,22 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
         except Exception:
             return None
 
+    # Prefer an exact match so legacy case-distinct accounts remain separate.
     row = conn.execute(
         "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
         (username,),
     ).fetchone()
-    if not row:
+    if row:
+        return verify(row, password)
+    # If there is exactly one case-insensitive match, accept the typed casing.
+    # If both Admin and admin exist, never guess between the two accounts.
+    candidates = conn.execute(
+        "SELECT * FROM auth_users WHERE username = ? COLLATE NOCASE AND active = 1",
+        (username,),
+    ).fetchall()
+    if len(candidates) != 1:
         return None
-    return verify(row, password)
+    return verify(candidates[0], password)
 
 
 api.app.router.routes[:] = [

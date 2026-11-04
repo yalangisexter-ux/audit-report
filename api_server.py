@@ -207,6 +207,25 @@ class SetupRequest(BaseModel):
     security_question: str
     security_answer: str
 
+
+class RegistrationRequest(BaseModel):
+    username: str
+    display_name: str
+    password: str
+    security_question: str
+    security_answer: str
+
+class RecoveryQuestionRequest(BaseModel):
+    username: str
+
+class PasswordResetRequest(BaseModel):
+    username: str
+    security_answer: str
+    new_password: str
+
+class AccountActiveRequest(BaseModel):
+    active: bool
+
 class EmployeeModel(BaseModel):
     name: str
     employee_code: Optional[str] = ""
@@ -367,6 +386,132 @@ def initial_setup(req: SetupRequest, conn: sqlite3.Connection = Depends(get_db))
     )
     conn.commit()
     return {"success": True, "message": "Admin account created successfully"}
+
+
+# --- Account registration, recovery and administration ---
+def _require_account_admin(user: Dict[str, Any]):
+    if str(user.get("role") or "").strip().casefold() not in {"admin", "developer"}:
+        raise HTTPException(status_code=403, detail="Only an Admin or Developer can manage accounts")
+
+
+@app.post("/api/auth/register")
+def register_account(req: RegistrationRequest, conn: sqlite3.Connection = Depends(get_db)):
+    username = str(req.username or "").strip()
+    display_name = str(req.display_name or "").strip()
+    answer = desktop_app.normalized_answer(str(req.security_answer or ""))
+    if not username or len(username) > 64 or not display_name or len(display_name) > 100:
+        raise HTTPException(status_code=422, detail="Enter a valid username and display name")
+    if not desktop_app.password_is_strong(req.password or ""):
+        raise HTTPException(status_code=422, detail="Use at least 8 characters with a letter and a number")
+    if len(answer) < 2 or req.security_question not in desktop_app.SECURITY_QUESTIONS:
+        raise HTTPException(status_code=422, detail="Choose a recovery question and enter a recovery answer")
+    if not conn.execute("SELECT 1 FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1").fetchone():
+        raise HTTPException(status_code=403, detail="An active Admin must complete initial setup before new account registration")
+    if conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+        raise HTTPException(status_code=409, detail="That username already exists")
+    password_salt, password_hash = desktop_app.hash_pin(req.password)
+    answer_salt, answer_hash = desktop_app.hash_pin(answer)
+    now = desktop_app.now_text()
+    try:
+        conn.execute(
+            """INSERT INTO auth_users(username,display_name,role,password_salt,password_hash,
+               security_question,answer_salt,answer_hash,active,created_at,updated_at)
+               VALUES(?,?,?,?,?,?,?,?,0,?,?)""",
+            (username, display_name, "Staff", password_salt, password_hash,
+             req.security_question, answer_salt, answer_hash, now, now),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="That username already exists")
+    return {"success": True, "pending_approval": True,
+            "message": "Account request submitted. An Admin must activate the account before sign-in."}
+
+
+@app.post("/api/auth/recovery-question")
+def get_recovery_question(req: RecoveryQuestionRequest, conn: sqlite3.Connection = Depends(get_db)):
+    username = str(req.username or "").strip()
+    row = conn.execute(
+        "SELECT security_question, answer_salt, answer_hash FROM auth_users WHERE username=? COLLATE BINARY AND active=1",
+        (username,),
+    ).fetchone()
+    if row is None:
+        matches = conn.execute(
+            "SELECT security_question, answer_salt, answer_hash FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+            (username,),
+        ).fetchall()
+        row = matches[0] if len(matches) == 1 else None
+    if not row or not row["security_question"] or not row["answer_salt"] or not row["answer_hash"]:
+        raise HTTPException(status_code=404, detail="No password-recovery question is configured for this active account. Contact an Admin.")
+    return {"security_question": row["security_question"]}
+
+
+@app.post("/api/auth/password-reset")
+def reset_account_password(req: PasswordResetRequest, conn: sqlite3.Connection = Depends(get_db)):
+    username = str(req.username or "").strip()
+    answer = desktop_app.normalized_answer(str(req.security_answer or ""))
+    row = conn.execute(
+        "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1", (username,)
+    ).fetchone()
+    if row is None:
+        matches = conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)
+        ).fetchall()
+        row = matches[0] if len(matches) == 1 else None
+    if not row or not row["answer_salt"] or not row["answer_hash"]:
+        raise HTTPException(status_code=400, detail="Password recovery is unavailable for this account. Contact an Admin.")
+    _, answer_hash = desktop_app.hash_pin(answer, row["answer_salt"])
+    if not secrets.compare_digest(str(answer_hash), str(row["answer_hash"])):
+        raise HTTPException(status_code=403, detail="Recovery answer is incorrect")
+    if not desktop_app.password_is_strong(req.new_password or ""):
+        raise HTTPException(status_code=422, detail="Use at least 8 characters with a letter and a number")
+    salt, digest = desktop_app.hash_pin(req.new_password)
+    conn.execute(
+        "UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?",
+        (salt, digest, desktop_app.now_text(), row["id"]),
+    )
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        conn.execute("DELETE FROM web_auth_sessions WHERE user_id=?", (row["id"],))
+    else:
+        for token, user in list(ACTIVE_SESSIONS.items()):
+            if int(user.get("id") or 0) == int(row["id"]):
+                ACTIVE_SESSIONS.pop(token, None)
+    conn.commit()
+    return {"success": True, "message": "Password reset successfully. Sign in with your new password."}
+
+
+@app.get("/api/auth/users")
+def list_auth_users(user: Dict[str, Any] = Depends(get_current_user), conn: sqlite3.Connection = Depends(get_db)):
+    _require_account_admin(user)
+    rows = conn.execute(
+        "SELECT id,username,display_name,role,active,created_at,updated_at FROM auth_users ORDER BY username COLLATE NOCASE"
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.patch("/api/auth/users/{user_id}/active")
+def set_auth_user_active(user_id: int, item: AccountActiveRequest,
+                         user: Dict[str, Any] = Depends(get_current_user),
+                         conn: sqlite3.Connection = Depends(get_db)):
+    _require_account_admin(user)
+    if int(user.get("id") or 0) == int(user_id) and not item.active:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+    target = conn.execute("SELECT id,role FROM auth_users WHERE id=?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if str(target["role"]).casefold() == "developer" and str(user.get("role") or "").casefold() != "developer":
+        raise HTTPException(status_code=403, detail="Only a Developer can change a Developer account")
+    if not item.active and str(target["role"]).casefold() == "admin":
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (user_id,)
+        ).fetchone()[0]
+        if remaining < 1:
+            raise HTTPException(status_code=409, detail="The last active Admin account cannot be deactivated")
+    conn.execute("UPDATE auth_users SET active=?,updated_at=? WHERE id=?",
+                 (1 if item.active else 0, desktop_app.now_text(), user_id))
+    if not item.active and os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        conn.execute("DELETE FROM web_auth_sessions WHERE user_id=?", (user_id,))
+    conn.commit()
+    return {"success": True, "user_id": user_id, "active": item.active}
 
 
 # --- Dashboard Analytics ---
@@ -646,6 +791,10 @@ def delete_task(task_id: int, conn: sqlite3.Connection = Depends(get_db)):
 @app.get("/api/attendance")
 def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
     selected_date = work_date or date.today().isoformat()
+    try:
+        selected_date = date.fromisoformat(str(selected_date)).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
     
     # Retrieve all active employees merged with attendance for selected_date
     rows = conn.execute(

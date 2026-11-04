@@ -2883,6 +2883,69 @@ class ForgotPasswordDialog(QDialog):
         self.accept()
 
 
+
+class AccountRegistrationDialog(QDialog):
+    """Self-service Staff registration; an Admin must activate the account."""
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.created = False
+        self.setWindowTitle("Create new account")
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.username = QLineEdit()
+        self.display_name = QLineEdit()
+        self.password = password_field("8+ characters with letters and numbers")
+        self.confirm = password_field("Confirm password")
+        self.question = QComboBox(); self.question.addItems(SECURITY_QUESTIONS)
+        self.answer = QLineEdit(); self.answer.setEchoMode(QLineEdit.Password)
+        form.addRow("Username", self.username)
+        form.addRow("Display name", self.display_name)
+        form.addRow("Password", self.password)
+        form.addRow("Confirm password", self.confirm)
+        form.addRow("Recovery question", self.question)
+        form.addRow("Recovery answer", self.answer)
+        layout.addLayout(form)
+        note = QLabel("New accounts are created with Staff access and remain pending until an Admin activates them.")
+        note.setWordWrap(True); note.setProperty("mutedText", True); layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.create_account); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def create_account(self):
+        username = self.username.text().strip()
+        display_name = self.display_name.text().strip()
+        password = self.password.field.text()
+        answer = normalized_answer(self.answer.text())
+        if not username or len(username) > 64 or not display_name:
+            return error(self, "Enter a valid username and display name.")
+        if not password_is_strong(password):
+            return error(self, "Use at least 8 characters with a letter and a number.")
+        if password != self.confirm.field.text():
+            return error(self, "The passwords do not match.")
+        if len(answer) < 2:
+            return error(self, "Enter a recovery answer you can remember.")
+        if not self.db.conn.execute("SELECT 1 FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1").fetchone():
+            return error(self, "An active Admin must complete initial setup before new account registration.")
+        if self.db.conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+            return error(self, "That username already exists.")
+        ps, ph = hash_pin(password); ans_salt, ans_hash = hash_pin(answer)
+        now = now_text()
+        try:
+            self.db.conn.execute(
+                "INSERT INTO auth_users(username,display_name,role,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,0,?,?)",
+                (username, display_name, "Staff", ps, ph, self.question.currentText(), ans_salt, ans_hash, now, now),
+            )
+            self.db.conn.commit()
+            self.db.log("Account registration requested", username)
+        except sqlite3.IntegrityError:
+            return error(self, "That username already exists.")
+        self.created = True
+        info(self, "Account request submitted. An Admin must activate it before sign-in.")
+        self.accept()
+
+
 def password_field(placeholder="Enter password"):
     """Create a password field with a show/hide toggle button."""
     container = QWidget()
@@ -2990,12 +3053,17 @@ class LoginDialog(QDialog):
         forgot.setFlat(True)
         forgot.setToolTip("Reset password using recovery question")
         forgot.clicked.connect(self.forgot_password)
+        create_account = QPushButton("Create account")
+        create_account.setFlat(True)
+        create_account.setToolTip("Request a Staff account; an Admin must activate it")
+        create_account.clicked.connect(self.create_account)
         change = QPushButton("Change password")
         change.setFlat(True)
         change.setToolTip("Change password for an existing account")
         change.clicked.connect(self.change_password)
         links.addStretch(1)
         links.addWidget(forgot)
+        links.addWidget(create_account)
         links.addWidget(change)
         links.addStretch(1)
         layout.addLayout(links)
@@ -3007,17 +3075,27 @@ class LoginDialog(QDialog):
         uname = raw_username.lower()
         if uname in ("admin / taruna", "admin/taruna", "taruna"):
             target_username = "taruna"
-        elif uname == "admin":
+        elif raw_username == "admin":
             target_username = "admin"
         else:
             target_username = raw_username
 
-        row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (target_username,)).fetchone()
+        row = self.db.conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1", (target_username,)
+        ).fetchone()
         if not row:
-            row = self.db.conn.execute(
-                "SELECT * FROM auth_users WHERE (username=? OR display_name LIKE ?) COLLATE NOCASE AND active=1",
-                (raw_username, f"%{raw_username}%")
-            ).fetchone()
+            username_matches = self.db.conn.execute(
+                "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (target_username,)
+            ).fetchall()
+            if len(username_matches) == 1:
+                row = username_matches[0]
+        if not row:
+            display_matches = self.db.conn.execute(
+                "SELECT * FROM auth_users WHERE display_name LIKE ? COLLATE NOCASE AND active=1",
+                (f"%{raw_username}%",)
+            ).fetchall()
+            if len(display_matches) == 1:
+                row = display_matches[0]
         if not row:
             return error(self, "Invalid username or password.")
         _, digest = hash_pin(self.password.text(), row["password_salt"])
@@ -3030,6 +3108,10 @@ class LoginDialog(QDialog):
 
     def forgot_password(self):
         dialog = ForgotPasswordDialog(self.db, self)
+        dialog.exec()
+
+    def create_account(self):
+        dialog = AccountRegistrationDialog(self.db, self)
         dialog.exec()
 
     def change_password(self):
@@ -11857,11 +11939,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def is_attendance_scheduled_workday(day_text, weekdays):
-        """Return True only for a valid configured workday (holiday filtering is separate)."""
-        try:
-            return date.fromisoformat(str(day_text)).weekday() in weekdays
-        except (TypeError, ValueError):
-            return False
+        return is_attendance_scheduled_workday(day_text, weekdays)
 
     # Preserve the original method name for older internal callers.
     _is_attendance_scheduled_workday = is_attendance_scheduled_workday
@@ -13567,6 +13645,12 @@ class MainWindow(QMainWindow):
             if not u_row: return error(dialog, "User not found.")
             if uname.lower() == str(self.current_user.get("username", "")).lower() and u_row["active"]:
                 return error(dialog, "You cannot disable your own active account.")
+            if u_row["active"] and str(u_row["role"]).casefold() == "admin":
+                remaining_admins = self.db.conn.execute(
+                    "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (u_row["id"],)
+                ).fetchone()[0]
+                if remaining_admins < 1:
+                    return error(dialog, "The last active Admin account cannot be disabled.")
             new_active = 0 if u_row["active"] else 1
             self.db.conn.execute("UPDATE auth_users SET active=?, updated_at=? WHERE id=?", (new_active, now_text(), u_row["id"]))
             self.db.conn.commit()
@@ -13586,6 +13670,12 @@ class MainWindow(QMainWindow):
             current_role_idx = roles.index(u_row["role"]) if u_row["role"] in roles else 0
             new_role, ok = QInputDialog.getItem(dialog, "Change User Role", f"Select new role/access level for {uname}:", roles, current_role_idx, False)
             if not ok or not new_role: return
+            if str(u_row["role"]).casefold() == "admin" and new_role != "Admin" and u_row["active"]:
+                remaining_admins = self.db.conn.execute(
+                    "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (u_row["id"],)
+                ).fetchone()[0]
+                if remaining_admins < 1:
+                    return error(dialog, "The last active Admin cannot be changed to a non-Admin role.")
             self.db.conn.execute("UPDATE auth_users SET role=?, updated_at=? WHERE id=?", (new_role, now_text(), u_row["id"]))
             self.db.conn.commit()
             self.db.log("User role changed", f"{uname} -> {new_role}")
