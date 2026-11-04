@@ -137,9 +137,11 @@ def test_api_tasks_with_custom_fields():
     client.delete(f"/api/tasks/{task_id}")
 
 def test_api_attendance_and_holidays():
+    import secrets
+
     employee_res = client.post("/api/employees", json={
         "name": "Attendance Basic API Test",
-        "employee_code": "ATT-BASIC-API-TEST",
+        "employee_code": f"ATT-BASIC-{secrets.token_hex(3).upper()}",
         "department": "Testing",
     })
     assert employee_res.status_code == 200
