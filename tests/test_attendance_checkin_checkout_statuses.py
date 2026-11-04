@@ -96,6 +96,7 @@ def test_absent_status_is_committed_to_selected_working_date(monkeypatch, tmp_pa
             (employee_id, today),
         ).fetchone()
         assert tuple(saved) == (today, "Absent", "", "")
+        window.refresh_attendance()
         qt_app.processEvents()
         assert window.att_table.cellWidget(0, 2).findChild(app.QComboBox).currentText() == "Absent"
     finally:
