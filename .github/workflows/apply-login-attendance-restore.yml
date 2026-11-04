@@ -1,6 +1,7 @@
 name: Apply login attendance restore
 on:
   push:
+    branches: [main]
     paths:
       - "tools/apply_login_attendance_restore.py"
       - ".github/workflows/apply-login-attendance-restore.yml"

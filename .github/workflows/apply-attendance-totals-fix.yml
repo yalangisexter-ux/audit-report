@@ -1,6 +1,7 @@
 name: Apply attendance totals fix
 on:
   push:
+    branches: [main]
     paths:
       - "tools/apply_attendance_totals_fix.py"
       - ".github/workflows/apply-attendance-totals-fix.yml"

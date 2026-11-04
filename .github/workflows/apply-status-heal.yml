@@ -1,6 +1,7 @@
 name: Apply status heal
 on:
   push:
+    branches: [main]
     paths:
       - "tools/apply_status_heal.py"
       - ".github/workflows/apply-status-heal.yml"

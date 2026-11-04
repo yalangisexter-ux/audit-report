@@ -1,6 +1,7 @@
 name: Apply Phase 1 parity
 on:
   push:
+    branches: [main]
     paths:
       - "tools/phase1_chunks/**"
       - "tools/assemble_phase1_apply.py"

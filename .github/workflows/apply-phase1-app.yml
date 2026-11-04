@@ -1,6 +1,7 @@
 name: Apply Phase 1 App UI
 on:
   push:
+    branches: [main]
     paths:
       - "tools/app_b64_*.txt"
       - "tools/apply_new_app_jsx.py"

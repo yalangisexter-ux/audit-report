@@ -1,6 +1,7 @@
 name: Restore Phase 1 web files
 on:
   push:
+    branches: [main]
     paths:
       - ".github/workflows/restore-phase1-web.yml"
       - "tools/TRIGGER_PHASE1_RESTORE"
