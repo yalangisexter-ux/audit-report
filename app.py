@@ -2126,23 +2126,30 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     )
                     stats["attendance"] += 1
                 else:
-                    merged_in = la["check_in"] or str(ra.get("check_in") or "")
-                    merged_out = la["check_out"] or str(ra.get("check_out") or "")
-                    status = la["attendance_status"]
-                    r_status = str(ra.get("attendance_status") or "")
-                    if status in ("", "Unmarked") and r_status not in ("", "Unmarked"):
-                        status = r_status
-                    elif r_status == "Present":
-                        status = "Present"
-                    l_note = la["attendance_note"] or ""
+                    local_att = dict(la)
+                    local_updated = str(local_att.get("updated_at") or "")
+                    remote_updated = str(ra.get("updated_at") or "")
+                    remote_is_newer = remote_updated > local_updated
+                    winner = ra if remote_is_newer else local_att
+                    status = str(winner.get("attendance_status") or "Unmarked")
+                    # Present records can combine a check-in from one device and a
+                    # check-out from another. A newer Absent/Leave/Unmarked status,
+                    # however, is an intentional clear and must never regain stale times.
+                    if is_present_attendance_status(status):
+                        merged_in = local_att.get("check_in") or str(ra.get("check_in") or "")
+                        merged_out = local_att.get("check_out") or str(ra.get("check_out") or "")
+                    else:
+                        merged_in = merged_out = ""
+                    l_note = str(local_att.get("attendance_note") or "")
                     r_note = str(ra.get("attendance_note") or "")
                     merged_note = l_note
                     if r_note and r_note not in l_note:
                         merged_note = f"{l_note} | {r_note}".strip(" |")
+                    merged_updated = remote_updated if remote_is_newer else local_updated
                     local_conn.execute(
                         """UPDATE attendance SET check_in=?, check_out=?, attendance_status=?, attendance_note=?, updated_at=?
                            WHERE id=?""",
-                        (merged_in, merged_out, status, merged_note, now_text(), la["id"])
+                        (merged_in, merged_out, status, merged_note, merged_updated, la["id"])
                     )
                     stats["attendance"] += 1
 
@@ -2372,20 +2379,25 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     stats["attendance"] += 1
                 else:
                     la = dict(la_row)
-                    c_in = la.get("check_in") or ra_dict.get("check_in") or ""
-                    c_out = la.get("check_out") or ra_dict.get("check_out") or ""
-                    status = la.get("attendance_status") or "Unmarked"
-                    r_status = ra_dict.get("attendance_status") or "Unmarked"
-                    r_upd = str(ra_dict.get("updated_at") or "")
                     l_upd = str(la.get("updated_at") or "")
-                    if (status in ("Unmarked", "", None) and r_status not in ("Unmarked", "", None)) or (r_upd > l_upd and r_status != "Unmarked"):
-                        status = r_status
-                    break_mins = max(int(la.get("break_minutes") or 0), int(ra_dict.get("break_minutes") or 0))
-                    note = la.get("attendance_note") or ""
-                    rnote = ra_dict.get("attendance_note") or ""
+                    r_upd = str(ra_dict.get("updated_at") or "")
+                    remote_is_newer = r_upd > l_upd
+                    winner = ra_dict if remote_is_newer else la
+                    status = str(winner.get("attendance_status") or "Unmarked")
+                    if is_present_attendance_status(status):
+                        # Preserve a split shift recorded on two devices.
+                        c_in = la.get("check_in") or ra_dict.get("check_in") or ""
+                        c_out = la.get("check_out") or ra_dict.get("check_out") or ""
+                    else:
+                        # Clearing attendance times is part of an Absent, Leave or
+                        # Unmarked update; never union stale times back into the row.
+                        c_in = c_out = ""
+                    break_mins = int(winner.get("break_minutes") or 0)
+                    note = str(la.get("attendance_note") or "")
+                    rnote = str(ra_dict.get("attendance_note") or "")
                     if rnote and rnote not in note:
                         note = f"{note}; {rnote}".strip("; ")
-                    upd = max(l_upd, r_upd, now_text())
+                    upd = r_upd if remote_is_newer else l_upd
                     local_conn.execute(
                         """UPDATE attendance SET check_in=?, check_out=?, break_minutes=?, attendance_status=?, attendance_note=?, updated_at=?
                            WHERE id=?""",
