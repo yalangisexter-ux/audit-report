@@ -30,6 +30,7 @@ def test_merge_preserves_local_rows_and_imports_remote_rows(tmp_path):
 
     assert names == {"Local", "Remote"}
     assert result["inserted"] >= 1
+    assert result["changed"] is True
 
 
 def test_merge_uses_newer_updated_at_for_same_row(tmp_path):
@@ -208,3 +209,16 @@ def test_legacy_snapshot_recovery_merges_accounts_only_for_matching_employee(tmp
         manager.sync = original_sync
         if original_sync is not None:
             original_sync.close()
+
+def test_merge_reports_no_changes_when_snapshot_is_already_merged(tmp_path):
+    local = tmp_path / "local-no-change.db"
+    remote = tmp_path / "remote-no-change.db"
+    rows = [(1, "EMP001", "Same employee", "2026-01-01")]
+    make_database(local, rows)
+    make_database(remote, rows)
+
+    result = merge_snapshot_databases(local, remote)
+
+    assert result["inserted"] == 0
+    assert result["updated"] == 0
+    assert result["changed"] is False

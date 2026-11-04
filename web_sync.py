@@ -225,7 +225,7 @@ def merge_snapshot_databases(local_path: Path, remote_path: Path) -> dict:
                     table_map[remote_pk] = local_pk
         local.commit()
         local.execute("PRAGMA foreign_keys=ON")
-        return {"inserted": inserted, "updated": updated, "conflicts": conflicts}
+        return {"inserted": inserted, "updated": updated, "conflicts": conflicts, "changed": bool(inserted or updated)}
     except Exception:
         local.rollback()
         raise
