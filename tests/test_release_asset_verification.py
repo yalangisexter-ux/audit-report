@@ -255,8 +255,11 @@ def test_release_metadata_is_consistent_and_newer_than_installed_version():
     assert f"prodvers=({v_parts[0]}, {v_parts[1]}, {v_parts[2]}, 0)" in (root / "version_info.txt").read_text(encoding="utf-8")
     workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
     assert f'APP_VERSION: "{version}"' in workflow
-    assert f"tag_name: v{version}" in workflow
-    assert f"Raw Strength Employee Audit Manager v{version}" in workflow
+    # The workflow publishes a fixed, explicitly versioned tag via its PowerShell release step.
+    assert f'$tag = "v{version}"' in workflow
+    assert f'--title "Raw Strength Employee Audit Manager v{version}"' in workflow
+    assert "gh release upload $tag $asset --clobber" in workflow
+    assert "gh release view $tag --json assets,isDraft,isPrerelease" in workflow
 
 
 def test_update_worker_uses_latest_published_stable_release(monkeypatch):
