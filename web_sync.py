@@ -17,7 +17,7 @@ from pathlib import Path
 from database_sync import GitHubDatabaseSync
 
 DEFAULT_WORKER = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
-DEFAULT_INSTALLATION = "c4cf201d3c68e2fcaf60aa05fd423d9a"
+DEFAULT_INSTALLATION = "080717e78653166d64cd2bcf72c75c76"
 REQUIRED_TABLES = {"auth_users", "employees", "tasks"}
 
 
