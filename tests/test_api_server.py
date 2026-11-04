@@ -137,9 +137,17 @@ def test_api_tasks_with_custom_fields():
     client.delete(f"/api/tasks/{task_id}")
 
 def test_api_attendance_and_holidays():
+    employee_res = client.post("/api/employees", json={
+        "name": "Attendance Basic API Test",
+        "employee_code": "ATT-BASIC-API-TEST",
+        "department": "Testing",
+    })
+    assert employee_res.status_code == 200
+    employee_id = employee_res.json()["id"]
+
     # 1. Mark attendance
     mark_payload = {
-        "employee_id": 1,
+        "employee_id": employee_id,
         "status": "Present",
         "notes": "Checked in via REST API",
         "check_in": "06:00",
