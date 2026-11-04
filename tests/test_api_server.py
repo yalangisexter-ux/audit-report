@@ -40,6 +40,7 @@ if hasattr(_test_db, "conn") and _test_db.conn:
     _test_db.conn.close()
 
 from fastapi.testclient import TestClient
+import api_server
 from api_server import app
 
 client = TestClient(app)
@@ -495,3 +496,99 @@ def test_api_attendance_preserves_recognized_worked_day_detail_statuses():
     assert saved["attendance_status"] == "Late Check-in"
     assert saved["check_in"] == "09:15"
     assert saved["check_out"] == "17:00"
+
+
+def test_employee_directory_groups_fields_and_reordering():
+    import secrets
+    group_a = "Directory Alpha " + secrets.token_hex(3)
+    group_b = "Directory Beta " + secrets.token_hex(3)
+    assert client.post("/api/employee-groups", json={"name": group_a}).status_code == 200
+    assert client.post("/api/employee-groups", json={"name": group_b}).status_code == 200
+    code_a = "DIR-A-" + secrets.token_hex(3).upper()
+    code_b = "DIR-B-" + secrets.token_hex(3).upper()
+    created_a = client.post("/api/employees", json={
+        "name": "Directory Athlete A", "employee_code": code_a, "department": group_a,
+        "designation": "Senior Coach", "phone": "9000000001", "email": "directory-a@example.test",
+        "joining_date": "2026-01-15", "notes": "Directory notes A",
+    })
+    created_b = client.post("/api/employees", json={
+        "name": "Directory Athlete B", "employee_code": code_b, "department": group_b,
+        "designation": "Coach", "joining_date": "2026-02-10",
+    })
+    assert created_a.status_code == 200 and created_b.status_code == 200
+    employee_a, employee_b = created_a.json()["id"], created_b.json()["id"]
+    rows = client.get("/api/employees?active_only=false").json()
+    row_a = next(row for row in rows if row["id"] == employee_a)
+    assert (row_a["joining_date"], row_a["notes"], row_a["email"]) == ("2026-01-15", "Directory notes A", "directory-a@example.test")
+    task = client.post("/api/tasks", json={"employee_id": employee_a, "task_date": "2026-11-05", "title": "Directory rename propagation", "department": group_a})
+    assert task.status_code == 200
+    renamed = group_a + " Renamed"
+    assert client.patch("/api/employee-groups", json={"old_name": group_a, "new_name": renamed}).status_code == 200
+    employee_after = next(row for row in client.get("/api/employees?active_only=false").json() if row["id"] == employee_a)
+    task_after = next(row for row in client.get("/api/tasks").json() if row["id"] == task.json()["id"])
+    assert employee_after["department"] == renamed and task_after["department"] == renamed
+    assert client.put("/api/employee-groups/order", json={"group_names": [group_b, renamed]}).status_code == 200
+    names = [row["name"] for row in client.get("/api/employee-groups").json()]
+    assert names.index(group_b) < names.index(renamed)
+    reordered = client.put("/api/employee-directory/reorder", json={"items": [
+        {"id": employee_a, "display_order": 20, "department": renamed},
+        {"id": employee_b, "display_order": 10, "department": group_b},
+    ]})
+    assert reordered.status_code == 200
+    employees = client.get("/api/employees?active_only=false").json()
+    row_a = next(row for row in employees if row["id"] == employee_a)
+    row_b = next(row for row in employees if row["id"] == employee_b)
+    assert row_a["display_order"] == 20 and row_b["display_order"] == 10 and row_b["department"] == group_b
+    assert client.request("DELETE", "/api/employee-groups", json={"name": group_b}).status_code == 200
+    row_b = next(row for row in client.get("/api/employees?active_only=false").json() if row["id"] == employee_b)
+    assert row_b["department"] == ""
+
+
+def test_employee_directory_role_permissions_and_safe_permanent_delete(tmp_path, monkeypatch):
+    import api_server
+    import secrets
+    monkeypatch.setattr(desktop_app, "BACKUP_DIR", tmp_path / "employee-backups")
+    original_overrides = dict(api_server.app.dependency_overrides)
+    def set_role(role):
+        api_server.app.dependency_overrides[api_server.get_current_user] = lambda: {
+            "id": 987654, "username": "employee-directory-role-test",
+            "display_name": "Employee Directory Role Test", "role": role,
+        }
+    try:
+        set_role("Staff")
+        denied = client.post("/api/employees", json={"name": "Denied Staff Employee", "employee_code": "DENIED-" + secrets.token_hex(3).upper()})
+        assert denied.status_code == 403
+        assert client.post("/api/employee-groups", json={"name": "Denied Section"}).status_code == 403
+        assert client.put("/api/employee-directory/reorder", json={"items": []}).status_code == 403
+        set_role("HR")
+        code = "HR-DIRECTORY-" + secrets.token_hex(3).upper()
+        created = client.post("/api/employees", json={"name": "HR Managed Employee", "employee_code": code, "department": "HR Directory QA"})
+        assert created.status_code == 200
+        employee_id = created.json()["id"]
+        status_res = client.patch(f"/api/employees/{employee_id}/status", json={"active": False})
+        assert status_res.status_code == 200 and status_res.json()["active"] == 0
+        assert client.delete(f"/api/employees/{employee_id}/permanent").status_code == 403
+        inactive = client.get("/api/employees?active_only=false&search=" + code).json()
+        assert len(inactive) == 1 and inactive[0]["active"] == 0
+        set_role("Admin")
+        client.post("/api/tasks", json={"employee_id": employee_id, "task_date": "2026-11-05", "title": "Permanent delete regression task"})
+        client.post("/api/attendance/mark", json={"employee_id": employee_id, "work_date": "2026-11-05", "attendance_status": "Present", "check_in": "09:00"})
+        deleted = client.delete(f"/api/employees/{employee_id}/permanent")
+        assert deleted.status_code == 200
+        backup_path = tmp_path / "employee-backups" / deleted.json()["backup_file"]
+        assert backup_path.is_file()
+        backup_conn = sqlite3.connect(str(backup_path))
+        try:
+            assert backup_conn.execute("SELECT name FROM employees WHERE id=?", (employee_id,)).fetchone()[0] == "HR Managed Employee"
+        finally:
+            backup_conn.close()
+        db_conn = sqlite3.connect(str(desktop_app.DB_PATH))
+        try:
+            assert db_conn.execute("SELECT COUNT(*) FROM employees WHERE id=?", (employee_id,)).fetchone()[0] == 0
+            assert db_conn.execute("SELECT COUNT(*) FROM tasks WHERE employee_id=?", (employee_id,)).fetchone()[0] == 0
+            assert db_conn.execute("SELECT COUNT(*) FROM attendance WHERE employee_id=?", (employee_id,)).fetchone()[0] == 0
+        finally:
+            db_conn.close()
+    finally:
+        api_server.app.dependency_overrides.clear()
+        api_server.app.dependency_overrides.update(original_overrides)

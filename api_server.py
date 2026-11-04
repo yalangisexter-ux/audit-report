@@ -595,13 +595,26 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db)):
 
 
 # --- Employees ---
+def _require_employee_roles(user, allowed_roles):
+    role = str((user or {}).get("role", "")).strip().casefold()
+    allowed = {str(value).strip().casefold() for value in allowed_roles}
+    if role not in allowed:
+        raise HTTPException(status_code=403, detail="You do not have permission to modify employee records.")
+
+
+def _ensure_employee_group(conn, department, timestamp):
+    name = str(department or "").strip()
+    if not name:
+        return
+    existing = conn.execute("SELECT 1 FROM employee_groups WHERE name=? COLLATE NOCASE", (name,)).fetchone()
+    if not existing:
+        maximum = conn.execute("SELECT COALESCE(MAX(display_order), 0) AS value FROM employee_groups").fetchone()
+        next_order = int((maximum["value"] if maximum else 0) or 0) + 10
+        conn.execute("INSERT INTO employee_groups(name, display_order, created_at) VALUES(?,?,?)", (name, next_order, timestamp))
+
+
 @app.get("/api/employees")
-def list_employees(
-    search: Optional[str] = None,
-    department: Optional[str] = None,
-    active_only: bool = True,
-    conn: sqlite3.Connection = Depends(get_db)
-):
+def list_employees(search: Optional[str] = None, department: Optional[str] = None, active_only: bool = True, conn: sqlite3.Connection = Depends(get_db)):
     query = "SELECT * FROM employees WHERE 1=1"
     params = []
     if active_only:
@@ -610,58 +623,82 @@ def list_employees(
         query += " AND department=?"
         params.append(department)
     if search:
-        query += " AND (name LIKE ? OR employee_code LIKE ? OR designation LIKE ?)"
+        query += " AND (name LIKE ? OR employee_code LIKE ? OR designation LIKE ? OR department LIKE ? OR phone LIKE ? OR email LIKE ?)"
         term = f"%{search.strip()}%"
-        params.extend([term, term, term])
-    
-    query += " ORDER BY name ASC"
-    rows = conn.execute(query, params).fetchall()
-    return [dict(r) for r in rows]
+        params.extend([term, term, term, term, term, term])
+    query += " ORDER BY active DESC, display_order ASC, name COLLATE NOCASE, id ASC"
+    return [dict(row) for row in conn.execute(query, params).fetchall()]
+
 
 @app.post("/api/employees")
-def create_employee(emp: EmployeeModel, conn: sqlite3.Connection = Depends(get_db)):
+def create_employee(emp: EmployeeModel, conn: sqlite3.Connection = Depends(get_db), user=Depends(get_current_user)):
+    _require_employee_roles(user, {"HR", "Admin", "Developer"})
+    name = (emp.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Employee name is required.")
+    email = (emp.email or "").strip()
+    if email and ("@" not in email or "." not in email.split("@")[-1]):
+        raise HTTPException(status_code=400, detail="Enter a valid email address or leave it blank.")
     now = desktop_app.now_text()
-    code = emp.employee_code.strip() if emp.employee_code else f"EMP{secrets.token_hex(2).upper()}"
+    code = (emp.employee_code or "").strip() or f"EMP{secrets.token_hex(2).upper()}"
+    department = (emp.department or "").strip()
+    active = 1 if emp.active is None or bool(emp.active) else 0
     try:
         cursor = conn.execute(
             """INSERT INTO employees(name, employee_code, department, designation, phone, email, joining_date, notes, active, created_at)
                VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (emp.name.strip(), code, emp.department, emp.designation, emp.phone, emp.email, emp.joining_date, emp.notes, emp.active, now)
+            (name, code, department, (emp.designation or "").strip(), (emp.phone or "").strip(), email,
+             (emp.joining_date or "").strip(), (emp.notes or "").strip(), active, now)
         )
+        _ensure_employee_group(conn, department, now)
         conn.commit()
-        new_id = cursor.lastrowid
-        return {"id": new_id, "success": True, "employee_code": code}
-    except sqlite3.IntegrityError as e:
+        return {"id": cursor.lastrowid, "success": True, "employee_code": code}
+    except sqlite3.IntegrityError:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=f"Employee code '{code}' already exists")
 
+
 @app.put("/api/employees/{emp_id}")
-def update_employee(emp_id: int, emp: EmployeeModel, conn: sqlite3.Connection = Depends(get_db)):
+def update_employee(emp_id: int, emp: EmployeeModel, conn: sqlite3.Connection = Depends(get_db), user=Depends(get_current_user)):
+    _require_employee_roles(user, {"HR", "Admin", "Developer"})
     existing = conn.execute("SELECT employee_code FROM employees WHERE id=?", (emp_id,)).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Employee not found")
-    code = emp.employee_code.strip() if emp.employee_code and emp.employee_code.strip() else existing["employee_code"]
+    name = (emp.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Employee name is required.")
+    email = (emp.email or "").strip()
+    if email and ("@" not in email or "." not in email.split("@")[-1]):
+        raise HTTPException(status_code=400, detail="Enter a valid email address or leave it blank.")
+    code = (emp.employee_code or "").strip() or existing["employee_code"]
+    department = (emp.department or "").strip()
+    active = 1 if emp.active is None or bool(emp.active) else 0
     try:
         conn.execute(
             """UPDATE employees SET name=?, employee_code=?, department=?, designation=?, phone=?, email=?,
-                                   joining_date=?, notes=?, active=?
-               WHERE id=?""",
-            (emp.name.strip(), code, emp.department, emp.designation, emp.phone, emp.email,
-             emp.joining_date, emp.notes, emp.active, emp_id)
+                                   joining_date=?, notes=?, active=? WHERE id=?""",
+            (name, code, department, (emp.designation or "").strip(), (emp.phone or "").strip(), email,
+             (emp.joining_date or "").strip(), (emp.notes or "").strip(), active, emp_id)
         )
+        _ensure_employee_group(conn, department, desktop_app.now_text())
         conn.commit()
         return {"success": True}
-    except sqlite3.IntegrityError as e:
+    except sqlite3.IntegrityError:
+        conn.rollback()
         raise HTTPException(status_code=400, detail=f"Employee code '{code}' already exists")
 
+
 @app.delete("/api/employees/{emp_id}")
-def delete_employee(emp_id: int, conn: sqlite3.Connection = Depends(get_db)):
-    # Toggle active status to prevent cascading delete data loss
+def delete_employee(emp_id: int, conn: sqlite3.Connection = Depends(get_db), user=Depends(get_current_user)):
+    # Preserve the legacy soft-toggle contract for existing clients.
+    _require_employee_roles(user, {"HR", "Admin", "Developer"})
     row = conn.execute("SELECT active FROM employees WHERE id=?", (emp_id,)).fetchone()
-    if row:
-        new_active = 0 if row["active"] == 1 else 1
-        conn.execute("UPDATE employees SET active=? WHERE id=?", (new_active, emp_id))
-        conn.commit()
-    return {"success": True, "active": new_active if row else 0}
+    if not row:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    new_active = 0 if row["active"] == 1 else 1
+    conn.execute("UPDATE employees SET active=? WHERE id=?", (new_active, emp_id))
+    conn.commit()
+    return {"success": True, "active": new_active}
 
 
 # --- Tasks ---
@@ -1268,6 +1305,7 @@ def check_updates():
 # Register operational routes after the API app and dependencies are fully defined.
 import web_ops_routes  # noqa: E402,F401
 import web_parity_routes  # noqa: E402,F401
+import web_employee_routes  # noqa: E402,F401
 
 # --- Serve Built React Frontend (SPA Fallback) ---
 DIST_DIR = ROOT_DIR / "frontend" / "dist"

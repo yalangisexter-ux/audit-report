@@ -4,12 +4,13 @@ Last inspected: 2026-11-05. Repository target: `main`. This is an evidence ledge
 
 ## Verification baseline
 
-- Latest successful full workflow inspected: [run #958](https://github.com/yalangisexter-ux/audit-report/actions/runs/41893954401), on commit `505ad312ecdb37d6a4fbaab419636684d09ec742`.
-- Run #958 passed the React production build, frontend bundle publication, Cloudflare JavaScript checks, isolated database-sync Worker tests, Python compile, pytest (**201 passed in 494.45 seconds**), Windows EXE packaging, installer creation, legacy v1.1.74 in-place upgrade with unchanged customer database hash and records, application launch smoke test, and v1.3.75 release asset verification.
-- Render deployment for commit `505ad312ecdb37d6a4fbaab419636684d09ec742` is live: build succeeded, Uvicorn startup completed, and the service returned HTTP 200 for `/`.
-- Latest published desktop release at inspection: [v1.3.75](https://github.com/yalangisexter-ux/audit-report/releases/tag/v1.3.75). This commit configures the next milestone as **v1.3.76**; its release build is pending.
+- Latest successful full workflow inspected: [run #959](https://github.com/yalangisexter-ux/audit-report/actions/runs/41897076890), building attendance milestone commit `498130acf7f4cbb3d11a7a8c5706a0353a2f446a`.
+- Run #959 passed the React production build, frontend bundle publication, Cloudflare JavaScript checks, isolated database-sync Worker tests, Python compilation, regression suite, Windows EXE packaging, installer creation, legacy v1.1.74 in-place upgrade with unchanged customer database hash and records, application launch smoke test, and v1.3.76 release asset verification.
+- Latest published desktop release: [v1.3.76](https://github.com/yalangisexter-ux/audit-report/releases/tag/v1.3.76); the verified installer asset is 75,495,551 bytes.
+- Render deployment for encrypted snapshot commit `526ce6c59629e78a52d9e76a7ce1a6ea141e9b68` is live; Render logs show application startup complete and HTTP 200 for `/`.
+- The Employee Directory parity milestone is configured as **v1.3.77**; its release remains pending regression, Windows packaging, legacy upgrade, and production deployment gates.
 
-- Current main also contains automated encrypted customer snapshot updates. Do not replace, normalize, or re-encrypt those files as part of UI parity work.
+- Current main also contains automated encrypted customer snapshot updates. Do not replace, normalize, or re-encrypt those files as part of UI parity work. Employee Directory is configured as v1.3.77; its release remains pending CI and production verification.
 
 ## Screen-by-screen parity ledger
 
@@ -49,8 +50,18 @@ A row can move to **Complete** only after:
 
 No 100% parity claim is permitted while any row above remains Partial or In progress.
 
-## Next parity milestone — Employee Directory
+## Employee Directory milestone — implementation added; verification pending
 
-- The Windows screen includes department/group filtering, three sort modes, Manage Sections, Move Up/Move Down, drag-to-reorder, and HR/Admin/Developer versus Admin/Developer permission distinctions.
-- The web screen currently provides a basic create/list/edit/soft-delete flow. Its create form omits joining date and notes, and it does not yet expose section management, sort modes, custom ordering or move-to-group actions.
-- Implement and test server-side role checks before exposing the missing actions: HR/Admin/Developer for add/edit/activate; Admin/Developer for delete, section management and reordering. Preserve existing employee IDs, department values, task links and attendance history.
+- Web create/edit exposes employee code, full name, department/section, designation, phone, email, joining date, notes and active status.
+- Web directory adds full-field search, department/group filter, Serial Number / ID, Department / Group, Name (A-Z), and Custom Order sorting.
+- Added Manage Sections with add, rename, delete and ordering; employee Move Up/Move Down and Move to Section actions; selected-row editing and activate/deactivate controls.
+- Server-side permission checks enforce HR/Admin/Developer for add/edit/activate and Admin/Developer for permanent deletion, section management and reordering. The legacy DELETE endpoint retains its soft-toggle contract for older clients.
+- Permanent deletion creates a SQLite safety backup first, then removes tasks, attendance and linked business activities; employee targets cascade and archived documents retain their content with a null employee link.
+- Added API regression tests for complete employee fields, section rename propagation to tasks, section and employee ordering, role restrictions, and backup-before-permanent-delete.
+- CI, EXE release, legacy upgrade, Render deployment and side-by-side verification against a representative customer database remain pending. Do not mark this row Complete until all gates pass.
+
+## Next parity milestone — Task Manager
+
+- Compare every desktop TaskDialog field and custom tracking value with the web create/edit form.
+- Verify target/actual quantity, due time, priority, all extended statuses, submitted timestamp preservation, proof URL/note, manager note, expose-link behavior, bulk editing, filtering and role restrictions.
+- Preserve task IDs, employee links, historical dates and existing evidence URLs.
