@@ -53,6 +53,7 @@ jobs:
           finally { Pop-Location }
 
       - name: Publish built React frontend for the existing Render Python service
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
