@@ -138,4 +138,3 @@ def test_employee_targets_crud_and_report_formatting(tmp_path, monkeypatch):
     finally:
         window.close()
         database.conn.close()
-        qt_app.processEvents()
