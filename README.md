@@ -1,8 +1,8 @@
 # Raw Strength Calisthenics — Employee Audit Manager & Operations OS
 
-## Modern React SPA + FastAPI REST API Interface (v1.3.23)
+## Modern React SPA + FastAPI REST API Interface (v1.3.76)
 
-A state-of-the-art web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a high-speed **FastAPI REST API** backend that connects directly to the underlying SQLite database with 100% business logic and audit trail parity.
+A React web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a **FastAPI REST API** backend and the shared SQLite data model. Existing PBKDF2 account hashes and installation-scoped sync behavior are preserved. Desktop-to-web feature parity is tracked screen by screen and is not yet complete.
 
 ### Quick Start
 To launch the modern web application and automatically open it in your browser:
@@ -19,22 +19,22 @@ python run_web.py
 - **Editable Department:** Free-text editable department field with auto-completion from existing organizational units.
 - **Responsive Dialog Modals:** Center-anchored with max-height limits and internal scrolling to prevent modals from hiding under taskbars or screen edges.
 - **Silent Background Sync HUD:** Real-time green auto-sync badge without disruptive loading screens or UI blocking.
-- **Integrated Print & Export Center:** Live preview generator with instant export to PDF, Word, and CSV matching all Task Manager filters.
-- **100% Business Logic & Data Parity:** Shares the exact same SQLite database, PBKDF2 encryption routines, and 102 automated regression tests.
+- **Web Print Center:** Report preview and browser print/save-to-PDF are available; full desktop report options, archived-report workflows, and PDF/DOCX/CSV export parity remain in progress.
+- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; the latest verified CI run passed 201 regression tests. Full feature parity remains in progress.
 
 ---
 
 ## Build a Windows release with GitHub Actions
 
 1. Extract this ZIP and upload the contents of this folder to the root of a GitHub repository.
-2. Open **Actions** and select **Build Raw Strength Employee Audit Manager (Windows)**.
-3. Select **Run workflow** or push to `main` / `master`.
-4. Pushes to `main` / `master` publish a versioned GitHub Release. The Actions artifact `RawStrengthEmployeeAuditManager-Windows-Release` is also available for 14 days.
+2. Open **Actions** and select **Master Build and Test**.
+3. Select **Run workflow** or push to `main`.
+4. Pushes to `main` publish a versioned GitHub Release. The Actions artifact `RawStrengthEmployeeAuditManager-Windows-Release` is also available for 14 days.
 5. Extract the artifact and run `RawStrengthEmployeeAuditManager-Setup.exe`. Setup installs the required Visual C++ runtime before launching the app.
 
 ## Live Chat (Cloudflare)
 
-- The **Live Chat** page supports private employee conversations and authorized groups in the Windows app.
+- The Windows app supports private employee conversations and authorized groups. The current web screen supports general-channel messaging only; private/group chat, unread state, and reconnect parity remain open.
 - A responsive browser/mobile client is served from the Cloudflare Worker. The chat backend is separate from the local audit database.
 - Deploy the service using the instructions in [Cloudflare Live Chat setup](cloudflare-chat/README.md). Configure a real D1 database ID and Cloudflare secrets before deploying; source-control changes alone do not deploy the service.
 - Chat accounts are provisioned by the chat administrator and use separate credentials from the existing local Audit Manager login.
@@ -56,10 +56,10 @@ The target Windows PC does not need Python installed. Use the setup installer fo
 
 ## UI updates
 
-- Main navigation stays horizontal above the page content, with the existing feature pages and controls retained.
+- Web navigation uses a collapsible left sidebar. The Windows EXE retains its native navigation and controls; the parity ledger records missing web actions.
 - The Home page opens first with signed-in session details and concise instructions and examples for each section.
 - The interface follows the supplied purple dashboard and blue project-management references, with Raw Strength branding and the bundled DejaVu Sans font.
-- Forms use readable dropdowns and checkboxes where choices or multi-selection are appropriate; report scope and report options remain explicit.
+- Forms use readable controls; web report scope/options and export formats are still being brought to desktop parity.
 - The first run against a fresh database requires creating an Admin username, password, and recovery question/answer before login. No default password is provided.
 
 ## Reports
@@ -68,7 +68,7 @@ The target Windows PC does not need Python installed. Use the setup installer fo
 - **Employee Productivity:** separate report for productivity score, calculation explanation, and task progress percentages.
 - **Employee Attendance:** separate attendance report.
 - **Employee Details:** separate employee register.
-- Consolidated and Individual scopes are supported. PDF, Word, and CSV exports are available where applicable.
+- The Windows EXE supports Consolidated and Individual scopes, employee exclusions, selected sections, and PDF/Word/CSV exports. The web client currently has date/type/employee selection, preview, and browser print/save-to-PDF; full scope/options and DOCX/CSV parity remain open.
 - Missing Employee ID, Department, or Role is shown as `N/A`.
 
 ## Data and existing installations
