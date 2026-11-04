@@ -11857,11 +11857,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def is_attendance_scheduled_workday(day_text, weekdays):
-        """Return True only for a valid configured workday (holiday filtering is separate)."""
-        try:
-            return date.fromisoformat(str(day_text)).weekday() in weekdays
-        except (TypeError, ValueError):
-            return False
+        return is_attendance_scheduled_workday(day_text, weekdays)
 
     # Preserve the original method name for older internal callers.
     _is_attendance_scheduled_workday = is_attendance_scheduled_workday
