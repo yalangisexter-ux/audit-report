@@ -1152,7 +1152,8 @@ def list_products(conn: sqlite3.Connection = Depends(get_db)):
     result = []
     for r in rows:
         d = dict(r)
-        d["available_stock"] = (d.get("opening_stock", 0) or 0) + (d.get("received_qty", 0) or 0) - (d.get("reserved_qty", 0) or 0)
+        from business_tracking import available_stock
+        d["available_stock"] = available_stock(d)
         result.append(d)
     return result
 
@@ -1593,7 +1594,8 @@ def _build_report_preview(req, conn):
             products = []
         lines.extend(["PRODUCT CATALOG & STOCK", "Product | SKU | Category | Brand | Unit | Available stock | Reorder level | Selling price"])
         for product in products:
-            available = float(product["opening_stock"] or 0) + float(product["received_qty"] or 0) - float(product["reserved_qty"] or 0)
+            from business_tracking import available_stock
+            available = available_stock(product)
             lines.append(
                 f"{product['name']} | {product['sku'] or '—'} | {product['category'] or '—'} | "
                 f"{product['brand'] or '—'} | {product['base_unit'] or '—'} | {available:g} | "
