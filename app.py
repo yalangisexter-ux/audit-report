@@ -11818,13 +11818,13 @@ class MainWindow(QMainWindow):
         self.refresh_attendance_summary()
         self.refresh_dashboard()
 
-def _is_attendance_scheduled_workday(day_text, weekdays):
-    """Return True only for a valid configured workday (holiday filtering is separate)."""
-    try:
-        return date.fromisoformat(str(day_text)).weekday() in weekdays
-    except (TypeError, ValueError):
-        return False
-
+    @staticmethod
+    def _is_attendance_scheduled_workday(day_text, weekdays):
+        """Return True only for a valid configured workday (holiday filtering is separate)."""
+        try:
+            return date.fromisoformat(str(day_text)).weekday() in weekdays
+        except (TypeError, ValueError):
+            return False
 
     def refresh_attendance_summary(self):
         if not hasattr(self, "attendance_summary_table"):
@@ -11912,7 +11912,7 @@ def _is_attendance_scheduled_workday(day_text, weekdays):
                     row for row in attendance_by_employee[employee_id]
                     if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
                     and row["work_date"] not in holiday_dates
-                    and _is_attendance_scheduled_workday(row["work_date"], weekdays)
+                    and self._is_attendance_scheduled_workday(row["work_date"], weekdays)
                 ]
                 holiday_count = 0
                 for holiday in holiday_dates:
