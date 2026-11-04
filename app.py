@@ -8305,6 +8305,19 @@ class MainWindow(QMainWindow):
             self._update_progress.setRange(0, 0)
             self._update_progress.repaint()
         try:
+            # Snapshot the customer's live SQLite database before starting setup.
+            # SQLite's backup API includes committed WAL data and validates integrity.
+            # This backup is outside {app}; the installer only replaces application files.
+            database_backup_path = None
+            database_path = Path(DB_PATH)
+            if database_path.is_file() and database_path.stat().st_size > 0:
+                database_backup_path = create_pre_migration_backup(database_path, BACKUP_DIR)
+                if not database_backup_path or not Path(database_backup_path).is_file():
+                    raise RuntimeError(
+                        "The customer database could not be backed up and verified. "
+                        "The update was cancelled; the installed application and data were left unchanged."
+                    )
+
             # Save a short-lived, one-use resume marker so the updater can reopen
             # the same user's last page after a successful in-app update.
             app_backup_dir = APP_DIR / "app_rollback"
@@ -8316,6 +8329,7 @@ class MainWindow(QMainWindow):
                     "tab_index": int(self.tabs.currentIndex()),
                     "created_at": datetime.now().timestamp(),
                     "target_version": str(version),
+                    "database_backup": str(database_backup_path) if database_backup_path else "",
                 }
                 resume_path = APP_DIR / "update_resume.json"
                 resume_tmp = resume_path.with_suffix(".tmp")

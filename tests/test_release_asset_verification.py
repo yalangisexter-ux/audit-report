@@ -812,7 +812,16 @@ def test_silent_update_installer_preserves_previous_install_directory_and_data()
     root = Path(__file__).resolve().parents[1]
     installer = (root / "installer.iss").read_text(encoding="utf-8")
     source = (root / "app.py").read_text(encoding="utf-8")
+    assert "AppId={{4A2A33C8-8C51-4CF5-A6B0-8D5F9F9A42D1}" in installer
     assert "UsePreviousAppDir=yes" in installer
+    assert "create_pre_migration_backup(database_path, BACKUP_DIR)" in source
+    assert '"database_backup": str(database_backup_path) if database_backup_path else ""' in source
     assert "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS" in source
     assert "The current application was left running." in source
     assert "if result <= 32:" in source
+
+    # Inno Setup must only deploy the application payload, never the customer DB.
+    files_section = installer.split("[Files]", 1)[1].split("[Icons]", 1)[0]
+    assert "employee_audit.db" not in files_section
+    assert "EmployeeAuditManager" not in files_section
+    assert "pending-update-backup" not in files_section

@@ -118,28 +118,7 @@ var
 	ResultCode: Integer;
 	ExtraArguments: String;
 begin
-	if CurStep = ssInstall then
-	begin
-		InstallDirectory := ExpandConstant('{app}');
-		PendingBackupDirectory := ExpandConstant('{localappdata}\EmployeeAuditManager\pending-update-backup');
-		StableBackupDirectory := ExpandConstant('{localappdata}\EmployeeAuditManager\previous-version');
-		RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');
-		if not FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
-			Exit;
-
-		KillRunningAppProcess;
-		ExtractTemporaryFile('update_recovery.ps1');
-		if not RunRecoveryScript('backup', '', ResultCode) or (ResultCode <> 0) then
-		begin
-			Sleep(1000);
-			if not RunRecoveryScript('backup', '', ResultCode) or (ResultCode <> 0) then
-			begin
-				RaiseException('Could not protect the existing installation before updating. The current app was left in place.');
-			end;
-		end;
-		TransactionBackupReady := True;
-	end
-	else if CurStep = ssPostInstall then
+	if CurStep = ssPostInstall then
 	begin
 		RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');
 		ExtractTemporaryFile('update_recovery.ps1');
