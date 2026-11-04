@@ -729,6 +729,13 @@ def is_present_attendance_status(status):
         value.casefold() for value in ATTENDANCE_PRESENT_STATUSES
     }
 
+def is_attendance_scheduled_workday(day_text, weekdays):
+    """Return True only for a valid configured working weekday."""
+    try:
+        return date.fromisoformat(str(day_text)).weekday() in weekdays
+    except (TypeError, ValueError):
+        return False
+
 
 def calculate_net_working_hours(check_in, check_out, break_minutes=0):
     """Calculate net working hours string from check-in, check-out, and break minutes."""
@@ -11819,7 +11826,7 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard()
 
     @staticmethod
-    def _is_attendance_scheduled_workday(day_text, weekdays):
+    def is_attendance_scheduled_workday(day_text, weekdays):
         """Return True only for a valid configured workday (holiday filtering is separate)."""
         try:
             return date.fromisoformat(str(day_text)).weekday() in weekdays
@@ -11912,7 +11919,7 @@ class MainWindow(QMainWindow):
                     row for row in attendance_by_employee[employee_id]
                     if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
                     and row["work_date"] not in holiday_dates
-                    and self._is_attendance_scheduled_workday(row["work_date"], weekdays)
+                    and is_attendance_scheduled_workday(row["work_date"], weekdays)
                 ]
                 holiday_count = 0
                 for holiday in holiday_dates:
@@ -11948,7 +11955,7 @@ class MainWindow(QMainWindow):
                 1 for row in attendance_by_employee[employee_id]
                 if start_day.isoformat() <= row["work_date"] <= end.isoformat()
                 and row["work_date"] not in holiday_dates
-                and _is_attendance_scheduled_workday(row["work_date"], weekdays)
+                and is_attendance_scheduled_workday(row["work_date"], weekdays)
                 and (
                     is_present_attendance_status(row["attendance_status"])
                     or (
