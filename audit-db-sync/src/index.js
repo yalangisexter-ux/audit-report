@@ -136,7 +136,7 @@ async function handlePush(request, env) {
     method: "PUT",
     headers: githubHeaders(env, "application/vnd.github+json", true),
     body: JSON.stringify({
-      message: "Update encrypted database snapshot for " + auth.installation_id,
+      message: "Update encrypted database snapshot for " + auth.installation_id + " [skip render]",
       content, branch, ...(sha ? { sha } : {}),
     }),
   });
