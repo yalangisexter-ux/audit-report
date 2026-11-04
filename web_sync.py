@@ -334,7 +334,9 @@ class WebDatabaseSync:
         except RuntimeError as exc:
             if "No remote snapshot exists" in str(exc):
                 self.status = "Connected; no remote snapshot exists yet"
-                self.last_pull = {"ok": True, "error": "No remote snapshot yet; the first web account or data save will publish it.", "auth_users": 0, "employees": 0, "tasks": 0}
+                # A missing remote snapshot is NOT proof that this customer has no
+                # existing accounts. Never let this state enable first-admin setup.
+                self.last_pull = {"ok": False, "error": "No verified customer snapshot was found for this installation. Existing accounts cannot be confirmed; setup remains disabled.", "auth_users": 0, "employees": 0, "tasks": 0}
                 return False
             self.status = "Initial pull failed"
             self.last_pull["error"] = str(exc)[:240]
