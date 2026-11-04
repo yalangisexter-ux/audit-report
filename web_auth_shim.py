@@ -92,7 +92,7 @@ def _ensure_bootstrap_admin(db_path: Path) -> None:
 
 
 def _find_active_login_user(conn: sqlite3.Connection, username: str, password: str):
-    """Verify the exact stored desktop credential without mutating the account."""
+    """Verify the exact stored desktop credential without case-folding account names."""
     import app as desktop_app
 
     def verify(row, pwd):
@@ -112,11 +112,6 @@ def _find_active_login_user(conn: sqlite3.Connection, username: str, password: s
         "SELECT * FROM auth_users WHERE username = ? COLLATE BINARY AND active = 1",
         (username,),
     ).fetchone()
-    if not row:
-        row = conn.execute(
-            "SELECT * FROM auth_users WHERE username = ? COLLATE NOCASE AND active = 1",
-            (username,),
-        ).fetchone()
     if not row:
         return None
     return verify(row, password)

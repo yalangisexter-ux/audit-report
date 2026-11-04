@@ -88,12 +88,17 @@ def ensure_database():
                 business_tracking.setup_business_tables(db.conn)
             except Exception:
                 pass
+            if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+                from web_db_migrations import ensure_case_sensitive_auth_users
+                if ensure_case_sensitive_auth_users(desktop_app.DB_PATH):
+                    print("[Web DB] Migrated auth_users to exact case-sensitive usernames; all credentials preserved")
             if hasattr(db, "close_github_sync"):
                 db.close_github_sync(timeout=0)
             if hasattr(db, "conn") and db.conn:
                 db.conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[Web DB] Initialization/migration failed: {exc}")
+            raise
         _DB_INITIALIZED = True
         if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
             try:
