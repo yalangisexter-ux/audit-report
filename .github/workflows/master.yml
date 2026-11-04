@@ -18,8 +18,10 @@ permissions:
 
 # Run every requested validation to completion; do not cancel builds after a new push.
 # Encrypted customer database snapshots do not need a full Windows installer build.
+# Use a distinct concurrency group for each run. GitHub otherwise retains only
+# one pending run per group and silently cancels the previous pending build.
 concurrency:
-  group: audit-report-main-release-${{ github.ref }}
+  group: audit-report-main-release-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:

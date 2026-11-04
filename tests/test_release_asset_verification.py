@@ -841,3 +841,11 @@ def test_release_workflow_runs_real_legacy_installer_upgrade_without_touching_cu
     assert "Deliberately omit DATA_DIR" in workflow
     assert "databaseHashAfter -ne $databaseHashBefore" in workflow
     assert "KEEP_EXISTING_CUSTOMER_DATA" in workflow
+
+
+
+def test_master_workflow_does_not_cancel_pending_builds_for_newer_pushes():
+    from pathlib import Path
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    assert "group: audit-report-main-release-${{ github.run_id }}" in workflow
+    assert "cancel-in-progress: false" in workflow
