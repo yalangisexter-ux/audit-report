@@ -213,19 +213,43 @@ jobs:
       - name: Upload installer as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RawStrengthEmployeeAuditManager-Setup-v1.3.71
+          name: RawStrengthEmployeeAuditManager-Setup-v1.3.72
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publish versioned release with direct EXE installer
+      - name: Publish versioned release with retry and asset verification
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.3.72
-          name: Raw Strength Employee Audit Manager v1.3.72
-          target_commitish: ${{ github.sha }}
-          generate_release_notes: true
-          files: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
-          fail_on_unmatched_files: true
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          $tag = "v1.3.72"
+          $asset = "installer-output/RawStrengthEmployeeAuditManager-Setup.exe"
+          $published = $false
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            gh release view $tag *> $null
+            if ($LASTEXITCODE -eq 0) {
+              gh release edit $tag --title "Raw Strength Employee Audit Manager v1.3.72" --target $env:GITHUB_SHA
+            }
+            else {
+              gh release create $tag $asset --title "Raw Strength Employee Audit Manager v1.3.72" --generate-notes --target $env:GITHUB_SHA
+            }
+            if ($LASTEXITCODE -eq 0) {
+              gh release upload $tag $asset --clobber
+              if ($LASTEXITCODE -eq 0) {
+                $release = gh release view $tag --json assets,isDraft,isPrerelease
+                if ($LASTEXITCODE -eq 0) {
+                  $metadata = $release | ConvertFrom-Json
+                  $installer = @($metadata.assets | Where-Object { $_.name -eq "RawStrengthEmployeeAuditManager-Setup.exe" })
+                  if ($installer.Count -eq 1 -and -not $metadata.isDraft -and -not $metadata.isPrerelease) {
+                    $published = $true
+                    break
+                  }
+                }
+              }
+            }
+            if ($attempt -lt 4) { Start-Sleep -Seconds (5 * $attempt) }
+          }
+          if (-not $published) { throw "GitHub release $tag could not be published and verified after four attempts." }
+          Write-Host "PASS: $tag contains the verified Windows installer asset."
