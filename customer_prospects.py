@@ -793,7 +793,14 @@ def persist_prospect_records(db, records, *, source_name="", source_url="", sour
             elif norm_domain and norm_domain in existing_by_domain:
                 d_cand = existing_by_domain[norm_domain]
                 if _normalise_store_name(d_cand.get("business_name")) == norm_name:
-                    match = d_cand
+                    candidate_state = _normalise_key(normalise_state(d_cand.get("state")))
+                    candidate_city = _normalise_key(d_cand.get("city"))
+                    same_branch = (
+                        (not norm_state or not candidate_state or norm_state == candidate_state)
+                        and (not norm_city or not candidate_city or norm_city == candidate_city)
+                    )
+                    if same_branch:
+                        match = d_cand
 
             if match:
                 updates = {}
@@ -1491,10 +1498,6 @@ def crawl_search_engine_results(
         business_name = re.sub(r"\s+", " ", business_name).strip(" -|•")
         if not business_name or len(business_name) < 3:
             business_name = urlparse(url).netloc.removeprefix("www.")
-        name_key = business_name.casefold()
-        if name_key in seen_names:
-            continue
-
         address = address_text
         # Parse schema.org JSON-LD to extract real PostalAddress values when available.
         for raw_json in parser.jsonld_parts:
@@ -1543,6 +1546,13 @@ def crawl_search_engine_results(
                 if re.search(r"\b" + re.escape(region_name) + r"\b", address, re.I):
                     state_name = region_name
                     break
+        # Deduplicate by branch identity, not brand name alone: chains can
+        # have multiple legitimate stores across cities and states.
+        name_key = _normalise_store_name(business_name)
+        branch_key = (name_key, _normalise_key(state_name), _normalise_key(city))
+        if branch_key in seen_names:
+            continue
+
         phone_match = phone_pattern.search(text_blob)
         phone = phone_match.group(0).strip() if phone_match else ""
         email_match = email_pattern.search(text_blob)
@@ -1556,7 +1566,7 @@ def crawl_search_engine_results(
         if not maps_link:
             query = ", ".join(x for x in (business_name, address, "India") if x)
             maps_link = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
-        seen_names.add(name_key)
+        seen_names.add(branch_key)
         found.append({
             "kind": kind,
             "business_name": business_name,
