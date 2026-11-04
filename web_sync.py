@@ -17,7 +17,7 @@ from pathlib import Path
 from database_sync import GitHubDatabaseSync
 
 DEFAULT_WORKER = "https://raw-strength-audit-db-sync.yalangisexter.workers.dev"
-DEFAULT_INSTALLATION = "080717e78653166d64cd2bcf72c75c76"
+DEFAULT_INSTALLATION = "c4cf201d3c68e2fcaf60aa05fd423d9a"
 REQUIRED_TABLES = {"auth_users", "employees", "tasks"}
 
 
@@ -40,8 +40,16 @@ def validate_snapshot(path: Path) -> dict:
         missing = REQUIRED_TABLES - _tables(db)
         if missing:
             raise ValueError("Remote database is missing required tables: " + ", ".join(sorted(missing)))
+        auth_columns = {row[1] for row in db.execute("PRAGMA table_info(auth_users)")}
+        active_clause = " WHERE active=1" if "active" in auth_columns else ""
+        active_users = db.execute("SELECT COUNT(*) FROM auth_users" + active_clause).fetchone()[0]
+        usernames = [str(row[0]) for row in db.execute(
+            "SELECT username FROM auth_users" + active_clause + " ORDER BY username COLLATE NOCASE"
+        ).fetchall()]
         return {
-            "auth_users": db.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0],
+            "auth_users": active_users,
+            "total_auth_users": db.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0],
+            "usernames": usernames,
             "employees": db.execute("SELECT COUNT(*) FROM employees").fetchone()[0],
             "tasks": db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],
         }
@@ -300,14 +308,78 @@ class WebDatabaseSync:
         finally:
             temp.unlink(missing_ok=True)
 
-    def _pull_merge(self) -> dict:
-        payload = self._download()
-        digest = hashlib.sha256(payload).hexdigest()
-        if digest == self.remote_digest:
-            return {"changed": False, "inserted": 0, "updated": 0, "conflicts": 0}
-        merged = self._merge_payload(payload)
-        self.remote_digest = digest
-        return {"changed": bool(merged["inserted"] or merged["updated"]), **merged}
+    def _recover_accounts_from_legacy_snapshot(self) -> bool:
+        """Recover account hashes from a known prior web installation without replacing data.
+
+        The old web installation ID is considered only when the canonical shared snapshot
+        has business data but no active users. The legacy snapshot must contain active
+        accounts and share at least one employee identity with the canonical database.
+        Its rows are union-merged; the canonical installation remains the only write target.
+        """
+        configured_ids = os.environ.get(
+            "DB_SYNC_LEGACY_INSTALLATION_IDS", "080717e78653166d64cd2bcf72c75c76"
+        )
+        candidates = [value.strip().lower() for value in configured_ids.split(",") if value.strip()]
+        for legacy_id in candidates:
+            if legacy_id == self.installation_id or not re.fullmatch(r"[0-9a-f]{32}", legacy_id):
+                continue
+            temp = self.db_path.with_name(self.db_path.name + ".legacy-check")
+            try:
+                payload = self.sync.download_latest_snapshot(
+                    target_installation_id=legacy_id,
+                    candidate_secret=self.secret,
+                    prefer_latest=False,
+                )
+                temp.write_bytes(payload)
+                legacy_stats = validate_snapshot(temp)
+                if int(legacy_stats.get("auth_users") or 0) < 1:
+                    continue
+                local = sqlite3.connect(str(self.db_path), timeout=20)
+                remote = sqlite3.connect(f"file:{temp}?mode=ro", uri=True, timeout=20)
+                try:
+                    local_cols = {row[1] for row in local.execute("PRAGMA table_info(employees)")}
+                    remote_cols = {row[1] for row in remote.execute("PRAGMA table_info(employees)")}
+                    local_rows = local.execute("SELECT * FROM employees").fetchall()
+                    remote_rows = remote.execute("SELECT * FROM employees").fetchall()
+                    def identity(row, columns):
+                        code = str(row[columns.index("employee_code")] or "").strip().casefold() if "employee_code" in columns else ""
+                        name = str(row[columns.index("name")] or "").strip().casefold() if "name" in columns else ""
+                        return code, name
+                    local_ids = {key for row in local_rows for key in identity(row, list(local_cols)) if key}
+                    remote_ids = {key for row in remote_rows for key in identity(row, list(remote_cols)) if key}
+                    if not local_ids or not remote_ids or not (local_ids & remote_ids):
+                        print(f"[Web Sync] Legacy snapshot {legacy_id[:8]} rejected: employee identities do not match")
+                        continue
+                finally:
+                    remote.close()
+                    local.close()
+                merged = merge_snapshot_databases(self.db_path, temp)
+                current = sqlite3.connect(str(self.db_path), timeout=20)
+                try:
+                    users = current.execute(
+                        "SELECT COUNT(*) FROM auth_users WHERE active=1"
+                    ).fetchone()[0]
+                    employees = current.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
+                    tasks = current.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+                    usernames = [row[0] for row in current.execute(
+                        "SELECT username FROM auth_users WHERE active=1 ORDER BY username COLLATE NOCASE"
+                    ).fetchall()]
+                finally:
+                    current.close()
+                if users < 1:
+                    continue
+                self.last_pull = {
+                    "ok": True, "error": "", "auth_users": users, "employees": employees,
+                    "tasks": tasks, "usernames": usernames, "recovered_from_legacy": legacy_id,
+                    "merge": merged,
+                }
+                print(f"[Web Sync] Recovered {users} active account(s) from verified legacy snapshot {legacy_id[:8]}")
+                return True
+            except Exception as exc:
+                print(f"[Web Sync] Legacy account recovery skipped for {legacy_id[:8]}: {str(exc)[:180]}")
+            finally:
+                temp.unlink(missing_ok=True)
+        return False
 
     def _sync_once(self):
         # Merge the newest remote snapshot before publishing local commits.
@@ -341,10 +413,15 @@ class WebDatabaseSync:
             except sqlite3.Error:
                 local_auth_users = 0
 
-            # Business records without any account rows do not prove that this is
-            # the customer's correct installation snapshot. Keep first-admin setup
-            # disabled until the matching account-bearing installation is restored.
+            # If the canonical snapshot contains business data but no active accounts,
+            # recover only from the known prior web installation after employee-identity
+            # verification. The legacy snapshot is never used as the write destination.
             if remote_auth_users == 0 and local_auth_users == 0 and (remote_employees or remote_tasks):
+                if self._recover_accounts_from_legacy_snapshot():
+                    self.status = "Customer accounts recovered; merged into shared installation"
+                    self.sync.mark_pending()
+                    self.sync.schedule_sync(3.0)
+                    return True
                 self.status = "Snapshot has business data but no customer login accounts"
                 self.last_pull["ok"] = False
                 self.last_pull["error"] = (
