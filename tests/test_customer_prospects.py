@@ -1033,3 +1033,38 @@ def test_deep_scraper_does_not_create_synthetic_leads_when_search_is_unavailable
     assert results == []
 
 # CI refresh: run the full Store Directory regression suite against the latest main tree.
+
+def test_same_retailer_domain_keeps_distinct_city_branches(tmp_path, monkeypatch):
+    import app
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "branch_dedupe_test.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    try:
+        records = [
+            {
+                "kind": "Store",
+                "business_name": "MultiCity Nutrition",
+                "state": "Andhra Pradesh",
+                "city": "Vijayawada",
+                "website": "https://multicity.example/vijayawada",
+                "address": "MG Road, Vijayawada, Andhra Pradesh 520010",
+            },
+            {
+                "kind": "Store",
+                "business_name": "MultiCity Nutrition",
+                "state": "Telangana",
+                "city": "Hyderabad",
+                "website": "https://www.multicity.example/hyderabad",
+                "address": "Banjara Hills, Hyderabad, Telangana 500034",
+            },
+        ]
+        result = prospects.persist_prospect_records(db, records, source_name="Deep Web Scraper")
+        saved = [
+            row for row in prospects.load_saved_prospects(db)
+            if row["business_name"] == "MultiCity Nutrition"
+        ]
+        assert result["inserted"] == 2
+        assert len(saved) == 2
+        assert {row["city"] for row in saved} == {"Vijayawada", "Hyderabad"}
+    finally:
+        db.conn.close()
