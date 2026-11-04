@@ -1206,6 +1206,10 @@ def check_updates():
         )
 
 
+# Register operational routes after the API app and dependencies are fully defined.
+import web_ops_routes  # noqa: E402,F401
+import web_parity_routes  # noqa: E402,F401
+
 # --- Serve Built React Frontend (SPA Fallback) ---
 DIST_DIR = ROOT_DIR / "frontend" / "dist"
 
