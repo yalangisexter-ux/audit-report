@@ -774,6 +774,10 @@ def delete_task(task_id: int, conn: sqlite3.Connection = Depends(get_db)):
 @app.get("/api/attendance")
 def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = Depends(get_db)):
     selected_date = work_date or date.today().isoformat()
+    try:
+        selected_date = date.fromisoformat(str(selected_date)).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
     
     # Retrieve all active employees merged with attendance for selected_date
     rows = conn.execute(
