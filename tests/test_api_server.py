@@ -802,3 +802,65 @@ def test_task_api_preserves_explicit_not_selected_status():
         connection.commit()
     finally:
         connection.close()
+
+def test_employee_tracker_task_list_filters_by_employee_and_date():
+    import secrets
+    import sqlite3
+
+    employee_a = client.post("/api/employees", json={
+        "name": "Tracker Filter Employee A",
+        "employee_code": "TRACKER-A-" + secrets.token_hex(3).upper(),
+        "department": "Operations",
+    })
+    employee_b = client.post("/api/employees", json={
+        "name": "Tracker Filter Employee B",
+        "employee_code": "TRACKER-B-" + secrets.token_hex(3).upper(),
+        "department": "Operations",
+    })
+    assert employee_a.status_code == 200 and employee_b.status_code == 200
+    employee_a_id = employee_a.json()["id"]
+    employee_b_id = employee_b.json()["id"]
+    created_ids = []
+    for employee_id, task_date, title in (
+        (employee_a_id, "2026-11-05", "Tracker selected day"),
+        (employee_a_id, "2026-11-04", "Tracker previous day"),
+        (employee_b_id, "2026-11-05", "Tracker other employee"),
+    ):
+        created = client.post("/api/tasks", json={
+            "employee_id": employee_id,
+            "task_date": task_date,
+            "title": title,
+            "status": "In progress",
+            "progress": 40,
+        })
+        assert created.status_code == 200
+        created_ids.append(created.json()["id"])
+
+    filtered = client.get(
+        f"/api/tasks?employee_id={employee_a_id}&task_date=2026-11-05"
+    )
+    assert filtered.status_code == 200
+    assert [row["id"] for row in filtered.json() if row["id"] in created_ids] == [created_ids[0]]
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.executemany("DELETE FROM tasks WHERE id=?", [(task_id,) for task_id in created_ids])
+        connection.executemany("DELETE FROM employees WHERE id=?", [(employee_a_id,), (employee_b_id,)])
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_employee_tracker_web_tab_exposes_desktop_task_workflow():
+    app_source = (ROOT / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    tracker_source = (ROOT / "frontend" / "src" / "TaskManager.jsx").read_text(encoding="utf-8")
+
+    assert 'mode="tracker"' in app_source
+    assert "Employee Activity &amp; Progression" in tracker_source
+    assert "Select employee" in tracker_source
+    assert "Task date" in tracker_source
+    assert "Average task progress" in tracker_source
+    assert "completed','submitted','cancelled','blocked','in progress" in tracker_source
+    assert "onClick={()=>openEdit(task)}" in tracker_source
+    assert "onClick={()=>openProof(task)}" in tracker_source
+    assert "{canDelete&&" in tracker_source
