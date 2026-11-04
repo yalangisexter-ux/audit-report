@@ -870,14 +870,17 @@ def test_employee_tracker_web_tab_exposes_desktop_task_workflow():
 def test_web_print_center_preview_applies_employee_exclusion_and_field_options():
     import secrets
     suffix = secrets.token_hex(4).upper()
+    included_name = "Report Included " + suffix
+    excluded_name = "Report Excluded " + suffix
+    included_email = "report-in-" + suffix.lower() + "@example.test"
     included = client.post("/api/employees", json={
-        "name": "Report Included " + suffix,
+        "name": included_name,
         "employee_code": "RPT-IN-" + suffix,
         "notes": "PRIVATE_INCLUDED_NOTE",
-        "email": "report-in-" + suffix.lower() + "@example.test",
+        "email": included_email,
     })
     excluded = client.post("/api/employees", json={
-        "name": "Report Excluded " + suffix,
+        "name": excluded_name,
         "employee_code": "RPT-EX-" + suffix,
         "notes": "PRIVATE_EXCLUDED_NOTE",
     })
@@ -898,11 +901,11 @@ def test_web_print_center_preview_applies_employee_exclusion_and_field_options()
     })
     assert response.status_code == 200
     preview = response.json()["preview_text"]
-    assert included.json()["name"] in preview
-    assert excluded.json()["name"] not in preview
+    assert included_name in preview
+    assert excluded_name not in preview
     assert "PRIVATE_INCLUDED_NOTE" not in preview
     assert "PRIVATE_EXCLUDED_NOTE" not in preview
-    assert included.json()["email"] not in preview
+    assert included_email not in preview
 
 
 def test_web_print_center_exports_pdf_docx_and_csv():
