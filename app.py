@@ -13645,6 +13645,12 @@ class MainWindow(QMainWindow):
             if not u_row: return error(dialog, "User not found.")
             if uname.lower() == str(self.current_user.get("username", "")).lower() and u_row["active"]:
                 return error(dialog, "You cannot disable your own active account.")
+            if u_row["active"] and str(u_row["role"]).casefold() == "admin":
+                remaining_admins = self.db.conn.execute(
+                    "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (u_row["id"],)
+                ).fetchone()[0]
+                if remaining_admins < 1:
+                    return error(dialog, "The last active Admin account cannot be disabled.")
             new_active = 0 if u_row["active"] else 1
             self.db.conn.execute("UPDATE auth_users SET active=?, updated_at=? WHERE id=?", (new_active, now_text(), u_row["id"]))
             self.db.conn.commit()
@@ -13664,6 +13670,12 @@ class MainWindow(QMainWindow):
             current_role_idx = roles.index(u_row["role"]) if u_row["role"] in roles else 0
             new_role, ok = QInputDialog.getItem(dialog, "Change User Role", f"Select new role/access level for {uname}:", roles, current_role_idx, False)
             if not ok or not new_role: return
+            if str(u_row["role"]).casefold() == "admin" and new_role != "Admin" and u_row["active"]:
+                remaining_admins = self.db.conn.execute(
+                    "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (u_row["id"],)
+                ).fetchone()[0]
+                if remaining_admins < 1:
+                    return error(dialog, "The last active Admin cannot be changed to a non-Admin role.")
             self.db.conn.execute("UPDATE auth_users SET role=?, updated_at=? WHERE id=?", (new_role, now_text(), u_row["id"]))
             self.db.conn.commit()
             self.db.log("User role changed", f"{uname} -> {new_role}")
