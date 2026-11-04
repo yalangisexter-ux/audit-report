@@ -864,3 +864,79 @@ def test_employee_tracker_web_tab_exposes_desktop_task_workflow():
     assert "onClick={()=>openEdit(task)}" in tracker_source
     assert "onClick={()=>openProof(task)}" in tracker_source
     assert "{canDelete&&" in tracker_source
+
+
+def test_web_print_center_preview_applies_employee_exclusion_and_field_options():
+    import secrets
+    suffix = secrets.token_hex(4).upper()
+    included = client.post("/api/employees", json={
+        "name": "Report Included " + suffix,
+        "employee_code": "RPT-IN-" + suffix,
+        "notes": "PRIVATE_INCLUDED_NOTE",
+    })
+    excluded = client.post("/api/employees", json={
+        "name": "Report Excluded " + suffix,
+        "employee_code": "RPT-EX-" + suffix,
+        "notes": "PRIVATE_EXCLUDED_NOTE",
+    })
+    assert included.status_code == 200
+    assert excluded.status_code == 200
+
+    response = client.post("/api/reports/preview", json={
+        "date": date.today().isoformat(),
+        "report_type": "Employee Details",
+        "exclude_employee_id": excluded.json()["id"],
+        "options": {
+            "details_identity": True,
+            "details_contact": False,
+            "details_joining": False,
+            "details_status": True,
+            "details_notes": False,
+        },
+    })
+    assert response.status_code == 200
+    preview = response.json()["preview_text"]
+    assert included.json()["name"] in preview
+    assert excluded.json()["name"] not in preview
+    assert "PRIVATE_INCLUDED_NOTE" not in preview
+    assert "PRIVATE_EXCLUDED_NOTE" not in preview
+    assert included.json()["email"] not in preview
+
+
+def test_web_print_center_exports_pdf_docx_and_csv():
+    import secrets
+    suffix = secrets.token_hex(4).upper()
+    created = client.post("/api/employees", json={
+        "name": "Report Export " + suffix,
+        "employee_code": "RPT-OUT-" + suffix,
+        "department": "Export QA",
+    })
+    assert created.status_code == 200
+
+    base_payload = {
+        "date": date.today().isoformat(),
+        "report_type": "Employee Details",
+        "employee_id": created.json()["id"],
+        "options": {
+            "details_identity": True,
+            "details_contact": True,
+            "details_joining": True,
+            "details_status": True,
+            "details_notes": False,
+        },
+    }
+    csv_response = client.post("/api/reports/export", json={**base_payload, "output_format": "csv"})
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert csv_response.content.startswith(b"\xef\xbb\xbf")
+    assert b"Report Export " in csv_response.content
+
+    docx_response = client.post("/api/reports/export", json={**base_payload, "output_format": "docx"})
+    assert docx_response.status_code == 200
+    assert docx_response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    assert docx_response.content.startswith(b"PK")
+
+    pdf_response = client.post("/api/reports/export", json={**base_payload, "output_format": "pdf"})
+    assert pdf_response.status_code == 200
+    assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert pdf_response.content.startswith(b"%PDF-")

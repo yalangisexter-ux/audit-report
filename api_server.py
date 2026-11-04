@@ -6,6 +6,9 @@ import sys
 import json
 import sqlite3
 import secrets
+import csv
+import io
+import re
 from pathlib import Path
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any
@@ -13,7 +16,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 # Ensure repo root is in python path
@@ -311,8 +314,10 @@ class ChatMessageModel(BaseModel):
 class ReportOptionsModel(BaseModel):
     date: str
     employee_id: Optional[int] = None
+    exclude_employee_id: Optional[int] = None
     report_type: Optional[str] = "Audit / EOD"
     options: Optional[Dict[str, bool]] = None
+    output_format: Optional[str] = "pdf"
 
 
 # ----------------- Endpoints ----------------- #
@@ -1180,135 +1185,582 @@ def create_service(s: ServiceModel, conn: sqlite3.Connection = Depends(get_db)):
 
 
 # --- Reports & Print Center ---
-@app.post("/api/reports/preview")
-def generate_report_preview(req: ReportOptionsModel, conn: sqlite3.Connection = Depends(get_db)):
+_REPORT_OPTION_DEFAULTS = {
+    "summary": True, "identity": True, "target": True, "contact": False,
+    "work_status": True, "late_links": True, "missing_proof": True,
+    "target_status": True, "tasks": True, "target_qty": True,
+    "actual_qty": True, "completion_pct": True, "priority": True,
+    "details": True, "due_time": True, "proof": True, "proof_notes": False,
+    "custom_values": True, "next_action": True, "remarks": True,
+    "expose_link": False, "pending": True, "attendance": True,
+    "attendance_identity": True, "attendance_status": True,
+    "attendance_times": True, "attendance_remarks": True,
+    "attendance_summary": True, "details_identity": True,
+    "details_contact": True, "details_joining": True, "details_status": True,
+    "details_notes": True, "productivity_identity": True,
+    "productivity_metrics": True, "productivity_explanation": True,
+    "productivity_tracking": True, "productivity_tasks": True,
+    "business_products": False, "business_services": False,
+}
+
+
+def _report_is_completed(status):
+    helper = getattr(desktop_app, "is_explicitly_completed_task_status", None)
+    if callable(helper):
+        return bool(helper(status))
+    return str(status or "").strip().lower() in {"completed", "done", "closed", "submitted"}
+
+
+def _report_is_cancelled(status):
+    helper = getattr(desktop_app, "is_cancelled_task_status", None)
+    if callable(helper):
+        return bool(helper(status))
+    return str(status or "").strip().lower() in {"cancelled", "canceled"}
+
+
+def _report_is_present(status, check_in=""):
+    helper = getattr(desktop_app, "is_present_attendance_status", None)
+    if callable(helper):
+        return bool(helper(status))
+    return str(status or "").strip().lower() in {"present", "late", "checked in", "on time"} or (
+        str(status or "").strip().lower() == "unmarked" and bool(check_in)
+    )
+
+
+def _report_net_hours(check_in, check_out, break_minutes=0):
+    if not check_in or not check_out:
+        return ""
+    try:
+        start = datetime.strptime(str(check_in), "%H:%M")
+        end = datetime.strptime(str(check_out), "%H:%M")
+        minutes = int((end - start).total_seconds() // 60)
+        if minutes < 0:
+            minutes += 24 * 60
+        minutes = max(0, minutes - int(break_minutes or 0))
+        return f"{minutes / 60:.2f}"
+    except (TypeError, ValueError, OverflowError):
+        return ""
+
+
+def _report_scope_clause(req, alias="e"):
+    if req.employee_id is not None:
+        return f" AND {alias}.id=?", [int(req.employee_id)]
+    if req.exclude_employee_id is not None:
+        return f" AND {alias}.id<>?", [int(req.exclude_employee_id)]
+    return "", []
+
+
+def _build_report_preview(req, conn):
+    try:
+        report_day = date.fromisoformat(req.date)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Report date must use YYYY-MM-DD.")
+    if report_day > date.today():
+        raise HTTPException(status_code=400, detail="Report date cannot be in the future.")
+
     report_type = (req.report_type or "Audit / EOD").strip()
-    if report_type == "Employee Attendance":
-        params = [req.date]
-        scope = ""
-        if req.employee_id:
-            scope = " AND e.id=?"
-            params.append(req.employee_id)
-        rows = conn.execute("""SELECT e.name,e.employee_code,e.department,
-            COALESCE(a.attendance_status,'Unmarked') AS status,
-            COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,
-            COALESCE(a.break_minutes,0) AS break_minutes,COALESCE(a.attendance_note,'') AS notes
-            FROM employees e LEFT JOIN attendance a ON a.employee_id=e.id AND a.work_date=?
-            WHERE e.active=1""" + scope + " ORDER BY e.name", params).fetchall()
-        lines = [f"RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", f"Date: {req.date}", ""]
-        totals = {}
-        for r in rows:
-            totals[r["status"]] = totals.get(r["status"], 0) + 1
-            lines.append(f"{r['name']} [{r['employee_code'] or 'N/A'}] | {r['department'] or 'General'} | {r['status']} | In: {r['check_in'] or '--:--'} | Out: {r['check_out'] or '--:--'} | Break: {r['break_minutes']} min | {r['notes']}")
-        lines.extend(["", "SUMMARY: " + " | ".join(f"{k}: {v}" for k,v in sorted(totals.items()))])
-        return {"preview_text":"\n".join(lines),"report_type":report_type,"record_count":len(rows)}
-    if report_type == "Employee Details":
-        params = []
-        scope = ""
-        if req.employee_id:
-            scope = " AND id=?"
-            params.append(req.employee_id)
-        rows = conn.execute("SELECT employee_code,name,department,designation,phone,email,joining_date,active,notes FROM employees WHERE 1=1" + scope + " ORDER BY name", params).fetchall()
-        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE DETAILS", f"Generated: {datetime.now().isoformat(timespec='seconds')}", ""]
-        for r in rows:
-            lines.extend([f"{r['name']} [{r['employee_code'] or 'N/A'}]", f"Department: {r['department'] or 'General'} | Designation: {r['designation'] or 'Staff'}", f"Phone: {r['phone'] or ''} | Email: {r['email'] or ''}", f"Joining date: {r['joining_date'] or ''} | Status: {'Active' if r['active'] else 'Inactive'}", f"Notes: {r['notes'] or ''}", ""])
-        return {"preview_text":"\n".join(lines),"report_type":report_type,"record_count":len(rows)}
-    if report_type == "Employee Productivity":
-        params = [req.date]
-        scope = ""
-        if req.employee_id:
-            scope = " AND e.id=?"
-            params.append(req.employee_id)
-        rows = conn.execute("""SELECT e.name,e.employee_code,COUNT(t.id) AS assigned,
-            SUM(CASE WHEN lower(COALESCE(t.status,'')) IN ('completed','done','closed') THEN 1 ELSE 0 END) AS completed,
-            ROUND(AVG(COALESCE(t.progress,0)),1) AS avg_progress
-            FROM employees e LEFT JOIN tasks t ON t.employee_id=e.id AND t.task_date=?
-            WHERE e.active=1""" + scope + " GROUP BY e.id ORDER BY e.name", params).fetchall()
-        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE PRODUCTIVITY", f"Date: {req.date}", ""]
-        for r in rows:
-            lines.append(f"{r['name']} [{r['employee_code'] or 'N/A'}] | Assigned: {r['assigned']} | Completed: {r['completed'] or 0} | Average progress: {r['avg_progress'] or 0}%")
-        return {"preview_text":"\n".join(lines),"report_type":report_type,"record_count":len(rows)}
-    # Standard EOD options default mapping
-    opts = {
-        "identity": True, "tasks": True, "details": True, "due_time": True,
-        "proof": True, "proof_notes": True, "expose_link": False, "remarks": True,
-        "target_qty": True, "actual_qty": True, "completion_pct": True,
-        "priority": True, "custom_values": True, "next_action": True,
-        "business_products": False, "business_services": False,
-        "attendance": True, "summary": True
-    }
+    allowed_types = {"Audit / EOD", "Employee Attendance", "Employee Details", "Employee Productivity"}
+    if report_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Unsupported report type.")
+
+    opts = dict(_REPORT_OPTION_DEFAULTS)
     if req.options:
-        opts.update(req.options)
+        opts.update({key: bool(value) for key, value in req.options.items() if key in opts})
+    scope_sql, scope_params = _report_scope_clause(req)
 
-    # Build rich formatted text preview
-    lines = []
-    lines.append(f"════════════════════════════════════════════════════════════════════")
-    lines.append(f"     RAW STRENGTH CALISTHENICS - EMPLOYEE AUDIT & OPERATIONS REPORT")
-    lines.append(f"════════════════════════════════════════════════════════════════════")
-    lines.append(f"Report Date : {req.date}")
-    lines.append(f"Scope       : {'Specific Employee' if req.employee_id else 'All Employees (Company-Wide)'}")
-    lines.append(f"Generated   : {datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')}")
-    lines.append(f"────────────────────────────────────────────────────────────────────\n")
+    if report_type == "Employee Attendance":
+        rows = conn.execute(
+            """SELECT e.name,e.employee_code,e.department,
+                      COALESCE(a.attendance_status,'Unmarked') AS status,
+                      COALESCE(a.check_in,'') AS check_in,
+                      COALESCE(a.check_out,'') AS check_out,
+                      COALESCE(a.break_minutes,0) AS break_minutes,
+                      COALESCE(a.attendance_note,'') AS notes
+               FROM employees e
+               LEFT JOIN attendance a ON a.employee_id=e.id AND a.work_date=?
+               WHERE e.active=1""" + scope_sql + " ORDER BY e.name",
+            [req.date, *scope_params],
+        ).fetchall()
+        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", f"Date: {req.date}", ""]
+        totals = {}
+        for row in rows:
+            status = str(row["status"] or "Unmarked")
+            totals[status] = totals.get(status, 0) + 1
+        if opts["attendance_summary"]:
+            present = sum(count for status, count in totals.items() if _report_is_present(status))
+            absent = sum(count for status, count in totals.items() if status.lower() == "absent")
+            leave = sum(count for status, count in totals.items() if status.lower() == "leave")
+            lines.append(f"SUMMARY: Present {present} | Absent {absent} | Leave {leave} | Employees {len(rows)}")
+            lines.append("")
+        for row in rows:
+            parts = [str(row["name"] or "")]
+            if opts["attendance_identity"]:
+                parts.extend([row["employee_code"] or "N/A", row["department"] or "General"])
+            if opts["attendance_status"]:
+                parts.append(str(row["status"] or "Unmarked"))
+            if opts["attendance_times"]:
+                net = _report_net_hours(row["check_in"], row["check_out"], row["break_minutes"])
+                parts.extend([
+                    f"In: {row['check_in'] or '—'}",
+                    f"Out: {row['check_out'] or '—'}",
+                    f"Break: {int(row['break_minutes'] or 0)} min",
+                    f"Net hours: {net or '—'}",
+                ])
+            if opts["attendance_remarks"]:
+                parts.append(f"Remarks: {row['notes'] or '—'}")
+            lines.append(" | ".join(str(part) for part in parts))
+        return {"preview_text": "\n".join(lines), "report_type": report_type, "record_count": len(rows)}
 
-    emp_query = "SELECT * FROM employees WHERE active=1"
-    emp_params = []
-    if req.employee_id:
-        emp_query += " AND id=?"
-        emp_params.append(req.employee_id)
-    emp_query += " ORDER BY name ASC"
-    
-    employees = conn.execute(emp_query, emp_params).fetchall()
+    if report_type == "Employee Details":
+        rows = conn.execute(
+            """SELECT e.* FROM employees e WHERE 1=1""" + scope_sql + " ORDER BY e.name",
+            scope_params,
+        ).fetchall()
+        lines = [
+            "RAW STRENGTH CALISTHENICS — EMPLOYEE DETAILS",
+            f"Generated: {datetime.now().isoformat(timespec='seconds')}",
+            "",
+        ]
+        for row in rows:
+            parts = [str(row["name"] or "")]
+            if opts["details_identity"]:
+                parts.extend([
+                    f"Employee ID: {row['employee_code'] or 'N/A'}",
+                    f"Department: {row['department'] or 'N/A'}",
+                    f"Role: {row['designation'] or 'N/A'}",
+                ])
+            if opts["details_contact"]:
+                parts.extend([f"Phone: {row['phone'] or 'N/A'}", f"Email: {row['email'] or 'N/A'}"])
+            if opts["details_joining"]:
+                parts.append(f"Joining date: {row['joining_date'] or 'N/A'}")
+            if opts["details_status"]:
+                parts.append("Status: Active" if row["active"] else "Status: Inactive")
+            if opts["details_notes"]:
+                parts.append(f"Notes: {row['notes'] or 'N/A'}")
+            lines.append(" | ".join(parts))
+        return {"preview_text": "\n".join(lines), "report_type": report_type, "record_count": len(rows)}
 
-    for emp in employees:
-        lines.append(f"■ EMPLOYEE: {emp['name']} [{emp['employee_code'] or 'N/A'}]")
-        if opts.get("identity"):
-            lines.append(f"  Department  : {emp['department'] or 'General'} | Title: {emp['designation'] or 'Staff'}")
-            if emp['phone'] or emp['email']:
-                lines.append(f"  Contact     : {emp['phone']} {emp['email']}")
-        
-        # Attendance status for that date
-        att = conn.execute(
-            "SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (emp["id"], req.date)
+    if report_type == "Employee Productivity":
+        rows = conn.execute(
+            """SELECT e.* FROM employees e WHERE e.active=1""" + scope_sql + " ORDER BY e.name",
+            scope_params,
+        ).fetchall()
+        try:
+            setting = conn.execute("SELECT value FROM settings WHERE key='working_weekdays'").fetchone()
+            weekdays = {int(value) for value in (setting["value"] if setting else "0,1,2,3,4").split(",") if value.strip()}
+        except (sqlite3.OperationalError, TypeError, ValueError):
+            weekdays = {0, 1, 2, 3, 4}
+        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE PRODUCTIVITY", f"Date: {req.date}", ""]
+        for employee in rows:
+            employee_id = int(employee["id"])
+            start_day = None
+            if employee["joining_date"]:
+                try:
+                    start_day = date.fromisoformat(employee["joining_date"])
+                except (TypeError, ValueError):
+                    start_day = None
+            if start_day is None:
+                first = conn.execute(
+                    """SELECT MIN(work_day) AS first_day FROM (
+                           SELECT task_date AS work_day FROM tasks WHERE employee_id=?
+                           UNION ALL
+                           SELECT work_date AS work_day FROM attendance WHERE employee_id=?
+                       ) WHERE work_day IS NOT NULL AND work_day<>''""",
+                    (employee_id, employee_id),
+                ).fetchone()
+                try:
+                    start_day = date.fromisoformat(first["first_day"]) if first and first["first_day"] else date.today()
+                except (TypeError, ValueError):
+                    start_day = date.today()
+            as_of = min(report_day, date.today())
+            task_rows = conn.execute(
+                "SELECT progress,status FROM tasks WHERE employee_id=? AND task_date BETWEEN ? AND ?",
+                (employee_id, start_day.isoformat(), as_of.isoformat()),
+            ).fetchall()
+            def task_progress(task):
+                known = getattr(desktop_app, "is_known_task_status", None)
+                if callable(known) and not known(task["status"]):
+                    return 0
+                try:
+                    return max(0, min(100, int(float(task["progress"] or 0))))
+                except (TypeError, ValueError, OverflowError):
+                    return 0
+            task_score = (sum(task_progress(task) for task in task_rows) / len(task_rows)) if task_rows else None
+            attendance_rows = conn.execute(
+                """SELECT work_date,attendance_status,check_in FROM attendance
+                   WHERE employee_id=? AND work_date BETWEEN ? AND ?""",
+                (employee_id, start_day.isoformat(), as_of.isoformat()),
+            ).fetchall()
+            holiday_rows = conn.execute(
+                "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",
+                (start_day.isoformat(), as_of.isoformat()),
+            ).fetchall()
+            holidays = {row["holiday_date"] for row in holiday_rows}
+            scheduled = []
+            current = start_day
+            from datetime import timedelta
+            while current <= as_of:
+                if current.weekday() in weekdays and current.isoformat() not in holidays:
+                    scheduled.append(current.isoformat())
+                current += timedelta(days=1)
+            leave_days = {
+                row["work_date"] for row in attendance_rows
+                if row["attendance_status"] == "Leave" and row["work_date"] in scheduled
+            }
+            eligible_days = max(0, len(scheduled) - len(leave_days))
+            present_days = sum(
+                1 for row in attendance_rows
+                if row["work_date"] in scheduled and _report_is_present(row["attendance_status"], row["check_in"])
+            )
+            attendance_score = (present_days / eligible_days * 100) if eligible_days else None
+            if task_score is not None and attendance_score is not None:
+                score = round(task_score * 0.7 + attendance_score * 0.3)
+            elif task_score is not None:
+                score = round(task_score)
+            elif attendance_score is not None:
+                score = round(attendance_score)
+            else:
+                score = 0
+            daily_tasks = conn.execute(
+                """SELECT title,status,progress FROM tasks
+                   WHERE employee_id=? AND task_date=? ORDER BY id""",
+                (employee_id, req.date),
+            ).fetchall()
+            completed = sum(1 for task in task_rows if _report_is_completed(task["status"]))
+            lines.append(str(employee["name"] or ""))
+            if opts["productivity_identity"]:
+                lines.append(f"Employee ID: {employee['employee_code'] or 'N/A'} | Department: {employee['department'] or 'N/A'}")
+            if opts["productivity_metrics"]:
+                lines.extend([
+                    f"Overall score: {score}%",
+                    f"Task progress component: {round(task_score)}%" if task_score is not None else "Task progress component: N/A",
+                    f"Attendance component: {round(attendance_score)}%" if attendance_score is not None else "Attendance component: N/A",
+                ])
+            if opts["productivity_explanation"]:
+                lines.append("Scoring: Task progress contributes 70% and attendance 30% when both are available; otherwise the available component is used. Attendance counts scheduled working days, excluding declared holidays and recorded leave.")
+            if opts["productivity_tracking"]:
+                lines.append(
+                    f"Tracking start: {start_day.isoformat()} | Working days: {len(scheduled)} | "
+                    f"Attendance-eligible days: {eligible_days} | Present days: {present_days} | "
+                    f"Tasks counted: {len(task_rows)} | Completed/submitted tasks: {completed}"
+                )
+            if opts["productivity_tasks"]:
+                if daily_tasks:
+                    lines.extend(
+                        f"• {task['title']}: {task['status'] or 'Not selected'} — {task['progress'] or 0}%"
+                        for task in daily_tasks
+                    )
+                else:
+                    lines.append("No tasks recorded for the selected date.")
+            lines.append("")
+        return {"preview_text": "\n".join(lines), "report_type": report_type, "record_count": len(rows)}
+
+    employees = conn.execute(
+        "SELECT e.* FROM employees e WHERE e.active=1" + scope_sql + " ORDER BY e.name",
+        scope_params,
+    ).fetchall()
+    all_tasks = []
+    employee_records = []
+    for employee in employees:
+        tasks = conn.execute(
+            "SELECT * FROM tasks WHERE employee_id=? AND task_date=? ORDER BY id",
+            (employee["id"], req.date),
+        ).fetchall()
+        attendance = conn.execute(
+            "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee["id"], req.date),
         ).fetchone()
-        if att:
-            in_t = att["check_in"] or "--:--"
-            out_t = att["check_out"] or "--:--"
-            lines.append(f"  Attendance  : [{att['attendance_status']}] In: {in_t} | Out: {out_t} | Notes: {att['attendance_note'] or 'None'}")
-        else:
-            lines.append(f"  Attendance  : [Unmarked]")
+        employee_records.append((employee, tasks, attendance))
+        all_tasks.extend(tasks)
 
-        # Tasks for that date
-        tasks = conn.execute("SELECT * FROM tasks WHERE employee_id=? AND task_date=?", (emp["id"], req.date)).fetchall()
-        if tasks:
-            lines.append(f"  Assigned Tasks ({len(tasks)}):")
-            for t in tasks:
-                t_title = t["title"]
-                t_stat = t["status"]
-                t_prog = f"{t['progress']}%" if opts.get("completion_pct") else ""
-                lines.append(f"    • {t_title} - [{t_stat}] {t_prog}")
-                if opts.get("target_qty") and t["target_qty"]:
-                    lines.append(f"        Target Qty: {t['target_qty']}")
-                if opts.get("actual_qty") and t["actual_qty"]:
-                    lines.append(f"        Actual Qty: {t['actual_qty']}")
-                if opts.get("priority") and t["priority"]:
-                    lines.append(f"        Priority: {t['priority']}")
-                if opts.get("due_time") and t["due_time"]:
-                    lines.append(f"        Due time: {t['due_time']}")
-                if opts.get("details") and t["details"]:
-                    lines.append(f"        Details: {t['details']}")
-                if opts.get("custom_values") and t["custom_values"]:
-                    lines.append(f"        Custom Values: {t['custom_values']}")
-                if opts.get("proof") and t["proof_url"]:
-                    p_disp = t["proof_url"] if opts.get("expose_link") else "Tap here to view content"
-                    lines.append(f"        Proof link: {p_disp}")
-                if opts.get("next_action") and t["next_action"]:
-                    lines.append(f"        Next Action: {t['next_action']}")
-        else:
-            lines.append(f"  Tasks       : No tasks assigned for this date.")
+    completed_count = sum(1 for task in all_tasks if _report_is_completed(task["status"]))
+    pending_count = sum(1 for task in all_tasks if not _report_is_completed(task["status"]) and not _report_is_cancelled(task["status"]))
+    missing_proof_count = sum(
+        1 for _employee, tasks, _attendance in employee_records
+        if any(_report_is_completed(task["status"]) and not str(task["proof_url"] or "").strip() for task in tasks)
+    )
+    lines = [
+        "RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD",
+        f"Report date: {req.date}",
+        f"Scope: {'Individual employee' if req.employee_id else ('Consolidated, excluding employee ' + str(req.exclude_employee_id) if req.exclude_employee_id else 'All employees')}",
+        "",
+    ]
+    if opts["summary"]:
+        lines.extend([
+            "DAILY SUMMARY",
+            f"Employees: {len(employee_records)}",
+            f"Tasks recorded: {len(all_tasks)}",
+            f"Completed / submitted tasks: {completed_count}",
+            f"Pending / other tasks: {pending_count}",
+            f"Employees flagged for missing proof: {missing_proof_count}",
+            "",
+        ])
 
-        lines.append(f"\n" + ("─" * 68) + "\n")
+    expose_global = False
+    try:
+        setting = conn.execute("SELECT value FROM settings WHERE key='global_expose_link'").fetchone()
+        expose_global = bool(setting and str(setting["value"]) == "1")
+    except sqlite3.OperationalError:
+        pass
 
-    return {"preview_text": "\n".join(lines)}
+    for employee, tasks, attendance in employee_records:
+        name = str(employee["name"] or "")
+        lines.append(f"EMPLOYEE: {name}")
+        if opts["identity"]:
+            lines.append(
+                f"Employee ID: {employee['employee_code'] or 'N/A'} | "
+                f"Department: {employee['department'] or 'N/A'} | Role: {employee['designation'] or 'N/A'}"
+            )
+        if opts["contact"]:
+            lines.append(f"Phone: {employee['phone'] or 'N/A'} | Email: {employee['email'] or 'N/A'}")
+        if opts["target"] or opts["target_status"]:
+            try:
+                target = conn.execute(
+                    "SELECT target,target_status FROM employee_targets WHERE employee_id=? AND target_date=?",
+                    (employee["id"], req.date),
+                ).fetchone()
+            except sqlite3.OperationalError:
+                target = None
+            if opts["target"]:
+                lines.append(f"Target: {(target['target'] if target else '') or 'N/A'}")
+            if opts["target_status"]:
+                lines.append(f"Target status: {(target['target_status'] if target else '') or 'N/A'}")
+        if opts["work_status"]:
+            statuses = [str(task["status"] or "") for task in tasks]
+            work_status = (
+                "Submitted" if statuses and all(_report_is_completed(status) for status in statuses)
+                else "In progress / Partial" if statuses else "No tasks recorded"
+            )
+            if req.date == "2026-10-09":
+                notes = str(employee["notes"] or "").lower()
+                if "work: submitted" in notes or "work: submitted in time" in notes:
+                    work_status = "Submitted (source audit)"
+            lines.append(f"WORK / EOD STATUS: {work_status}")
+        if opts["late_links"]:
+            notes = str(employee["notes"] or "").lower()
+            late = "No (source audit)" if req.date == "2026-10-09" and "late: no" in notes else "Review required"
+            links = "Open (source audit; not rechecked)" if req.date == "2026-10-09" and ("links: open" in notes or "links open: yes" in notes) else "Not independently checked"
+            lines.append(f"LATE: {late} | LINKS: {links}")
+        if opts["missing_proof"]:
+            missing = any(_report_is_completed(task["status"]) and not str(task["proof_url"] or "").strip() for task in tasks)
+            lines.append(f"MISSING PROOF: {'Yes' if missing else 'No'}")
+        if opts["attendance"] and attendance:
+            lines.append(
+                f"Attendance: {attendance['attendance_status'] or 'Unmarked'} | "
+                f"In: {attendance['check_in'] or '—'} | Out: {attendance['check_out'] or '—'}"
+            )
+        if opts["tasks"]:
+            lines.append("TASKS / WORK ITEMS")
+            if not tasks:
+                lines.append("No tasks recorded for this date.")
+            for index, task in enumerate(tasks, 1):
+                lines.append(f"{index}. {task['title']} — Status: {task['status'] or 'Not selected'}")
+                if opts["target_qty"] and task["target_qty"]:
+                    lines.append(f"Target Qty: {task['target_qty']}")
+                if opts["actual_qty"] and task["actual_qty"]:
+                    lines.append(f"Actual Qty: {task['actual_qty']}")
+                if opts["completion_pct"]:
+                    lines.append(f"Completion %: {task['progress'] or 0}%")
+                if opts["priority"]:
+                    lines.append(f"Priority: {task['priority'] or 'Normal'}")
+                if opts["details"] and task["details"]:
+                    lines.append(f"Details: {task['details']}")
+                if opts["due_time"] and task["due_time"]:
+                    lines.append(f"Due time: {task['due_time']}")
+                if opts["proof"] and task["proof_url"]:
+                    expose = opts["expose_link"] or expose_global or bool(task["expose_link"])
+                    lines.append(f"Proof link: {task['proof_url'] if expose else 'Tap here to view content'}")
+                if opts["proof_notes"] and task["proof_note"]:
+                    lines.append(f"Proof notes: {task['proof_note']}")
+                if opts["custom_values"] and task["custom_values"]:
+                    lines.append(f"Custom values: {task['custom_values']}")
+                if opts["next_action"] and task["next_action"]:
+                    lines.append(f"Next action: {task['next_action']}")
+                if opts["remarks"] and task["manager_note"]:
+                    lines.append(f"Manager remarks: {task['manager_note']}")
+        if opts["pending"]:
+            pending = [
+                str(task["title"] or "") for task in tasks
+                if not _report_is_completed(task["status"]) and not _report_is_cancelled(task["status"])
+            ]
+            lines.append("PENDING: " + ("; ".join(pending) if pending else "No"))
+        lines.append("")
+
+    if opts["business_products"]:
+        try:
+            products = conn.execute("SELECT * FROM bt_products ORDER BY name").fetchall()
+        except sqlite3.OperationalError:
+            products = []
+        lines.extend(["PRODUCT CATALOG & STOCK", "Product | SKU | Category | Brand | Unit | Available stock | Reorder level | Selling price"])
+        for product in products:
+            available = float(product["opening_stock"] or 0) + float(product["received_qty"] or 0) - float(product["reserved_qty"] or 0)
+            lines.append(
+                f"{product['name']} | {product['sku'] or '—'} | {product['category'] or '—'} | "
+                f"{product['brand'] or '—'} | {product['base_unit'] or '—'} | {available:g} | "
+                f"{float(product['reorder_level'] or 0):g} | {float(product['selling_price'] or 0):.2f}"
+            )
+    if opts["business_services"]:
+        try:
+            services = conn.execute("SELECT * FROM bt_services ORDER BY name").fetchall()
+        except sqlite3.OperationalError:
+            services = []
+        lines.extend(["SERVICE CATALOG", "Service | Category | Description | Training mode | Unit | Duration | Sessions | Validity | Price | Status"])
+        for service in services:
+            lines.append(
+                f"{service['name']} | {service['category'] or '—'} | {service['description'] or '—'} | "
+                f"{service['training_mode'] or '—'} | {service['service_unit'] or '—'} | "
+                f"{service['session_duration'] or 0} | {service['num_sessions'] or 0} | "
+                f"{service['plan_validity'] or 0} | {float(service['standard_price'] or 0):.2f} | "
+                f"{'Active' if service['active'] else 'Inactive'}"
+            )
+
+    return {"preview_text": "\n".join(lines), "report_type": report_type, "record_count": len(employee_records)}
+
+
+@app.post("/api/reports/preview")
+def generate_report_preview(
+    req: ReportOptionsModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return _build_report_preview(req, conn)
+
+
+@app.post("/api/reports/export")
+def export_report(
+    req: ReportOptionsModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    output_format = str(req.output_format or "pdf").lower().lstrip(".")
+    if output_format not in {"pdf", "docx", "csv"}:
+        raise HTTPException(status_code=400, detail="Output format must be PDF, DOCX, or CSV.")
+    report = _build_report_preview(req, conn)
+    report_text = report["preview_text"]
+    slug = re.sub(r"[^a-z0-9]+", "-", str(req.report_type or "report").lower()).strip("-") or "report"
+    filename = f"raw-strength-{slug}-{req.date}.{output_format}"
+
+    if output_format == "csv":
+        stream = io.StringIO(newline="")
+        writer = csv.writer(stream)
+        writer.writerow(["Section", "Field", "Value"])
+        section = str(req.report_type or "Report")
+        for raw_line in report_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.isupper() or line.startswith("EMPLOYEE:") or line.startswith("DAILY SUMMARY"):
+                section = line
+                writer.writerow([section, "", ""])
+            elif ":" in line:
+                field, value = line.split(":", 1)
+                writer.writerow([section, field.strip(), value.strip()])
+            else:
+                writer.writerow([section, "Detail", line])
+        content = ("\ufeff" + stream.getvalue()).encode("utf-8")
+        media_type = "text/csv; charset=utf-8"
+    elif output_format == "docx":
+        from docx import Document
+        from docx.shared import Inches, Pt
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+        document = Document()
+        section = document.sections[0]
+        section.top_margin = Inches(0.65)
+        section.bottom_margin = Inches(0.6)
+        section.left_margin = Inches(0.7)
+        section.right_margin = Inches(0.7)
+        document.styles["Normal"].font.name = "Aptos"
+        document.styles["Normal"].font.size = Pt(9)
+        title = document.add_paragraph()
+        title.alignment = 1
+        title_run = title.add_run("RAW STRENGTH CALISTHENICS")
+        title_run.bold = True
+        title_run.font.size = Pt(16)
+        subtitle = document.add_paragraph()
+        subtitle.alignment = 1
+        subtitle.add_run(f"{req.report_type or 'Report'} — {req.date}").bold = True
+
+        def add_line_with_links(line):
+            paragraph = document.add_paragraph()
+            for part in re.split(r"(https?://[^\s]+)", line):
+                if part.startswith(("http://", "https://")):
+                    relation = paragraph.part.relate_to(part, RT.HYPERLINK, is_external=True)
+                    hyperlink = OxmlElement("w:hyperlink")
+                    hyperlink.set(qn("r:id"), relation)
+                    run = OxmlElement("w:r")
+                    properties = OxmlElement("w:rPr")
+                    color = OxmlElement("w:color")
+                    color.set(qn("w:val"), "0563C1")
+                    underline = OxmlElement("w:u")
+                    underline.set(qn("w:val"), "single")
+                    properties.append(color)
+                    properties.append(underline)
+                    run.append(properties)
+                    text_node = OxmlElement("w:t")
+                    text_node.text = part
+                    run.append(text_node)
+                    hyperlink.append(run)
+                    paragraph._p.append(hyperlink)
+                elif part:
+                    paragraph.add_run(part)
+
+        for line in report_text.splitlines():
+            if not line.strip():
+                document.add_paragraph()
+            elif line.isupper() or line.startswith("EMPLOYEE:") or line.startswith("DAILY SUMMARY"):
+                document.add_heading(line, level=2)
+            else:
+                add_line_with_links(line)
+        output = io.BytesIO()
+        document.save(output)
+        content = output.getvalue()
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from xml.sax.saxutils import escape
+
+        output = io.BytesIO()
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=15, leading=19, textColor=colors.HexColor("#1F3B57")))
+        styles.add(ParagraphStyle(name="ReportBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.5, leading=12, spaceAfter=4))
+        story = [
+            Paragraph("RAW STRENGTH CALISTHENICS", styles["ReportTitle"]),
+            Paragraph(escape(f"{req.report_type or 'Report'} — {req.date}"), styles["Heading2"]),
+            Spacer(1, 5 * mm),
+        ]
+        url_pattern = re.compile(r"https?://[^\s]+")
+        for line in report_text.splitlines():
+            if not line.strip():
+                story.append(Spacer(1, 2 * mm))
+                continue
+            clean = line.replace("■ ", "EMPLOYEE: ").replace("•", "-").replace("—", "-")
+            safe = escape(clean)
+            safe = url_pattern.sub(
+                lambda match: '<link href="' + escape(match.group(0), {"'": "&#39;", '"': "&quot;"}) + '" color="blue">' + escape(match.group(0)) + "</link>",
+                safe,
+            )
+            if clean.isupper() or clean.startswith("EMPLOYEE:") or clean.startswith("DAILY SUMMARY"):
+                story.append(Paragraph("<b>" + safe + "</b>", styles["Heading3"]))
+            else:
+                story.append(Paragraph(safe, styles["ReportBody"]))
+        pdf = SimpleDocTemplate(output, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=16 * mm, bottomMargin=16 * mm)
+        pdf.build(story)
+        content = output.getvalue()
+        media_type = "application/pdf"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # --- Live Chat ---

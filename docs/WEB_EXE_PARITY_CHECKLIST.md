@@ -73,3 +73,14 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 
 - Compare the desktop employee/date selector, task summary/progress, task table and add/edit/delete/open-proof actions with the web tracker.
 - Preserve the shared Task Manager permission and evidence-link behavior; do not create a second task data model.
+
+
+## Print Center web milestone — report controls and export endpoints added; parity verification pending
+
+- Added a dedicated responsive React Print Center with the Windows report types: Audit / EOD, Employee Attendance, Employee Details, and Employee Productivity.
+- Added consolidated and individual employee scope, report-only employee exclusion, date selection, and Word/PDF/CSV output selection.
+- Added report-specific include/exclude controls for identity, contact, attendance fields, productivity metrics, task fields, proof links, remarks, employee notes, and optional product/service catalogs.
+- Added authenticated /api/reports/preview and /api/reports/export operations. Preview and export share the same report filters/options. Exclusion is a query filter only and never modifies employee records.
+- DOCX and PDF exports retain exposed evidence URLs as clickable links; CSV exports preserve the report's sections and fields as section/field/value rows.
+- Added regression tests for employee exclusion, hidden private notes, and PDF/DOCX/CSV response formats.
+- Remaining: run the full regression suite and Windows build; compare generated document layout/tables and all report field values side-by-side with the EXE; verify evidence-link exposure settings against the same customer database; test report permissions in production. Do not mark Print Center Complete until these checks pass.
