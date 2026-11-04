@@ -326,6 +326,33 @@ class WebDatabaseSync:
             return False
         try:
             result = self._pull_merge()
+            remote_auth_users = int(self.last_pull.get("auth_users") or 0)
+            remote_employees = int(self.last_pull.get("employees") or 0)
+            remote_tasks = int(self.last_pull.get("tasks") or 0)
+            local_auth_users = 0
+            try:
+                local = sqlite3.connect(str(self.db_path), timeout=10)
+                try:
+                    local_auth_users = int(
+                        local.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
+                    )
+                finally:
+                    local.close()
+            except sqlite3.Error:
+                local_auth_users = 0
+
+            # Business records without any account rows do not prove that this is
+            # the customer's correct installation snapshot. Keep first-admin setup
+            # disabled until the matching account-bearing installation is restored.
+            if remote_auth_users == 0 and local_auth_users == 0 and (remote_employees or remote_tasks):
+                self.status = "Snapshot has business data but no customer login accounts"
+                self.last_pull["ok"] = False
+                self.last_pull["error"] = (
+                    "The selected installation snapshot contains business records but zero active login users. "
+                    "Restore the correct customer installation snapshot; first-admin setup remains disabled."
+                )
+                return False
+
             self.status = "Connected to encrypted installation snapshot"
             if result["changed"]:
                 self.sync.mark_pending()
