@@ -670,27 +670,72 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
 
 @app.post("/api/attendance/mark")
 def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depends(get_db)):
+    """Persist one employee's attendance for the explicitly selected working date."""
     now = desktop_app.now_text()
-    work_date = item.work_date or date.today().isoformat()
-    status = item.status or item.attendance_status or "Present"
-    note = item.notes or item.attendance_note or ""
-    check_in = (item.check_in or "").strip()
-    if check_in and str(status).strip().casefold() in {"absent", "unmarked", ""}:
+    work_date = str(item.work_date or date.today().isoformat()).strip()
+    try:
+        work_date = date.fromisoformat(work_date).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
+
+    employee = conn.execute("SELECT id FROM employees WHERE id=?", (item.employee_id,)).fetchone()
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    fields_set = getattr(item, "model_fields_set", None)
+    if fields_set is None:
+        fields_set = getattr(item, "__fields_set__", set())
+    old = conn.execute(
+        "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+        (item.employee_id, work_date),
+    ).fetchone()
+
+    status = str(item.status or item.attendance_status or "Present").strip()
+    note = (
+        item.notes if "notes" in fields_set else
+        item.attendance_note if "attendance_note" in fields_set else
+        (old["attendance_note"] if old else "")
+    ) or ""
+    check_in = (
+        str(item.check_in or "").strip() if "check_in" in fields_set
+        else str(old["check_in"] or "").strip() if old else ""
+    )
+    check_out = (
+        str(item.check_out or "").strip() if "check_out" in fields_set
+        else str(old["check_out"] or "").strip() if old else ""
+    )
+    break_minutes = (
+        max(0, int(item.break_minutes or 0)) if "break_minutes" in fields_set
+        else int(old["break_minutes"] or 0) if old else 0
+    )
+
+    if status.casefold() in {"absent", "leave", "unmarked"}:
+        check_in = check_out = ""
+    elif (check_in or check_out) and not desktop_app.is_present_attendance_status(status):
         status = "Present"
+    if check_out and not check_in:
+        raise HTTPException(status_code=422, detail="Check-out requires a check-in")
+
     conn.execute(
-        """INSERT INTO attendance(employee_id, work_date, attendance_status, check_in, check_out, break_minutes, attendance_note, updated_at)
-           VALUES(?,?,?,?,?,?,?,?)
+        """INSERT INTO attendance(
+               employee_id, work_date, attendance_status, check_in, check_out,
+               break_minutes, attendance_note, updated_at
+           ) VALUES(?,?,?,?,?,?,?,?)
            ON CONFLICT(employee_id, work_date) DO UPDATE SET
                attendance_status=excluded.attendance_status,
-               check_in=CASE WHEN excluded.check_in != '' THEN excluded.check_in ELSE attendance.check_in END,
-               check_out=CASE WHEN excluded.check_out != '' THEN excluded.check_out ELSE attendance.check_out END,
+               check_in=excluded.check_in,
+               check_out=excluded.check_out,
                break_minutes=excluded.break_minutes,
                attendance_note=excluded.attendance_note,
                updated_at=excluded.updated_at""",
-        (item.employee_id, work_date, status, item.check_in or "", item.check_out or "", item.break_minutes or 0, note, now)
+        (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now)
     )
     conn.commit()
-    return {"success": True}
+    saved = conn.execute(
+        "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+        (item.employee_id, work_date),
+    ).fetchone()
+    return {"success": True, "attendance": dict(saved)}
 
 @app.post("/api/attendance/bulk")
 def bulk_attendance(
@@ -706,6 +751,8 @@ def bulk_attendance(
                VALUES(?,?,?,?)
                ON CONFLICT(employee_id, work_date) DO UPDATE SET
                    attendance_status=excluded.attendance_status,
+                   check_in=CASE WHEN excluded.attendance_status IN ('Absent','Leave','Unmarked') THEN '' ELSE attendance.check_in END,
+                   check_out=CASE WHEN excluded.attendance_status IN ('Absent','Leave','Unmarked') THEN '' ELSE attendance.check_out END,
                    updated_at=excluded.updated_at""",
             (emp["id"], work_date, status, now)
         )
