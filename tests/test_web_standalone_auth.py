@@ -1,0 +1,78 @@
+"""Regression coverage for standalone web login and protected API sessions."""
+import sqlite3
+from datetime import datetime
+
+from fastapi.testclient import TestClient
+
+import app as desktop_app
+import api_server as api
+import web_auth_shim  # registers the production web login route
+
+
+def test_standalone_login_token_authenticates_protected_api(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEB_STANDALONE", "1")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    db_path = tmp_path / "standalone-auth.db"
+    password = "Customer-Admin-Test-Password"
+    salt, password_hash = desktop_app.hash_pin(password)
+
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL COLLATE BINARY,
+            display_name TEXT,
+            role TEXT,
+            password_salt TEXT,
+            password_hash TEXT,
+            active INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE web_auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """INSERT INTO auth_users
+           (id, username, display_name, role, password_salt, password_hash, active)
+           VALUES (1, 'Admin', 'Customer Administrator', 'Admin', ?, ?, 1)""",
+        (salt, password_hash),
+    )
+    conn.commit()
+    conn.close()
+
+    def override_get_db():
+        db = sqlite3.connect(db_path, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api.app.dependency_overrides[api.get_db] = override_get_db
+    try:
+        client = TestClient(api.app)
+        login = client.post(
+            "/api/auth/login",
+            json={"username": "Admin", "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["token"]
+        assert token
+
+        me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert me.status_code == 200, me.text
+        assert me.json()["user"]["username"] == "Admin"
+        assert me.json()["user"]["role"] == "Admin"
+
+        stored = sqlite3.connect(db_path)
+        try:
+            assert stored.execute("SELECT COUNT(*) FROM web_auth_sessions").fetchone()[0] == 1
+        finally:
+            stored.close()
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
