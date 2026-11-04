@@ -9902,11 +9902,8 @@ class MainWindow(QMainWindow):
             self.db.github_sync._on_dirty_callback = lambda: self.schedule_auto_sync(delay_ms=2000)
 
         QTimer.singleShot(1500, self._background_auto_sync)
-        # Reconcile remote changes continuously while the desktop app is open.
-        self._continuous_sync_timer = QTimer(self)
-        self._continuous_sync_timer.setInterval(30000)
-        self._continuous_sync_timer.timeout.connect(self._background_auto_sync)
-        self._continuous_sync_timer.start()
+        # The primary 30-second timer above is the single periodic reconciliation loop.
+        # Avoid a second timer firing the same worker concurrently.
 
     def schedule_auto_sync(self, delay_ms=2500, immediate=False, developer_authorized=False):
         if is_developer_test_user(getattr(self, "current_user", None)) and not developer_authorized:
@@ -9933,6 +9930,7 @@ class MainWindow(QMainWindow):
 
         def run_sync_thread():
             raw = None
+            merge_handed_off = False
             try:
                 try:
                     raw = sync.download_latest_snapshot(prefer_latest=True)
@@ -9945,6 +9943,8 @@ class MainWindow(QMainWindow):
                     with tempfile.NamedTemporaryFile(prefix="rsc_autosync_", suffix=".sqlite3", delete=False) as h:
                         tpath = Path(h.name)
                         h.write(raw)
+                    # Keep the worker guard held until the GUI-thread merge completes.
+                    merge_handed_off = True
                     QTimer.singleShot(0, lambda: self._apply_snapshot_merge(tpath))
                     return
 
@@ -9953,7 +9953,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logging.getLogger("auto_sync").debug(f"Auto-sync worker note: {e}")
             finally:
-                self._auto_sync_running = False
+                if not merge_handed_off:
+                    self._auto_sync_running = False
 
         threading.Thread(target=run_sync_thread, name="auto-sync-thread", daemon=True).start()
 
