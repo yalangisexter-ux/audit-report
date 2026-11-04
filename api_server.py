@@ -92,6 +92,18 @@ def ensure_database():
                 from web_db_migrations import ensure_case_sensitive_auth_users
                 if ensure_case_sensitive_auth_users(desktop_app.DB_PATH):
                     print("[Web DB] Migrated auth_users to exact case-sensitive usernames; all credentials preserved")
+            if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+                db.conn.execute("""
+                    CREATE TABLE IF NOT EXISTS web_auth_sessions (
+                        token_hash TEXT PRIMARY KEY,
+                        user_id INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        FOREIGN KEY(user_id) REFERENCES auth_users(id) ON DELETE CASCADE
+                    )
+                """)
+                db.conn.execute("CREATE INDEX IF NOT EXISTS idx_web_auth_sessions_expiry ON web_auth_sessions(expires_at)")
+                db.conn.commit()
             if hasattr(db, "close_github_sync"):
                 db.close_github_sync(timeout=0)
             if hasattr(db, "conn") and db.conn:
@@ -145,7 +157,17 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
         scheme, _, value = authorization.partition(" ")
         if scheme.lower() == "bearer":
             token = value.strip()
-    if token and token in ACTIVE_SESSIONS:
+    if token and os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        token_hash = __import__("hashlib").sha256(token.encode("utf-8")).hexdigest()
+        session = conn.execute(
+            """SELECT u.id, u.username, u.display_name, u.role
+               FROM web_auth_sessions s JOIN auth_users u ON u.id=s.user_id
+               WHERE s.token_hash=? AND s.expires_at>? AND u.active=1""",
+            (token_hash, datetime.now().isoformat(timespec="seconds")),
+        ).fetchone()
+        if session:
+            return dict(session)
+    elif token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
     if os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes"):
         raise HTTPException(status_code=401, detail="Login required")
@@ -308,7 +330,19 @@ def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
         "display_name": row["display_name"] or row["username"],
         "role": row["role"],
     }
-    ACTIVE_SESSIONS[token] = user_info
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        import hashlib
+        from datetime import timedelta
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        created_at = datetime.now()
+        conn.execute(
+            "INSERT INTO web_auth_sessions(token_hash, user_id, created_at, expires_at) VALUES(?,?,?,?)",
+            (token_hash, row["id"], created_at.isoformat(timespec="seconds"),
+             (created_at + timedelta(days=30)).isoformat(timespec="seconds")),
+        )
+        conn.commit()
+    else:
+        ACTIVE_SESSIONS[token] = user_info
     return {"token": token, "user": user_info}
 
 @app.get("/api/auth/me")
