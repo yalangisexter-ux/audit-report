@@ -159,6 +159,61 @@ def test_api_attendance_and_holidays():
     assert h_res.status_code == 200
     assert isinstance(h_res.json(), list)
 
+def test_api_attendance_saves_selected_date_and_clears_absent_times():
+    import secrets
+    import sqlite3
+
+    employee_res = client.post("/api/employees", json={
+        "name": "Attendance API Regression",
+        "employee_code": f"ATT-{secrets.token_hex(3).upper()}",
+        "department": "Testing",
+    })
+    assert employee_res.status_code == 200
+    employee_id = employee_res.json()["id"]
+    work_date = "2026-11-03"
+
+    present_res = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_date,
+        "attendance_status": "Present",
+        "check_in": "09:00",
+        "check_out": "18:00",
+        "break_minutes": 30,
+        "attendance_note": "Regression test",
+    })
+    assert present_res.status_code == 200
+    assert present_res.json()["attendance"]["work_date"] == work_date
+
+    absent_res = client.post("/api/attendance/mark", json={
+        "employee_id": employee_id,
+        "work_date": work_date,
+        "attendance_status": "Absent",
+    })
+    assert absent_res.status_code == 200
+    saved = absent_res.json()["attendance"]
+    assert saved["attendance_status"] == "Absent"
+    assert saved["check_in"] == ""
+    assert saved["check_out"] == ""
+
+    roster_res = client.get(f"/api/attendance?work_date={work_date}")
+    assert roster_res.status_code == 200
+    roster = next(row for row in roster_res.json()["roster"] if row["employee_id"] == employee_id)
+    assert roster_res.json()["date"] == work_date
+    assert roster["attendance_status"] == "Absent"
+    assert roster["check_in"] == ""
+    assert roster["check_out"] == ""
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        row = connection.execute(
+            "SELECT work_date, attendance_status, check_in, check_out FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, work_date),
+        ).fetchone()
+        assert row == (work_date, "Absent", "", "")
+    finally:
+        connection.close()
+
+
 def test_api_business_tracking():
     # Products
     p_res = client.get("/api/business/products")
