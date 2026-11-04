@@ -5,7 +5,6 @@ on:
     paths:
       - "tools/phase1_chunks/**"
       - "tools/assemble_phase1_apply.py"
-      - ".github/workflows/apply-phase1-parity.yml"
       - "tools/TRIGGER_PHASE1_PARITY"
   workflow_dispatch:
 permissions:

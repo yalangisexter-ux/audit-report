@@ -3,7 +3,6 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/apply-phase1-dashboard.yml"
       - "tools/TRIGGER_PHASE1_DASH"
   workflow_dispatch:
 permissions:

@@ -4,7 +4,6 @@ on:
     branches: [main]
     paths:
       - "tools/apply_status_heal.py"
-      - ".github/workflows/apply-status-heal.yml"
   workflow_dispatch:
 permissions:
   contents: write

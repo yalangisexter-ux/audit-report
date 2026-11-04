@@ -3,7 +3,6 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/restore-phase1-web.yml"
       - "tools/TRIGGER_PHASE1_RESTORE"
   workflow_dispatch:
 permissions:
