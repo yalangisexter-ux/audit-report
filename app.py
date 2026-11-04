@@ -1248,6 +1248,14 @@ class Database:
         self.legacy_mode_state_path.unlink(missing_ok=True)
 
     def _initialize_github_sync(self):
+        # The Render/FastAPI deployment uses web_sync.py for encrypted snapshot
+        # transport. Do not initialize the Windows desktop sync credential store
+        # in WEB_STANDALONE mode: it uses Windows DPAPI and is not available on Linux.
+        # Keeping this guard here prevents database startup from failing before the
+        # web-only sync manager is initialized by api_server.py.
+        if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+            self.github_sync = None
+            return
         install_id = self.get_setting("github_sync_install_id", "")
         if not re.fullmatch(r"[0-9a-f]{32}", install_id):
             install_id = secrets.token_hex(16)
