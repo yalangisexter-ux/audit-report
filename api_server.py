@@ -405,6 +405,8 @@ def register_account(req: RegistrationRequest, conn: sqlite3.Connection = Depend
         raise HTTPException(status_code=422, detail="Use at least 8 characters with a letter and a number")
     if len(answer) < 2 or req.security_question not in desktop_app.SECURITY_QUESTIONS:
         raise HTTPException(status_code=422, detail="Choose a recovery question and enter a recovery answer")
+    if not conn.execute("SELECT 1 FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1").fetchone():
+        raise HTTPException(status_code=403, detail="An active Admin must complete initial setup before new account registration")
     if conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
         raise HTTPException(status_code=409, detail="That username already exists")
     password_salt, password_hash = desktop_app.hash_pin(req.password)
