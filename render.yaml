@@ -8,6 +8,21 @@ services:
     numInstances: 1
     autoDeploy: true
     region: oregon
+    # Deploy application/runtime changes, not encrypted customer snapshot commits.
+    # This prevents every database sync from restarting the web service.
+    buildFilter:
+      paths:
+        - app.py
+        - api_server.py
+        - database_sync.py
+        - web_*.py
+        - business_tracking.py
+        - build_info.py
+        - requirements.txt
+        - requirements-web.txt
+        - frontend/**
+        - assets/**
+        - tools/force_admin_login_heal.py
     # Keep the existing full-featured web client and web-only FastAPI entrypoint.
     # Do not build or replace the Windows EXE from this Render service.
     buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt && npm --prefix frontend ci --include=dev && rm -rf frontend/dist && npm --prefix frontend run build && python -c "from pathlib import Path; p=Path('frontend/dist/index.html'); s=p.read_text(encoding='utf-8'); assert '/assets/' in s and 'loginView' not in s, 'React production bundle was not generated; refusing to deploy stale legacy frontend'"
