@@ -286,6 +286,10 @@ class WebDatabaseSync:
             raise ValueError("Worker snapshot is not a SQLite database")
         return payload
 
+    def _pull_merge(self) -> dict:
+        """Download, validate, back up, and merge the current shared snapshot."""
+        return self._merge_payload(self._download())
+
     def _merge_payload(self, payload: bytes) -> dict:
         temp = self.db_path.with_name(self.db_path.name + ".remote-check")
         try:
