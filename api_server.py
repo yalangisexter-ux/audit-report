@@ -733,7 +733,7 @@ def _validate_task_fields(task):
     progress = int(task.progress or 0)
     if progress < 0 or progress > 100:
         raise HTTPException(status_code=422, detail="Task progress must be between 0 and 100.")
-    status = str(task.status or "Not started").strip()
+    status = "Not started" if task.status is None else str(task.status).strip()
     if status == "Completed":
         progress = 100
     next_action = str(task.next_action or task.manager_note or "").strip()
@@ -787,7 +787,7 @@ def list_tasks(
             raise HTTPException(status_code=422, detail="task_date must use YYYY-MM-DD format.")
         query += " AND t.task_date=?"
         params.append(task_date)
-    if status:
+    if status is not None:
         query += " AND t.status=?"
         params.append(status)
     if priority:

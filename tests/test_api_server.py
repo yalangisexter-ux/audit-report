@@ -696,7 +696,7 @@ def test_task_bulk_edit_changes_only_selected_fields_and_sets_submission_time():
 
     result = client.post("/api/tasks/bulk-edit", json={
         "task_ids": created_ids[:2],
-        "updates": {"status": "Completed", "next_action": "Bulk follow-up", "expose_link": True},
+        "updates": {"title": "Bulk-updated task", "status": "Completed", "next_action": "Bulk follow-up", "expose_link": True, "custom_values": "Client: Bulk\nLocation: Zone 2"},
     })
     assert result.status_code == 200
     assert result.json()["updated"] == 2
@@ -704,13 +704,15 @@ def test_task_bulk_edit_changes_only_selected_fields_and_sets_submission_time():
     by_id = {row["id"]: row for row in rows}
     for task_id in created_ids[:2]:
         row = by_id[task_id]
+        assert row["title"] == "Bulk-updated task"
         assert row["status"] == "Completed" and row["progress"] == 100
         assert row["target_qty"] == "25" and row["actual_qty"] == "4"
         assert row["next_action"] == "Bulk follow-up"
         assert row["manager_note"] == "Bulk follow-up"
         assert row["expose_link"] == 1
         assert row["submitted_at"]
-        assert row["custom_fields"][0]["value"] == "Keep this value"
+        custom = {item["key"]: item["value"] for item in row["custom_fields"]}
+        assert custom == {"Client": "Bulk", "Location": "Zone 2"}
     untouched = by_id[created_ids[2]]
     assert untouched["status"] == "Not started"
     assert untouched["target_qty"] == "25" and untouched["actual_qty"] == "4"
@@ -759,6 +761,43 @@ def test_task_delete_is_restricted_to_admin_and_developer():
     import sqlite3
     connection = sqlite3.connect(str(desktop_app.DB_PATH))
     try:
+        connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_task_api_preserves_explicit_not_selected_status():
+    import secrets
+    import sqlite3
+
+    employee = client.post("/api/employees", json={
+        "name": "Task Blank Status Employee",
+        "employee_code": "TASK-BLANK-" + secrets.token_hex(3).upper(),
+        "department": "Operations",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+    payload = {
+        "employee_id": employee_id,
+        "task_date": "2026-11-05",
+        "title": "Task with no selected status",
+        "status": "",
+    }
+    created = client.post("/api/tasks", json=payload)
+    assert created.status_code == 200
+    task_id = created.json()["id"]
+    assert created.json()["status"] == ""
+    filtered = client.get("/api/tasks?status=")
+    assert filtered.status_code == 200
+    assert any(row["id"] == task_id and row["status"] == "" for row in filtered.json())
+    updated = client.put(f"/api/tasks/{task_id}", json=payload)
+    assert updated.status_code == 200
+    assert updated.json()["status"] == ""
+
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        connection.execute("DELETE FROM tasks WHERE id=?", (task_id,))
         connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
         connection.commit()
     finally:
