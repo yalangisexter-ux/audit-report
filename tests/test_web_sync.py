@@ -103,3 +103,37 @@ def test_web_sync_requires_explicit_encryption_secret(tmp_path, monkeypatch):
     assert manager.configured is False
     assert manager.bootstrap() is False
     assert "DB_SYNC_ENCRYPTION_SECRET" in manager.last_pull["error"]
+
+
+
+def test_bootstrap_rejects_business_snapshot_without_customer_login_users(tmp_path, monkeypatch):
+    from web_sync import WebDatabaseSync
+
+    monkeypatch.setenv("DB_SYNC_ENCRYPTION_SECRET", "test-encryption-secret")
+    monkeypatch.setenv("DB_SYNC_INSTALLATION_ID", "080717e78653166d64cd2bcf72c75c76")
+    monkeypatch.setenv("DB_SYNC_WORKER_URL", "https://sync.example")
+    path = tmp_path / "web-no-users.db"
+    db = sqlite3.connect(path)
+    db.executescript(
+        """
+        CREATE TABLE auth_users(id INTEGER PRIMARY KEY, username TEXT, active INTEGER DEFAULT 1);
+        CREATE TABLE employees(id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE tasks(id INTEGER PRIMARY KEY, title TEXT);
+        INSERT INTO employees VALUES(1, 'Existing employee');
+        INSERT INTO tasks VALUES(1, 'Existing task');
+        """
+    )
+    db.commit()
+    db.close()
+
+    manager = WebDatabaseSync(path)
+    manager.last_pull = {"ok": True, "auth_users": 0, "employees": 1, "tasks": 1}
+    manager._pull_merge = lambda: {"changed": False, "inserted": 0, "updated": 0, "conflicts": 0}
+    try:
+        assert manager.bootstrap() is False
+        assert manager.last_pull["ok"] is False
+        assert "zero active login users" in manager.last_pull["error"]
+        assert "first-admin setup remains disabled" in manager.last_pull["error"]
+    finally:
+        if manager.sync is not None:
+            manager.sync.close()
