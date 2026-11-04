@@ -86,6 +86,23 @@ def test_toolbar_checkout_uses_visible_checkin_and_extended_statuses(monkeypatch
         db.conn.close()
 
 
+def test_absent_status_is_committed_to_selected_working_date(monkeypatch, tmp_path):
+    qt_app, db, window, employee_id, today = make_attendance_window(monkeypatch, tmp_path)
+    try:
+        db.upsert_attendance(employee_id, today, check_in="09:00", check_out="18:00", status="Present")
+        window.set_attendance_status("Absent")
+        saved = db.conn.execute(
+            "SELECT work_date, attendance_status, check_in, check_out FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, today),
+        ).fetchone()
+        assert tuple(saved) == (today, "Absent", "", "")
+        qt_app.processEvents()
+        assert window.att_table.cellWidget(0, 2).findChild(app.QComboBox).currentText() == "Absent"
+    finally:
+        window.close()
+        db.conn.close()
+
+
 def test_attendance_select_all_keeps_multi_selection_after_table_polish(monkeypatch, tmp_path):
     qt_app, db, window, employee_id, today = make_attendance_window(monkeypatch, tmp_path)
     try:
