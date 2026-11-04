@@ -337,8 +337,8 @@ class WebDatabaseSync:
                 local = sqlite3.connect(str(self.db_path), timeout=20)
                 remote = sqlite3.connect(f"file:{temp}?mode=ro", uri=True, timeout=20)
                 try:
-                    local_cols = {row[1] for row in local.execute("PRAGMA table_info(employees)")}
-                    remote_cols = {row[1] for row in remote.execute("PRAGMA table_info(employees)")}
+                    local_cols = [row[1] for row in local.execute("PRAGMA table_info(employees)")]
+                    remote_cols = [row[1] for row in remote.execute("PRAGMA table_info(employees)")]
                     local_rows = local.execute("SELECT * FROM employees").fetchall()
                     remote_rows = remote.execute("SELECT * FROM employees").fetchall()
                     def identity(row, columns):
