@@ -3234,13 +3234,24 @@ class LoginDialog(QDialog):
             if row is None:
                 salt, digest = hash_pin(password)
                 timestamp = now_text()
-                self.db.conn.execute(
-                    """INSERT INTO auth_users(
-                        username, display_name, role, password_salt, password_hash,
-                        security_question, answer_salt, answer_hash, active, created_at, updated_at
-                    ) VALUES('admin', 'admin (Developer - Test Mode)', 'Developer', ?, ?, '', '', '', 1, ?, ?)""",
-                    (salt, digest, timestamp, timestamp),
-                )
+                inactive_row = self.db.conn.execute(
+                    "SELECT id FROM auth_users WHERE username='admin' COLLATE BINARY"
+                ).fetchone()
+                if inactive_row:
+                    self.db.conn.execute(
+                        """UPDATE auth_users SET display_name='admin (Developer - Test Mode)',
+                           role='Developer', password_salt=?, password_hash=?, active=1, updated_at=?
+                           WHERE id=?""",
+                        (salt, digest, timestamp, inactive_row["id"]),
+                    )
+                else:
+                    self.db.conn.execute(
+                        """INSERT INTO auth_users(
+                            username, display_name, role, password_salt, password_hash,
+                            security_question, answer_salt, answer_hash, active, created_at, updated_at
+                        ) VALUES('admin', 'admin (Developer - Test Mode)', 'Developer', ?, ?, '', '', '', 1, ?, ?)""",
+                        (salt, digest, timestamp, timestamp),
+                    )
                 self.db.conn.commit()
                 row = self.db.conn.execute(
                     "SELECT * FROM auth_users WHERE username='admin' COLLATE BINARY AND active=1"
