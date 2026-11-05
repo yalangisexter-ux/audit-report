@@ -11628,8 +11628,12 @@ class MainWindow(QMainWindow):
             changes.setdefault("check_in", "")
             changes.setdefault("check_out", "")
         now = now_text()
+        savepoint_started = False
         try:
-            self.db.conn.execute("BEGIN")
+            # A savepoint also works when another UI operation already has an
+            # open SQLite transaction on the shared desktop connection.
+            self.db.conn.execute("SAVEPOINT bulk_attendance_update")
+            savepoint_started = True
             for employee_id in employee_ids:
                 old = self.db.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (employee_id, work_date)).fetchone()
                 current_in = changes.get("check_in", old["check_in"] if old else "")
@@ -11651,9 +11655,18 @@ class MainWindow(QMainWindow):
                     status=current_status,
                     commit=False,
                 )
+            self.db.conn.execute("RELEASE SAVEPOINT bulk_attendance_update")
+            savepoint_started = False
             self.db.conn.commit()
         except (sqlite3.Error, ValueError) as exc:
-            self.db.conn.rollback()
+            if savepoint_started:
+                try:
+                    self.db.conn.execute("ROLLBACK TO SAVEPOINT bulk_attendance_update")
+                    self.db.conn.execute("RELEASE SAVEPOINT bulk_attendance_update")
+                except sqlite3.Error:
+                    self.db.conn.rollback()
+            else:
+                self.db.conn.rollback()
             return error(self, f"Bulk attendance update failed; no changes were saved. {exc}")
         self.db.log("Bulk attendance edited", f"date={work_date}, employees={len(employee_ids)}, fields={','.join(changes)}")
         self.refresh_all()

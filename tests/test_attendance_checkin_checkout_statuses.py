@@ -416,6 +416,57 @@ def test_bulk_attendance_transaction_uses_legacy_safe_schema_and_commits_once(mo
         db.conn.close()
 
 
+def test_bulk_attendance_uses_savepoint_when_connection_has_pending_work(monkeypatch, tmp_path):
+    qt_app, db, window, employee_id, today = make_attendance_window(monkeypatch, tmp_path)
+    errors = []
+    notices = []
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        second_id = db.conn.execute(
+            "INSERT INTO employees(employee_code,name,joining_date,active,created_at) VALUES(?,?,?,?,?)",
+            ("EMP-ATT-2", "Second Attendance Check", today, 1, timestamp),
+        ).lastrowid
+        db.conn.commit()
+        window.refresh_attendance()
+        window.att_table.selectAll()
+        assert len(window._selected_attendance_employee_ids()) == 2
+
+        # Simulate a pending write left on the shared desktop connection before
+        # the user opens the bulk attendance dialog.
+        db.conn.execute("UPDATE employees SET name=name WHERE id=?", (employee_id,))
+        assert db.conn.in_transaction
+
+        def accept_bulk_dialog(dialog):
+            apply_checks = dialog.findChildren(app.QCheckBox)
+            combos = dialog.findChildren(app.QComboBox)
+            assert len(apply_checks) == 4
+            apply_checks[0].setChecked(True)
+            combos[0].setCurrentText("Absent")
+            return 1  # QDialog.Accepted
+
+        monkeypatch.setattr(app.QDialog, "exec", accept_bulk_dialog)
+        monkeypatch.setattr(app, "error", lambda *args: errors.append(str(args[-1])))
+        monkeypatch.setattr(app, "info", lambda *args: notices.append(str(args[-1])))
+
+        window.bulk_edit_attendance()
+
+        assert errors == []
+        assert any("Updated attendance for 2 employee(s)." in message for message in notices)
+        assert not db.conn.in_transaction
+        saved = db.conn.execute(
+            "SELECT employee_id,attendance_status FROM attendance WHERE work_date=? ORDER BY employee_id",
+            (today,),
+        ).fetchall()
+        assert [(int(row["employee_id"]), row["attendance_status"]) for row in saved] == [
+            (employee_id, "Absent"),
+            (second_id, "Absent"),
+        ]
+        qt_app.processEvents()
+    finally:
+        window.close()
+        db.conn.close()
+
+
 def test_remote_attendance_merge_populates_legacy_required_columns(monkeypatch, tmp_path):
     import sqlite3
 
