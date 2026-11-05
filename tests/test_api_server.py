@@ -1335,15 +1335,6 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
     }
     staff_headers = {"Authorization": f"Bearer {staff_token}"}
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
-    import sys
-    from types import SimpleNamespace
-    # Keep this API test isolated from the production boot shim while exercising
-    # the restore endpoint's existing post-import normalization hook.
-    monkeypatch.setitem(
-        sys.modules,
-        "web_auth_shim",
-        SimpleNamespace(_normalize_web_login_accounts=lambda _path: None),
-    )
     database_path = Path(desktop_app.DB_PATH)
     preimport_backups = set(database_path.parent.glob(
         database_path.stem + ".before-import-*" + database_path.suffix
@@ -1397,6 +1388,10 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
             employees_after = db.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
             tasks_after = db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            auth_schema = db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
+            ).fetchone()[0].upper()
+            assert "COLLATE BINARY" in auth_schema
         finally:
             db.close()
         assert accounts_after == accounts_before
