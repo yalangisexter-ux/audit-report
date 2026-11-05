@@ -30,3 +30,18 @@ def test_embedded_chat_keeps_a_separate_authentication_boundary():
 
     assert "Your audit login is not shared with the chat service." in component
     assert "Use the chat service sign-in inside this panel" in component
+
+
+
+def test_general_channel_history_and_send_action_remain_available():
+    app_source = (ROOT / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    component = (ROOT / "frontend" / "src" / "LiveChat.jsx").read_text(encoding="utf-8")
+
+    assert "messages={data.messages}" in app_source
+    assert "onSendGeneral={async content=>" in app_source
+    assert "channel:'general'" in app_source
+    assert 'role="tablist"' in component
+    assert 'aria-label="General channel messages"' in component
+    assert "messages.map(" in component
+    assert "onSendGeneral(content)" in component
+    assert "General Channel" in component
