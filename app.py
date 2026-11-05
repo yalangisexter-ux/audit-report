@@ -1636,9 +1636,17 @@ class Database:
                 # A prior process may have been interrupted during migration.
                 # Use a unique staging table so stale staging data cannot block startup.
                 staging_table = "auth_users_case_sensitive_" + secrets.token_hex(6)
-                create_sql = auth_sql.replace(
-                    "CREATE TABLE auth_users", f"CREATE TABLE {staging_table}", 1
+                create_sql, replacement_count = re.subn(
+                    r"CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?auth_users\\b",
+                    f"CREATE TABLE {staging_table}",
+                    auth_sql,
+                    count=1,
+                    flags=re.IGNORECASE,
                 )
+                if replacement_count != 1:
+                    raise sqlite3.DatabaseError(
+                        "Could not safely prepare auth_users case-sensitive migration."
+                    )
                 create_sql = re.sub(r"COLLATE\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
                 if not self.conn.in_transaction:
                     self.conn.execute("BEGIN IMMEDIATE")
