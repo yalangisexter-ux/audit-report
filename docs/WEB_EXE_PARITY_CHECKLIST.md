@@ -82,6 +82,14 @@ Last inspected: 2026-11-05 21:39 IST. Repository target: `main`. This is an evid
 - Kept the separate chat-service sign-in and member-only authorization boundary explicit; this change does not claim single sign-on or identity unification.
 - Added `tests/test_web_live_chat_integration.py` to guard the React navigation, Worker asset origin, iframe permissions, safe new-tab relationship, separate-auth boundary, and preservation of general-channel history/send. Run #1103 failed at Vite import resolution because the first commit referenced the component before its follow-up commit added it; runs #1104–#1109 are revalidating the reconciled source and regression tests. Run #1105 includes the Windows EXE/installer path because a test file changed. Browser functional comparison and production deployment checks remain open. No version bump is appropriate for this web-only integration.
 
+## GitHub Actions frontend bundle publication race — fix implemented; verification pending
+
+- Runs #1108 and #1109 failed after the React/Vite build, specifically in the step that publishes generated `frontend/dist` files to `main`. Concurrent workflow runs produced different hashed asset filenames and attempted to rebase over one another; Git reported a rename/rename conflict for the generated JavaScript asset and a content conflict in `frontend/dist/index.html`.
+- Replaced the rebase-based publisher with a latest-main reconciliation loop: it saves the freshly built bundle outside the checkout, fetches `origin/main`, verifies that the build commit is still an ancestor, skips a bundle if newer frontend source/assets exist, resets to the latest main commit, restores and stages only `frontend/dist`, and pushes with a normal non-force update. If another run already published the same bundle, the step exits successfully instead of treating that race as a failure.
+- Added `test_frontend_bundle_publisher_skips_stale_builds_and_avoids_rebase_races` to `tests/test_render_configuration.py`.
+- Run #1112 has passed React production build, frontend publication, browser/Worker JavaScript validation and database-sync Worker validation/tests; Python regression and the remaining installer checks are still running. Run #1113 is validating the added regression test and the same workflow change. Do not treat the complete workflow fix as verified until at least one run finishes successfully.
+- No version bump is required; this is CI reliability and generated-asset publication maintenance.
+
 ## Completion gate
 
 A row can move to **Complete** only after:
