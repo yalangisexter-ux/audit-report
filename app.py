@@ -2158,7 +2158,7 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
         return stats
 
     local_conn.execute("PRAGMA foreign_keys=OFF")
-    local_conn.execute("BEGIN IMMEDIATE")
+    local_conn.execute("SAVEPOINT remote_json_snapshot_merge")
     try:
         # 0. Merge auth_users
         remote_users = data.get("auth_users") or []
@@ -2383,9 +2383,10 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                         (str(rh["holiday_date"]), str(rh.get("holiday_name", "")), now_text())
                     )
 
-        local_conn.commit()
+        local_conn.execute("RELEASE SAVEPOINT remote_json_snapshot_merge")
     except Exception as exc:
-        local_conn.rollback()
+        local_conn.execute("ROLLBACK TO SAVEPOINT remote_json_snapshot_merge")
+        local_conn.execute("RELEASE SAVEPOINT remote_json_snapshot_merge")
         raise exc
     finally:
         local_conn.execute("PRAGMA foreign_keys=ON")
@@ -2495,7 +2496,7 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
         }
         
         local_conn.execute("PRAGMA foreign_keys=OFF")
-        local_conn.execute("BEGIN IMMEDIATE")
+        local_conn.execute("SAVEPOINT remote_database_snapshot_merge")
         
         # 1. Merge auth_users
         if "auth_users" in remote_tables:
@@ -2761,9 +2762,10 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                         (rk, r_val[0])
                     )
 
-        local_conn.commit()
+        local_conn.execute("RELEASE SAVEPOINT remote_database_snapshot_merge")
     except Exception:
-        local_conn.rollback()
+        local_conn.execute("ROLLBACK TO SAVEPOINT remote_database_snapshot_merge")
+        local_conn.execute("RELEASE SAVEPOINT remote_database_snapshot_merge")
         raise
     finally:
         local_conn.execute("PRAGMA foreign_keys=ON")
