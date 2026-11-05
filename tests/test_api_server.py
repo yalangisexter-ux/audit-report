@@ -236,16 +236,162 @@ def test_api_attendance_saves_selected_date_and_clears_absent_times():
         connection.close()
 
 
-def test_api_business_tracking():
-    # Products
-    p_res = client.get("/api/business/products")
-    assert p_res.status_code == 200
-    assert isinstance(p_res.json(), list)
+def test_api_business_tracking(monkeypatch):
+    import secrets
 
-    # Services
-    s_res = client.get("/api/business/services")
-    assert s_res.status_code == 200
-    assert isinstance(s_res.json(), list)
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "business-list-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 990, "username": "business-list-test", "display_name": "Business Test", "role": "Admin"
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        assert client.get("/api/business/products").status_code == 401
+        assert client.get("/api/business/services").status_code == 401
+        assert client.get("/api/business/orders").status_code == 401
+        assert client.get("/api/business/members").status_code == 401
+        assert client.get("/api/business/activities").status_code == 401
+        assert client.get("/api/business/overview").status_code == 401
+        assert client.get("/api/business/stock-ledger").status_code == 401
+
+        for path in (
+            "/api/business/products", "/api/business/services", "/api/business/orders",
+            "/api/business/members", "/api/business/activities", "/api/business/overview",
+            "/api/business/stock-ledger",
+        ):
+            response = client.get(path, headers=headers)
+            assert response.status_code == 200, (path, response.text)
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+
+
+def test_business_tracking_full_workflow_and_stock_ledger(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "business-workflow-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 991, "username": "business-workflow-test", "display_name": "Business Workflow Test", "role": "Admin"
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    sku = "BT-" + secrets.token_hex(5).upper()
+    employee_code = "BIZ-" + secrets.token_hex(4).upper()
+    product_id = service_id = member_id = order_id = activity_id = employee_id = None
+    try:
+        product = client.post("/api/business/products", headers=headers, json={
+            "name": "Business Ledger Test Product", "sku": sku, "category": "equipment",
+            "brand": "RSC", "package_type": "Box", "base_unit": "PCS",
+            "opening_stock": 20, "received_qty": 5, "reserved_qty": 0,
+            "dispatched_qty": 0, "free_qty": 0, "returned_qty": 0,
+            "damaged_qty": 0, "expired_qty": 0, "quarantined_qty": 0,
+            "purchase_cost": 40, "selling_price": 75, "reorder_level": 2,
+            "batch_number": "BATCH-01", "expiry_date": "2027-12-31", "storage_location": "Rack A",
+        })
+        assert product.status_code == 200, product.text
+        product_id = product.json()["id"]
+
+        listed = client.get("/api/business/products", headers=headers)
+        item = next(row for row in listed.json() if row["id"] == product_id)
+        assert item["available_stock"] == 25
+        assert item["package_type"] == "Box" and item["batch_number"] == "BATCH-01"
+
+        for movement, quantity, expected in (("reserve", 3, 22), ("dispatch", 2, 20), ("release", 1, 21)):
+            result = client.post("/api/business/stock-ledger", headers=headers, json={
+                "product_id": product_id, "txn_type": movement, "quantity": quantity, "unit": "PCS",
+                "reference": "TEST-ORDER", "notes": "Automated ledger regression",
+            })
+            assert result.status_code == 200, result.text
+            assert result.json()["available_stock"] == expected
+
+        ledger = client.get("/api/business/stock-ledger", headers=headers, params={"product_id": product_id})
+        assert ledger.status_code == 200 and len(ledger.json()) == 3
+        overdraw = client.post("/api/business/stock-ledger", headers=headers, json={
+            "product_id": product_id, "txn_type": "dispatch", "quantity": 999,
+        })
+        assert overdraw.status_code == 409
+
+        service = client.post("/api/business/services", headers=headers, json={
+            "name": "Business API Coaching", "category": "Strength", "description": "Regression service",
+            "training_mode": "Hybrid", "service_unit": "Session", "session_duration": 60,
+            "num_sessions": 8, "plan_validity": 30, "standard_price": 1500, "active": 1,
+        })
+        assert service.status_code == 200, service.text
+        service_id = service.json()["id"]
+
+        employee = client.post("/api/employees", headers=headers, json={
+            "name": "Business Workflow Employee", "employee_code": employee_code, "department": "Operations",
+        })
+        assert employee.status_code == 200, employee.text
+        employee_id = employee.json()["id"]
+
+        order = client.post("/api/business/orders", headers=headers, json={
+            "order_code": "ORD-" + secrets.token_hex(3).upper(), "customer_name": "Test Customer",
+            "order_date": date.today().isoformat(), "channel": "gym counter", "contact": "9999999999",
+            "payment_mode": "UPI", "status": "Pending", "discount": 50, "order_value": 1500,
+            "invoice_number": "INV-TEST", "shipment_id": "SHIP-TEST", "assigned_employee_id": employee_id,
+            "notes": "Order workflow regression",
+        })
+        assert order.status_code == 200, order.text
+        order_id = order.json()["id"]
+        assert client.patch(f"/api/business/orders/{order_id}", headers=headers, json={"status": "Confirmed"}).status_code == 200
+
+        member = client.post("/api/business/members", headers=headers, json={
+            "full_name": "Business Test Member", "service_id": service_id, "phone": "8888888888",
+            "training_mode": "Hybrid", "registration_date": date.today().isoformat(),
+            "start_date": date.today().isoformat(), "end_date": "2026-12-31",
+            "sessions_purchased": 8, "sessions_completed": 2, "assigned_trainer_id": employee_id,
+            "status": "Active", "payment_status": "Paid", "invoice_ref": "MEM-TEST",
+            "notes": "Member workflow regression",
+        })
+        assert member.status_code == 200, member.text
+        member_id = member.json()["id"]
+        update_member = client.patch(f"/api/business/members/{member_id}", headers=headers, json={
+            "sessions_completed": 3, "payment_status": "Paid",
+        })
+        assert update_member.status_code == 200
+        member_row = next(row for row in client.get("/api/business/members", headers=headers).json() if row["id"] == member_id)
+        assert member_row["sessions_completed"] == 3 and member_row["sessions_purchased"] == 8
+
+        activity = client.post("/api/business/activities", headers=headers, json={
+            "employee_id": employee_id, "related_order_id": order_id, "related_service_id": service_id,
+            "task_type": "Training", "product_id": product_id, "quantity": 2, "unit": "Session",
+            "task_status": "In Progress", "proof_ref": "https://example.invalid/proof",
+            "remarks": "Activity workflow regression",
+        })
+        assert activity.status_code == 200, activity.text
+        activity_id = activity.json()["id"]
+        assert client.patch(f"/api/business/activities/{activity_id}", headers=headers, json={
+            "task_status": "Completed",
+        }).status_code == 200
+        activity_row = next(row for row in client.get("/api/business/activities", headers=headers).json() if row["id"] == activity_id)
+        assert activity_row["employee_name"] == "Business Workflow Employee"
+        assert activity_row["completion_time"]
+
+        overview = client.get("/api/business/overview", headers=headers).json()
+        assert overview["products"] >= 1 and overview["orders"] >= 1
+        assert overview["members"] >= 1 and overview["activities"] >= 1
+    finally:
+        connection = sqlite3.connect(str(desktop_app.DB_PATH))
+        try:
+            if activity_id is not None:
+                connection.execute("DELETE FROM bt_activities WHERE id=?", (activity_id,))
+            if member_id is not None:
+                connection.execute("DELETE FROM bt_members WHERE id=?", (member_id,))
+            if order_id is not None:
+                connection.execute("DELETE FROM bt_orders WHERE id=?", (order_id,))
+            if product_id is not None:
+                connection.execute("DELETE FROM bt_stock_ledger WHERE product_id=?", (product_id,))
+                connection.execute("DELETE FROM bt_products WHERE id=?", (product_id,))
+            if service_id is not None:
+                connection.execute("DELETE FROM bt_services WHERE id=?", (service_id,))
+            if employee_id is not None:
+                connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+            connection.commit()
+        finally:
+            connection.close()
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+
 
 def test_api_settings():
     res = client.get("/api/settings")
@@ -948,10 +1094,16 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     assert pdf_response.headers["content-type"].startswith("application/pdf")
     assert pdf_response.content.startswith(b"%PDF-")
 
-def test_web_business_products_and_print_center_use_full_stock_ledger():
+def test_web_business_products_and_print_center_use_full_stock_ledger(monkeypatch):
     import secrets
 
-    client.get("/api/health")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "stock-ledger-report-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 992, "username": "stock-ledger-report", "display_name": "Stock Ledger Report", "role": "Admin"
+    }
+    headers = {"Authorization": f"Bearer {token}"}
     sku = "STOCK-" + secrets.token_hex(4).upper()
     connection = sqlite3.connect(str(desktop_app.DB_PATH))
     connection.row_factory = sqlite3.Row
@@ -970,7 +1122,7 @@ def test_web_business_products_and_print_center_use_full_stock_ledger():
         )
         connection.commit()
 
-        products_response = client.get("/api/business/products")
+        products_response = client.get("/api/business/products", headers=headers)
         assert products_response.status_code == 200
         product = next(row for row in products_response.json() if row["sku"] == sku)
         assert product["available_stock"] == 111
@@ -986,6 +1138,7 @@ def test_web_business_products_and_print_center_use_full_stock_ledger():
         assert "Ledger Stock Regression" in report["preview_text"]
         assert " | 111 | " in report["preview_text"]
     finally:
+        api_server.ACTIVE_SESSIONS.pop(token, None)
         connection.execute("DELETE FROM bt_products WHERE sku=?", (sku,))
         connection.commit()
         connection.close()

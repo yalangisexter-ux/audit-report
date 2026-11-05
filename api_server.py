@@ -287,22 +287,33 @@ class ProductModel(BaseModel):
     sku: Optional[str] = ""
     category: Optional[str] = "General"
     brand: Optional[str] = ""
+    package_type: Optional[str] = ""
     base_unit: Optional[str] = "PCS"
     opening_stock: Optional[float] = 0.0
     received_qty: Optional[float] = 0.0
     reserved_qty: Optional[float] = 0.0
-    reorder_level: Optional[float] = 0.0
+    dispatched_qty: Optional[float] = 0.0
+    free_qty: Optional[float] = 0.0
+    returned_qty: Optional[float] = 0.0
+    damaged_qty: Optional[float] = 0.0
+    expired_qty: Optional[float] = 0.0
+    quarantined_qty: Optional[float] = 0.0
+    purchase_cost: Optional[float] = 0.0
     selling_price: Optional[float] = 0.0
+    reorder_level: Optional[float] = 0.0
+    batch_number: Optional[str] = ""
+    expiry_date: Optional[str] = ""
+    storage_location: Optional[str] = ""
 
 class ServiceModel(BaseModel):
     name: str
     category: Optional[str] = "Training"
     description: Optional[str] = ""
-    training_mode: Optional[str] = "In-Person"
+    training_mode: Optional[str] = "Offline"
     service_unit: Optional[str] = "Session"
-    session_duration: Optional[int] = 60
-    num_sessions: Optional[int] = 1
-    plan_validity: Optional[int] = 30
+    session_duration: Optional[int] = 0
+    num_sessions: Optional[int] = 0
+    plan_validity: Optional[int] = 0
     standard_price: Optional[float] = 0.0
     active: Optional[int] = 1
 
@@ -1146,43 +1157,113 @@ def delete_holiday(holiday_date: str, conn: sqlite3.Connection = Depends(get_db)
 
 
 # --- Business Tracking (Products & Services) ---
+_BUSINESS_PRODUCT_NUMBERS = (
+    "opening_stock", "received_qty", "reserved_qty", "dispatched_qty",
+    "free_qty", "returned_qty", "damaged_qty", "expired_qty",
+    "quarantined_qty", "purchase_cost", "selling_price", "reorder_level",
+)
+
+
+def _validate_business_amounts(model, field_names):
+    for field_name in field_names:
+        value = getattr(model, field_name, 0) or 0
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail=f"{field_name} must be a non-negative number.")
+        if number < 0 or number != number or number in (float("inf"), float("-inf")):
+            raise HTTPException(status_code=422, detail=f"{field_name} must be a finite non-negative number.")
+
+
 @app.get("/api/business/products")
-def list_products(conn: sqlite3.Connection = Depends(get_db)):
-    rows = conn.execute("SELECT * FROM bt_products ORDER BY name ASC").fetchall()
+def list_products(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    rows = conn.execute("SELECT * FROM bt_products ORDER BY name COLLATE NOCASE ASC").fetchall()
     result = []
-    for r in rows:
-        d = dict(r)
-        from business_tracking import available_stock
-        d["available_stock"] = available_stock(d)
-        result.append(d)
+    from business_tracking import available_stock
+    for row in rows:
+        item = dict(row)
+        item["available_stock"] = available_stock(item)
+        result.append(item)
     return result
 
+
 @app.post("/api/business/products")
-def create_product(p: ProductModel, conn: sqlite3.Connection = Depends(get_db)):
+def create_product(
+    p: ProductModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    name = str(p.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Product name is required.")
+    _validate_business_amounts(p, _BUSINESS_PRODUCT_NUMBERS)
     now = desktop_app.now_text()
-    conn.execute(
-        """INSERT INTO bt_products(name, sku, category, brand, base_unit, opening_stock, received_qty, reserved_qty, reorder_level, selling_price, updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-        (p.name, p.sku, p.category, p.brand, p.base_unit, p.opening_stock, p.received_qty, p.reserved_qty, p.reorder_level, p.selling_price, now)
-    )
-    conn.commit()
-    return {"success": True}
+    try:
+        cur = conn.execute(
+            """INSERT INTO bt_products(
+                name,sku,category,brand,package_type,base_unit,opening_stock,received_qty,
+                reserved_qty,dispatched_qty,free_qty,returned_qty,damaged_qty,expired_qty,
+                quarantined_qty,purchase_cost,selling_price,reorder_level,batch_number,
+                expiry_date,storage_location,updated_by,updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                name, str(p.sku or "").strip() or None, p.category or "", p.brand or "",
+                p.package_type or "", p.base_unit or "PCS", p.opening_stock or 0,
+                p.received_qty or 0, p.reserved_qty or 0, p.dispatched_qty or 0,
+                p.free_qty or 0, p.returned_qty or 0, p.damaged_qty or 0,
+                p.expired_qty or 0, p.quarantined_qty or 0, p.purchase_cost or 0,
+                p.selling_price or 0, p.reorder_level or 0, p.batch_number or "",
+                p.expiry_date or "", p.storage_location or "", user.get("username", ""), now,
+            ),
+        )
+        conn.commit()
+        return {"success": True, "id": cur.lastrowid}
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail="A product with that SKU already exists.") from exc
+    except sqlite3.Error as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=f"Create product failed: {exc}") from exc
+
 
 @app.get("/api/business/services")
-def list_services(conn: sqlite3.Connection = Depends(get_db)):
-    rows = conn.execute("SELECT * FROM bt_services ORDER BY name ASC").fetchall()
-    return [dict(r) for r in rows]
+def list_services(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    rows = conn.execute("SELECT * FROM bt_services ORDER BY name COLLATE NOCASE ASC").fetchall()
+    return [dict(row) for row in rows]
+
 
 @app.post("/api/business/services")
-def create_service(s: ServiceModel, conn: sqlite3.Connection = Depends(get_db)):
+def create_service(
+    s: ServiceModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    name = str(s.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Service name is required.")
+    if int(s.session_duration or 0) < 0 or int(s.num_sessions or 0) < 0 or int(s.plan_validity or 0) < 0:
+        raise HTTPException(status_code=422, detail="Service duration, sessions and validity cannot be negative.")
+    _validate_business_amounts(s, ("standard_price",))
     now = desktop_app.now_text()
-    conn.execute(
-        """INSERT INTO bt_services(name, category, description, training_mode, service_unit, session_duration, num_sessions, plan_validity, standard_price, active, updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-        (s.name, s.category, s.description, s.training_mode, s.service_unit, s.session_duration, s.num_sessions, s.plan_validity, s.standard_price, s.active, now)
+    cur = conn.execute(
+        """INSERT INTO bt_services(
+            name,category,description,training_mode,service_unit,session_duration,
+            num_sessions,plan_validity,standard_price,active,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            name, s.category or "", s.description or "", s.training_mode or "Offline",
+            s.service_unit or "Session", s.session_duration or 0, s.num_sessions or 0,
+            s.plan_validity or 0, s.standard_price or 0, int(s.active if s.active is not None else 1), now,
+        ),
     )
     conn.commit()
-    return {"success": True}
+    return {"success": True, "id": cur.lastrowid}
 
 
 # --- Reports & Print Center ---

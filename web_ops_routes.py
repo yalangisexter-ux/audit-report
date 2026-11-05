@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Query
 from pydantic import BaseModel
 import sqlite3
 import secrets
+import math
 
 import api_server as api
 
@@ -38,35 +39,62 @@ def _now():
 
 
 @api.app.get("/api/business/orders")
-def list_business_orders(conn: sqlite3.Connection = Depends(api.get_db)):
+def list_business_orders(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
     return _rows(conn, "SELECT id,external_order_id AS order_code,order_date,sales_channel AS channel,customer_name,contact,payment_mode,order_status AS status,discount,order_value,invoice_number,shipment_id,assigned_employee_id,updated_by,updated_at,remarks FROM bt_orders ORDER BY id DESC LIMIT 300")
 
 
 @api.app.get("/api/business/members")
-def list_business_members(conn: sqlite3.Connection = Depends(api.get_db)):
-    return _rows(conn, """SELECT m.id,m.name AS full_name,m.contact AS phone,m.service_id,s.name AS plan_name,m.training_mode,m.registration_date AS start_date,m.expiry_date AS end_date,m.sessions_purchased,m.sessions_completed,m.status,m.payment_status,m.invoice_ref,m.remarks FROM bt_members m LEFT JOIN bt_services s ON s.id=m.service_id ORDER BY m.id DESC LIMIT 300""")
+def list_business_members(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    return _rows(conn, """SELECT m.id,m.name AS full_name,m.contact AS phone,m.service_id,s.name AS plan_name,m.training_mode,m.registration_date,m.start_date,m.expiry_date AS end_date,m.sessions_purchased,m.sessions_completed,m.assigned_trainer_id,m.status,m.payment_status,m.invoice_ref,m.remarks FROM bt_members m LEFT JOIN bt_services s ON s.id=m.service_id ORDER BY m.id DESC LIMIT 300""")
 
 
 @api.app.get("/api/business/activities")
-def list_business_activities(conn: sqlite3.Connection = Depends(api.get_db)):
-    return _rows(conn, "SELECT * FROM bt_activities ORDER BY id DESC LIMIT 300")
+def list_business_activities(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    return _rows(conn, """SELECT a.*,e.name AS employee_name,o.external_order_id AS order_code,
+        s.name AS service_name,p.name AS product_name
+        FROM bt_activities a
+        LEFT JOIN employees e ON e.id=a.employee_id
+        LEFT JOIN bt_orders o ON o.id=a.related_order_id
+        LEFT JOIN bt_services s ON s.id=a.related_service_id
+        LEFT JOIN bt_products p ON p.id=a.product_id
+        ORDER BY a.id DESC LIMIT 300""")
 
 
 @api.app.get("/api/business/overview")
-def business_overview(conn: sqlite3.Connection = Depends(api.get_db)):
+def business_overview(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
     return {
         "products": _count(conn, "SELECT COUNT(*) FROM bt_products"),
+        "low_stock": _count(conn, """SELECT COUNT(*) FROM bt_products WHERE
+            (COALESCE(opening_stock,0)+COALESCE(received_qty,0)-COALESCE(reserved_qty,0)
+             -COALESCE(dispatched_qty,0)-COALESCE(free_qty,0)-COALESCE(damaged_qty,0)
+             -COALESCE(expired_qty,0)-COALESCE(quarantined_qty,0)+COALESCE(returned_qty,0))
+            <= COALESCE(reorder_level,0)"""),
         "orders": _count(conn, "SELECT COUNT(*) FROM bt_orders"),
         "services": _count(conn, "SELECT COUNT(*) FROM bt_services"),
         "members": _count(conn, "SELECT COUNT(*) FROM bt_members"),
         "activities": _count(conn, "SELECT COUNT(*) FROM bt_activities"),
         "open_orders": _count(
             conn,
-            "SELECT COUNT(*) FROM bt_orders WHERE lower(IFNULL(status,'')) NOT IN ('completed','cancelled','delivered','closed')",
+            "SELECT COUNT(*) FROM bt_orders WHERE lower(IFNULL(order_status,'')) NOT IN ('completed','cancelled','delivered','closed','returned')",
         ),
         "active_members": _count(
             conn,
             "SELECT COUNT(*) FROM bt_members WHERE lower(IFNULL(status,'')) IN ('active','current','ongoing') OR IFNULL(status,'') = ''",
+        ),
+        "completed_activities": _count(
+            conn, "SELECT COUNT(*) FROM bt_activities WHERE lower(IFNULL(task_status,''))='completed'"
         ),
     }
 
@@ -74,29 +102,60 @@ def business_overview(conn: sqlite3.Connection = Depends(api.get_db)):
 class OrderIn(BaseModel):
     customer_name: str = ""
     order_code: Optional[str] = None
-    status: str = "Open"
+    status: str = "Pending"
     order_date: Optional[str] = None
     order_value: float = 0.0
     channel: str = ""
+    contact: str = ""
+    payment_mode: str = ""
+    discount: float = 0.0
+    invoice_number: str = ""
+    shipment_id: str = ""
+    assigned_employee_id: Optional[int] = None
     notes: str = ""
 
 
 @api.app.post("/api/business/orders")
-def create_order(body: OrderIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
+def create_order(
+    body: OrderIn,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
     now = _now()
     code = (body.order_code or "").strip() or ("WEB-" + secrets.token_hex(3).upper())
-    odate = body.order_date or date.today().isoformat()
+    try:
+        odate = date.fromisoformat(str(body.order_date or date.today().isoformat())).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Order date must use YYYY-MM-DD.")
+    if body.status not in {"Pending", "Confirmed", "Packed", "Dispatched", "Delivered", "Completed", "Cancelled", "Returned"}:
+        raise HTTPException(status_code=422, detail="Invalid order status.")
+    if not math.isfinite(float(body.order_value)) or body.order_value < 0:
+        raise HTTPException(status_code=422, detail="Order value must be a finite non-negative number.")
+    if not math.isfinite(float(body.discount)) or body.discount < 0:
+        raise HTTPException(status_code=422, detail="Discount must be a finite non-negative number.")
+    if body.assigned_employee_id is not None and not conn.execute(
+        "SELECT 1 FROM employees WHERE id=? AND active=1", (body.assigned_employee_id,)
+    ).fetchone():
+        raise HTTPException(status_code=400, detail="Assigned employee was not found or is inactive.")
     try:
         cur = conn.execute(
-            """INSERT INTO bt_orders(external_order_id,order_date,sales_channel,customer_name,contact,order_status,order_value,updated_by,updated_at,remarks)
-               VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (code,odate,body.channel,body.customer_name.strip(),"",body.status,body.order_value,user.get("username",""),now,body.notes),
+            """INSERT INTO bt_orders(
+                external_order_id,order_date,sales_channel,customer_name,contact,payment_mode,
+                order_status,discount,order_value,invoice_number,shipment_id,assigned_employee_id,
+                updated_by,updated_at,remarks
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                code, odate, body.channel, body.customer_name.strip(), body.contact,
+                body.payment_mode, body.status, body.discount, body.order_value,
+                body.invoice_number, body.shipment_id, body.assigned_employee_id,
+                user.get("username", ""), now, body.notes,
+            ),
         )
         conn.commit()
-        return {"success":True,"id":cur.lastrowid,"order_code":code}
+        return {"success": True, "id": cur.lastrowid, "order_code": code}
     except sqlite3.Error as exc:
         conn.rollback()
-        raise HTTPException(status_code=400,detail=f"Create order failed: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Create order failed: {exc}") from exc
 
 
 class MemberIn(BaseModel):
@@ -106,33 +165,122 @@ class MemberIn(BaseModel):
     service_id: Optional[int] = None
     phone: str = ""
     training_mode: str = ""
+    registration_date: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     sessions_purchased: int = 0
+    sessions_completed: int = 0
+    assigned_trainer_id: Optional[int] = None
     payment_status: str = "Pending"
     invoice_ref: str = ""
     notes: str = ""
 
 
 @api.app.post("/api/business/members")
-def create_member(body: MemberIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
-    service_id=body.service_id
+def create_member(
+    body: MemberIn,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    if not body.full_name.strip():
+        raise HTTPException(status_code=422, detail="Member name is required.")
+    if body.sessions_purchased < 0 or body.sessions_completed < 0:
+        raise HTTPException(status_code=422, detail="Session counts cannot be negative.")
+    service_id = body.service_id
     if service_id is None and body.plan_name.strip():
-        found=conn.execute("SELECT id FROM bt_services WHERE name=? COLLATE NOCASE LIMIT 1",(body.plan_name.strip(),)).fetchone()
-        service_id=found[0] if found else None
-    start=body.start_date or date.today().isoformat()
+        found = conn.execute(
+            "SELECT id FROM bt_services WHERE name=? COLLATE NOCASE LIMIT 1",
+            (body.plan_name.strip(),),
+        ).fetchone()
+        service_id = found[0] if found else None
+    if service_id is not None and not conn.execute(
+        "SELECT 1 FROM bt_services WHERE id=?", (service_id,)
+    ).fetchone():
+        raise HTTPException(status_code=400, detail="Selected service was not found.")
+    if body.assigned_trainer_id is not None and not conn.execute(
+        "SELECT 1 FROM employees WHERE id=? AND active=1", (body.assigned_trainer_id,)
+    ).fetchone():
+        raise HTTPException(status_code=400, detail="Assigned trainer was not found or is inactive.")
+    registration = body.registration_date or body.start_date or date.today().isoformat()
+    start = body.start_date or registration
     try:
-        cur=conn.execute(
-            """INSERT INTO bt_members(name,contact,service_id,training_mode,registration_date,start_date,expiry_date,
-               sessions_purchased,status,payment_status,invoice_ref,remarks) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (body.full_name.strip(),body.phone,service_id,body.training_mode,start,start,body.end_date or "",
-             body.sessions_purchased,body.status,body.payment_status,body.invoice_ref,body.notes),
+        registration = date.fromisoformat(str(registration)).isoformat()
+        start = date.fromisoformat(str(start)).isoformat()
+        expiry = date.fromisoformat(str(body.end_date)).isoformat() if body.end_date else ""
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Membership dates must use YYYY-MM-DD.")
+    if body.status not in {"Active", "Expired", "Inactive", "Cancelled", "Suspended"}:
+        raise HTTPException(status_code=422, detail="Invalid membership status.")
+    if body.payment_status not in {"Pending", "Paid", "Partial", "Overdue", "Refunded"}:
+        raise HTTPException(status_code=422, detail="Invalid payment status.")
+    try:
+        cur = conn.execute(
+            """INSERT INTO bt_members(
+                name,contact,service_id,training_mode,registration_date,start_date,expiry_date,
+                sessions_purchased,sessions_completed,assigned_trainer_id,status,payment_status,
+                invoice_ref,remarks
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                body.full_name.strip(), body.phone, service_id, body.training_mode, registration,
+                start, expiry, body.sessions_purchased, body.sessions_completed,
+                body.assigned_trainer_id, body.status, body.payment_status,
+                body.invoice_ref, body.notes,
+            ),
         )
         conn.commit()
-        return {"success":True,"id":cur.lastrowid}
+        return {"success": True, "id": cur.lastrowid}
     except sqlite3.Error as exc:
         conn.rollback()
-        raise HTTPException(status_code=400,detail=f"Create member failed: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Create member failed: {exc}") from exc
+
+
+class MemberUpdate(BaseModel):
+    status: Optional[str] = None
+    payment_status: Optional[str] = None
+    sessions_purchased: Optional[int] = None
+    sessions_completed: Optional[int] = None
+    end_date: Optional[str] = None
+    invoice_ref: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@api.app.patch("/api/business/members/{member_id}")
+def update_business_member(
+    member_id: int,
+    body: MemberUpdate,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    allowed = {
+        "status": "status", "payment_status": "payment_status",
+        "sessions_purchased": "sessions_purchased", "sessions_completed": "sessions_completed",
+        "end_date": "expiry_date", "invoice_ref": "invoice_ref", "notes": "remarks",
+    }
+    values = body.dict(exclude_unset=True)
+    if not values:
+        raise HTTPException(status_code=422, detail="No membership changes were supplied.")
+    if "status" in values and values["status"] not in {"Active", "Expired", "Inactive", "Cancelled", "Suspended"}:
+        raise HTTPException(status_code=422, detail="Invalid membership status.")
+    if "payment_status" in values and values["payment_status"] not in {"Pending", "Paid", "Partial", "Overdue", "Refunded"}:
+        raise HTTPException(status_code=422, detail="Invalid payment status.")
+    for key in ("sessions_purchased", "sessions_completed"):
+        if key in values and (values[key] is None or int(values[key]) < 0):
+            raise HTTPException(status_code=422, detail="Session counts cannot be negative.")
+    if "end_date" in values and values["end_date"]:
+        try:
+            values["end_date"] = date.fromisoformat(str(values["end_date"])).isoformat()
+        except ValueError:
+            raise HTTPException(status_code=422, detail="End date must use YYYY-MM-DD.")
+    assignments = [f"{allowed[key]}=?" for key in values]
+    params = [values[key] for key in values]
+    cur = conn.execute(
+        "UPDATE bt_members SET " + ",".join(assignments) + " WHERE id=?",
+        (*params, member_id),
+    )
+    conn.commit()
+    if not cur.rowcount:
+        raise HTTPException(status_code=404, detail="Member not found.")
+    return {"success": True}
 
 
 class OrderStatusIn(BaseModel):
@@ -166,19 +314,173 @@ class ActivityIn(BaseModel):
     remarks: str = ""
 
 
+_ACTIVITY_STATUSES = {"Pending", "In Progress", "Completed", "Blocked", "Cancelled"}
+
+
 @api.app.post("/api/business/activities")
-def create_business_activity(body: ActivityIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
-    if not conn.execute("SELECT 1 FROM employees WHERE id=? AND active=1",(body.employee_id,)).fetchone():
-        raise HTTPException(status_code=400,detail="Select an active employee.")
-    cur=conn.execute(
-        """INSERT INTO bt_activities(employee_id,related_order_id,related_service_id,task_type,product_id,quantity,
-           unit,assigned_by,start_time,completion_time,task_status,proof_ref,remarks,created_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (body.employee_id,body.related_order_id,body.related_service_id,body.task_type,body.product_id,body.quantity,
-         body.unit,user.get("username",""),body.start_time,body.completion_time,body.task_status,body.proof_ref,body.remarks,_now()),
+def create_business_activity(
+    body: ActivityIn,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    if not conn.execute("SELECT 1 FROM employees WHERE id=? AND active=1", (body.employee_id,)).fetchone():
+        raise HTTPException(status_code=400, detail="Select an active employee.")
+    if not math.isfinite(float(body.quantity)) or body.quantity < 0:
+        raise HTTPException(status_code=422, detail="Activity quantity must be a finite non-negative number.")
+    if body.task_status not in _ACTIVITY_STATUSES:
+        raise HTTPException(status_code=422, detail="Invalid activity status.")
+    for table, value, label in (
+        ("bt_orders", body.related_order_id, "order"),
+        ("bt_services", body.related_service_id, "service"),
+        ("bt_products", body.product_id, "product"),
+    ):
+        if value is not None and not conn.execute(f"SELECT 1 FROM {table} WHERE id=?", (value,)).fetchone():
+            raise HTTPException(status_code=400, detail=f"Selected {label} was not found.")
+    cur = conn.execute(
+        """INSERT INTO bt_activities(
+            employee_id,related_order_id,related_service_id,task_type,product_id,quantity,
+            unit,assigned_by,start_time,completion_time,task_status,proof_ref,remarks,created_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            body.employee_id, body.related_order_id, body.related_service_id, body.task_type,
+            body.product_id, body.quantity, body.unit, user.get("username", ""),
+            body.start_time, body.completion_time, body.task_status, body.proof_ref,
+            body.remarks, _now(),
+        ),
     )
     conn.commit()
-    return {"success":True,"id":cur.lastrowid}
+    return {"success": True, "id": cur.lastrowid}
+
+
+class ActivityUpdate(BaseModel):
+    task_status: Optional[str] = None
+    start_time: Optional[str] = None
+    completion_time: Optional[str] = None
+    verified_by: Optional[str] = None
+    proof_ref: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+@api.app.patch("/api/business/activities/{activity_id}")
+def update_business_activity(
+    activity_id: int,
+    body: ActivityUpdate,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    values = body.dict(exclude_unset=True)
+    if not values:
+        raise HTTPException(status_code=422, detail="No activity changes were supplied.")
+    if "task_status" in values and values["task_status"] not in _ACTIVITY_STATUSES:
+        raise HTTPException(status_code=422, detail="Invalid activity status.")
+    current = conn.execute("SELECT task_status,start_time,completion_time FROM bt_activities WHERE id=?", (activity_id,)).fetchone()
+    if not current:
+        raise HTTPException(status_code=404, detail="Activity not found.")
+    if values.get("task_status") == "In Progress" and not values.get("start_time", current["start_time"]):
+        values["start_time"] = _now()
+    if values.get("task_status") == "Completed" and not values.get("completion_time", current["completion_time"]):
+        values["completion_time"] = _now()
+    allowed = {"task_status", "start_time", "completion_time", "verified_by", "proof_ref", "remarks"}
+    assignments = [f"{key}=?" for key in values if key in allowed]
+    params = [values[key] for key in values if key in allowed]
+    cur = conn.execute(
+        "UPDATE bt_activities SET " + ",".join(assignments) + " WHERE id=?",
+        (*params, activity_id),
+    )
+    conn.commit()
+    if not cur.rowcount:
+        raise HTTPException(status_code=404, detail="Activity not found.")
+    return {"success": True}
+
+
+class StockMovementIn(BaseModel):
+    product_id: int
+    txn_type: str
+    quantity: float
+    unit: str = ""
+    reference: str = ""
+    notes: str = ""
+
+
+_STOCK_MOVEMENTS = {
+    "receive": ("received_qty", 1, False),
+    "reserve": ("reserved_qty", 1, True),
+    "release": ("reserved_qty", -1, False),
+    "dispatch": ("dispatched_qty", 1, True),
+    "free": ("free_qty", 1, True),
+    "return": ("returned_qty", 1, False),
+    "damage": ("damaged_qty", 1, True),
+    "expire": ("expired_qty", 1, True),
+    "quarantine": ("quarantined_qty", 1, True),
+    "unquarantine": ("quarantined_qty", -1, False),
+}
+
+
+@api.app.get("/api/business/stock-ledger")
+def list_business_stock_ledger(
+    product_id: Optional[int] = None,
+    limit: int = Query(300, ge=1, le=1000),
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    sql = """SELECT l.*,p.name AS product_name,p.sku FROM bt_stock_ledger l
+             LEFT JOIN bt_products p ON p.id=l.product_id"""
+    params = []
+    if product_id is not None:
+        sql += " WHERE l.product_id=?"
+        params.append(product_id)
+    sql += " ORDER BY l.id DESC LIMIT ?"
+    params.append(limit)
+    return _rows(conn, sql, tuple(params))
+
+
+@api.app.post("/api/business/stock-ledger")
+def create_business_stock_movement(
+    body: StockMovementIn,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    movement = str(body.txn_type or "").strip().casefold()
+    if movement not in _STOCK_MOVEMENTS:
+        raise HTTPException(status_code=422, detail="Unsupported stock movement type.")
+    quantity = float(body.quantity)
+    if not math.isfinite(quantity) or quantity <= 0:
+        raise HTTPException(status_code=422, detail="Movement quantity must be a finite positive number.")
+    field, direction, consumes_available = _STOCK_MOVEMENTS[movement]
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        product = conn.execute("SELECT * FROM bt_products WHERE id=?", (body.product_id,)).fetchone()
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found.")
+        if consumes_available:
+            from business_tracking import available_stock
+            if quantity > max(0.0, available_stock(product)):
+                raise HTTPException(status_code=409, detail="Movement exceeds available stock.")
+        if direction < 0 and quantity > float(product[field] or 0):
+            raise HTTPException(status_code=409, detail="Movement exceeds the quantity currently held in that stock state.")
+        conn.execute(
+            f"UPDATE bt_products SET {field}=COALESCE({field},0)+?,updated_by=?,updated_at=? WHERE id=?",
+            (quantity * direction, user.get("username", ""), _now(), body.product_id),
+        )
+        cur = conn.execute(
+            """INSERT INTO bt_stock_ledger(
+                product_id,txn_type,quantity,unit,reference,notes,created_by,created_at
+            ) VALUES(?,?,?,?,?,?,?,?)""",
+            (
+                body.product_id, movement, quantity, body.unit, body.reference,
+                body.notes, user.get("username", ""), _now(),
+            ),
+        )
+        conn.commit()
+        updated = conn.execute("SELECT * FROM bt_products WHERE id=?", (body.product_id,)).fetchone()
+        from business_tracking import available_stock
+        return {"success": True, "id": cur.lastrowid, "available_stock": available_stock(updated)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except sqlite3.Error as exc:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=f"Stock movement failed: {exc}") from exc
 
 
 @api.app.get("/api/customers/prospects")
