@@ -180,3 +180,129 @@ def test_settings_screen_renders_both_desktop_data_actions():
     assert "/employees/export.csv" in source
     assert "Expose all proof links" in source
     assert "/settings/expose-all-links" in source
+
+def test_google_sheets_sync_customer_admin_merges_without_changing_account_credentials(tmp_path, monkeypatch):
+    import google_sheets_sync
+
+    path = tmp_path / "google-sheets-customer-admin.db"
+    _create_settings_database(path)
+    setup = sqlite3.connect(path)
+    setup.execute(
+        """CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL COLLATE BINARY,
+            display_name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1
+        )"""
+    )
+    setup.execute(
+        "INSERT INTO auth_users VALUES(1, 'Admin', 'Customer Admin', 'Admin', 'pbkdf2-customer-hash', 1)"
+    )
+    setup.commit()
+    setup.close()
+
+    def fake_sync(db):
+        assert db.active_user["username"] == "Admin"
+        db.conn.execute("UPDATE employees SET notes='Merged from master workbook' WHERE id=1")
+        db.conn.commit()
+        return {"employees": 1, "tasks": 2}
+
+    monkeypatch.setattr(google_sheets_sync, "sync_from_live_google_sheet", fake_sync)
+    client, connections = _client_for_database(
+        path,
+        {"id": 1, "username": "Admin", "display_name": "Customer Admin", "role": "Admin"},
+        track_commits=True,
+    )
+    try:
+        response = client.post("/api/settings/google-sheets-sync", json={})
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "synced"
+        assert response.json()["updated"] == 3
+        assert connections[-1].commit_calls == 1
+        conn = sqlite3.connect(path)
+        try:
+            assert conn.execute("SELECT notes FROM employees WHERE id=1").fetchone()[0] == "Merged from master workbook"
+            assert conn.execute("SELECT username,password_hash FROM auth_users").fetchone() == (
+                "Admin", "pbkdf2-customer-hash"
+            )
+        finally:
+            conn.close()
+    finally:
+        _clear_overrides()
+
+
+def test_google_sheets_sync_requires_developer_password_for_exact_lowercase_admin(tmp_path, monkeypatch):
+    import cloudflare_chat
+    import google_sheets_sync
+
+    path = tmp_path / "google-sheets-developer.db"
+    _create_settings_database(path)
+    sync_calls = []
+
+    def fake_sync(db):
+        sync_calls.append(db.active_user["username"])
+        return {"stores": 1}
+
+    monkeypatch.setattr(google_sheets_sync, "sync_from_live_google_sheet", fake_sync)
+    monkeypatch.setattr(cloudflare_chat, "verify_developer_password", lambda password: password == "kiran123")
+    client, _connections = _client_for_database(
+        path,
+        {"id": 2, "username": "admin", "display_name": "Developer", "role": "Admin"},
+    )
+    try:
+        missing = client.post("/api/settings/google-sheets-sync", json={})
+        wrong = client.post("/api/settings/google-sheets-sync", json={"developer_password": "wrong"})
+        valid = client.post("/api/settings/google-sheets-sync", json={"developer_password": "kiran123"})
+        assert missing.status_code == 403
+        assert wrong.status_code == 403
+        assert valid.status_code == 200, valid.text
+        assert valid.json()["status"] == "synced"
+        assert sync_calls == ["admin"]
+    finally:
+        _clear_overrides()
+
+
+def test_google_sheets_sync_denies_staff_and_reports_offline_without_replacing_local_data(tmp_path, monkeypatch):
+    import google_sheets_sync
+
+    path = tmp_path / "google-sheets-offline.db"
+    _create_settings_database(path)
+    monkeypatch.setattr(google_sheets_sync, "sync_from_live_google_sheet", lambda _db: {})
+    client, _connections = _client_for_database(
+        path,
+        {"id": 3, "username": "Staff", "display_name": "Staff", "role": "Staff"},
+    )
+    try:
+        denied = client.post("/api/settings/google-sheets-sync", json={})
+        assert denied.status_code == 403
+    finally:
+        _clear_overrides()
+
+    client, _connections = _client_for_database(
+        path,
+        {"id": 1, "username": "Admin", "display_name": "Customer Admin", "role": "Admin"},
+    )
+    try:
+        response = client.post("/api/settings/google-sheets-sync", json={})
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "offline"
+        assert response.json()["updated"] == 0
+        conn = sqlite3.connect(path)
+        try:
+            assert conn.execute("SELECT notes FROM employees WHERE id=1").fetchone()[0] == "First line, with comma\nSecond line"
+        finally:
+            conn.close()
+    finally:
+        _clear_overrides()
+
+
+def test_settings_screen_exposes_google_sheets_sync_and_developer_password_gate():
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text(
+        encoding="utf-8"
+    )
+    assert "Google Sheets master sync" in source
+    assert "/settings/google-sheets-sync" in source
+    assert "Developer password (required for lowercase developer account)" in source
+    assert "This is a pull operation, not an upload to Google Sheets." in source

@@ -36,6 +36,7 @@ export default function App() {
   const [passwordChange,setPasswordChange]=useState({current_password:'',new_password:'',confirm_password:''});
   const [recoveryQuestion,setRecoveryQuestion]=useState(''),[recoveryReady,setRecoveryReady]=useState(false);
   const [authNotice,setAuthNotice]=useState(''),[authUsers,setAuthUsers]=useState([]);
+  const [googleSheetsPassword,setGoogleSheetsPassword]=useState(''),[googleSheetsBusy,setGoogleSheetsBusy]=useState(false),[googleSheetsStatus,setGoogleSheetsStatus]=useState('');
   const [accountRoleDrafts,setAccountRoleDrafts]=useState({});
   const [accountPasswordResetTarget,setAccountPasswordResetTarget]=useState(null);
   const [accountPasswordDraft,setAccountPasswordDraft]=useState({password:'',confirm:''});
@@ -170,6 +171,29 @@ export default function App() {
       await load();
     }catch(error){notify(error.message)}
   };
+  const syncGoogleSheets=async()=>{
+    setGoogleSheetsBusy(true);
+    setGoogleSheetsStatus('');
+    try{
+      const result=await apiFetch('/settings/google-sheets-sync',{
+        method:'POST',
+        body:JSON.stringify({developer_password:googleSheetsPassword})
+      });
+      setGoogleSheetsStatus(result.message||'Google Sheets sync completed.');
+      if(result.status==='synced'){
+        notify('Google Sheets master workbook merged: '+result.updated+' records.');
+        await load();
+      }else{
+        notify(result.message||'Google Sheets is unavailable; local records were preserved.');
+      }
+    }catch(error){
+      setGoogleSheetsStatus(error.message);
+      notify(error.message);
+    }finally{
+      setGoogleSheetsBusy(false);
+      setGoogleSheetsPassword('');
+    }
+  };
   const downloadDatabaseBackup=async()=>{
     try{
       const response=await fetch(API+'/web-database/export',{headers:{Authorization:'Bearer '+token}});
@@ -203,6 +227,10 @@ export default function App() {
   const filtered=(items,keys)=>items.filter(x=>keys.some(k=>String(x[k]??'').toLowerCase().includes(query.toLowerCase())));
   const canEditEmployees=['hr','admin','developer'].includes(String(user?.role||'').toLowerCase());
   const canAdminEmployees=['admin','developer'].includes(String(user?.role||'').toLowerCase());
+  const isDeveloperSyncUser=String(user?.username||'').trim()!=='Admin'
+    && !String(user?.username||'').toLowerCase().includes('taruna')
+    && !String(user?.display_name||'').toLowerCase().includes('taruna')
+    && (String(user?.username||'').trim()==='admin'||String(user?.role||'').trim().toLowerCase()==='developer');
   const employeeRows=useMemo(()=>{
     const term=query.trim().toLowerCase();
     let rows=(data.employees||[]).filter(e=>{
@@ -414,6 +442,15 @@ export default function App() {
         {tab==='reports'&&<PrintCenter employees={data.employees} apiFetch={apiFetch} notify={notify}/>}
         {tab==='archive'&&<ArchiveManager items={data.archive} employees={data.employees} apiFetch={apiFetch} notify={notify} refresh={load} isAdmin={canAdminEmployees} token={token}/>}
         {tab==='chat'&&<Panel title="Live Chat"><LiveChat messages={data.messages} user={user} onSendGeneral={async content=>{await post('/chat/messages',{channel:'general',content,sender_name:user.display_name||user.username})}}/></Panel>}
+        {tab==='settings'&&canAdminEmployees&&<Panel title="Google Sheets master sync">
+          <p className="mb-3 text-sm text-slate-400">Pull the current desktop master workbook and merge it into this web database. Matching records are updated from the workbook; local-only records are not deleted. This is a pull operation, not an upload to Google Sheets.</p>
+          {isDeveloperSyncUser&&<label className="mb-3 block max-w-md text-xs text-slate-400">Developer password (required for lowercase developer account)
+            <input className={field+' mt-1'} type="password" autoComplete="current-password" value={googleSheetsPassword} onChange={e=>setGoogleSheetsPassword(e.target.value)} placeholder="Enter developer password"/>
+          </label>}
+          <button type="button" className={btn} disabled={googleSheetsBusy||(isDeveloperSyncUser&&!googleSheetsPassword.trim())} onClick={syncGoogleSheets}>{googleSheetsBusy?'Syncing master workbook…':'Sync Google Sheets'}</button>
+          {googleSheetsStatus&&<p role="status" className="mt-3 rounded-lg bg-slate-950 p-3 text-sm text-cyan-200">{googleSheetsStatus}</p>}
+          <p className="mt-2 text-xs text-slate-500">Customer Admin sync does not require a developer password. Developer sync authorization is checked for each request and is never stored.</p>
+        </Panel>}
         {tab==='settings'&&<><Panel title="Employee data actions"><div className="flex flex-wrap gap-2"><button type="button" className={btn} onClick={downloadEmployeesCsv}>Export employees CSV</button><button type="button" className={btn} onClick={exposeAllProofLinks}>Expose all proof links</button></div><p className="mt-2 text-xs text-slate-500">CSV includes active and inactive employee records. Global exposure enables full proof URLs for every task and the default reports.</p></Panel><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><button className="mt-3 rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300" onClick={logout}>Sign out</button></Panel><Panel title="Database and encrypted sync"><div className="mb-3 grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database</p><p className="mt-1 text-sm font-semibold">{data.db?.database_connected?'Connected':'Unavailable'}</p><p className="text-xs text-slate-500">{data.db?.database_name||'Waiting for status'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database size</p><p className="mt-1 text-sm font-semibold">{data.db?.database_size_bytes!=null?(data.db.database_size_bytes/1024/1024).toFixed(2)+' MB':'—'}</p><p className="text-xs text-slate-500">Integrity: {data.db?.database_integrity||'Unknown'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Encrypted sync</p><p className="mt-1 text-sm font-semibold">{data.db?.sync?.status||'Status unavailable'}</p><p className="text-xs text-slate-500">{data.db?.sync?.configured?'Configured':'Not configured'}</p></div></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(data.db?.counts||{},null,2)}</pre><div className="mt-3 flex flex-wrap gap-2"><button className={btn} onClick={downloadDatabaseBackup}><Download size={16}/> Download database backup</button><button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={Boolean(data.db?.sync?.busy)} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Encrypted sync completed':(r.error||r.status||'Sync did not complete'));await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></div>{canAdminEmployees&&<div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/5 p-3"><label className="block text-xs text-slate-300">Restore database backup (Admin / Developer)<input className={field+' mt-2'} type="file" accept=".db,.sqlite,.sqlite3" onChange={e=>setRestoreFile(e.target.files?.[0]||null)}/></label><button className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2.5 text-sm text-rose-200 disabled:opacity-40" disabled={!restoreFile||restoreBusy} onClick={restoreDatabaseBackup}><Upload size={16}/>{restoreBusy?'Validating and restoring…':'Restore selected backup'}</button><p className="mt-2 text-xs text-slate-500">The server validates the SQLite file and creates a safety backup before replacement. Account names and password hashes in the restored database are preserved; browser sessions are cleared.</p></div>}</Panel></>}
       </main>
     </div>
