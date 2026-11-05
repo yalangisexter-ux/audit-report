@@ -989,3 +989,129 @@ def test_web_business_products_and_print_center_use_full_stock_ledger():
         connection.execute("DELETE FROM bt_products WHERE sku=?", (sku,))
         connection.commit()
         connection.close()
+
+
+def test_web_archive_read_requires_login_and_supports_view_export_and_rbac(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    staff_token = "archive-staff-" + secrets.token_hex(8)
+    admin_token = "archive-admin-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 901, "username": "archive-staff", "display_name": "Archive Staff", "role": "Staff"
+    }
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 902, "username": "archive-admin", "display_name": "Archive Admin", "role": "Admin"
+    }
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    connection.row_factory = sqlite3.Row
+    pdf_content = b"%PDF-1.4\\narchive access regression\\n%%EOF"
+    try:
+        cursor = connection.execute(
+            """INSERT INTO archived_documents(
+                employee_id,report_date,file_name,mime_type,content,notes,uploaded_at
+            ) VALUES(NULL,?,?,?,?,?,?)""",
+            ("2026-11-04", "archive-access-test.pdf", "application/pdf",
+             sqlite3.Binary(pdf_content), "access regression", "2026-11-04 09:00:00"),
+        )
+        document_id = cursor.lastrowid
+        connection.commit()
+
+        assert client.get("/api/archive").status_code == 401
+        assert client.get(f"/api/archive/{document_id}/view").status_code == 401
+        assert client.get(f"/api/archive/{document_id}/download").status_code == 401
+
+        staff_headers = {"Authorization": f"Bearer {staff_token}"}
+        listed = client.get("/api/archive", headers=staff_headers)
+        assert listed.status_code == 200
+        assert any(row["id"] == document_id for row in listed.json())
+
+        viewed = client.get(f"/api/archive/{document_id}/view", headers=staff_headers)
+        assert viewed.status_code == 200
+        assert viewed.content == pdf_content
+        assert viewed.headers["content-disposition"].startswith("inline;")
+        assert "no-store" in viewed.headers["cache-control"]
+        assert viewed.headers["x-content-type-options"] == "nosniff"
+
+        exported = client.get(f"/api/archive/{document_id}/download", headers=staff_headers)
+        assert exported.status_code == 200
+        assert exported.content == pdf_content
+        assert exported.headers["content-disposition"].startswith("attachment;")
+        assert "no-store" in exported.headers["cache-control"]
+
+        assert client.delete(f"/api/archive/{document_id}", headers=staff_headers).status_code == 403
+        deleted = client.delete(
+            f"/api/archive/{document_id}",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert deleted.status_code == 200
+        assert client.get(f"/api/archive/{document_id}/view", headers=staff_headers).status_code == 404
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+        connection.execute("DELETE FROM archived_documents WHERE file_name=?", ("archive-access-test.pdf",))
+        connection.commit()
+        connection.close()
+
+
+def test_web_archive_upload_preserves_employee_date_and_notes(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "archive-upload-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 903, "username": "archive-admin", "display_name": "Archive Admin", "role": "Admin"
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    employee_code = "ARC-" + secrets.token_hex(4).upper()
+    employee_id = None
+    archive_id = None
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        employee_response = client.post(
+            "/api/employees",
+            json={"name": "Archive Association Test", "employee_code": employee_code, "department": "QA"},
+            headers=headers,
+        )
+        assert employee_response.status_code == 200
+        employee_id = employee_response.json()["id"]
+
+        pdf_content = b"%PDF-1.4\\nmetadata upload regression\\n%%EOF"
+        uploaded = client.post(
+            "/api/archive",
+            data={
+                "employee_id": str(employee_id),
+                "report_date": "2026-11-04",
+                "notes": "Imported from desktop archive",
+            },
+            files={"file": ("history.pdf", pdf_content, "application/pdf")},
+            headers=headers,
+        )
+        assert uploaded.status_code == 200
+        archive_id = uploaded.json()["id"]
+
+        listed = client.get("/api/archive", headers=headers)
+        assert listed.status_code == 200
+        row = next(item for item in listed.json() if item["id"] == archive_id)
+        assert row["employee_id"] == employee_id
+        assert row["employee_name"] == "Archive Association Test"
+        assert row["report_date"] == "2026-11-04"
+        assert row["notes"] == "Imported from desktop archive"
+
+        invalid = client.post(
+            "/api/archive",
+            data={"report_date": "2026-11-04"},
+            files={"file": ("not-a-pdf.pdf", b"not a pdf", "application/pdf")},
+            headers=headers,
+        )
+        assert invalid.status_code == 400
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+        if archive_id is not None:
+            connection.execute("DELETE FROM archived_documents WHERE id=?", (archive_id,))
+        if employee_id is not None:
+            connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        connection.commit()
+        connection.close()

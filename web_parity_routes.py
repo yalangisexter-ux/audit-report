@@ -30,7 +30,7 @@ def _rows(conn, sql, params=()):
 
 
 @api.app.get("/api/archive")
-def list_archive(conn=Depends(api.get_db)):
+def list_archive(conn=Depends(api.get_db), user=Depends(api.get_current_user)):
     return _rows(conn, """SELECT d.id,d.employee_id,COALESCE(e.name,'Unassigned / All') AS employee_name,
         d.report_date,d.file_name,d.mime_type,d.notes,d.uploaded_at,length(d.content) AS size_bytes
         FROM archived_documents d LEFT JOIN employees e ON e.id=d.employee_id ORDER BY d.uploaded_at DESC,d.id DESC""")
@@ -58,13 +58,40 @@ async def upload_archive(file: UploadFile = File(...), employee_id: int | None =
     conn.commit()
     return {"success": True, "id": cur.lastrowid}
 
+def _archive_pdf_response(document_id: int, disposition: str, conn):
+    row = conn.execute(
+        "SELECT file_name,mime_type,content FROM archived_documents WHERE id=?",
+        (document_id,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Archived document not found.")
+    filename = Path(row["file_name"] or f"archive-{document_id}.pdf").name
+    filename = "".join(
+        char for char in filename
+        if ord(char) >= 32 and char not in {'"', chr(92), chr(13), chr(10)}
+    ).strip()
+    if not filename:
+        filename = f"archive-{document_id}.pdf"
+    return Response(
+        content=bytes(row["content"]),
+        media_type=row["mime_type"] or "application/pdf",
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@api.app.get("/api/archive/{document_id}/view")
+def view_archive(document_id: int, conn=Depends(api.get_db), user=Depends(api.get_current_user)):
+    return _archive_pdf_response(document_id, "inline", conn)
+
+
 @api.app.get("/api/archive/{document_id}/download")
-def download_archive(document_id: int, conn=Depends(api.get_db)):
-    row = conn.execute("SELECT file_name,mime_type,content FROM archived_documents WHERE id=?", (document_id,)).fetchone()
-    if not row: raise HTTPException(status_code=404, detail="Archived document not found.")
-    filename = Path(row["file_name"]).name.replace('"', "")
-    return Response(content=bytes(row["content"]), media_type=row["mime_type"] or "application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+def download_archive(document_id: int, conn=Depends(api.get_db), user=Depends(api.get_current_user)):
+    return _archive_pdf_response(document_id, "attachment", conn)
 
 @api.app.delete("/api/archive/{document_id}")
 def delete_archive(document_id: int, conn=Depends(api.get_db), user=Depends(api.get_current_user)):
