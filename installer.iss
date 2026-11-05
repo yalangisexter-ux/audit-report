@@ -96,8 +96,6 @@ begin
 
 	// Legacy installers may omit DATA_DIR. Discover the original customer profile, including after EXE uninstall.
 	// Never use the elevated administrator's LocalAppData for the customer database.
-	// Very old clients do not pass DATA_DIR. Resolve the interactive user's
-	// actual profile instead of using the elevated administrator's LOCALAPPDATA.
 	ScriptPath := ExpandConstant('{tmp}\resolve_customer_data_dir.ps1');
 	OutputPath := ExpandConstant('{tmp}\rsc_customer_data_dir.txt');
 	DeleteFile(OutputPath);
@@ -164,6 +162,8 @@ begin
 	ExtractTemporaryFile('update_recovery.ps1');
 	if not FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
 	begin
+		// A prior EXE may have been removed while its process still holds files open.
+		KillRunningAppProcess;
 		if not RunRecoveryScript('cleanup', '', ResultCode) or (ResultCode <> 0) then
 			Log('Safe cleanup of stale application transaction folders did not complete.');
 	end;
