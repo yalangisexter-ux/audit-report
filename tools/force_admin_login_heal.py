@@ -47,11 +47,24 @@ def ensure_admin_accounts(db_path, customer_password: str, developer_password: s
         for username, display_name, role, password in desired:
             salt, digest = desktop_app.hash_pin(password)
             existing = conn.execute(
-                "SELECT id FROM auth_users WHERE username = ? COLLATE BINARY",
+                """SELECT id, password_salt, password_hash, role, display_name, active
+                   FROM auth_users WHERE username = ? COLLATE BINARY""",
                 (username,),
             ).fetchone()
             if existing:
-                # Keep the customer's stable account ID and all unrelated records.
+                # Do not rotate salts/hashes on every status poll once the requested
+                # credential is already valid. Preserve the stable account ID.
+                stored_salt = existing["password_salt"] or ""
+                stored_hash = existing["password_hash"] or ""
+                try:
+                    _, verified_hash = desktop_app.hash_pin(password, stored_salt)
+                    password_matches = bool(stored_salt and secrets.compare_digest(
+                        str(verified_hash), str(stored_hash)
+                    ))
+                except Exception:
+                    password_matches = False
+                if password_matches:
+                    salt, digest = stored_salt, stored_hash
                 conn.execute(
                     """UPDATE auth_users SET display_name=?, role=?, password_salt=?,
                        password_hash=?, active=1, updated_at=? WHERE id=?""",
