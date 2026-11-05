@@ -125,15 +125,13 @@ def test_attendance_select_all_keeps_multi_selection_after_table_polish(monkeypa
         db.conn.close()
 
 
-def test_present_absent_leave_inline_updates_persist_and_refresh_monthly_summary(monkeypatch, tmp_path):
+def test_present_absent_leave_dropdown_updates_persist_and_refresh_monthly_summary(monkeypatch, tmp_path):
     import sqlite3
-    from calendar import monthrange
 
     qt_app, db, window, employee_id, today_text = make_attendance_window(monkeypatch, tmp_path)
     try:
         today = date.fromisoformat(today_text)
         month_start = today.replace(day=1)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         db.conn.execute(
             "UPDATE employees SET joining_date=? WHERE id=?",
             (month_start.isoformat(), employee_id),
@@ -146,14 +144,34 @@ def test_present_absent_leave_inline_updates_persist_and_refresh_monthly_summary
             current = date.fromordinal(current.toordinal() + 1)
         assert len(weekdays) >= 3
 
-        # Exercise the same inline save handler used by the status dropdown.
+        # Drive the real QComboBox signal wired by refresh_attendance(), rather
+        # than calling the persistence helper directly.
         for work_date, status in zip(weekdays[:3], ("Present", "Absent", "Leave")):
-            window.save_attendance_inline(employee_id, work_date, "status", status)
+            work_day = date.fromisoformat(work_date)
+            window.att_date.setDate(app.QDate(work_day.year, work_day.month, work_day.day))
+            window.refresh_attendance()
+            combo = window.att_table.cellWidget(0, 2).findChild(app.QComboBox)
+            assert combo is not None
+            combo.setCurrentText(status)
+            qt_app.processEvents()
+            saved = db.conn.execute(
+                "SELECT attendance_status, check_in, check_out FROM attendance "
+                "WHERE employee_id=? AND work_date=?",
+                (employee_id, work_date),
+            ).fetchone()
+            assert saved is not None
+            assert saved["attendance_status"] == status
+            if status in ("Absent", "Leave"):
+                assert saved["check_in"] == ""
+                assert saved["check_out"] == ""
 
-        # A Present day with check-in/out must retain all fields after subsequent
-        # status changes on other dates.
+        # Re-check Present with times after the other two statuses were written.
+        first_day = date.fromisoformat(weekdays[0])
+        window.att_date.setDate(app.QDate(first_day.year, first_day.month, first_day.day))
+        window.refresh_attendance()
         window.save_attendance_inline(employee_id, weekdays[0], "check_in", "09:00")
         window.save_attendance_inline(employee_id, weekdays[0], "check_out", "17:00")
+
         window.att_date.setDate(app.QDate(today.year, today.month, today.day))
         window.refresh_attendance_summary()
         qt_app.processEvents()
@@ -182,11 +200,10 @@ def test_present_absent_leave_inline_updates_persist_and_refresh_monthly_summary
         finally:
             reopened.close()
     finally:
-        if getattr(window, "db", None) is not None:
-            try:
-                window.close()
-            except Exception:
-                pass
+        try:
+            window.close()
+        except Exception:
+            pass
         try:
             db.conn.close()
         except Exception:
