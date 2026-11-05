@@ -246,7 +246,7 @@ def test_google_sheets_sync_requires_developer_password_for_exact_lowercase_admi
         return {"stores": 1}
 
     monkeypatch.setattr(google_sheets_sync, "sync_from_live_google_sheet", fake_sync)
-    monkeypatch.setattr(cloudflare_chat, "verify_developer_password", lambda password: password == "kiran123")
+    monkeypatch.setattr(cloudflare_chat, "verify_developer_password", lambda password: password == "unit-test-only-developer-secret")
     client, _connections = _client_for_database(
         path,
         {"id": 2, "username": "admin", "display_name": "Developer", "role": "Admin"},
@@ -254,7 +254,7 @@ def test_google_sheets_sync_requires_developer_password_for_exact_lowercase_admi
     try:
         missing = client.post("/api/settings/google-sheets-sync", json={})
         wrong = client.post("/api/settings/google-sheets-sync", json={"developer_password": "wrong"})
-        valid = client.post("/api/settings/google-sheets-sync", json={"developer_password": "kiran123"})
+        valid = client.post("/api/settings/google-sheets-sync", json={"developer_password": "unit-test-only-developer-secret"})
         assert missing.status_code == 403
         assert wrong.status_code == 403
         assert valid.status_code == 200, valid.text
