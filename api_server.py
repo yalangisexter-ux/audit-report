@@ -2054,7 +2054,7 @@ def export_report(
             HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9),
         ])
 
-        url_pattern = re.compile(r"https?://[^\\s]+", re.IGNORECASE)
+        url_pattern = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
         def linked_markup(value):
             clean = str(value).replace("■ ", "EMPLOYEE: ").replace("—", "-")
