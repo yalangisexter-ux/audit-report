@@ -412,3 +412,79 @@ def test_bulk_attendance_transaction_uses_legacy_safe_schema_and_commits_once(mo
         ]
     finally:
         db.conn.close()
+
+
+def test_remote_attendance_merge_populates_legacy_required_columns(monkeypatch, tmp_path):
+    import sqlite3
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "legacy-merge.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+
+    local_legacy = sqlite3.connect(tmp_path / "legacy-merge.db")
+    local_legacy.execute("""
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            check_in TEXT NOT NULL DEFAULT '',
+            check_out TEXT NOT NULL DEFAULT '',
+            remarks TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )
+    """)
+    local_legacy.commit()
+    local_legacy.close()
+
+    db = app.Database()
+    remote_path = tmp_path / "remote.db"
+    remote = sqlite3.connect(remote_path)
+    remote.executescript("""
+        CREATE TABLE employees(
+            id INTEGER PRIMARY KEY, employee_code TEXT, name TEXT, department TEXT,
+            designation TEXT, phone TEXT, email TEXT, joining_date TEXT,
+            active INTEGER, notes TEXT, created_at TEXT
+        );
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL, work_date TEXT NOT NULL,
+            date TEXT NOT NULL, status TEXT NOT NULL, check_in TEXT NOT NULL DEFAULT '',
+            check_out TEXT NOT NULL DEFAULT '', break_minutes INTEGER NOT NULL DEFAULT 0,
+            attendance_status TEXT NOT NULL, attendance_note TEXT NOT NULL DEFAULT '',
+            remarks TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL
+        );
+    """)
+    work_date = date.today().isoformat()
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    remote.execute(
+        "INSERT INTO employees VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (9, "SYNC-LEGACY-01", "Legacy Sync Employee", "Ops", "", "", "",
+         work_date, 1, "", stamp),
+    )
+    remote.execute(
+        "INSERT INTO attendance VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        (17, 9, work_date, work_date, "Present", "09:00", "18:00", 0,
+         "Present", "Remote attendance", "Remote attendance", stamp),
+    )
+    remote.commit()
+    remote.close()
+
+    try:
+        db.conn.execute(
+            "INSERT INTO employees(employee_code,name,joining_date,active,created_at) VALUES(?,?,?,?,?)",
+            ("SYNC-LEGACY-01", "Legacy Sync Employee", work_date, 1, stamp),
+        )
+        db.conn.commit()
+
+        app.merge_remote_database_snapshot(db.conn, remote_path)
+
+        saved = db.conn.execute(
+            "SELECT date,work_date,status,attendance_status,check_in,check_out,remarks "
+            "FROM attendance WHERE employee_id=(SELECT id FROM employees WHERE employee_code=?)",
+            ("SYNC-LEGACY-01",),
+        ).fetchone()
+        assert tuple(saved) == (
+            work_date, work_date, "Present", "Present", "09:00", "18:00", "Remote attendance"
+        )
+    finally:
+        db.conn.close()
