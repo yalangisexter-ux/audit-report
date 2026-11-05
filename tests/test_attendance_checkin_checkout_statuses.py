@@ -123,3 +123,71 @@ def test_attendance_select_all_keeps_multi_selection_after_table_polish(monkeypa
     finally:
         window.close()
         db.conn.close()
+
+
+def test_present_absent_leave_inline_updates_persist_and_refresh_monthly_summary(monkeypatch, tmp_path):
+    import sqlite3
+    from calendar import monthrange
+
+    qt_app, db, window, employee_id, today_text = make_attendance_window(monkeypatch, tmp_path)
+    try:
+        today = date.fromisoformat(today_text)
+        month_start = today.replace(day=1)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        db.conn.execute(
+            "UPDATE employees SET joining_date=? WHERE id=?",
+            (month_start.isoformat(), employee_id),
+        )
+        weekdays = []
+        current = month_start
+        while current <= today:
+            if current.weekday() in db.working_weekdays():
+                weekdays.append(current.isoformat())
+            current = date.fromordinal(current.toordinal() + 1)
+        assert len(weekdays) >= 3
+
+        # Exercise the same inline save handler used by the status dropdown.
+        for work_date, status in zip(weekdays[:3], ("Present", "Absent", "Leave")):
+            window.save_attendance_inline(employee_id, work_date, "status", status)
+
+        # A Present day with check-in/out must retain all fields after subsequent
+        # status changes on other dates.
+        window.save_attendance_inline(employee_id, weekdays[0], "check_in", "09:00")
+        window.save_attendance_inline(employee_id, weekdays[0], "check_out", "17:00")
+        window.att_date.setDate(app.QDate(today.year, today.month, today.day))
+        window.refresh_attendance_summary()
+        qt_app.processEvents()
+
+        summary = window.attendance_summary_table
+        assert summary.rowCount() == 1
+        assert int(summary.item(0, 3).text()) == 1  # Present
+        assert int(summary.item(0, 4).text()) == 1  # Absent
+        assert int(summary.item(0, 5).text()) == 1  # Leave
+        assert int(summary.item(0, 7).text()) == 1  # Total present
+
+        window.close()
+        db.conn.close()
+        reopened = sqlite3.connect(tmp_path / "attendance.db")
+        try:
+            saved = reopened.execute(
+                "SELECT work_date, attendance_status, check_in, check_out "
+                "FROM attendance WHERE employee_id=? ORDER BY work_date",
+                (employee_id,),
+            ).fetchall()
+            assert saved == [
+                (weekdays[0], "Present", "09:00", "17:00"),
+                (weekdays[1], "Absent", "", ""),
+                (weekdays[2], "Leave", "", ""),
+            ]
+        finally:
+            reopened.close()
+    finally:
+        if getattr(window, "db", None) is not None:
+            try:
+                window.close()
+            except Exception:
+                pass
+        try:
+            db.conn.close()
+        except Exception:
+            pass
