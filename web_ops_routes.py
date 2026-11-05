@@ -39,20 +39,7 @@ def _now():
 
 
 def _read_working_weekdays(conn):
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key=?", ("working_weekdays",)
-    ).fetchone()
-    raw = row["value"] if row else "0,1,2,3,4,6"
-    try:
-        weekdays = {
-            int(value.strip()) for value in str(raw).split(",") if value.strip()
-        }
-        weekdays = {value for value in weekdays if 0 <= value <= 6}
-    except (TypeError, ValueError):
-        weekdays = {0, 1, 2, 3, 4}
-    # Match the desktop Database.working_weekdays() rule, including legacy DBs.
-    weekdays.add(6)
-    return sorted(weekdays)
+    return sorted(api.desktop_app.working_weekdays_from_connection(conn))
 
 
 @api.app.get("/api/business/orders")

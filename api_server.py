@@ -1611,11 +1611,7 @@ def _build_report_preview(req, conn):
             """SELECT e.* FROM employees e WHERE e.active=1""" + scope_sql + " ORDER BY e.name",
             scope_params,
         ).fetchall()
-        try:
-            setting = conn.execute("SELECT value FROM settings WHERE key='working_weekdays'").fetchone()
-            weekdays = {int(value) for value in (setting["value"] if setting else "0,1,2,3,4").split(",") if value.strip()}
-        except (sqlite3.OperationalError, TypeError, ValueError):
-            weekdays = {0, 1, 2, 3, 4}
+        weekdays = desktop_app.working_weekdays_from_connection(conn)
         lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE PRODUCTIVITY", f"Date: {req.date}", ""]
         for employee in rows:
             employee_id = int(employee["id"])

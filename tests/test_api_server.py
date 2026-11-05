@@ -1668,3 +1668,90 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
             database_path.stem + ".before-import-*" + database_path.suffix
         )) - preimport_backups:
             backup_path.unlink(missing_ok=True)
+
+def test_web_employee_productivity_report_counts_sunday_for_legacy_weekday_setting(monkeypatch):
+    import secrets
+    from datetime import timedelta
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "0")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "sunday-productivity-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 9817,
+        "username": "sunday-productivity",
+        "display_name": "Sunday Productivity",
+        "role": "Admin",
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    original = connection.execute(
+        "SELECT value FROM settings WHERE key='working_weekdays'"
+    ).fetchone()
+    employee_id = None
+    try:
+        holidays = {
+            row[0] for row in connection.execute("SELECT holiday_date FROM holidays").fetchall()
+        }
+        sunday = date.today() - timedelta(days=(date.today().weekday() + 1) % 7)
+        for _ in range(52):
+            if sunday.isoformat() not in holidays:
+                break
+            sunday -= timedelta(days=7)
+        else:
+            raise AssertionError("Could not find a non-holiday Sunday for productivity report testing")
+
+        connection.execute(
+            "INSERT INTO settings(key,value) VALUES('working_weekdays','0,1,2,3,4') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        connection.commit()
+
+        created = client.post(
+            "/api/employees",
+            headers=headers,
+            json={
+                "name": "Sunday Productivity Report Test",
+                "employee_code": "RPT-SUNDAY-" + secrets.token_hex(4).upper(),
+                "joining_date": sunday.isoformat(),
+                "department": "Testing",
+            },
+        )
+        assert created.status_code == 200, created.text
+        employee_id = int(created.json()["id"])
+
+        response = client.post(
+            "/api/reports/preview",
+            headers=headers,
+            json={
+                "date": sunday.isoformat(),
+                "report_type": "Employee Productivity",
+                "employee_id": employee_id,
+                "options": {
+                    "productivity_identity": True,
+                    "productivity_metrics": True,
+                    "productivity_explanation": True,
+                    "productivity_tracking": True,
+                    "productivity_tasks": False,
+                },
+            },
+        )
+        assert response.status_code == 200, response.text
+        preview = response.json()["preview_text"]
+        assert "Working days: 1" in preview
+        assert "Attendance-eligible days: 1" in preview
+    finally:
+        if employee_id is not None:
+            connection.execute("DELETE FROM tasks WHERE employee_id=?", (employee_id,))
+            connection.execute("DELETE FROM attendance WHERE employee_id=?", (employee_id,))
+            connection.execute("DELETE FROM employee_targets WHERE employee_id=?", (employee_id,))
+            connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        if original:
+            connection.execute(
+                "UPDATE settings SET value=? WHERE key='working_weekdays'", (original[0],)
+            )
+        else:
+            connection.execute("DELETE FROM settings WHERE key='working_weekdays'")
+        connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+

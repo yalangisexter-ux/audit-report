@@ -485,6 +485,29 @@ def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def working_weekdays_from_connection(conn):
+    """Return configured working days, always including Sunday like the desktop."""
+    try:
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key=?", ("working_weekdays",)
+        ).fetchone()
+        if row is None:
+            raw = "0,1,2,3,4,6"
+        else:
+            try:
+                raw = row["value"]
+            except (TypeError, IndexError):
+                raw = row[0]
+        weekdays = {
+            int(value.strip()) for value in str(raw).split(",") if value.strip()
+        }
+        weekdays = {value for value in weekdays if 0 <= value <= 6}
+    except (sqlite3.OperationalError, TypeError, ValueError, IndexError):
+        weekdays = {0, 1, 2, 3, 4}
+    weekdays.add(6)
+    return weekdays
+
+
 def is_explicitly_completed_task_status(status):
     """Only an explicit Completed or Submitted state counts as complete."""
     return normalized_task_status(status) in {"completed", "submitted"}
@@ -2018,16 +2041,7 @@ class Database:
 
     def working_weekdays(self):
         """Return configured working days, with Sunday always included."""
-        raw = self.get_setting("working_weekdays", "0,1,2,3,4,6")
-        try:
-            weekdays = {int(value.strip()) for value in str(raw).split(",") if value.strip()}
-            weekdays = {value for value in weekdays if 0 <= value <= 6}
-        except (TypeError, ValueError):
-            weekdays = {0, 1, 2, 3, 4}
-        # Sunday is a required working day for this business, including for
-        # databases created by older releases whose setting was Monday-Friday.
-        weekdays.add(6)
-        return weekdays
+        return working_weekdays_from_connection(self.conn)
 
     def get_holiday(self, day_text):
         row = self.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (day_text,)).fetchone()
