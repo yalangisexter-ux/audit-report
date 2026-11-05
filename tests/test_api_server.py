@@ -474,12 +474,45 @@ def test_business_tracking_full_workflow_and_stock_ledger(monkeypatch):
         api_server.ACTIVE_SESSIONS.pop(token, None)
 
 
-def test_api_settings():
-    res = client.get("/api/settings")
-    assert res.status_code == 200
-    data = res.json()
-    assert "settings" in data
-    assert "app_version" in data
+def test_api_settings_require_admin_session(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    admin_token = "settings-admin-" + secrets.token_hex(8)
+    staff_token = "settings-staff-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 9801, "username": "settings-admin", "display_name": "Settings Admin", "role": "Admin"
+    }
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 9802, "username": "settings-staff", "display_name": "Settings Staff", "role": "Staff"
+    }
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        assert client.get("/api/settings").status_code == 401
+        assert client.post("/api/settings", json={"settings_permission_test": "1"}).status_code == 401
+        staff_headers = {"Authorization": f"Bearer {staff_token}"}
+        assert client.get("/api/settings", headers=staff_headers).status_code == 403
+        assert client.post("/api/settings", headers=staff_headers, json={"settings_permission_test": "1"}).status_code == 403
+
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        response = client.get("/api/settings", headers=admin_headers)
+        assert response.status_code == 200
+        assert "settings" in response.json()
+        assert "app_version" in response.json()
+        updated = client.post(
+            "/api/settings", headers=admin_headers, json={"settings_permission_test": "1"}
+        )
+        assert updated.status_code == 200
+        assert connection.execute(
+            "SELECT value FROM settings WHERE key='settings_permission_test'"
+        ).fetchone()[0] == "1"
+    finally:
+        connection.execute("DELETE FROM settings WHERE key='settings_permission_test'")
+        connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
 
 def test_api_system_updates(monkeypatch):
     import json
@@ -588,6 +621,7 @@ def _api_test_workday():
             weekdays = {int(value) for value in (setting["value"] if setting else "0,1,2,3,4").split(",") if value.strip()}
         except (TypeError, ValueError):
             weekdays = {0, 1, 2, 3, 4}
+        weekdays.add(6)
         holidays = {
             row["holiday_date"]
             for row in connection.execute("SELECT holiday_date FROM holidays").fetchall()
@@ -632,6 +666,155 @@ def test_api_attendance_summary_matches_desktop_workday_rules():
     assert summary["leave"] == 0
     assert summary["holidays"] == 0
     assert summary["total_present"] == 1
+
+
+def test_web_working_weekday_settings_require_admin_and_keep_sunday(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    admin_token = "working-week-admin-" + secrets.token_hex(8)
+    staff_token = "working-week-staff-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 9803, "username": "working-week-admin", "display_name": "Working Week Admin", "role": "Admin"
+    }
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 9804, "username": "working-week-staff", "display_name": "Working Week Staff", "role": "Staff"
+    }
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    original = connection.execute(
+        "SELECT value FROM settings WHERE key='working_weekdays'"
+    ).fetchone()
+    try:
+        connection.execute(
+            "INSERT INTO settings(key,value) VALUES('working_weekdays','0,1,2,3,4') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        connection.commit()
+
+        assert client.get("/api/settings/working-weekdays").status_code == 401
+        staff_headers = {"Authorization": f"Bearer {staff_token}"}
+        assert client.get("/api/settings/working-weekdays", headers=staff_headers).status_code == 403
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        current = client.get("/api/settings/working-weekdays", headers=admin_headers)
+        assert current.status_code == 200
+        assert current.json()["weekdays"] == [0, 1, 2, 3, 4, 6]
+        assert current.json()["sunday_required"] is True
+
+        saved = client.put(
+            "/api/settings/working-weekdays",
+            headers=admin_headers,
+            json={"weekdays": [0, 1, 2, 3, 4]},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["weekdays"] == [0, 1, 2, 3, 4, 6]
+        assert connection.execute(
+            "SELECT value FROM settings WHERE key='working_weekdays'"
+        ).fetchone()[0] == "0,1,2,3,4,6"
+
+        invalid = client.put(
+            "/api/settings/working-weekdays",
+            headers=admin_headers,
+            json={"weekdays": [0, 7]},
+        )
+        assert invalid.status_code == 422
+    finally:
+        if original:
+            connection.execute(
+                "UPDATE settings SET value=? WHERE key='working_weekdays'", (original[0],)
+            )
+        else:
+            connection.execute("DELETE FROM settings WHERE key='working_weekdays'")
+        connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
+
+
+def test_api_attendance_summary_counts_sunday_with_legacy_weekday_setting(monkeypatch):
+    from datetime import timedelta
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "sunday-attendance-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 9805, "username": "sunday-attendance", "display_name": "Sunday Attendance", "role": "Admin"
+    }
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    original = connection.execute(
+        "SELECT value FROM settings WHERE key='working_weekdays'"
+    ).fetchone()
+    employee_id = None
+    try:
+        holidays = {
+            row[0] for row in connection.execute("SELECT holiday_date FROM holidays").fetchall()
+        }
+        sunday = date.today() - timedelta(days=(date.today().weekday() + 1) % 7)
+        for _ in range(52):
+            if sunday.isoformat() not in holidays:
+                break
+            sunday -= timedelta(days=7)
+        else:
+            raise AssertionError("Could not find a non-holiday Sunday for attendance summary testing")
+
+        connection.execute(
+            "INSERT INTO settings(key,value) VALUES('working_weekdays','0,1,2,3,4') "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+        )
+        connection.commit()
+        headers = {"Authorization": f"Bearer {token}"}
+        employee = client.post(
+            "/api/employees",
+            headers=headers,
+            json={
+                "name": "Sunday Attendance Summary Test",
+                "employee_code": "ATT-SUNDAY-" + secrets.token_hex(4).upper(),
+                "joining_date": sunday.isoformat(),
+                "department": "Testing",
+            },
+        )
+        assert employee.status_code == 200, employee.text
+        employee_id = int(employee.json()["id"])
+
+        marked = client.post(
+            "/api/attendance/mark",
+            headers=headers,
+            json={
+                "employee_id": employee_id,
+                "work_date": sunday.isoformat(),
+                "attendance_status": "Present",
+                "check_in": "09:00",
+                "check_out": "17:00",
+            },
+        )
+        assert marked.status_code == 200, marked.text
+
+        response = client.get(
+            "/api/attendance/summary",
+            headers=headers,
+            params={"work_date": sunday.isoformat()},
+        )
+        assert response.status_code == 200, response.text
+        summary = next(row for row in response.json()["rows"] if row["employee_id"] == employee_id)
+        assert summary["work_days"] == 1
+        assert summary["present"] == 1
+        assert summary["absent"] == 0
+        assert summary["leave"] == 0
+        assert summary["total_present"] == 1
+    finally:
+        if employee_id is not None:
+            connection.execute("DELETE FROM attendance WHERE employee_id=?", (employee_id,))
+            connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+        if original:
+            connection.execute(
+                "UPDATE settings SET value=? WHERE key='working_weekdays'", (original[0],)
+            )
+        else:
+            connection.execute("DELETE FROM settings WHERE key='working_weekdays'")
+        connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(token, None)
 
 
 def test_api_attendance_bulk_edit_is_atomic_and_validates_times():

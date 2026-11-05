@@ -38,6 +38,23 @@ def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _read_working_weekdays(conn):
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key=?", ("working_weekdays",)
+    ).fetchone()
+    raw = row["value"] if row else "0,1,2,3,4,6"
+    try:
+        weekdays = {
+            int(value.strip()) for value in str(raw).split(",") if value.strip()
+        }
+        weekdays = {value for value in weekdays if 0 <= value <= 6}
+    except (TypeError, ValueError):
+        weekdays = {0, 1, 2, 3, 4}
+    # Match the desktop Database.working_weekdays() rule, including legacy DBs.
+    weekdays.add(6)
+    return sorted(weekdays)
+
+
 @api.app.get("/api/business/orders")
 def list_business_orders(
     conn: sqlite3.Connection = Depends(api.get_db),
@@ -591,6 +608,10 @@ class AttendanceBulkEditModel(BaseModel):
     remarks: str = ""
 
 
+class WorkingWeekdaysModel(BaseModel):
+    weekdays: list[int]
+
+
 @api.app.post("/api/attendance/bulk-edit")
 def bulk_edit_attendance(
     body: AttendanceBulkEditModel,
@@ -693,6 +714,36 @@ def bulk_edit_attendance(
     return {"success": True, "updated": updated, "work_date": work_date}
 
 
+@api.app.get("/api/settings/working-weekdays")
+def get_working_weekdays(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    api._require_employee_roles(user, {"admin", "developer"})
+    return {"weekdays": _read_working_weekdays(conn), "sunday_required": True}
+
+
+@api.app.put("/api/settings/working-weekdays")
+def save_working_weekdays(
+    body: WorkingWeekdaysModel,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    api._require_employee_roles(user, {"admin", "developer"})
+    if not body.weekdays or any(value < 0 or value > 6 for value in body.weekdays):
+        raise HTTPException(status_code=422, detail="Choose valid weekdays from Monday through Sunday.")
+    weekdays = sorted(set(body.weekdays) | {6})
+    serialized = ",".join(str(value) for value in weekdays)
+    conn.execute(
+        "INSERT INTO settings(key, value) VALUES(?,?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        ("working_weekdays", serialized),
+    )
+    api._record_account_audit(conn, "Working week changed", serialized)
+    conn.commit()
+    return {"success": True, "weekdays": weekdays, "sunday_required": True}
+
+
 @api.app.get("/api/attendance/summary")
 def attendance_summary(
     work_date: Optional[str] = None,
@@ -743,15 +794,7 @@ def attendance_summary(
             except (TypeError, ValueError):
                 starts[employee_id] = date.today()
 
-    raw_weekdays = conn.execute(
-        "SELECT value FROM settings WHERE key=?", ("working_weekdays",)
-    ).fetchone()
-    try:
-        weekdays = {int(value) for value in str(raw_weekdays["value"] if raw_weekdays else "0,1,2,3,4").split(",") if value.strip()}
-        if not weekdays or any(value < 0 or value > 6 for value in weekdays):
-            raise ValueError("invalid working weekdays")
-    except (TypeError, ValueError):
-        weekdays = {0, 1, 2, 3, 4}
+    weekdays = set(_read_working_weekdays(conn))
 
     earliest_start = min(starts.values())
     holiday_rows = _rows(

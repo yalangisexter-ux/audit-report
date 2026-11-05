@@ -2087,7 +2087,11 @@ def send_chat_message(
 
 # --- Settings ---
 @app.get("/api/settings")
-def get_settings(conn: sqlite3.Connection = Depends(get_db)):
+def get_settings(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    _require_account_admin(user)
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     settings_dict = {r["key"]: r["value"] for r in rows}
     return {
@@ -2097,7 +2101,12 @@ def get_settings(conn: sqlite3.Connection = Depends(get_db)):
     }
 
 @app.post("/api/settings")
-def update_settings(data: Dict[str, str], conn: sqlite3.Connection = Depends(get_db)):
+def update_settings(
+    data: Dict[str, str],
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    _require_account_admin(user)
     for k, v in data.items():
         conn.execute(
             "INSERT INTO settings(key, value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
