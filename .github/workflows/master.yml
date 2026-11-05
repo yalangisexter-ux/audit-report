@@ -207,7 +207,7 @@ jobs:
           if (-not (Test-Path "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe")) { throw "Inno Setup compiler was not installed." }
 
       - name: Compile standalone Windows application with bundled dependencies
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         run: |
           python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py database_sync.py
@@ -217,7 +217,7 @@ jobs:
           if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe")) { throw "Application executable was not created." }
 
       - name: Build standalone Windows installer
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         env:
           APP_VERSION: "1.3.81"
@@ -228,7 +228,7 @@ jobs:
           if ((Get-Item "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Length -lt 10000000) { throw "Setup installer is unexpectedly small." }
 
       - name: Verify legacy v1.1.74 in-place upgrade preserves customer database
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         run: |
           $legacySetup = Join-Path $env:RUNNER_TEMP "RawStrengthEmployeeAuditManager-Setup-v1.1.74.exe"
@@ -264,9 +264,27 @@ jobs:
           python -c 'import os,sqlite3; c=sqlite3.connect(os.environ["RSC_TEST_DATABASE"]); assert c.execute("PRAGMA integrity_check").fetchone()[0]=="ok"; assert c.execute("SELECT employee_name FROM employees WHERE id=1").fetchone()[0]=="Legacy Customer Employee"; assert c.execute("SELECT value FROM customer_upgrade_sentinel").fetchone()[0]=="KEEP_EXISTING_CUSTOMER_DATA"; c.close()'
           if ($LASTEXITCODE -ne 0) { throw "Existing customer database data or integrity did not survive the upgrade." }
           Write-Host "PASS: v1.1.74 upgraded in place to v1.3.81; original customer DB hash and records are unchanged."
+          # Simulate the customer uninstalling the old EXE before installing the new setup.
+          # Inno's uninstaller must not remove the customer database under LocalAppData.
+          $uninstaller = Join-Path $installDir "unins000.exe"
+          if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Installed application uninstaller is missing." }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall-before-reinstall scenario failed (exit code $($uninstall.ExitCode))." }
+          if (-not (Test-Path -LiteralPath $env:RSC_TEST_DATABASE)) { throw "Uninstaller removed the customer database." }
+          $databaseHashAfterUninstall = (Get-FileHash -LiteralPath $env:RSC_TEST_DATABASE -Algorithm SHA256).Hash
+          if ($databaseHashAfterUninstall -ne $databaseHashBefore) { throw "Uninstaller modified the customer database." }
+
+          $reinstall = Start-Process -FilePath $latestSetup -ArgumentList $latestArgs -Wait -PassThru
+          if ($reinstall.ExitCode -ne 0) { throw "Reinstall after uninstall failed (exit code $($reinstall.ExitCode))." }
+          if (-not (Test-Path -LiteralPath $installedExe)) { throw "Reinstall did not restore the application executable." }
+          $databaseHashAfterReinstall = (Get-FileHash -LiteralPath $env:RSC_TEST_DATABASE -Algorithm SHA256).Hash
+          if ($databaseHashAfterReinstall -ne $databaseHashBefore) { throw "Reinstall changed the existing customer database." }
+          python -c 'import os,sqlite3; c=sqlite3.connect(os.environ["RSC_TEST_DATABASE"]); assert c.execute("PRAGMA integrity_check").fetchone()[0]=="ok"; assert c.execute("SELECT value FROM customer_upgrade_sentinel").fetchone()[0]=="KEEP_EXISTING_CUSTOMER_DATA"; c.close()'
+          if ($LASTEXITCODE -ne 0) { throw "Customer data integrity check failed after uninstall and reinstall." }
+          Write-Host "PASS: uninstall + reinstall preserved the customer database hash, integrity, and sentinel record."
 
       - name: Launch smoke test
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         run: |
           $exe = (Resolve-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe").Path
@@ -279,7 +297,7 @@ jobs:
           Write-Host "PASS: packaged application remained running for 8 seconds."
 
       - name: Upload installer as a build artifact
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         uses: actions/upload-artifact@v4
         with:
           name: RawStrengthEmployeeAuditManager-Setup-v1.3.81
