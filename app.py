@@ -2378,6 +2378,75 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
     - settings: only shared business calendar / config merged; local credentials/themes preserved.
     - audit_log: non-duplicates appended.
     """
+
+    def write_attendance_compat(
+        employee_id, work_date, check_in, check_out, break_minutes,
+        status, note, updated_at, row_id=None,
+    ):
+        """Write merged attendance into both modern and legacy customer schemas."""
+        columns = {
+            row["name"]: row
+            for row in local_conn.execute("PRAGMA table_info(attendance)").fetchall()
+        }
+        values = {
+            "employee_id": employee_id,
+            "work_date": work_date,
+            "date": work_date,
+            "attendance_date": work_date,
+            "record_date": work_date,
+            "check_in": check_in or "",
+            "check_out": check_out or "",
+            "break_minutes": int(break_minutes or 0),
+            "attendance_status": status or "Unmarked",
+            "status": status or "Unmarked",
+            "attendance_note": note or "",
+            "remarks": note or "",
+            "updated_at": updated_at or now_text(),
+        }
+        if row_id is not None:
+            updates = {
+                name: value for name, value in values.items()
+                if name in columns and name not in ("employee_id", "work_date")
+            }
+            assignments = ", ".join(f'"{name}"=?' for name in updates)
+            local_conn.execute(
+                f"UPDATE attendance SET {assignments} WHERE id=?",
+                (*updates.values(), row_id),
+            )
+            return
+
+        insert_values = {name: value for name, value in values.items() if name in columns}
+        for name, metadata in columns.items():
+            if (
+                name in insert_values or name == "id"
+                or metadata["notnull"] != 1 or metadata["dflt_value"] is not None
+            ):
+                continue
+            if name == "created_at":
+                insert_values[name] = now_text()
+            elif name in ("date", "attendance_date", "record_date", "work_date"):
+                insert_values[name] = work_date
+            elif name in ("status", "attendance_status"):
+                insert_values[name] = status or "Unmarked"
+            elif name in ("note", "remark", "remarks", "attendance_note"):
+                insert_values[name] = note or ""
+            elif name == "break_minutes":
+                insert_values[name] = 0
+            elif name in ("check_in", "check_out"):
+                insert_values[name] = values[name]
+            elif name == "employee_id":
+                insert_values[name] = employee_id
+            else:
+                raise sqlite3.IntegrityError(
+                    "Cannot safely populate required legacy attendance column: " + name
+                )
+        names = list(insert_values)
+        local_conn.execute(
+            "INSERT INTO attendance (" + ",".join(f'"{name}"' for name in names) +
+            ") VALUES (" + ",".join("?" for _ in names) + ")",
+            tuple(insert_values[name] for name in names),
+        )
+
     raw_head = b""
     try:
         with open(str(snapshot_path), "rb") as f:
@@ -2503,12 +2572,10 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                 wdate = ra_dict.get("work_date", "")
                 la_row = local_conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (lid, wdate)).fetchone()
                 if la_row is None:
-                    local_conn.execute(
-                        """INSERT INTO attendance(employee_id, work_date, check_in, check_out, break_minutes, attendance_status, attendance_note, updated_at)
-                           VALUES(?,?,?,?,?,?,?,?)""",
-                        (lid, wdate, ra_dict.get("check_in", ""), ra_dict.get("check_out", ""),
-                         int(ra_dict.get("break_minutes", 0)), ra_dict.get("attendance_status", "Unmarked"),
-                         ra_dict.get("attendance_note", ""), ra_dict.get("updated_at", now_text()))
+                    write_attendance_compat(
+                        lid, wdate, ra_dict.get("check_in", ""), ra_dict.get("check_out", ""),
+                        ra_dict.get("break_minutes", 0), ra_dict.get("attendance_status", "Unmarked"),
+                        ra_dict.get("attendance_note", ""), ra_dict.get("updated_at", now_text()),
                     )
                     stats["attendance"] += 1
                 else:
@@ -2532,10 +2599,9 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     if rnote and rnote not in note:
                         note = f"{note}; {rnote}".strip("; ")
                     upd = r_upd if remote_is_newer else l_upd
-                    local_conn.execute(
-                        """UPDATE attendance SET check_in=?, check_out=?, break_minutes=?, attendance_status=?, attendance_note=?, updated_at=?
-                           WHERE id=?""",
-                        (c_in, c_out, break_mins, status, note, upd, la["id"])
+                    write_attendance_compat(
+                        lid, wdate, c_in, c_out, break_mins, status, note, upd,
+                        row_id=la["id"],
                     )
 
         # 4. Merge tasks
