@@ -1633,8 +1633,11 @@ class Database:
                 columns = [row["name"] for row in self.conn.execute("PRAGMA table_info(auth_users)").fetchall()]
                 if not columns or "username" not in columns:
                     raise RuntimeError("auth_users schema is missing its username column")
+                # A prior process may have been interrupted during migration.
+                # Use a unique staging table so stale staging data cannot block startup.
+                staging_table = "auth_users_case_sensitive_" + secrets.token_hex(6)
                 create_sql = auth_sql.replace(
-                    "CREATE TABLE auth_users", "CREATE TABLE auth_users_case_sensitive", 1
+                    "CREATE TABLE auth_users", f"CREATE TABLE {staging_table}", 1
                 )
                 create_sql = re.sub(r"COLLATE\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
                 if not self.conn.in_transaction:
@@ -1643,11 +1646,11 @@ class Database:
                     self.conn.execute(create_sql)
                     column_list = ", ".join('"' + name.replace('"', '""') + '"' for name in columns)
                     self.conn.execute(
-                        f"INSERT INTO auth_users_case_sensitive ({column_list}) "
+                        f"INSERT INTO {staging_table} ({column_list}) "
                         f"SELECT {column_list} FROM auth_users"
                     )
                     self.conn.execute("DROP TABLE auth_users")
-                    self.conn.execute("ALTER TABLE auth_users_case_sensitive RENAME TO auth_users")
+                    self.conn.execute(f"ALTER TABLE {staging_table} RENAME TO auth_users")
                     for statement in index_sql + trigger_sql:
                         self.conn.execute(statement)
                     self.conn.commit()

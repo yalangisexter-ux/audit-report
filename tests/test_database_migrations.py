@@ -197,3 +197,42 @@ def test_desktop_login_uses_exact_customer_and_developer_accounts(tmp_path, monk
         assert saved_developer["password_hash"] == expected_hash
     finally:
         database.conn.close()
+
+def test_auth_case_sensitive_migration_ignores_stale_staging_table(tmp_path, monkeypatch):
+    """A previous interrupted upgrade must not block the next application startup."""
+    db_path = tmp_path / "auth_stale_staging.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE auth_users(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          display_name TEXT NOT NULL DEFAULT '',
+          role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
+          password_salt TEXT NOT NULL, password_hash TEXT NOT NULL,
+          security_question TEXT NOT NULL DEFAULT '', answer_salt TEXT NOT NULL DEFAULT '',
+          answer_hash TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        INSERT INTO auth_users(username,display_name,role,password_salt,password_hash,
+          security_question,answer_salt,answer_hash,active,created_at,updated_at)
+        VALUES('Admin','Customer','Admin','salt','hash','','','',1,'created','updated')
+    """)
+    conn.execute("CREATE TABLE auth_users_case_sensitive(id INTEGER PRIMARY KEY, stale TEXT)")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    database = app.Database()
+    try:
+        row = database.conn.execute(
+            "SELECT username,password_hash FROM auth_users WHERE username='Admin' COLLATE BINARY"
+        ).fetchone()
+        assert row is not None and row["username"] == "Admin" and row["password_hash"] == "hash"
+        schema = database.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
+        ).fetchone()[0]
+        assert "COLLATE BINARY" in schema.upper()
+    finally:
+        database.conn.close()
+
