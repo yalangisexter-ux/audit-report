@@ -88,6 +88,19 @@ def verify_developer_password(password: str) -> bool:
     return False
 
 
+
+def verify_customer_admin_password(password: str) -> bool:
+    """Verify the explicitly configured customer Admin bootstrap credential."""
+    if not password:
+        return False
+    actual = hashlib.pbkdf2_hmac(
+        "sha256", str(password).strip().encode("utf-8"),
+        b"RSC-Customer-Admin-v1", 300000
+    )
+    expected = bytes.fromhex("ab3ed5cc647ccbcd6afd17a0af3236b8c3e74be52e6b89288cebacf05934b5c3")
+    return secrets.compare_digest(actual, expected)
+
+
 def normalize_api_base(value: str) -> str:
     """Validate and normalize a Cloudflare Worker HTTPS URL."""
     parsed = urlsplit(str(value or "").strip())
