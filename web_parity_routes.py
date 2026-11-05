@@ -6,14 +6,20 @@ from pathlib import Path
 from types import SimpleNamespace
 import csv
 import io
+import json
+import re
+import secrets
 import sqlite3
 import tempfile
 import threading
+import time
 import uuid
+from urllib.request import Request, urlopen
 
 from fastapi import Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 
+import cloudflare_chat
 import customer_prospects as prospect_store
 import api_server as api
 
@@ -812,4 +818,239 @@ def sync_google_sheets_master(
         "updated": sum(int(value or 0) for value in stats.values()),
         "stats": stats,
         "message": "The master workbook was merged into the web database. Local-only records were not deleted.",
+    }
+
+
+# --- Windows installer update / rollback catalog parity ----------------------
+# The browser can download a signed/published Windows installer, but it cannot
+# execute it. Rollback links are exposed only after the same Admin/Developer
+# re-authentication gate used by the desktop application.
+_UPDATE_RELEASE_CACHE = {"expires_at": 0.0, "entries": None}
+_UPDATE_RELEASE_CACHE_LOCK = threading.Lock()
+_UPDATE_RELEASE_CACHE_TTL = 300
+_UPDATE_INSTALLER_NAME = "RawStrengthEmployeeAuditManager-Setup.exe"
+
+
+def _normalise_update_releases(payload):
+    if not isinstance(payload, list):
+        raise ValueError("GitHub returned an invalid releases response.")
+
+    entries = []
+    for release in payload:
+        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+            continue
+        published_at = str(release.get("published_at") or "").strip()
+        if not published_at:
+            continue
+        tag = str(release.get("tag_name") or "").strip()
+        try:
+            version_tuple = api.desktop_app.release_version_tuple(tag)
+        except (TypeError, ValueError):
+            continue
+
+        assets = release.get("assets")
+        if not isinstance(assets, list):
+            continue
+        asset = next(
+            (
+                item for item in assets
+                if isinstance(item, dict) and item.get("name") == _UPDATE_INSTALLER_NAME
+            ),
+            None,
+        )
+        if asset is None:
+            continue
+
+        download_url = str(asset.get("browser_download_url") or "").strip()
+        if not download_url.startswith(api.desktop_app.GITHUB_RELEASE_DOWNLOAD_PREFIX):
+            continue
+        size = asset.get("size")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 1_000_000:
+            continue
+
+        digest = str(asset.get("digest") or "").strip().lower()
+        if digest and not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            continue
+
+        release_url = str(release.get("html_url") or "").strip()
+        if not release_url.startswith(
+            "https://github.com/yalangisexter-ux/audit-report/releases/tag/"
+        ):
+            release_url = ""
+
+        entries.append(
+            {
+                "tag": tag,
+                "version": ".".join(str(part) for part in version_tuple),
+                "_version_tuple": version_tuple,
+                "title": str(release.get("name") or tag)[:200],
+                "published_at": published_at,
+                "release_url": release_url,
+                "download_url": download_url,
+                "asset_size": size,
+                "sha256": digest.partition(":")[2] if digest else None,
+                "body": str(release.get("body") or "")[:6000],
+            }
+        )
+
+    entries.sort(key=lambda item: item["_version_tuple"], reverse=True)
+    return entries
+
+
+def _load_update_release_catalog():
+    now = time.monotonic()
+    with _UPDATE_RELEASE_CACHE_LOCK:
+        cached = _UPDATE_RELEASE_CACHE.get("entries")
+        expires_at = float(_UPDATE_RELEASE_CACHE.get("expires_at") or 0.0)
+        if cached is not None and expires_at > now:
+            return cached, False
+
+    request = Request(
+        api.desktop_app.GITHUB_RELEASES_API,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "RawStrengthEmployeeAuditManager-Web",
+            "Cache-Control": "no-cache",
+        },
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        entries = _normalise_update_releases(payload)
+    except Exception:
+        if cached is not None:
+            return cached, True
+        raise
+
+    with _UPDATE_RELEASE_CACHE_LOCK:
+        _UPDATE_RELEASE_CACHE["entries"] = entries
+        _UPDATE_RELEASE_CACHE["expires_at"] = time.monotonic() + _UPDATE_RELEASE_CACHE_TTL
+    return entries, False
+
+
+def _public_update_release(entry):
+    return {
+        key: entry[key]
+        for key in (
+            "tag", "version", "title", "published_at", "release_url",
+            "download_url", "asset_size", "sha256", "body",
+        )
+    }
+
+
+@api.app.get("/api/update-center")
+def get_update_center(user=Depends(api.get_current_user)):
+    current_version = str(api.desktop_app.APP_VERSION)
+    current_tuple = api.desktop_app.release_version_tuple(current_version)
+    try:
+        releases, stale = _load_update_release_catalog()
+    except Exception:
+        return {
+            "status": "offline",
+            "current_version": current_version,
+            "latest_version": None,
+            "update_available": False,
+            "latest_release": None,
+            "previous_release_count": 0,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "message": "GitHub releases could not be reached. Try checking again later.",
+        }
+
+    latest = releases[0] if releases else None
+    update_available = bool(
+        latest is not None and latest["_version_tuple"] > current_tuple
+    )
+    return {
+        "status": "cached" if stale else "ok",
+        "current_version": current_version,
+        "latest_version": latest["version"] if latest else None,
+        "update_available": update_available,
+        "latest_release": _public_update_release(latest) if latest else None,
+        "previous_release_count": sum(
+            1 for item in releases if item["_version_tuple"] < current_tuple
+        ),
+        "checked_at": datetime.now().isoformat(timespec="seconds"),
+        "message": "",
+    }
+
+
+@api.app.post("/api/update-center/rollback-options")
+def get_rollback_options(
+    payload: dict,
+    conn=Depends(api.get_db),
+    user=Depends(api.get_current_user),
+):
+    _admin(user)
+    username = str(user.get("username") or "")
+    try:
+        user_id = int(user.get("id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+
+    account = conn.execute(
+        """SELECT password_salt,password_hash,active
+           FROM auth_users
+           WHERE id=? AND username=? COLLATE BINARY""",
+        (user_id, username),
+    ).fetchone()
+    if account is None or not account["active"]:
+        raise HTTPException(status_code=403, detail="The active Admin or Developer account could not be verified.")
+
+    password = str(payload.get("password") or "")
+    valid_password = False
+    try:
+        _, digest = api.desktop_app.hash_pin(password, account["password_salt"])
+        valid_password = secrets.compare_digest(str(digest), str(account["password_hash"]))
+    except Exception:
+        valid_password = False
+    try:
+        valid_password = valid_password or bool(
+            cloudflare_chat.verify_developer_password(password)
+        )
+    except Exception:
+        pass
+
+    audit_action = (
+        "Application rollback authorized"
+        if valid_password
+        else "Application rollback denied"
+    )
+    try:
+        conn.execute(
+            "INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)",
+            (
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                audit_action,
+                username,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
+    if not valid_password:
+        raise HTTPException(
+            status_code=403,
+            detail="Incorrect Admin or Developer password. Rollback was cancelled.",
+        )
+
+    try:
+        releases, _stale = _load_update_release_catalog()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub releases are unavailable. Previous installers cannot be listed right now.",
+        ) from exc
+
+    current_tuple = api.desktop_app.release_version_tuple(api.desktop_app.APP_VERSION)
+    previous = [
+        item for item in releases if item["_version_tuple"] < current_tuple
+    ]
+    return {
+        "current_version": str(api.desktop_app.APP_VERSION),
+        "versions": [_public_update_release(item) for item in previous],
+        "message": (
+            "Download a previous Windows installer only after creating a verified database backup. "
+            "The browser cannot run the installer; rollback must be completed on Windows."
+        ),
     }
