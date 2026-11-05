@@ -66,14 +66,18 @@ def test_database_setup_provisions_both_taruna_and_admin(tmp_path, monkeypatch):
     conn.close()
 
     db = app.Database()
-    rows = {r["username"].lower(): dict(r) for r in db.conn.execute("SELECT * FROM auth_users").fetchall()}
+    rows = {r["username"]: dict(r) for r in db.conn.execute("SELECT * FROM auth_users").fetchall()}
 
     assert "admin" in rows
-    assert "Developer" in rows["admin"]["role"] or "admin" in rows["admin"]["display_name"]
+    assert rows["admin"]["role"] == "Developer"
     assert "taruna" in rows
     assert rows["taruna"]["role"] == "Admin"
     assert "Taruna" in rows["taruna"]["display_name"]
-    # Shared password salt/hash so customer can sign in immediately
+    # Preserve the original customer credential under the explicit Admin name too.
+    assert "Admin" in rows
+    assert rows["Admin"]["role"] == "Admin"
+    assert rows["Admin"]["password_hash"] == "hash123"
+    # Legacy Taruna sign-in remains available during customer migration.
     assert rows["taruna"]["password_hash"] == "hash123"
 
 
