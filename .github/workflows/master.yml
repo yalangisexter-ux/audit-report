@@ -75,7 +75,7 @@ jobs:
             if ($changed -contains $path) { $mustBuild = $true }
           }
           foreach ($path in $changed) {
-            if ($path -match "^[^/]+\\.py$" -or $path -like "assets/*" -or $path -like "tests/*" -or $path -like "*.spec") {
+            if ($path -match "^[^/]+\.py$" -or $path -like "assets/*" -or $path -like "tests/*" -or $path -like "*.spec") {
               $mustBuild = $true
             }
           }
