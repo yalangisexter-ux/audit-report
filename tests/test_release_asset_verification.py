@@ -245,6 +245,12 @@ def test_release_metadata_is_consistent_and_newer_than_installed_version():
 
     root = Path(__file__).resolve().parents[1]
     version = app.APP_VERSION
+    import json
+    frontend_package = json.loads((root / "frontend" / "package.json").read_text(encoding="utf-8"))
+    frontend_lock = json.loads((root / "frontend" / "package-lock.json").read_text(encoding="utf-8"))
+    assert frontend_package["version"] == version
+    assert frontend_lock["version"] == version
+    assert frontend_lock["packages"][""]["version"] == version
     assert app.release_version_tuple(version) > app.release_version_tuple("1.2.55")
     assert f'APP_VERSION = "{version}"' in (root / "build_info.py").read_text(encoding="utf-8")
     assert f'MyAppVersion "{version}"' in (root / "installer.iss").read_text(encoding="utf-8")
