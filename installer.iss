@@ -81,6 +81,32 @@ begin
 	Sleep(750);
 end;
 
+function IsVCRedistInstalled: Boolean;
+var
+	Installed: Cardinal;
+begin
+	Result := RegQueryDWordValue(HKLM64, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'Installed', Installed) and (Installed = 1);
+end;
+
+function EnsureVCRedist(var NeedsRestart: Boolean): Boolean;
+var
+	ResultCode: Integer;
+begin
+	Result := True;
+	if IsVCRedistInstalled then
+		Exit;
+
+	ExtractTemporaryFile('vc_redist.x64.exe');
+	if not Exec(ExpandConstant('{tmp}\vc_redist.x64.exe'), '/install /quiet /norestart', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+	begin
+		Result := False;
+		Exit;
+	end;
+	if ResultCode = 3010 then
+		NeedsRestart := True;
+	Result := (ResultCode = 0) or (ResultCode = 3010) or (ResultCode = 1638);
+end;
+
 function GetCustomerDataDirectory: String;
 var
 	ScriptPath: String;
@@ -157,6 +183,11 @@ begin
 		// No existing database/profile was found; keep transaction files outside customer data.
 		PendingBackupDirectory := ExpandConstant('{tmp}\rsc-no-profile-pending-backup');
 		StableBackupDirectory := ExpandConstant('{tmp}\rsc-no-profile-stable-backup');
+	end;
+	if not EnsureVCRedist(NeedsRestart) then
+	begin
+		Result := 'The Microsoft Visual C++ runtime could not be installed. The application was not changed.';
+		Exit;
 	end;
 	RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');
 	ExtractTemporaryFile('update_recovery.ps1');
