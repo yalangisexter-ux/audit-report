@@ -2009,6 +2009,7 @@ def check_updates():
 import web_ops_routes  # noqa: E402,F401
 import web_parity_routes  # noqa: E402,F401
 import web_employee_routes  # noqa: E402,F401
+import web_standalone_routes  # noqa: E402,F401
 
 # --- Serve Built React Frontend (SPA Fallback) ---
 DIST_DIR = ROOT_DIR / "frontend" / "dist"

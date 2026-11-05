@@ -53,6 +53,7 @@ export default function App() {
   const [scrapeQuery,setScrapeQuery]=useState('sports nutrition supplement stores');
   const [scrapeBusy,setScrapeBusy]=useState(false);
   const [scrapeStatus,setScrapeStatus]=useState('');
+  const [restoreFile,setRestoreFile]=useState(null),[restoreBusy,setRestoreBusy]=useState(false);
 
   const apiFetch=async(path,options={})=>{
     const headers={...(options.headers||{})};
@@ -95,6 +96,36 @@ export default function App() {
   const post=async(path,payload)=>{try{const result=await apiFetch(path,{method:'POST',body:JSON.stringify(payload)});if(path==='/attendance/mark'){const selected=data.attendance.date||today();const [refreshed,summary]=await Promise.all([apiFetch('/attendance?work_date='+encodeURIComponent(selected)),apiFetch('/attendance/summary?work_date='+encodeURIComponent(selected))]);setData(p=>({...p,attendance:refreshed,attendanceSummary:summary}));setAttendanceDrafts({});}else{await load(data.attendance.date||today());}notify('Saved successfully');return result;}catch(e){notify(e.message);throw e;}};
   const del=async(path)=>{if(!window.confirm('Delete this record?'))return;await apiFetch(path,{method:'DELETE'});await load();notify('Record deleted')};
   const saveEdit=async()=>{if(!editRecord)return;const {kind,id,...payload}=editRecord;try{await apiFetch('/'+kind+'/'+id,{method:kind==='prospects'?'PATCH':'PUT',body:JSON.stringify(payload)});setEditRecord(null);await load();notify('Changes saved');}catch(e){notify(e.message)}};
+  const downloadDatabaseBackup=async()=>{
+    try{
+      const response=await fetch(API+'/web-database/export',{headers:{Authorization:'Bearer '+token}});
+      if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.detail||'Database backup download failed');}
+      const blob=await response.blob();
+      const url=window.URL.createObjectURL(blob);
+      const anchor=document.createElement('a');
+      const disposition=response.headers.get('content-disposition')||'';
+      const match=disposition.match(/filename="?([^";]+)"?/i);
+      anchor.href=url;anchor.download=match?.[1]||'RawStrength-Web-Database.db';
+      document.body.appendChild(anchor);anchor.click();anchor.remove();window.URL.revokeObjectURL(url);
+      notify('Database backup downloaded');
+    }catch(error){notify(error.message)}
+  };
+  const restoreDatabaseBackup=async()=>{
+    if(!canAdminEmployees){notify('Only Admin or Developer can restore a database backup.');return;}
+    if(!restoreFile)return;
+    if(!window.confirm('Restore this database backup? The current web database will be backed up first. You will need to sign in again.'))return;
+    setRestoreBusy(true);
+    try{
+      const payload=new FormData();payload.append('file',restoreFile);
+      const response=await fetch(API+'/web-database/import',{method:'POST',headers:{Authorization:'Bearer '+token},body:payload});
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body.detail||'Database restore failed');
+      setRestoreFile(null);
+      notify(body.message||'Database restored. Sign in again.');
+      logout();
+    }catch(error){notify(error.message)}
+    finally{setRestoreBusy(false)}
+  };
   const filtered=(items,keys)=>items.filter(x=>keys.some(k=>String(x[k]??'').toLowerCase().includes(query.toLowerCase())));
   const canEditEmployees=['hr','admin','developer'].includes(String(user?.role||'').toLowerCase());
   const canAdminEmployees=['admin','developer'].includes(String(user?.role||'').toLowerCase());
@@ -263,7 +294,7 @@ export default function App() {
         {tab==='reports'&&<PrintCenter employees={data.employees} apiFetch={apiFetch} notify={notify}/>}
         {tab==='archive'&&<ArchiveManager items={data.archive} employees={data.employees} apiFetch={apiFetch} notify={notify} refresh={load} isAdmin={canAdminEmployees} token={token}/>}
         {tab==='chat'&&<Panel title="Live Chat"><div className="mb-3 max-h-96 space-y-2 overflow-y-auto">{data.messages.map((m,i)=><div key={m.id||i} className="rounded-lg bg-slate-950 p-3"><b className="text-xs text-cyan-300">{m.sender_name||m.username||'User'}</b><p className="mt-1 whitespace-pre-wrap text-sm">{m.content||m.message}</p></div>)}</div><form className="flex flex-col gap-2 sm:flex-row" onSubmit={e=>{e.preventDefault();post('/chat/messages',{channel:form.channel,content:form.content,sender_name:user.display_name||user.username});set('content','')}}><input className={field} placeholder="Write a message…" value={form.content} onChange={e=>set('content',e.target.value)}/><button className={btn}>Send</button></form></Panel>}
-        {tab==='settings'&&<><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><button className="mt-3 rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300" onClick={logout}>Sign out</button></Panel><Panel title="Database and sync"><pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-300">{JSON.stringify(data.db,null,2)}</pre><button className={btn+' mt-3'} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Sync completed':'Sync did not complete');await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></Panel></>}
+        {tab==='settings'&&<><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><button className="mt-3 rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300" onClick={logout}>Sign out</button></Panel><Panel title="Database and encrypted sync"><div className="mb-3 grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database</p><p className="mt-1 text-sm font-semibold">{data.db?.database_connected?'Connected':'Unavailable'}</p><p className="text-xs text-slate-500">{data.db?.database_name||'Waiting for status'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database size</p><p className="mt-1 text-sm font-semibold">{data.db?.database_size_bytes!=null?(data.db.database_size_bytes/1024/1024).toFixed(2)+' MB':'—'}</p><p className="text-xs text-slate-500">Integrity: {data.db?.database_integrity||'Unknown'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Encrypted sync</p><p className="mt-1 text-sm font-semibold">{data.db?.sync?.status||'Status unavailable'}</p><p className="text-xs text-slate-500">{data.db?.sync?.configured?'Configured':'Not configured'}</p></div></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(data.db?.counts||{},null,2)}</pre><div className="mt-3 flex flex-wrap gap-2"><button className={btn} onClick={downloadDatabaseBackup}><Download size={16}/> Download database backup</button><button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={Boolean(data.db?.sync?.busy)} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Encrypted sync completed':(r.error||r.status||'Sync did not complete'));await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></div>{canAdminEmployees&&<div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/5 p-3"><label className="block text-xs text-slate-300">Restore database backup (Admin / Developer)<input className={field+' mt-2'} type="file" accept=".db,.sqlite,.sqlite3" onChange={e=>setRestoreFile(e.target.files?.[0]||null)}/></label><button className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2.5 text-sm text-rose-200 disabled:opacity-40" disabled={!restoreFile||restoreBusy} onClick={restoreDatabaseBackup}><Upload size={16}/>{restoreBusy?'Validating and restoring…':'Restore selected backup'}</button><p className="mt-2 text-xs text-slate-500">The server validates the SQLite file and creates a safety backup before replacement. Account names and password hashes in the restored database are preserved; browser sessions are cleared.</p></div>}</Panel></>}
       </main>
     </div>
   </div>;

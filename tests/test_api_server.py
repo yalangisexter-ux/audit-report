@@ -1268,3 +1268,89 @@ def test_web_archive_upload_preserves_employee_date_and_notes(monkeypatch):
             connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
         connection.commit()
         connection.close()
+
+
+
+def test_web_system_database_info_and_manual_encrypted_sync_require_login(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    token = "web-system-settings-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 950, "username": "web-system-settings", "display_name": "Web System Settings", "role": "Admin"
+    }
+
+    class FakeSyncManager:
+        def public_status(self):
+            return {
+                "configured": True, "status": "Synced", "dirty": False, "busy": False,
+                "last_sync": "2026-11-05T00:00:00", "last_error": "", "installation_id": "a" * 32,
+                "last_pull": {"usernames": ["must-not-be-exposed"]},
+            }
+
+        def sync_now(self, conn):
+            assert conn.execute("SELECT 1").fetchone()[0] == 1
+            return {"success": True, "status": "Synced", "inserted": 0, "updated": 0, "conflicts": 0}
+
+    monkeypatch.setattr(api_server, "WEB_SYNC_MANAGER", FakeSyncManager())
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        assert client.get("/api/system/db-info").status_code == 401
+        info = client.get("/api/system/db-info", headers=headers)
+        assert info.status_code == 200
+        payload = info.json()
+        assert payload["database_connected"] is True
+        assert payload["database_integrity"] == "ok"
+        assert payload["app_version"]
+        assert "database_path" not in payload
+        assert "must-not-be-exposed" not in info.text
+        assert payload["sync"]["configured"] is True
+
+        synced = client.post("/api/system/sync-now", headers=headers)
+        assert synced.status_code == 200
+        assert synced.json()["success"] is True
+        assert synced.json()["status"] == "Synced"
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+
+
+def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypatch, tmp_path):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    staff_token = "web-db-staff-" + secrets.token_hex(8)
+    admin_token = "web-db-admin-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 951, "username": "web-db-staff", "display_name": "Web DB Staff", "role": "Staff"
+    }
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 952, "username": "web-db-admin", "display_name": "Web DB Admin", "role": "Admin"
+    }
+    monkeypatch.setattr(desktop_app, "EXPORT_DIR", tmp_path)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    try:
+        assert client.get("/api/web-database/export").status_code == 401
+        backup = client.get("/api/web-database/export", headers=staff_headers)
+        assert backup.status_code == 200
+        assert backup.content.startswith(b"SQLite format 3\\x00")
+        assert "no-store" in backup.headers.get("cache-control", "")
+
+        denied = client.post(
+            "/api/web-database/import",
+            headers=staff_headers,
+            files={"file": ("customer.db", b"not a database", "application/octet-stream")},
+        )
+        assert denied.status_code == 403
+
+        invalid = client.post(
+            "/api/web-database/import",
+            headers=admin_headers,
+            files={"file": ("customer.db", b"not a database", "application/octet-stream")},
+        )
+        assert invalid.status_code == 400
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
