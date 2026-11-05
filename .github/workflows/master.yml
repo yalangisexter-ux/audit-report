@@ -106,41 +106,77 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          $bundleBackup = Join-Path $env:RUNNER_TEMP "rsc-frontend-dist-publish"
+          if (Test-Path $bundleBackup) { Remove-Item -Recurse -Force $bundleBackup }
+          New-Item -ItemType Directory -Path $bundleBackup -Force | Out-Null
+          Copy-Item -Path "frontend/dist/*" -Destination $bundleBackup -Recurse -Force
+          if (-not (Test-Path (Join-Path $bundleBackup "index.html"))) { throw "Built frontend bundle backup is incomplete." }
+
           git config user.name "github-actions[bot]"
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure frontend publisher identity." }
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add frontend/dist
-          if (git diff --cached --quiet) {
-            Write-Host "Frontend production bundle is already current."
-            exit 0
-          }
-          git commit -m "Publish freshly built web frontend bundle [skip render]"
-          for ($attempt = 1; $attempt -le 4; $attempt++) {
-            git pull --rebase origin main
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure frontend publisher email." }
+
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch the latest main before publishing frontend assets." }
+            $latestMain = (git rev-parse origin/main).Trim()
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($latestMain)) { throw "Could not resolve the latest main commit." }
+
+            git merge-base --is-ancestor $env:GITHUB_SHA $latestMain
             if ($LASTEXITCODE -ne 0) {
-              # frontend/dist is generated output. Concurrent main builds can
-              # publish a different hashed bundle, so resolve only this generated
-              # directory in favor of the bundle produced by this run.
-              $unmerged = git diff --name-only --diff-filter=U
-              if ($LASTEXITCODE -ne 0) { throw "Could not inspect frontend bundle rebase conflicts." }
-              $unexpected = @($unmerged | Where-Object { $_ -notlike "frontend/dist/*" })
-              if ($unexpected.Count -gt 0) {
-                git rebase --abort
-                throw "Frontend bundle rebase encountered non-generated conflicts: $($unexpected -join ', ')"
-              }
-              if ($unmerged.Count -gt 0) {
-                git checkout --theirs -- frontend/dist
-                if ($LASTEXITCODE -ne 0) { throw "Could not keep the freshly built frontend bundle." }
-                git add frontend/dist
-                if ($LASTEXITCODE -ne 0) { throw "Could not stage the resolved frontend bundle." }
-                git -c core.editor=true rebase --continue
-                if ($LASTEXITCODE -ne 0) { throw "Could not complete frontend bundle rebase after resolving generated assets." }
-              } else {
-                throw "Could not rebase frontend bundle onto latest main."
-              }
+              Write-Host "This build commit is no longer an ancestor of main; skipping stale frontend publication."
+              exit 0
             }
+
+            $changedSinceBuild = @(git diff --name-only $env:GITHUB_SHA $latestMain -- frontend assets)
+            if ($LASTEXITCODE -ne 0) { throw "Could not compare frontend inputs with the latest main commit." }
+            $staleInputs = @($changedSinceBuild | Where-Object { $_ -notlike "frontend/dist/*" })
+            if ($staleInputs.Count -gt 0) {
+              Write-Host "A newer main commit changed frontend source/assets:"
+              Write-Host ($staleInputs -join "`n")
+              Write-Host "Skipping this stale bundle; the newer main build will publish its own output."
+              exit 0
+            }
+
+            git reset --hard $latestMain
+            if ($LASTEXITCODE -ne 0) { throw "Could not reconcile the publisher checkout with latest main." }
+            if (Test-Path "frontend/dist") { Remove-Item -Recurse -Force "frontend/dist" }
+            New-Item -ItemType Directory -Path "frontend/dist" -Force | Out-Null
+            Copy-Item -Path (Join-Path $bundleBackup "*") -Destination "frontend/dist" -Recurse -Force
+            git add -A -- frontend/dist
+            if ($LASTEXITCODE -ne 0) { throw "Could not stage the generated frontend bundle." }
+            git diff --cached --quiet
+            $diffExit = $LASTEXITCODE
+            if ($diffExit -eq 0) {
+              Write-Host "The latest main already contains this frontend bundle."
+              exit 0
+            }
+            if ($diffExit -ne 1) { throw "Could not inspect staged frontend bundle changes." }
+            $stagedPaths = @(git diff --cached --name-only)
+            if ($LASTEXITCODE -ne 0) { throw "Could not inspect staged frontend paths." }
+            $unexpectedPaths = @($stagedPaths | Where-Object { $_ -notlike "frontend/dist/*" })
+            if ($unexpectedPaths.Count -gt 0) { throw "Publisher staged non-generated files: $($unexpectedPaths -join ', ')" }
+
+            git commit -m "Publish freshly built web frontend bundle [skip render]"
+            if ($LASTEXITCODE -ne 0) { throw "Could not commit the generated frontend bundle." }
             git push origin HEAD:main
-            if ($LASTEXITCODE -eq 0) { break }
-            if ($attempt -eq 4) { throw "Could not publish frontend bundle after four attempts." }
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "Published the frontend bundle to main without a force update."
+              exit 0
+            }
+
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) { throw "Could not refresh main after the frontend push was rejected." }
+            git diff --quiet origin/main -- frontend/dist
+            $remoteBundleDiff = $LASTEXITCODE
+            if ($remoteBundleDiff -eq 0) {
+              Write-Host "Another concurrent run already published the same frontend bundle."
+              exit 0
+            }
+            if ($remoteBundleDiff -ne 1) { throw "Could not compare the published frontend bundle after a push race." }
+            if ($attempt -eq 5) { throw "Could not publish the frontend bundle after five safe fast-forward attempts." }
             Start-Sleep -Seconds 3
           }
 
