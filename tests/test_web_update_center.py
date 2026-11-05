@@ -247,6 +247,6 @@ def test_update_center_ui_distinguishes_windows_installer_from_hosted_web_deploy
     assert "Download Windows installer" in component
     assert "Download previous versions" in component or "Load previous versions" in component
     assert "The browser cannot install or execute it." in component
-    assert "The browser cannot run the installer" in component
+    assert "does not perform rollback in the browser" in component
     assert "dangerouslySetInnerHTML" not in component
     assert "window.location" not in component
