@@ -822,6 +822,10 @@ def test_silent_update_installer_preserves_previous_install_directory_and_data()
     assert "UsePreviousAppDir=yes" in installer
     assert "resolve_customer_data_dir.ps1" in installer
     assert "original customer Windows profile" in installer
+    assert "function EnsureVCRedist(var NeedsRestart: Boolean): Boolean;" in installer
+    assert "RegQueryDWordValue(HKLM64" in installer
+    assert "ExtractTemporaryFile('vc_redist.x64.exe')" in installer
+    assert "EnsureVCRedist(NeedsRestart)" in installer
     assert "create_pre_migration_backup(database_path, BACKUP_DIR)" in source
     assert '"database_backup": str(database_backup_path) if database_backup_path else ""' in source
     assert "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /DATA_DIR=" in source
