@@ -159,11 +159,9 @@ try {
             $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
             $smokeLocalAppData = Join-Path $tempRoot ('RSC-update-check-' + [guid]::NewGuid().ToString('N'))
             $originalLocalAppData = $env:LOCALAPPDATA
-            $originalQtPlatform = $env:QT_QPA_PLATFORM
 
             try {
                 $env:LOCALAPPDATA = $smokeLocalAppData
-                $env:QT_QPA_PLATFORM = 'offscreen'
                 $smokeDataDir = Join-Path $smokeLocalAppData 'EmployeeAuditManager'
                 $null = New-Item -ItemType Directory -Path $smokeDataDir -Force
                 if ($DataDir -and (Test-Path -LiteralPath (Join-Path $DataDir 'employee_audit.db') -PathType Leaf)) {
@@ -184,7 +182,6 @@ try {
             }
             finally {
                 $env:LOCALAPPDATA = $originalLocalAppData
-                $env:QT_QPA_PLATFORM = $originalQtPlatform
                 $resolvedSmokePath = [System.IO.Path]::GetFullPath($smokeLocalAppData)
                 if ($resolvedSmokePath.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
                     (Split-Path -Leaf $resolvedSmokePath).StartsWith('RSC-update-check-', [System.StringComparison]::OrdinalIgnoreCase) -and
