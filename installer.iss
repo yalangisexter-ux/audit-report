@@ -28,20 +28,23 @@ CloseApplications=yes
 RestartApplications=no
 
 [Files]
-Source: "dist\RawStrengthEmployeeAuditManager\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Install the main executable explicitly so it cannot be omitted by directory wildcard expansion.
+Source: "dist\RawStrengthEmployeeAuditManager\RawStrengthEmployeeAuditManager.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Copy bundled runtime files while excluding the executable already installed above.
+Source: "dist\RawStrengthEmployeeAuditManager\*"; DestDir: "{app}"; Excludes: "RawStrengthEmployeeAuditManager.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "update_recovery.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "resolve_customer_data_dir.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
-Name: "{group}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{group}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
+Name: "{autodesktop}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
 
 [Code]
 var
