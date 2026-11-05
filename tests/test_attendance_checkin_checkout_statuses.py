@@ -390,6 +390,8 @@ def test_bulk_attendance_transaction_uses_legacy_safe_schema_and_commits_once(mo
             for index in range(2)
         ]
 
+        # Commit fixture employee creation before starting the attendance-only transaction.
+        db.conn.commit()
         db.conn.execute("BEGIN")
         for employee_id, status in zip(employee_ids, ("Present", "Leave")):
             db.upsert_attendance(
