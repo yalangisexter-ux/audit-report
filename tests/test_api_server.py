@@ -1361,7 +1361,10 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     assert b"/Subtype /Image" in pdf_response.content  # embedded Raw Strength logo
     assert b"/Author (Raw Strength Calisthenics)" in pdf_response.content
     assert b"/Title (Employee Details)" in pdf_response.content
-    assert b"RawStrengthSans" in pdf_response.content  # bundled DejaVu font family
+    # ReportLab embeds the font using its internal DejaVu face name and a subset prefix,
+    # not the registration alias (RawStrengthSans). Verify the actual TTF is embedded.
+    assert b"DejaVuSans" in pdf_response.content
+    assert b"/FontFile2" in pdf_response.content
 
     # Each supported Print Center report type uses the same branded PDF renderer.
     for report_type in ("Audit / EOD", "Employee Attendance", "Employee Productivity"):

@@ -228,3 +228,14 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - Add workbook import, CSV/XLSX/PDF/DOC exports, regional dashboard and desktop-equivalent contact/website/verification/exclusion filters.
 - Verify one-tap scraping updates the same customer dataset and triggers encrypted snapshot sync.
 - Complete browser-side comparison with the EXE before marking the screen complete.
+## Print Center PDF font regression diagnosis — 2026-11-05
+
+- GitHub Actions runs #1084 through #1088 repeatedly failed at the same single assertion in `test_web_print_center_exports_pdf_docx_and_csv`; the other 265 tests in #1088 passed.
+- The generated PDF was valid, branded, included the Raw Strength logo and metadata, but ReportLab did not serialize the registration alias `RawStrengthSans` into the PDF. TrueType fonts are embedded under the font face's internal DejaVu name, often with a subset prefix.
+- The regression assertion is corrected to verify the embedded `DejaVuSans` face name and `/FontFile2` font program rather than the Python-side registration alias. This tests the actual embedded font and avoids a false negative.
+- The correction is not considered verified until the next complete GitHub Actions run passes; no version bump is appropriate for this test-only fix.
+
+## Store Directory pagination remains open
+
+- Re-inspection of the current `main` checklist confirms the earlier pagination claim has not landed in this repository state: the API/UI pagination, workbook import/export, regional dashboard and browser-side EXE comparison are still outstanding.
+- The confirmed 5,003-record restore count is a visibility target, not proof that the browser currently retrieves all rows. Keep Store Directory Partial until API paging is implemented and a no-gap/no-duplicate production check is completed.
