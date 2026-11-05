@@ -11,7 +11,7 @@ import tempfile
 import threading
 import uuid
 
-from fastapi import Depends, HTTPException, UploadFile, File, Form
+from fastapi import Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 
 import customer_prospects as prospect_store
