@@ -26,7 +26,7 @@ Last inspected: 2026-11-05. Repository target: `main`. This is an evidence ledge
 | Print Center / Reports | Dedicated React Print Center with four report types, consolidated/individual/excluded employee scope, date and report-specific field toggles, preview, PDF/DOCX/CSV export APIs and exposed evidence-link handling | In progress | Run #976 passed 213 regression tests including employee exclusion, hidden-field behavior, all three export formats and full stock-ledger calculation; React build, Python compilation, EXE/installer, legacy upgrade and launch smoke also passed. Still require document-layout/field-by-field comparison against the EXE and production permission checks. |
 | Historical EOD Archive | Multi-PDF upload, employee/date/notes association, searchable selection, inline view, export, refresh, Admin/Developer delete | In progress | Automated auth/RBAC and metadata regression coverage added; direct browser side-by-side verification and production storage/sync checks remain. |
 | Business Tracking | Dedicated React workspace with Dashboard, Products & Inventory, stock movement ledger, Orders, Services & Members, and Employee Activities | In progress | Automated API and UI regression coverage plus direct browser/EXE side-by-side verification, permission checks and production sync/storage verification are pending. |
-| Store Directory / Scraping | Evidence-backed public merchant scraping, full prospect create form, state/kind/website/verification filters, address/email/website/Maps fields, branch-aware duplicate-safe create/enrichment, edit/delete APIs | Partial | Verify all desktop prospect fields and permissions, scrape sources, multi-location evidence and export/report workflows in-browser. |
+| Store Directory / Scraping | Evidence-backed public merchant scraping, create/edit/delete APIs, branch-aware dedupe, address/email/website/Maps fields, Admin/Developer edit/delete permissions, and encrypted-sync callback on scrape commits | Partial | Production snapshot contains 5,003 prospects, but web UI currently requests only the API's first 200 rows. Add offset pagination and a paged UI; workbook import/export, regional dashboard, desktop filters/exclusions, and print workflows remain. |
 | Live Chat | React app exposes only the legacy general-channel message list/send. A separate Worker-served chat-web client supports private/group conversations, membership, reconnect, WebRTC audio/video and screen sharing. | Partial | The full chat-web client is not integrated into the main React app or unified with the desktop support-chat entry point. Add a consistent in-app entry, verify account/session boundaries, channel selection, unread state and permissions; do not mark complete based only on the standalone Worker page. |
 | Settings & Backup | Web account activation; authenticated DB health/counts, encrypted sync status/manual sync, database backup download and Admin/Developer-only validated restore with pre-import safety copy | In progress | API/UI and 218-test Windows release pipeline verified; a valid backup/restore round-trip with account-hash assertions is being added. Still need password/recovery changes, employee CSV, expose-all-links, Google Sheets sync, working weekdays, theme/wallpaper, updater and rollback controls; production storage remains a blocker. |
 | Cloud sync / customer data | Web standalone encrypted snapshot bootstrap/polling; installation-scoped database sync | Partial | Verify multi-device conflict behavior, identity/password hash preservation, rollback/recovery and production health under real customer data. |
@@ -191,9 +191,40 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - The code was deployed by Render deployment `dep-dbm5r6jbc2fs73apuko0`; startup and root HEAD probe succeeded. A direct production request asserting 401/200 for these four endpoints remains to be performed.
 - No customer rows, auth identities, PBKDF2 salts/hashes, sync callbacks, installation IDs, encryption settings, schema, or version metadata were changed.
 
-### Store Directory edit/permission correction — implementation added; CI verification pending
+### Store Directory edit/permission correction — CI verified; production browser verification pending
 
 - Fixed the web editor's discriminator collision: a prospect's business kind (Store/Gym) no longer overwrites the UI edit-type marker, so the edit modal loads prospect fields and submits PATCH to the correct endpoint.
 - Restricted prospect edit and delete actions to Admin/Developer in both UI and API. Staff no longer see controls that would fail with HTTP 403.
 - Prospect edits now recompute the canonical name/state/city dedupe key, reject collisions with another branch using HTTP 409, persist the Store/Gym kind, and generate a Maps search URL from a real address when the direct Maps field is cleared.
-- Added regression coverage for Staff denial, duplicate branch rejection, kind/location updates, dedupe-key recalculation and Maps generation. CI and production browser verification are pending.
+- [Run #1056](https://github.com/yalangisexter-ux/audit-report/actions/runs/42015428311) passed 259 tests, including these Store Directory regressions; React build, Worker validation/tests, and Python compilation also passed. The installer was correctly skipped for this web-only correction.
+- Production browser verification against a representative customer account remains outstanding.
+
+### Store Directory scraper encrypted-sync callback — CI verification pending
+
+- Found that the background scraper opened a raw SQLite connection, bypassing `SyncableSQLiteConnection` and its encrypted snapshot commit callback. Scraped records could therefore be saved locally without being marked pending for cloud sync.
+- Changed the scraper to use the shared `api.get_db()` connection and close its dependency generator reliably. Empty scrape results do not create a needless sync write.
+- Added a regression test that stubs the crawler, verifies a prospect is inserted, and asserts that the encrypted-sync manager receives exactly one pending notification.
+- Commit: [dfd7a2f](https://github.com/yalangisexter-ux/audit-report/commit/dfd7a2f09093ce8ac96f8fc8dcf824b0459c4d96). [Run #1057](https://github.com/yalangisexter-ux/audit-report/actions/runs/42017224257) is still running; do not treat this fix as CI-verified until it completes. The commit was deployed to Render and Uvicorn startup plus the root HEAD/GET 200 probe succeeded.
+
+### Administrator credential hash preservation — CI verification pending
+
+- The Render startup helper previously replaced an existing Admin/admin password hash when the configured deployment secret did not match it. That could silently change customer credentials during Blueprint adoption.
+- The helper now preserves existing exact-case account IDs, display names, password salts and hashes. It only heals role/active metadata, refuses to auto-reset an existing account with a missing hash, and uses deployment secrets only when creating a genuinely missing account.
+- Updated regression coverage verifies that a later deployment with different secrets cannot rotate either existing account hash, while a missing Developer account can still be provisioned.
+- Commit: [a6abc0e](https://github.com/yalangisexter-ux/audit-report/commit/a6abc0eb87308bcc9af059660edb695becef1051). [Run #1058](https://github.com/yalangisexter-ux/audit-report/actions/runs/42018091578) is running; this helper is not yet CI-verified and is not active in the live Render start command until the Blueprint plan is approved.
+
+## Production deployment and data-visibility findings — 5 November 2026
+
+- Live Render service inspection shows the current build command is `pip install -r requirements.txt`; it does not build the React app. The live service also has no health-check path and deploys on every commit. Therefore source-level React changes are not reliably reaching production.
+- Repository `render.yaml` defines a React production build, a frontend/backend build filter, `checksPass` auto-deploy, `/api/health`, and a Free plan. The live service has not adopted that Blueprint.
+- Render deployment for commit `dfd7a2f` succeeded. Logs show `Application startup complete`, Uvicorn listening on port 10000, `HEAD /` 200 and `GET /` 200.
+- Blueprint plan `exe-dbm6b1ec6qcc73846pug` is prepared. It proposes the build command, start command, build filter, health check, and no-cost Free-tier settings; it requests no manual secret values and no paid disk/plan. It has not been approved or applied. Review it at [Render Blueprint plan](https://dashboard.render.com/blueprint/exs-dbm5sot9fdbs73bug7r0/sync/exe-dbm6b1ec6qcc73846pug).
+- Render snapshot-restore logs report 5,003 customer prospects restored. The web list API defaults to `limit=200` and currently has no offset parameter; the React app makes one request. This is a confirmed data-visibility gap, not evidence of lost customer rows. Add API offset support and a paged table before declaring Store Directory parity.
+- Render Free currently has no persistent disk. Encrypted installation-scoped snapshots are the recovery path; verify a full post-write snapshot round-trip and restart recovery. Do not change hosting cost or storage plan without explicit approval.
+
+### Next Store Directory milestone
+
+- Implement API offset pagination and UI pagination without rendering thousands of table rows at once.
+- Add workbook import, CSV/XLSX/PDF/DOC exports, regional dashboard and desktop-equivalent contact/website/verification/exclusion filters.
+- Verify one-tap scraping updates the same customer dataset and triggers encrypted snapshot sync.
+- Complete browser-side comparison with the EXE before marking the screen complete.
