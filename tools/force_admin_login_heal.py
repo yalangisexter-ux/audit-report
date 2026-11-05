@@ -1,8 +1,8 @@
 """Credential-preserving provisioning for the two explicitly configured web admins.
 
-Passwords are supplied only through deployment environment secrets. They are never
-stored in source control or logged. Existing account IDs and unrelated accounts remain
-untouched; the two named accounts receive the requested roles and credentials.
+Deployment secrets are used only when an exact-case administrator account is missing.
+Existing account IDs, display names and password hashes are preserved; only role and
+active-state metadata are healed during startup.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 def ensure_admin_accounts(db_path, customer_password: str, developer_password: str) -> int:
-    """Ensure exact-case Admin and admin accounts exist with supplied credentials."""
+    """Ensure exact-case Admin and admin exist without rotating existing credentials."""
     if not customer_password or not developer_password:
         raise RuntimeError("Both web administrator password secrets must be configured")
 
@@ -45,32 +45,29 @@ def ensure_admin_accounts(db_path, customer_password: str, developer_password: s
             ("admin", "Developer Administrator", "Developer", developer_password),
         )
         for username, display_name, role, password in desired:
-            salt, digest = desktop_app.hash_pin(password)
             existing = conn.execute(
                 """SELECT id, password_salt, password_hash, role, display_name, active
                    FROM auth_users WHERE username = ? COLLATE BINARY""",
                 (username,),
             ).fetchone()
             if existing:
-                # Do not rotate salts/hashes on every status poll once the requested
-                # credential is already valid. Preserve the stable account ID.
-                stored_salt = existing["password_salt"] or ""
-                stored_hash = existing["password_hash"] or ""
-                try:
-                    _, verified_hash = desktop_app.hash_pin(password, stored_salt)
-                    password_matches = bool(stored_salt and secrets.compare_digest(
-                        str(verified_hash), str(stored_hash)
-                    ))
-                except Exception:
-                    password_matches = False
-                if password_matches:
-                    salt, digest = stored_salt, stored_hash
+                # Startup healing may restore role/active metadata, but it must never
+                # rotate an existing customer's or developer's password hash. Password
+                # changes belong to the explicit authenticated recovery/reset workflow.
+                if not existing["password_salt"] or not existing["password_hash"]:
+                    raise RuntimeError(
+                        f"Existing {username} account has no password hash; refusing an automatic reset"
+                    )
+                preserved_display_name = existing["display_name"] or display_name
                 conn.execute(
-                    """UPDATE auth_users SET display_name=?, role=?, password_salt=?,
-                       password_hash=?, active=1, updated_at=? WHERE id=?""",
-                    (display_name, role, salt, digest, now, existing["id"]),
+                    """UPDATE auth_users SET display_name=?, role=?, active=1,
+                       updated_at=? WHERE id=?""",
+                    (preserved_display_name, role, now, existing["id"]),
                 )
             else:
+                # Deployment secrets are used only to provision a genuinely missing account.
+                # Existing credentials are always preserved, even if a secret changes.
+                salt, digest = desktop_app.hash_pin(password)
                 # Older schemas may have optional security-answer fields.
                 values = {
                     "username": username, "display_name": display_name, "role": role,

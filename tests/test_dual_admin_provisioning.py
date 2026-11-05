@@ -39,8 +39,10 @@ def test_dual_admin_provisioning_preserves_ids_and_sets_requested_roles(tmp_path
         "SELECT username, password_salt || ':' || password_hash FROM auth_users"
     ).fetchall())
     conn.close()
+    assert first_hashes["Admin"] == salt + ":" + digest
 
-    assert ensure_admin_accounts(db_path, "Shiva@01", "kiran123") == 2
+    # A later deployment with different secrets must not silently reset either account.
+    assert ensure_admin_accounts(db_path, "changed-customer-secret", "changed-developer-secret") == 2
 
     conn = sqlite3.connect(db_path)
     second_hashes = dict(conn.execute(
@@ -59,7 +61,8 @@ def test_dual_admin_provisioning_preserves_ids_and_sets_requested_roles(tmp_path
         assert rows["Admin"]["id"] == 7
         assert rows["Admin"]["role"] == "Admin"
         assert rows["admin"]["role"] == "Developer"
-        for username, password in (("Admin", "Shiva@01"), ("admin", "kiran123")):
+        assert rows["Admin"]["display_name"] == "Old name"
+        for username, password in (("Admin", "old-customer-password"), ("admin", "kiran123")):
             row = rows[username]
             _, actual = desktop_app.hash_pin(password, row["password_salt"])
             assert actual == row["password_hash"]
