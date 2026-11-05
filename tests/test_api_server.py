@@ -2104,3 +2104,25 @@ def test_customer_prospect_api_keyset_pagination_returns_every_row_once():
         assert len(set(collected)) == 2505
     finally:
         connection.close()
+
+def test_store_directory_web_ui_exposes_workbook_import_regional_dashboard_and_exports():
+    source = (ROOT / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    for endpoint in (
+        "/customers/import",
+        "/customers/dashboard-import",
+        "/customers/regional-summary",
+        "/customers/export?",
+        "/customers/regional-export?",
+    ):
+        assert endpoint in source, f"Store Directory UI is missing {endpoint}"
+    for label in (
+        "Import and merge workbook",
+        "Import regional benchmark",
+        "Regional coverage",
+        "Export filtered Store Directory:",
+        "Regional dashboard export:",
+    ):
+        assert label in source, f"Store Directory UI is missing {label}"
+    assert "disabled={!canAdminEmployees||!storeWorkbook||storeImportBusy}" in source
+    assert "disabled={!canAdminEmployees||!dashboardWorkbook||dashboardImportBusy}" in source
+    assert "Existing customer IDs, notes, follow-ups and records are merged, not deleted or replaced." in source
