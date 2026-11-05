@@ -1363,6 +1363,23 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     assert b"/Title (Employee Details)" in pdf_response.content
     assert b"RawStrengthSans" in pdf_response.content  # bundled DejaVu font family
 
+    # Each supported Print Center report type uses the same branded PDF renderer.
+    for report_type in ("Audit / EOD", "Employee Attendance", "Employee Productivity"):
+        typed_pdf = client.post(
+            "/api/reports/export",
+            json={**base_payload, "report_type": report_type, "output_format": "pdf"},
+        )
+        assert typed_pdf.status_code == 200
+        assert typed_pdf.headers["content-type"].startswith("application/pdf")
+        assert typed_pdf.content.startswith(b"%PDF-")
+        assert b"/Subtype /Image" in typed_pdf.content
+
+    # The Print Center preview action opens this generated PDF, not a browser print of page text.
+    print_center_source = (ROOT / "frontend" / "src" / "PrintCenter.jsx").read_text(encoding="utf-8")
+    assert "output_format: 'pdf'" in print_center_source
+    assert "window.print()" not in print_center_source
+    assert "Open PDF preview / Print" in print_center_source
+
 def test_web_business_products_and_print_center_use_full_stock_ledger(monkeypatch):
     import secrets
 
