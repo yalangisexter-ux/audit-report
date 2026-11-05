@@ -1888,7 +1888,7 @@ class Database:
         if work_date: q += " AND a.work_date=?"; args.append(work_date)
         return self.conn.execute(q + " ORDER BY e.display_order ASC, e.name COLLATE NOCASE", args).fetchall()
 
-    def upsert_attendance(self, emp_id, work_date, check_in=None, check_out=None, note=None, status=None):
+    def upsert_attendance(self, emp_id, work_date, check_in=None, check_out=None, note=None, status=None, *, commit=True):
         """Persist attendance across current and legacy customer DB schemas.
 
         Older releases may retain NOT NULL date/status columns alongside the
@@ -1975,7 +1975,8 @@ class Database:
                 ") VALUES (" + ",".join("?" for _ in names) + ")",
                 tuple(insert_values[name] for name in names),
             )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_employee_target(self, emp_id, target_date):
         if not emp_id:
@@ -11561,16 +11562,15 @@ class MainWindow(QMainWindow):
                     current_status = "Present"
                 if current_status in ("Absent","Leave","Unmarked"):
                     current_in = current_out = ""
-                if old:
-                    self.db.conn.execute(
-                        "UPDATE attendance SET check_in=?,check_out=?,attendance_note=?,attendance_status=?,updated_at=? WHERE id=?",
-                        (current_in,current_out,current_note,current_status,now,old["id"])
-                    )
-                else:
-                    self.db.conn.execute(
-                        "INSERT INTO attendance(employee_id,work_date,check_in,check_out,attendance_note,attendance_status,updated_at) VALUES(?,?,?,?,?,?,?)",
-                        (employee_id,work_date,current_in,current_out,current_note,current_status,now)
-                    )
+                self.db.upsert_attendance(
+                    employee_id,
+                    work_date,
+                    check_in=current_in,
+                    check_out=current_out,
+                    note=current_note,
+                    status=current_status,
+                    commit=False,
+                )
             self.db.conn.commit()
         except (sqlite3.Error, ValueError) as exc:
             self.db.conn.rollback()
