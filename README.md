@@ -1,6 +1,6 @@
 # Raw Strength Calisthenics — Employee Audit Manager & Operations OS
 
-## Modern React SPA + FastAPI REST API Interface (v1.3.77)
+## Modern React SPA + FastAPI REST API Interface (v1.3.78)
 
 A React web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a **FastAPI REST API** backend and the shared SQLite data model. Existing PBKDF2 account hashes and installation-scoped sync behavior are preserved. Desktop-to-web feature parity is tracked screen by screen and is not yet complete.
 
@@ -20,7 +20,7 @@ python run_web.py
 - **Responsive Dialog Modals:** Center-anchored with max-height limits and internal scrolling to prevent modals from hiding under taskbars or screen edges.
 - **Silent Background Sync HUD:** Real-time green auto-sync badge without disruptive loading screens or UI blocking.
 - **Web Print Center:** Report preview and browser print/save-to-PDF are available; full desktop report options, archived-report workflows, and PDF/DOCX/CSV export parity remain in progress.
-- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; the latest verified CI run passed 201 regression tests. Full feature parity remains in progress.
+- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; the latest verified CI run passed 226 regression tests. Full feature parity remains in progress.
 
 ---
 
