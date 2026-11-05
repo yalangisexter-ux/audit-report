@@ -1611,66 +1611,54 @@ class Database:
         except Exception:
             self.conn.rollback()
             raise
-        # Additive migration for auth_users table to allow Developer, Staff, and Employee roles
+        # Rebuild auth_users with exact-case username uniqueness. Older releases
+        # used COLLATE NOCASE, which made customer "Admin" and developer "admin"
+        # collide and caused the wrong account to be assigned the Developer role.
         try:
-            row = self.conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'").fetchone()
-            if row and row[0] and "CHECK" in row[0] and "'Developer'" not in row[0]:
-                self.conn.execute("PRAGMA foreign_keys=OFF")
-                self.conn.execute("""
-                    CREATE TABLE IF NOT EXISTS auth_users_migrated(
-                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                      username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-                      display_name TEXT NOT NULL DEFAULT '',
-                      role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
-                      password_salt TEXT NOT NULL,
-                      password_hash TEXT NOT NULL,
-                      security_question TEXT NOT NULL,
-                      answer_salt TEXT NOT NULL,
-                      answer_hash TEXT NOT NULL,
-                      active INTEGER NOT NULL DEFAULT 1,
-                      created_at TEXT NOT NULL,
-                      updated_at TEXT NOT NULL
-                    )
-                """)
-                self.conn.execute("""
-                    INSERT INTO auth_users_migrated(id, username, display_name, role, password_salt, password_hash, security_question, answer_salt, answer_hash, active, created_at, updated_at)
-                    SELECT id, username, display_name, role, password_salt, password_hash, security_question, answer_salt, answer_hash, active, created_at, updated_at
-                    FROM auth_users
-                """)
-                self.conn.execute("DROP TABLE auth_users")
-                self.conn.execute("ALTER TABLE auth_users_migrated RENAME TO auth_users")
-                self.conn.execute("PRAGMA foreign_keys=ON")
-        except Exception as e:
-            logging.getLogger("db").debug(f"auth_users migration notice: {e}")
-
-        # Ensure distinct developer testing user ('admin') and master customer user ('taruna')
-        try:
-            admin_row = self.conn.execute("SELECT * FROM auth_users WHERE username='admin' COLLATE NOCASE").fetchone()
-            taruna_row = self.conn.execute("SELECT * FROM auth_users WHERE username='taruna' COLLATE NOCASE").fetchone()
-
-            if admin_row:
-                if not admin_row["display_name"] or admin_row["display_name"] in ("Administrator", "admin"):
-                    self.conn.execute(
-                        "UPDATE auth_users SET display_name='admin (Developer - Test Mode)', role='Developer', updated_at=? WHERE id=?",
-                        (now_text(), admin_row["id"])
-                    )
-
-            if not taruna_row and admin_row:
-                self.conn.execute(
-                    """INSERT INTO auth_users(username, display_name, role, password_salt, password_hash,
-                       security_question, answer_salt, answer_hash, active, created_at, updated_at)
-                       VALUES('taruna', 'Admin / Taruna (Customer Master)', 'Admin', ?, ?, ?, ?, ?, 1, ?, ?)""",
-                    (admin_row["password_salt"], admin_row["password_hash"], admin_row["security_question"],
-                     admin_row["answer_salt"], admin_row["answer_hash"], now_text(), now_text())
+            auth_sql_row = self.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
+            ).fetchone()
+            auth_sql = auth_sql_row[0] if auth_sql_row else ""
+            if auth_sql and "COLLATE NOCASE" in auth_sql.upper():
+                index_sql = [
+                    row[0] for row in self.conn.execute(
+                        "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='auth_users' AND sql IS NOT NULL"
+                    ).fetchall()
+                ]
+                trigger_sql = [
+                    row[0] for row in self.conn.execute(
+                        "SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name='auth_users' AND sql IS NOT NULL"
+                    ).fetchall()
+                ]
+                columns = [row["name"] for row in self.conn.execute("PRAGMA table_info(auth_users)").fetchall()]
+                if not columns or "username" not in columns:
+                    raise RuntimeError("auth_users schema is missing its username column")
+                create_sql = auth_sql.replace(
+                    "CREATE TABLE auth_users", "CREATE TABLE auth_users_case_sensitive", 1
                 )
-            elif taruna_row:
-                if "Admin" not in str(taruna_row["display_name"]):
+                create_sql = re.sub(r"COLLATE\\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
+                self.conn.execute("BEGIN IMMEDIATE")
+                try:
+                    self.conn.execute(create_sql)
+                    column_list = ", ".join('"' + name.replace('"', '""') + '"' for name in columns)
                     self.conn.execute(
-                        "UPDATE auth_users SET display_name='Admin / Taruna (Customer Master)', role='Admin', updated_at=? WHERE id=?",
-                        (now_text(), taruna_row["id"])
+                        f"INSERT INTO auth_users_case_sensitive ({column_list}) "
+                        f"SELECT {column_list} FROM auth_users"
                     )
+                    self.conn.execute("DROP TABLE auth_users")
+                    self.conn.execute("ALTER TABLE auth_users_case_sensitive RENAME TO auth_users")
+                    for statement in index_sql + trigger_sql:
+                        self.conn.execute(statement)
+                    self.conn.commit()
+                except Exception:
+                    self.conn.rollback()
+                    raise
+
+            # Never infer identity or change roles by a case-insensitive username
+            # lookup. Preserve all existing customer/developer credentials.
         except Exception as e:
-            logging.getLogger("db").debug(f"User provisioning notice: {e}")
+            logging.getLogger("db").exception("auth_users case-sensitive migration failed: %s", e)
+            raise
 
         # Do not create a known/default credential. Authentication is handled by
         # the first-run Admin account and per-user password/recovery records.
