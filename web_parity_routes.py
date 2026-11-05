@@ -110,16 +110,21 @@ def _run_scrape(job_id, state, query, max_results, deep_scrape):
             category="Pure Product Selling Stores", state=state, query_term=query,
             max_results=max_results, deep_scrape=deep_scrape
         )
-        conn = sqlite3.connect(str(api.desktop_app.DB_PATH), timeout=30)
-        conn.row_factory = sqlite3.Row
-        try:
-            db = SimpleNamespace(conn=conn)
-            result = cp.persist_prospect_records(
-                db, records, source_name="Deep Web Scraper",
-                source_checked_at=date.today().isoformat()
-            )
-        finally:
-            conn.close()
+        result = {"inserted": 0, "duplicates": 0}
+        if records:
+            # Use the same managed connection as ordinary API writes. In standalone
+            # production this installs the encrypted-sync commit callback, so a
+            # background scrape cannot silently update only the local SQLite file.
+            db_context = api.get_db()
+            try:
+                conn = next(db_context)
+                db = SimpleNamespace(conn=conn)
+                result = cp.persist_prospect_records(
+                    db, records, source_name="Deep Web Scraper",
+                    source_checked_at=date.today().isoformat()
+                )
+            finally:
+                db_context.close()
         with _jobs_lock:
             _jobs[job_id].update({"status":"completed","found":len(records),"result":result,"error":""})
     except Exception as exc:

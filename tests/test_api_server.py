@@ -1985,3 +1985,64 @@ def test_web_store_directory_edit_is_admin_only_and_recomputes_branch_dedupe(mon
         connection.close()
         api_server.ACTIVE_SESSIONS.pop(admin_token, None)
         api_server.ACTIVE_SESSIONS.pop(staff_token, None)
+
+
+def test_store_directory_scrape_uses_managed_connection_for_encrypted_sync(monkeypatch):
+    import secrets
+    import customer_prospects
+    import web_parity_routes
+
+    class SyncManager:
+        configured = True
+
+        def __init__(self):
+            self.pending = 0
+
+        def mark_pending(self):
+            self.pending += 1
+
+    manager = SyncManager()
+    monkeypatch.setenv("WEB_STANDALONE", "1")
+    monkeypatch.setattr(api_server, "WEB_SYNC_MANAGER", manager)
+    monkeypatch.setattr(api_server, "ensure_database", lambda: None)
+
+    suffix = secrets.token_hex(5).upper()
+    business_name = "Scrape Sync Callback QA " + suffix
+    record = dict(customer_prospects.RESEARCHED_WEB_LEADS[0])
+    record.update({
+        "business_name": business_name,
+        "business_category": "Sports Nutrition",
+        "kind": "Store",
+        "state": "Andhra Pradesh",
+        "city": "Vijayawada",
+        "area": "Benz Circle",
+        "address": "Shop 12, MG Road, Vijayawada, Andhra Pradesh 520010",
+        "phone": "90000" + suffix[:5],
+        "email": "scrape-" + suffix.lower() + "@example.test",
+        "website": "https://scrape-sync-" + suffix.lower() + ".example.test",
+        "maps": "",
+    })
+    monkeypatch.setattr(
+        customer_prospects,
+        "crawl_search_engine_results",
+        lambda **_kwargs: [record],
+    )
+
+    job_id = "scrape-sync-" + suffix.lower()
+    web_parity_routes._jobs[job_id] = {"id": job_id, "status": "running"}
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        web_parity_routes._run_scrape(job_id, "Andhra Pradesh", "sports nutrition", 5, True)
+        assert web_parity_routes._jobs[job_id]["status"] == "completed"
+        assert web_parity_routes._jobs[job_id]["result"]["inserted"] == 1
+        assert manager.pending == 1, "The scrape commit must notify the encrypted snapshot sync manager."
+        saved = connection.execute(
+            "SELECT id FROM customer_prospects WHERE business_name=?",
+            (business_name,),
+        ).fetchone()
+        assert saved is not None
+        connection.execute("DELETE FROM customer_prospects WHERE id=?", (saved[0],))
+        connection.commit()
+    finally:
+        connection.close()
+        web_parity_routes._jobs.pop(job_id, None)
