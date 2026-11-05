@@ -101,16 +101,19 @@ begin
 	if Exec(RecoveryPowerShellPath, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) + ' -OutputFile ' + AddQuotes(OutputPath), '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) and LoadStringsFromFile(OutputPath, OutputLines) and (GetArrayLength(OutputLines) > 0) then
 	begin
 		Result := Trim(OutputLines[0]);
-		if Result <> '' then
+		if (Result <> '') and (Result <> '__RSC_NO_EXISTING_PROFILE__') then
 			Exit;
-	end;
-
-	// A fresh install has no previous customer data to locate. For an existing
-	// installation, fail closed rather than accidentally selecting the admin profile.
-	if FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
-		Result := ''
+		if Result = '__RSC_NO_EXISTING_PROFILE__' then
+			Result := '';
+	end
 	else
-		Result := ExpandConstant('{localappdata}\EmployeeAuditManager');
+		Result := '__RSC_RESOLUTION_FAILED__';
+	if Result = '' then
+		Result := '__RSC_RESOLUTION_FAILED__';
+
+	// Never fall back to the elevated installer's LocalAppData.
+	if FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
+		Result := '';
 end;
 
 function InitializeSetup: Boolean;
@@ -132,14 +135,30 @@ begin
 	NeedsRestart := False;
 	InstallDirectory := ExpandConstant('{app}');
 	DataDirectory := GetCustomerDataDirectory;
-	if DataDirectory = '' then
+	if (DataDirectory = '__RSC_RESOLUTION_FAILED__') or
+		((DataDirectory = '') and FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe')) then
 	begin
-		Result := 'Could not identify the original customer Windows profile. The update was stopped to protect the existing database. Please retry the update from the installed application.';
+		Result := 'Could not safely identify the customer data folder. The installation was stopped to protect existing databases.';
 		Exit;
 	end;
-	PendingBackupDirectory := AddBackslash(DataDirectory) + 'pending-update-backup';
-	StableBackupDirectory := AddBackslash(DataDirectory) + 'previous-version';
+	if DataDirectory <> '' then
+	begin
+		PendingBackupDirectory := AddBackslash(DataDirectory) + 'pending-update-backup';
+		StableBackupDirectory := AddBackslash(DataDirectory) + 'previous-version';
+	end
+	else
+	begin
+		// No existing database/profile was found; keep transaction files outside customer data.
+		PendingBackupDirectory := ExpandConstant('{tmp}\rsc-no-profile-pending-backup');
+		StableBackupDirectory := ExpandConstant('{tmp}\rsc-no-profile-stable-backup');
+	end;
 	RecoveryScriptPath := ExpandConstant('{tmp}\update_recovery.ps1');
+	ExtractTemporaryFile('update_recovery.ps1');
+	if not FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
+	begin
+		if not RunRecoveryScript('cleanup', '', ResultCode) or (ResultCode <> 0) then
+			Log('Safe cleanup of stale application transaction folders did not complete.');
+	end;
 	if DirExists(InstallDirectory) and FileExists(InstallDirectory + '\RawStrengthEmployeeAuditManager.exe') then
 	begin
 		KillRunningAppProcess;
