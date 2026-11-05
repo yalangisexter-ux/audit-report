@@ -1636,7 +1636,7 @@ class Database:
                 create_sql = auth_sql.replace(
                     "CREATE TABLE auth_users", "CREATE TABLE auth_users_case_sensitive", 1
                 )
-                create_sql = re.sub(r"COLLATE\\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
+                create_sql = re.sub(r"COLLATE\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
                 self.conn.execute("BEGIN IMMEDIATE")
                 try:
                     self.conn.execute(create_sql)
