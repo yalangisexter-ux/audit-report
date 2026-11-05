@@ -229,6 +229,20 @@ class PasswordResetRequest(BaseModel):
 class AccountActiveRequest(BaseModel):
     active: bool
 
+class AccountCreateRequest(BaseModel):
+    username: str
+    display_name: str
+    role: str
+    password: str
+    security_question: str
+    security_answer: str
+
+class AccountRoleRequest(BaseModel):
+    role: str
+
+class AccountPasswordResetRequest(BaseModel):
+    new_password: str
+
 class EmployeeModel(BaseModel):
     name: str
     employee_code: Optional[str] = ""
@@ -415,6 +429,32 @@ def _require_account_admin(user: Dict[str, Any]):
         raise HTTPException(status_code=403, detail="Only an Admin or Developer can manage accounts")
 
 
+def _invalidate_account_sessions(user_id: int, conn: sqlite3.Connection) -> None:
+    """Invalidate both in-memory and persistent browser sessions for one account."""
+    for token, session in list(ACTIVE_SESSIONS.items()):
+        try:
+            if int(session.get("id") or 0) == int(user_id):
+                ACTIVE_SESSIONS.pop(token, None)
+        except (TypeError, ValueError):
+            continue
+    has_sessions = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='web_auth_sessions'"
+    ).fetchone()
+    if has_sessions:
+        conn.execute("DELETE FROM web_auth_sessions WHERE user_id=?", (int(user_id),))
+
+
+def _record_account_audit(conn: sqlite3.Connection, action: str, details: str) -> None:
+    has_audit = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log'"
+    ).fetchone()
+    if has_audit:
+        conn.execute(
+            "INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)",
+            (desktop_app.now_text(), action, details),
+        )
+
+
 @app.post("/api/auth/register")
 def register_account(req: RegistrationRequest, conn: sqlite3.Connection = Depends(get_db)):
     username = str(req.username or "").strip()
@@ -509,17 +549,65 @@ def list_auth_users(user: Dict[str, Any] = Depends(get_current_user), conn: sqli
     return [dict(row) for row in rows]
 
 
+@app.post("/api/auth/users")
+def create_managed_account(
+    item: AccountCreateRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    _require_account_admin(user)
+    username = str(item.username or "").strip()
+    display_name = str(item.display_name or "").strip()
+    role = str(item.role or "").strip()
+    answer = desktop_app.normalized_answer(str(item.security_answer or ""))
+    allowed_roles = {"Staff", "HR", "Admin", "Developer"}
+    if not username or len(username) > 64 or not display_name or len(display_name) > 100:
+        raise HTTPException(status_code=422, detail="Enter a valid username and display name")
+    if role not in allowed_roles:
+        raise HTTPException(status_code=422, detail="Select a valid account role")
+    caller_role = str(user.get("role") or "").casefold()
+    if role == "Developer" and caller_role != "developer":
+        raise HTTPException(status_code=403, detail="Only a Developer can create a Developer account")
+    if not desktop_app.password_is_strong(item.password or ""):
+        raise HTTPException(status_code=422, detail="Use at least 8 characters with a letter and a number")
+    if item.security_question not in desktop_app.SECURITY_QUESTIONS or len(answer) < 2:
+        raise HTTPException(status_code=422, detail="Select a recovery question and enter a valid recovery answer")
+    if conn.execute(
+        "SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE",
+        (username,),
+    ).fetchone():
+        raise HTTPException(status_code=409, detail="That username already exists. Usernames are case-insensitive and must be unique.")
+    password_salt, password_hash = desktop_app.hash_pin(item.password)
+    answer_salt, answer_hash = desktop_app.hash_pin(answer)
+    now = desktop_app.now_text()
+    cursor = conn.execute(
+        """INSERT INTO auth_users(
+               username,display_name,role,password_salt,password_hash,
+               security_question,answer_salt,answer_hash,active,created_at,updated_at
+           ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+        (username, display_name, role, password_salt, password_hash,
+         item.security_question, answer_salt, answer_hash, now, now),
+    )
+    _record_account_audit(conn, "User account created", f"{username} ({role})")
+    conn.commit()
+    return {"success": True, "user_id": int(cursor.lastrowid), "username": username, "role": role, "active": True}
+
+
 @app.patch("/api/auth/users/{user_id}/active")
-def set_auth_user_active(user_id: int, item: AccountActiveRequest,
-                         user: Dict[str, Any] = Depends(get_current_user),
-                         conn: sqlite3.Connection = Depends(get_db)):
+def set_auth_user_active(
+    user_id: int,
+    item: AccountActiveRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
     _require_account_admin(user)
     if int(user.get("id") or 0) == int(user_id) and not item.active:
         raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
-    target = conn.execute("SELECT id,role FROM auth_users WHERE id=?", (user_id,)).fetchone()
+    target = conn.execute("SELECT id,username,role,active FROM auth_users WHERE id=?", (user_id,)).fetchone()
     if not target:
         raise HTTPException(status_code=404, detail="Account not found")
-    if str(target["role"]).casefold() == "developer" and str(user.get("role") or "").casefold() != "developer":
+    caller_role = str(user.get("role") or "").casefold()
+    if str(target["role"]).casefold() == "developer" and caller_role != "developer":
         raise HTTPException(status_code=403, detail="Only a Developer can change a Developer account")
     if not item.active and str(target["role"]).casefold() == "admin":
         remaining = conn.execute(
@@ -527,12 +615,83 @@ def set_auth_user_active(user_id: int, item: AccountActiveRequest,
         ).fetchone()[0]
         if remaining < 1:
             raise HTTPException(status_code=409, detail="The last active Admin account cannot be deactivated")
-    conn.execute("UPDATE auth_users SET active=?,updated_at=? WHERE id=?",
-                 (1 if item.active else 0, desktop_app.now_text(), user_id))
-    if not item.active and os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
-        conn.execute("DELETE FROM web_auth_sessions WHERE user_id=?", (user_id,))
+    conn.execute(
+        "UPDATE auth_users SET active=?,updated_at=? WHERE id=?",
+        (1 if item.active else 0, desktop_app.now_text(), user_id),
+    )
+    if not item.active:
+        _invalidate_account_sessions(user_id, conn)
+    _record_account_audit(
+        conn,
+        "User status changed",
+        f"{target['username']}: {'Active' if item.active else 'Disabled'}",
+    )
     conn.commit()
     return {"success": True, "user_id": user_id, "active": item.active}
+
+
+@app.patch("/api/auth/users/{user_id}/role")
+def set_auth_user_role(
+    user_id: int,
+    item: AccountRoleRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    _require_account_admin(user)
+    new_role = str(item.role or "").strip()
+    allowed_roles = {"Staff", "HR", "Admin", "Developer"}
+    if new_role not in allowed_roles:
+        raise HTTPException(status_code=422, detail="Select a valid account role")
+    target = conn.execute("SELECT id,username,role,active FROM auth_users WHERE id=?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="Account not found")
+    caller_role = str(user.get("role") or "").casefold()
+    if (str(target["role"]).casefold() == "developer" or new_role == "Developer") and caller_role != "developer":
+        raise HTTPException(status_code=403, detail="Only a Developer can change or assign a Developer account")
+    if str(target["role"]).casefold() == "admin" and new_role != "Admin" and int(target["active"] or 0):
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM auth_users WHERE active=1 AND role='Admin' AND id<>?",
+            (user_id,),
+        ).fetchone()[0]
+        if remaining < 1:
+            raise HTTPException(status_code=409, detail="The last active Admin cannot be changed to a non-Admin role")
+    if str(target["role"]) == new_role:
+        return {"success": True, "user_id": user_id, "role": new_role, "unchanged": True}
+    conn.execute(
+        "UPDATE auth_users SET role=?,updated_at=? WHERE id=?",
+        (new_role, desktop_app.now_text(), user_id),
+    )
+    _record_account_audit(conn, "User role changed", f"{target['username']} -> {new_role}")
+    _invalidate_account_sessions(user_id, conn)
+    conn.commit()
+    return {"success": True, "user_id": user_id, "role": new_role}
+
+
+@app.post("/api/auth/users/{user_id}/password-reset")
+def reset_managed_account_password(
+    user_id: int,
+    item: AccountPasswordResetRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    _require_account_admin(user)
+    target = conn.execute("SELECT id,username,role FROM auth_users WHERE id=?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="Account not found")
+    caller_role = str(user.get("role") or "").casefold()
+    if str(target["role"]).casefold() == "developer" and caller_role != "developer":
+        raise HTTPException(status_code=403, detail="Only a Developer can reset a Developer account password")
+    if not desktop_app.password_is_strong(item.new_password or ""):
+        raise HTTPException(status_code=422, detail="Use at least 8 characters with a letter and a number")
+    salt, digest = desktop_app.hash_pin(item.new_password)
+    conn.execute(
+        "UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?",
+        (salt, digest, desktop_app.now_text(), user_id),
+    )
+    _record_account_audit(conn, "User password reset by admin", target["username"])
+    _invalidate_account_sessions(user_id, conn)
+    conn.commit()
+    return {"success": True, "user_id": user_id, "message": "Password reset successfully. The account must sign in again."}
 
 
 # --- Dashboard Analytics ---
