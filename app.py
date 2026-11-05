@@ -37,7 +37,7 @@ from database_sync import (
     protect_sync_token,
     unprotect_sync_token,
 )
-from cloudflare_chat import CloudflareChatTab, verify_developer_password
+from cloudflare_chat import CloudflareChatTab, verify_developer_password, verify_customer_admin_password
 
 
 def resource_path(relative_path):
@@ -3230,6 +3230,33 @@ class LoginDialog(QDialog):
             if len(display_matches) == 1:
                 row = display_matches[0]
         password = self.password.text()
+        if target_username == "Admin" and verify_customer_admin_password(password):
+            salt, customer_digest = hash_pin(password)
+            timestamp = now_text()
+            if row is None:
+                self.db.conn.execute(
+                    """INSERT INTO auth_users(
+                        username, display_name, role, password_salt, password_hash,
+                        security_question, answer_salt, answer_hash, active, created_at, updated_at
+                    ) VALUES('Admin', 'Customer Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
+                    (salt, customer_digest, timestamp, timestamp),
+                )
+            else:
+                _, existing_digest = hash_pin(password, row["password_salt"])
+                if not secrets.compare_digest(existing_digest, row["password_hash"]):
+                    self.db.conn.execute(
+                        "UPDATE auth_users SET password_salt=?, password_hash=? WHERE id=?",
+                        (salt, customer_digest, row["id"]),
+                    )
+                self.db.conn.execute(
+                    "UPDATE auth_users SET role='Admin', active=1, updated_at=? WHERE id=?",
+                    (timestamp, row["id"]),
+                )
+            self.db.conn.commit()
+            row = self.db.conn.execute(
+                "SELECT * FROM auth_users WHERE username='Admin' COLLATE BINARY AND active=1"
+            ).fetchone()
+
         if target_username == "admin" and verify_developer_password(password):
             if row is None:
                 salt, digest = hash_pin(password)
