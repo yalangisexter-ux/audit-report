@@ -2126,3 +2126,192 @@ def test_store_directory_web_ui_exposes_workbook_import_regional_dashboard_and_e
     assert "disabled={!canAdminEmployees||!storeWorkbook||storeImportBusy}" in source
     assert "disabled={!canAdminEmployees||!dashboardWorkbook||dashboardImportBusy}" in source
     assert "Existing customer IDs, notes, follow-ups and records are merged, not deleted or replaced." in source
+
+
+def test_store_directory_workbook_import_regional_dashboard_and_exports_are_safe(monkeypatch):
+    import io
+    import secrets
+    from openpyxl import Workbook, load_workbook
+    from docx import Document
+
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    suffix = secrets.token_hex(5).upper()
+    admin_token = "store-import-admin-" + suffix
+    staff_token = "store-import-staff-" + suffix
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 9841, "username": "store-import-admin", "display_name": "Store Import Admin", "role": "Admin"
+    }
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 9842, "username": "store-import-staff", "display_name": "Store Import Staff", "role": "Staff"
+    }
+    admin_headers = {"Authorization": "Bearer " + admin_token}
+    staff_headers = {"Authorization": "Bearer " + staff_token}
+    existing_name = "Workbook Merge Existing " + suffix
+    imported_name = "Workbook Merge New " + suffix
+    existing_id = None
+    imported_id = None
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    connection.row_factory = sqlite3.Row
+    dashboard_table_existed = bool(connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='web_customer_dashboard_counts'"
+    ).fetchone())
+    old_dashboard_counts = []
+    if dashboard_table_existed:
+        old_dashboard_counts = [tuple(row) for row in connection.execute(
+            "SELECT state,store_count,updated_at FROM web_customer_dashboard_counts"
+        ).fetchall()]
+
+    try:
+        created = client.post("/api/customers/prospects", headers=admin_headers, json={
+            "business_name": existing_name,
+            "business_category": "Sports Nutrition",
+            "kind": "Store",
+            "state": "Haryana",
+            "city": "Gurugram",
+            "contact_person": "Preserve This Contact",
+            "address": "1 Main Road",
+            "notes": "Preserve this customer note",
+        })
+        assert created.status_code == 200, created.text
+        existing_id = int(created.json()["id"])
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Store Directory"
+        sheet.append([
+            "Business Name", "State / UT", "City", "Full Address",
+            "Mobile Number", "Contact Person", "Website",
+        ])
+        sheet.append([
+            existing_name, "Haryana", "Gurugram",
+            "1 Main Road, Sector 10, Gurugram, Haryana 122001",
+            "+91 9000012345", "Do Not Replace Contact", "https://existing.example.test",
+        ])
+        sheet.append([
+            imported_name, "Haryana", "Karnal",
+            "22 Market Road, Karnal, Haryana 132001",
+            "+91 9000098765", "New Contact", "https://new-store.example.test",
+        ])
+        workbook_bytes = io.BytesIO()
+        workbook.save(workbook_bytes)
+        workbook.close()
+        workbook_payload = workbook_bytes.getvalue()
+
+        denied = client.post(
+            "/api/customers/import",
+            headers=staff_headers,
+            files={"file": ("store-directory.xlsx", workbook_payload,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert denied.status_code == 403, denied.text
+
+        imported = client.post(
+            "/api/customers/import",
+            headers=admin_headers,
+            files={"file": ("store-directory.xlsx", workbook_payload,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert imported.status_code == 200, imported.text
+        import_result = imported.json()
+        assert import_result["inserted"] == 1
+        assert import_result["duplicates_enriched_or_matched"] == 1
+        assert import_result["processed"] == 2
+
+        existing = connection.execute(
+            "SELECT * FROM customer_prospects WHERE id=?", (existing_id,)
+        ).fetchone()
+        assert existing is not None
+        assert existing["contact_person"] == "Preserve This Contact"
+        assert existing["notes"] == "Preserve this customer note"
+        assert existing["address"].startswith("1 Main Road, Sector 10")
+        assert existing["phone"] == "+91 9000012345"
+        new_row = connection.execute(
+            "SELECT * FROM customer_prospects WHERE business_name=?", (imported_name,)
+        ).fetchone()
+        assert new_row is not None
+        imported_id = int(new_row["id"])
+
+        regional = client.get("/api/customers/regional-summary", headers=admin_headers)
+        assert regional.status_code == 200, regional.text
+        regional_data = regional.json()
+        assert len(regional_data["rows"]) == 36
+        haryana = next(row for row in regional_data["rows"] if row["state"] == "Haryana")
+        assert haryana["stores"] >= 2
+        assert regional_data["totals"]["customer_records"] >= 2
+
+        dashboard = Workbook()
+        dashboard_sheet = dashboard.active
+        dashboard_sheet.title = "Dashboard"
+        dashboard_sheet.append(["State", "Stores"])
+        dashboard_sheet.append(["Haryana", 99])
+        dashboard_bytes = io.BytesIO()
+        dashboard.save(dashboard_bytes)
+        dashboard.close()
+        dashboard_import = client.post(
+            "/api/customers/dashboard-import",
+            headers=admin_headers,
+            files={"file": ("regional-dashboard.xlsx", dashboard_bytes.getvalue(),
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert dashboard_import.status_code == 200, dashboard_import.text
+        assert dashboard_import.json()["territories"] == 1
+        assert dashboard_import.json()["dashboard_total"] == 99
+
+        regional_after_import = client.get("/api/customers/regional-summary", headers=admin_headers)
+        haryana = next(row for row in regional_after_import.json()["rows"] if row["state"] == "Haryana")
+        assert haryana["dashboard_stores"] == 99
+        assert haryana["variance"] == haryana["stores"] - 99
+
+        for export_format in ("csv", "xlsx", "pdf", "docx"):
+            response = client.get(
+                "/api/customers/export",
+                headers=admin_headers,
+                params={"format": export_format, "q": imported_name},
+            )
+            assert response.status_code == 200, (export_format, response.text)
+            if export_format == "csv":
+                assert imported_name in response.content.decode("utf-8-sig")
+            elif export_format == "xlsx":
+                exported = load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
+                assert imported_name in str(list(exported.active.values)[1])
+                exported.close()
+            elif export_format == "pdf":
+                assert response.content.startswith(b"%PDF")
+            else:
+                exported = Document(io.BytesIO(response.content))
+                exported_text = " ".join(p.text for p in exported.paragraphs)
+                exported_text += " " + " ".join(cell.text for row in exported.tables[0].rows for cell in row.cells)
+                assert imported_name in exported_text
+
+        for export_format in ("csv", "xlsx", "pdf"):
+            response = client.get(
+                "/api/customers/regional-export",
+                headers=admin_headers,
+                params={"format": export_format},
+            )
+            assert response.status_code == 200, (export_format, response.text)
+            if export_format == "csv":
+                assert "State / UT / Island" in response.content.decode("utf-8-sig")
+            elif export_format == "xlsx":
+                exported = load_workbook(io.BytesIO(response.content), read_only=True, data_only=True)
+                assert exported.active.max_row >= 37
+                exported.close()
+            else:
+                assert response.content.startswith(b"%PDF")
+    finally:
+        ids = [value for value in (existing_id, imported_id) if value is not None]
+        if ids:
+            connection.executemany("DELETE FROM customer_prospects WHERE id=?", [(value,) for value in ids])
+        if dashboard_table_existed:
+            connection.execute("DELETE FROM web_customer_dashboard_counts")
+            connection.executemany(
+                "INSERT INTO web_customer_dashboard_counts(state,store_count,updated_at) VALUES(?,?,?)",
+                old_dashboard_counts,
+            )
+        else:
+            connection.execute("DROP TABLE IF EXISTS web_customer_dashboard_counts")
+        connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
