@@ -1654,6 +1654,21 @@ class Database:
                     self.conn.rollback()
                     raise
 
+            # Repair legacy role corruption using exact-case identity only.
+            # Password hashes, account IDs and customer data remain untouched.
+            self.conn.execute(
+                "UPDATE auth_users SET role='Admin', "
+                "display_name=CASE WHEN display_name LIKE '%Developer - Test Mode%' "
+                "THEN 'Customer Administrator' ELSE display_name END, updated_at=? "
+                "WHERE username='Admin' COLLATE BINARY",
+                (now_text(),)
+            )
+            self.conn.execute(
+                "UPDATE auth_users SET role='Developer', updated_at=? "
+                "WHERE username='admin' COLLATE BINARY",
+                (now_text(),)
+            )
+
             # Never infer identity or change roles by a case-insensitive username
             # lookup. Preserve all existing customer/developer credentials.
         except Exception as e:
