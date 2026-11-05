@@ -282,3 +282,10 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - Username lookup is exact-case first, with a case-insensitive fallback only when exactly one active account matches. This prevents Admin and admin from being confused.
 - Successful changes invalidate that account's in-memory and persistent web sessions, create an audit-log entry, and commit through the existing syncable database connection so the encrypted snapshot callback remains active.
 - Added API regressions for successful exact-case change, wrong current password, weak new password, ambiguous mixed-case usernames, session invalidation, unchanged other-account credentials, audit logging and the React sign-in form. CI verification is pending; no version bump is appropriate for this web-only parity correction.
+
+
+## Live Chat regression assertion correction — CI failure isolated
+
+- Runs #1113 and #1115 reached the Python regression step and failed on one stale source assertion: the test expected a prop-less <LiveChat/> even though the integration now passes messages, user identity and the authenticated general-channel send callback.
+- The React production build, frontend publisher, Worker checks and database-sync Worker tests had passed before the regression step.
+- Updated the test to assert that the chat tab renders LiveChat with its required props; the implementation and separate chat authentication boundary are unchanged. The next full regression run must pass before this correction is marked verified.

@@ -12,7 +12,10 @@ def test_main_web_navigation_embeds_the_full_live_chat_client():
     worker_config = (ROOT / "cloudflare-chat" / "wrangler.toml").read_text(encoding="utf-8")
 
     assert "import LiveChat from './LiveChat';" in app_source
-    assert "{tab==='chat'&&<Panel title=\"Live Chat\"><LiveChat/></Panel>}" in app_source
+    assert "{tab==='chat'&&<Panel title=\"Live Chat\"><LiveChat" in app_source
+    assert "messages={data.messages}" in app_source
+    assert "user={user}" in app_source
+    assert "onSendGeneral={async content=>" in app_source
     assert "data.messages.map" not in app_source
 
     assert f"const DEFAULT_CHAT_URL = '{FALLBACK_CHAT_API_BASE}'" in component
