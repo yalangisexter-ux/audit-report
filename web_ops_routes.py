@@ -801,7 +801,7 @@ def get_clock_mode(
     conn: sqlite3.Connection = Depends(api.get_db),
     user: dict = Depends(api.get_current_user),
 ):
-    """Return the shared Digital/Analog preference used by the Windows client."""
+    """Legacy server-side clock preference endpoint retained for older web bundles."""
     row = conn.execute("SELECT value FROM settings WHERE key='clock_mode'").fetchone()
     mode = str(row[0] if row else "digital").strip().lower()
     return {"mode": mode if mode in {"digital", "analog"} else "digital"}
@@ -813,7 +813,7 @@ def save_clock_mode(
     conn: sqlite3.Connection = Depends(api.get_db),
     user: dict = Depends(api.get_current_user),
 ):
-    """Persist the shared clock mode without exposing the generic settings API."""
+    """Legacy compatibility write endpoint; current React UI stores clock mode locally."""
     mode = str(body.mode or "").strip().lower()
     if mode not in {"digital", "analog"}:
         raise HTTPException(status_code=422, detail="Clock mode must be Digital or Analog.")

@@ -386,7 +386,7 @@ def test_web_appearance_controls_and_wallpaper_contrast_styles_render():
     assert "opaque workspace cards keep employee data readable" in css
 
 
-def test_clock_mode_setting_is_shared_and_available_to_staff(tmp_path):
+def test_legacy_clock_mode_api_remains_available_to_staff_for_compatibility(tmp_path):
     path = tmp_path / "clock-mode.db"
     _create_settings_database(path)
     client, connections = _client_for_database(
@@ -416,7 +416,7 @@ def test_clock_mode_setting_is_shared_and_available_to_staff(tmp_path):
         _clear_overrides()
 
 
-def test_clock_mode_setting_requires_authentication(tmp_path, monkeypatch):
+def test_legacy_clock_mode_api_requires_authentication(tmp_path, monkeypatch):
     monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
     path = tmp_path / "clock-mode-auth.db"
     _create_settings_database(path)
@@ -440,6 +440,18 @@ def test_web_clock_controls_match_desktop_digital_analog_setting():
     assert 'className="block space-y-2 text-xs font-semibold text-slate-400">Clock display mode' in web
     assert 'aria-label="Clock display mode"' in web
     assert 'function AnalogClock({ now })' in web
-    assert '/settings/clock-mode' in web
+    assert "localStorage.getItem('rsc_web_clock_mode')" in web
+    assert "localStorage.setItem('rsc_web_clock_mode',normalized)" in web
+    assert '/settings/clock-mode' not in web
     assert 'toLocaleTimeString(undefined,{hour:' in web
     assert 'saveClockMode(clockMode===\'digital\'?\'analog\':\'digital\')' in web
+
+
+def test_web_clock_mode_is_browser_local_and_survives_app_reload():
+    root = Path(__file__).resolve().parents[1]
+    web = (root / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+
+    assert "localStorage.getItem('rsc_web_clock_mode')||'digital'" in web
+    assert "localStorage.setItem('rsc_web_clock_mode',normalized)" in web
+    assert "Clock display mode is stored in this browser" in web
+    assert "apiFetch('/settings/clock-mode')" not in web

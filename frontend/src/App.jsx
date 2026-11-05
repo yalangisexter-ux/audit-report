@@ -133,7 +133,7 @@ export default function App() {
   const [workingWeekdays,setWorkingWeekdays]=useState([0,1,2,3,4,6]),[workingWeekdaysBusy,setWorkingWeekdaysBusy]=useState(false);
   const [theme,setTheme]=useState(()=>{const saved=localStorage.getItem('rsc_web_theme')||'night';return APPEARANCE_THEMES.includes(saved)?saved:'night';});
   const [wallpaper,setWallpaper]=useState(()=>{const saved=localStorage.getItem('rsc_web_wallpaper')||'Galaxy';return WALLPAPER_STYLES.includes(saved)?saved:'Galaxy';});
-  const [clockMode,setClockMode]=useState('digital'),[clockNow,setClockNow]=useState(()=>new Date()),[clockModeBusy,setClockModeBusy]=useState(false);
+  const [clockMode,setClockMode]=useState(()=>{const saved=String(localStorage.getItem('rsc_web_clock_mode')||'digital').trim().toLowerCase();return ['digital','analog'].includes(saved)?saved:'digital';}),[clockNow,setClockNow]=useState(()=>new Date());
   const [customWallpaperUrl,setCustomWallpaperUrl]=useState('');
   const [customWallpaperName,setCustomWallpaperName]=useState(()=>localStorage.getItem('rsc_web_custom_wallpaper_name')||'');
   const [appearanceBusy,setAppearanceBusy]=useState(false);
@@ -194,14 +194,6 @@ export default function App() {
     return ()=>window.clearInterval(timer);
   },[]);
   useEffect(()=>{
-    if(!user||!token)return;
-    let active=true;
-    apiFetch('/settings/clock-mode').then(result=>{
-      if(active)setClockMode(result.mode==='analog'?'analog':'digital');
-    }).catch(()=>{});
-    return ()=>{active=false;};
-  },[user,token]);
-  useEffect(()=>{
     document.documentElement.dataset.rscTheme=theme;
     document.body.dataset.rscTheme=theme;
     document.body.dataset.rscWallpaper=wallpaper;
@@ -222,17 +214,11 @@ export default function App() {
   useEffect(()=>{if(user&&token&&tab==='customers')load()},[tab,user,token]);
   useEffect(()=>{if(tab==='settings'&&user&&['admin','developer'].includes(String(user.role||'').toLowerCase())){Promise.all([apiFetch('/auth/users'),apiFetch('/settings/working-weekdays')]).then(([accounts,working])=>{setAuthUsers(accounts);setWorkingWeekdays(working.weekdays||[0,1,2,3,4,6])}).catch(e=>notify(e.message))}},[tab,user,token]);
   const notify=(s)=>{setNotice(s);setTimeout(()=>setNotice(''),3500)};
-  const saveClockMode=async mode=>{
+  const saveClockMode=mode=>{
     const normalized=String(mode||'').trim().toLowerCase();
-    if(!['digital','analog'].includes(normalized)||clockModeBusy)return;
-    const previous=clockMode;
-    setClockModeBusy(true);
+    if(!['digital','analog'].includes(normalized))return;
     setClockMode(normalized);
-    try{
-      const result=await apiFetch('/settings/clock-mode',{method:'PUT',body:JSON.stringify({mode:normalized})});
-      setClockMode(result.mode==='analog'?'analog':'digital');
-    }catch(error){setClockMode(previous);notify(error.message||'Could not save clock mode.');}
-    finally{setClockModeBusy(false);}
+    localStorage.setItem('rsc_web_clock_mode',normalized);
   };
   const uploadCustomWallpaper=async event=>{
     const file=event.target.files?.[0];event.target.value='';
@@ -682,7 +668,7 @@ export default function App() {
               <select className={field} value={wallpaper} onChange={e=>setWallpaper(e.target.value)}>{WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}</select>
             </label>
             <label className="block space-y-2 text-xs font-semibold text-slate-400">Clock display mode
-              <select aria-label="Clock display mode" className={field} value={clockMode} disabled={clockModeBusy} onChange={e=>saveClockMode(e.target.value)}>
+              <select aria-label="Clock display mode" className={field} value={clockMode} onChange={e=>saveClockMode(e.target.value)}>
                 <option value="digital">Digital</option><option value="analog">Analog</option>
               </select>
             </label>
@@ -692,7 +678,7 @@ export default function App() {
             </label>
             <div className="flex flex-wrap items-end gap-2">
               <button type="button" className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={appearanceBusy} onClick={resetCustomWallpaper}>{appearanceBusy?'Saving…':'Reset wallpaper'}</button>
-              <span className="text-xs text-slate-500">Theme and wallpaper remain local to this browser. Clock display mode is saved to the shared clock_mode setting, matching the Windows desktop preference across signed-in devices.</span>
+              <span className="text-xs text-slate-500">Theme and wallpaper remain local to this browser. Clock display mode is stored in this browser, matching the Windows desktop's per-installation preference.</span>
             </div>
           </div>
         </Panel>}
