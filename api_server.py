@@ -2068,6 +2068,11 @@ def export_report(
             ),
             HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9),
         ])
+        if req.report_type == "Employee Details":
+            story.append(Paragraph(
+                f"<b>TOTAL EMPLOYEES:</b> {int(report.get('record_count') or 0)}",
+                styles["RSWebSection"],
+            ))
 
         url_pattern = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 
