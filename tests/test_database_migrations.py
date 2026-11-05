@@ -114,7 +114,7 @@ def test_admin_and_admin_are_preserved_as_distinct_case_sensitive_accounts(tmp_p
         INSERT INTO auth_users(
           id, username, display_name, role, password_salt, password_hash,
           security_question, answer_salt, answer_hash, active, created_at, updated_at
-        ) VALUES(41, 'Admin', 'Customer Administrator', 'Admin', 'customer-salt',
+        ) VALUES(41, 'Admin', 'admin (Developer - Test Mode)', 'Developer', 'customer-salt',
                  'customer-hash', '', '', '', 1, 'created', 'updated')
     """)
     conn.commit()
