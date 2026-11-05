@@ -1335,7 +1335,7 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
         assert client.get("/api/web-database/export").status_code == 401
         backup = client.get("/api/web-database/export", headers=staff_headers)
         assert backup.status_code == 200
-        assert backup.content.startswith(b"SQLite format 3\\x00")
+        assert backup.content.startswith(b"SQLite format 3\x00")
         assert "no-store" in backup.headers.get("cache-control", "")
 
         denied = client.post(
