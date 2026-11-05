@@ -1329,7 +1329,10 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
         "id": 952, "username": "web-db-admin", "display_name": "Web DB Admin", "role": "Admin"
     }
     monkeypatch.setattr(desktop_app, "EXPORT_DIR", tmp_path)
-    previous_sessions = dict(api_server.ACTIVE_SESSIONS)
+    previous_sessions = {
+        key: value for key, value in api_server.ACTIVE_SESSIONS.items()
+        if key not in {staff_token, admin_token}
+    }
     staff_headers = {"Authorization": f"Bearer {staff_token}"}
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
     import sys
