@@ -1637,7 +1637,8 @@ class Database:
                     "CREATE TABLE auth_users", "CREATE TABLE auth_users_case_sensitive", 1
                 )
                 create_sql = re.sub(r"COLLATE\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
-                self.conn.execute("BEGIN IMMEDIATE")
+                if not self.conn.in_transaction:
+                    self.conn.execute("BEGIN IMMEDIATE")
                 try:
                     self.conn.execute(create_sql)
                     column_list = ", ".join('"' + name.replace('"', '""') + '"' for name in columns)
