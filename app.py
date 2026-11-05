@@ -3216,13 +3216,13 @@ class LoginDialog(QDialog):
         row = self.db.conn.execute(
             "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1", (target_username,)
         ).fetchone()
-        if not row:
+        if not row and target_username not in ("Admin", "admin"):
             username_matches = self.db.conn.execute(
                 "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (target_username,)
             ).fetchall()
             if len(username_matches) == 1:
                 row = username_matches[0]
-        if not row:
+        if not row and target_username not in ("Admin", "admin"):
             display_matches = self.db.conn.execute(
                 "SELECT * FROM auth_users WHERE display_name LIKE ? COLLATE NOCASE AND active=1",
                 (f"%{raw_username}%",)
@@ -3234,13 +3234,24 @@ class LoginDialog(QDialog):
             salt, customer_digest = hash_pin(password)
             timestamp = now_text()
             if row is None:
-                self.db.conn.execute(
-                    """INSERT INTO auth_users(
-                        username, display_name, role, password_salt, password_hash,
-                        security_question, answer_salt, answer_hash, active, created_at, updated_at
-                    ) VALUES('Admin', 'Customer Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
-                    (salt, customer_digest, timestamp, timestamp),
-                )
+                inactive_customer = self.db.conn.execute(
+                    "SELECT id FROM auth_users WHERE username='Admin' COLLATE BINARY"
+                ).fetchone()
+                if inactive_customer:
+                    self.db.conn.execute(
+                        """UPDATE auth_users SET display_name='Customer Administrator',
+                           role='Admin', password_salt=?, password_hash=?, active=1, updated_at=?
+                           WHERE id=?""",
+                        (salt, customer_digest, timestamp, inactive_customer["id"]),
+                    )
+                else:
+                    self.db.conn.execute(
+                        """INSERT INTO auth_users(
+                            username, display_name, role, password_salt, password_hash,
+                            security_question, answer_salt, answer_hash, active, created_at, updated_at
+                        ) VALUES('Admin', 'Customer Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
+                        (salt, customer_digest, timestamp, timestamp),
+                    )
             else:
                 _, existing_digest = hash_pin(password, row["password_salt"])
                 if not secrets.compare_digest(existing_digest, row["password_hash"]):
