@@ -10270,11 +10270,19 @@ class MainWindow(QMainWindow):
         def run_sync_thread():
             raw = None
             merge_handed_off = False
+            remote_snapshot_missing = False
             try:
                 try:
-                    raw = sync.download_latest_snapshot(prefer_latest=True)
+                    # Pull only this customer's canonical installation snapshot.
+                    # Global latest-snapshot discovery can cross customer boundaries.
+                    raw = sync.download_latest_snapshot(
+                        target_installation_id=sync.installation_id,
+                        prefer_latest=False,
+                    )
                 except Exception as ex:
-                    if "No remote snapshot" not in str(ex):
+                    if "No remote snapshot" in str(ex):
+                        remote_snapshot_missing = True
+                    else:
                         logging.getLogger("auto_sync").debug(f"Auto-sync pull check: {ex}")
 
                 if raw:
@@ -10287,7 +10295,13 @@ class MainWindow(QMainWindow):
                     QTimer.singleShot(0, lambda: self._apply_snapshot_merge(tpath))
                     return
 
-                if sync.is_dirty:
+                if remote_snapshot_missing:
+                    # First customer login: publish the existing EXE database even
+                    # when no post-login local edit has marked it dirty yet.
+                    # This is queued only after the exact installation pull confirms
+                    # that no remote customer snapshot exists.
+                    sync.request_sync()
+                elif sync.is_dirty:
                     sync.request_sync()
             except Exception as e:
                 logging.getLogger("auto_sync").debug(f"Auto-sync worker note: {e}")
