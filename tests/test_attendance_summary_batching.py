@@ -87,18 +87,19 @@ def test_attendance_summary_ignores_weekends_and_counts_case_insensitive_statuse
     try:
         today = date.today()
         month_start = today.replace(day=1)
+        db.set_setting("working_weekdays", "0,1,2,3,4")
+        configured_weekdays = db.working_weekdays()
         weekdays = []
         weekend = None
         current = month_start
         while current <= today:
-            if current.weekday() < 5:
+            if current.weekday() in configured_weekdays:
                 weekdays.append(current)
             elif weekend is None:
                 weekend = current
             current = date.fromordinal(current.toordinal() + 1)
         assert len(weekdays) >= 3
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        db.set_setting("working_weekdays", "0,1,2,3,4")
         employee_id = db.conn.execute(
             "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
             ("Attendance Counts", month_start.isoformat(), 1, timestamp),
