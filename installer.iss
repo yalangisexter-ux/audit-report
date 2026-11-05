@@ -94,7 +94,7 @@ begin
 	if Result <> '' then
 		Exit;
 
-	// Legacy installers may omit DATA_DIR. Discover the original customer profile, including after EXE uninstall.
+	// Legacy installers may omit DATA_DIR. Discover the original customer Windows profile and its data folder, including after EXE uninstall.
 	// Never use the elevated administrator's LocalAppData for the customer database.
 	ScriptPath := ExpandConstant('{tmp}\resolve_customer_data_dir.ps1');
 	OutputPath := ExpandConstant('{tmp}\rsc_customer_data_dir.txt');
