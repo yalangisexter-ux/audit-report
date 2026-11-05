@@ -1755,3 +1755,119 @@ def test_web_employee_productivity_report_counts_sunday_for_legacy_weekday_setti
         connection.close()
         api_server.ACTIVE_SESSIONS.pop(token, None)
 
+def test_web_store_directory_list_and_summary_require_authentication(monkeypatch):
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    assert client.get("/api/customers/prospects").status_code == 401
+    assert client.get("/api/customers/summary").status_code == 401
+
+
+def test_web_store_directory_create_persists_location_and_deduplicates(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "0")
+    token = "store-directory-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 9818,
+        "username": "store-directory",
+        "display_name": "Store Directory QA",
+        "role": "Admin",
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    connection.row_factory = sqlite3.Row
+    suffix = secrets.token_hex(4).upper()
+    business_name = "Directory QA Store " + suffix
+    address = "Plot 12, Main Road, Benz Circle, Vijayawada, Andhra Pradesh 520010"
+    extended_address = address + ", Near Test Landmark"
+    prospect_id = None
+    try:
+        payload = {
+            "business_name": business_name,
+            "business_category": "Sports Nutrition",
+            "kind": "Store",
+            "state": "Andhra Pradesh",
+            "city": "Vijayawada",
+            "area": "Benz Circle",
+            "contact_person": "QA Contact",
+            "phone": "+91 9000000000",
+            "email": "directory-qa@example.test",
+            "address": address,
+            "website": "https://example.test/store",
+            "maps": "",
+            "followup_date": "2026-11-07",
+            "call_time": "10:30",
+            "connection": "Not Connected",
+            "verified": "No",
+            "response": "Awaiting confirmation",
+            "notes": "Directory QA record",
+        }
+        first = client.post("/api/customers/prospects", headers=headers, json=payload)
+        assert first.status_code == 200, first.text
+        first_result = first.json()
+        prospect_id = int(first_result["id"])
+        assert first_result["inserted"] == 1
+        assert first_result["duplicates"] == 0
+
+        duplicate_payload = {
+            **payload,
+            "business_name": business_name.upper(),
+            "address": extended_address,
+        }
+        second = client.post(
+            "/api/customers/prospects", headers=headers, json=duplicate_payload
+        )
+        assert second.status_code == 200, second.text
+        second_result = second.json()
+        assert second_result["id"] == prospect_id
+        assert second_result["duplicate"] is True
+        assert second_result["duplicates"] == 1
+
+        saved = connection.execute(
+            "SELECT * FROM customer_prospects WHERE id=?", (prospect_id,)
+        ).fetchone()
+        assert saved is not None
+        assert saved["business_category"] == "Sports Nutrition"
+        assert saved["address"] == extended_address
+        assert saved["website"] == "https://example.test/store"
+        assert saved["maps"].startswith("https://www.google.com/maps/search/")
+        assert saved["followup_date"] == "2026-11-07"
+        assert saved["call_time"] == "10:30"
+        assert saved["source_type"] == "Web"
+        assert saved["source_status"] == "Needs direct confirmation"
+
+        search = client.get(
+            "/api/customers/prospects",
+            headers=headers,
+            params={"q": "Benz Circle"},
+        )
+        assert search.status_code == 200
+        assert any(int(row["id"]) == prospect_id for row in search.json())
+        count = connection.execute(
+            "SELECT COUNT(*) FROM customer_prospects WHERE dedupe_key=?",
+            (saved["dedupe_key"],),
+        ).fetchone()[0]
+        assert count == 1
+    finally:
+        if prospect_id is not None:
+            connection.execute(
+                "DELETE FROM customer_prospects WHERE id=?", (prospect_id,)
+            )
+            connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+
+
+def test_web_store_directory_ui_exposes_location_filters_and_map_links():
+    source = (ROOT / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    assert 'label="Full postal address" name="address"' in source
+    assert 'label="Official website" name="website"' in source
+    assert 'label="Google Maps URL (optional)" name="maps"' in source
+    assert "prospectStateFilter" in source
+    assert "prospectWebsiteFilter" in source
+    assert "prospectVerificationFilter" in source
+    assert "Open Maps" in source
+    assert 'target="_blank" rel="noopener noreferrer"' in source
+    assert "kind==='prospects'?'/customers/prospects/'+id" in source
+

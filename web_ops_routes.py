@@ -8,7 +8,9 @@ from pydantic import BaseModel
 import sqlite3
 import secrets
 import math
+from types import SimpleNamespace
 
+import customer_prospects as prospect_store
 import api_server as api
 
 
@@ -493,6 +495,7 @@ def list_customer_prospects(
     q: Optional[str] = None,
     limit: int = Query(200, ge=1, le=1000),
     conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
 ):
     sql = "SELECT * FROM customer_prospects WHERE 1=1"
     params = []
@@ -501,15 +504,25 @@ def list_customer_prospects(
         params.append(state)
     if q:
         term = f"%{q.strip()}%"
-        sql += " AND (IFNULL(business_name,'') LIKE ? OR IFNULL(city,'') LIKE ? OR IFNULL(contact_person,'') LIKE ? OR IFNULL(phone,'') LIKE ?)"
-        params.extend([term, term, term, term])
+        search_fields = (
+            "business_name", "business_category", "kind", "area", "city", "state",
+            "contact_person", "phone", "email", "address", "website", "maps",
+            "followup_date", "connection", "verified", "response", "source_status",
+        )
+        sql += " AND (" + " OR ".join(
+            f"IFNULL({field},'') LIKE ?" for field in search_fields
+        ) + ")"
+        params.extend([term] * len(search_fields))
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
     return _rows(conn, sql, tuple(params))
 
 
 @api.app.get("/api/customers/summary")
-def customers_summary(conn: sqlite3.Connection = Depends(api.get_db)):
+def customers_summary(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
     return {
         "prospects": _count(conn, "SELECT COUNT(*) FROM customer_prospects"),
         "total": _count(conn, "SELECT COUNT(*) FROM customer_prospects"),
@@ -520,32 +533,76 @@ def customers_summary(conn: sqlite3.Connection = Depends(api.get_db)):
 
 class ProspectIn(BaseModel):
     business_name: str
+    business_category: str = ""
+    kind: str = "Store"
     state: str = ""
     city: str = ""
+    area: str = ""
+    contact_person: str = ""
     phone: str = ""
     email: str = ""
-    contact_person: str = ""
+    address: str = ""
+    website: str = ""
+    maps: str = ""
+    followup_date: str = ""
+    call_time: str = ""
+    connection: str = ""
+    verified: str = ""
+    response: str = ""
     notes: str = ""
-    kind: str = "Store"
 
 
 @api.app.post("/api/customers/prospects")
-def create_prospect(body: ProspectIn, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
-    now = _now()
-    dedupe = f"web:{body.business_name.strip().lower()}:{body.city.strip().lower()}:{secrets.token_hex(3)}"
+def create_prospect(
+    body: ProspectIn,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    record = body.model_dump() if hasattr(body, "model_dump") else body.dict()
+    record["business_name"] = str(record.get("business_name") or "").strip()
+    record["state"] = str(record.get("state") or "").strip()
+    record["city"] = str(record.get("city") or "").strip()
+    if not record["business_name"]:
+        raise HTTPException(status_code=422, detail="Business / store name is required.")
+    if not record["state"] or not record["city"]:
+        raise HTTPException(status_code=422, detail="City and state are required to identify a unique store branch.")
+
+    record["kind"] = str(record.get("kind") or "Store").strip()
+    record["source_name"] = "Web App"
+    record["source_type"] = "Web"
+    record["source_url"] = str(record.get("website") or "").strip()
     try:
-        cur = conn.execute(
-            """INSERT INTO customer_prospects(
-                   dedupe_key, kind, business_name, state, city, contact_person, phone, email, notes,
-                   source_name, source_type, source_status, created_at, updated_at
-               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (dedupe, body.kind, body.business_name.strip(), body.state, body.city, body.contact_person,
-             body.phone, body.email, body.notes, "Web App", "Web", "Active", now, now),
+        result = prospect_store.persist_prospect_records(
+            SimpleNamespace(conn=conn),
+            [record],
+            source_name="Web App",
+            source_checked_at=date.today().isoformat(),
         )
-        conn.commit()
-        return {"success": True, "id": cur.lastrowid}
+        if not result.get("inserted") and not result.get("duplicates"):
+            raise HTTPException(
+                status_code=422,
+                detail="This record did not pass the Store Directory quality filters.",
+            )
+        dedupe_key = prospect_store.prospect_dedupe_key(record)
+        saved = conn.execute(
+            "SELECT id FROM customer_prospects WHERE dedupe_key=?",
+            (dedupe_key,),
+        ).fetchone()
+        if not saved:
+            raise HTTPException(status_code=500, detail="Saved prospect could not be resolved after deduplication.")
+        saved_id = int(saved["id"] if isinstance(saved, sqlite3.Row) else saved[0])
+        return {
+            "success": True,
+            "id": saved_id,
+            "inserted": int(result.get("inserted", 0)),
+            "duplicates": int(result.get("duplicates", 0)),
+            "duplicate": bool(result.get("duplicates", 0)),
+        }
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Create prospect failed: {exc}")
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=f"Create prospect failed: {exc}") from exc
 
 
 @api.app.get("/api/print-center/summary")
