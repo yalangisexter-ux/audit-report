@@ -1274,7 +1274,8 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
 def bulk_attendance(
     work_date: str = Query(...),
     status: str = Query("Present"),
-    conn: sqlite3.Connection = Depends(get_db)
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     now = desktop_app.now_text()
     employees = conn.execute("SELECT id FROM employees WHERE active=1").fetchall()

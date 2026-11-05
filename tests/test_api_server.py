@@ -181,6 +181,43 @@ def test_api_attendance_and_holidays():
     assert h_res.status_code == 200
     assert isinstance(h_res.json(), list)
 
+def test_legacy_bulk_attendance_requires_authenticated_session(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    work_date = "2999-01-01"
+    params = {"work_date": work_date, "status": "Present"}
+
+    denied = client.post("/api/attendance/bulk", params=params)
+    assert denied.status_code == 401
+
+    token = "legacy-attendance-bulk-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 990301,
+        "username": "legacy-attendance-bulk-test",
+        "display_name": "Legacy Attendance Bulk Test",
+        "role": "Staff",
+    }
+    try:
+        allowed = client.post(
+            "/api/attendance/bulk",
+            params=params,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert allowed.status_code == 200
+        assert allowed.json()["success"] is True
+        assert isinstance(allowed.json()["count"], int)
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(token, None)
+        connection = sqlite3.connect(str(desktop_app.DB_PATH))
+        try:
+            connection.execute("DELETE FROM attendance WHERE work_date=?", (work_date,))
+            connection.commit()
+        finally:
+            connection.close()
+
+
 def test_holiday_management_requires_authorized_role_and_valid_dates():
     from fastapi import HTTPException
 
