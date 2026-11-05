@@ -736,64 +736,269 @@ def reset_managed_account_password(
 # --- Dashboard Analytics ---
 @app.get("/api/dashboard")
 def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, Any] = Depends(get_current_user)):
-    today_str = date.today().isoformat()
-    
-    total_employees = conn.execute("SELECT COUNT(*) FROM employees WHERE active=1").fetchone()[0]
-    present_today = conn.execute(
-        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND attendance_status='Present'", (today_str,)
-    ).fetchone()[0]
-    absent_today = conn.execute(
-        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND attendance_status='Absent'", (today_str,)
-    ).fetchone()[0]
-    leave_today = conn.execute(
-        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND attendance_status='Leave'", (today_str,)
-    ).fetchone()[0]
-    checkins_today = conn.execute(
-        "SELECT COUNT(*) FROM attendance WHERE work_date=? AND check_in != ''", (today_str,)
-    ).fetchone()[0]
-    open_tasks = conn.execute(
-        "SELECT COUNT(*) FROM tasks WHERE task_date=? AND status IN ('Not started', 'In progress')", (today_str,)
-    ).fetchone()[0]
-    completed_tasks = conn.execute(
-        "SELECT COUNT(*) FROM tasks WHERE task_date=? AND status='Completed'", (today_str,)
-    ).fetchone()[0]
+    """Return the desktop dashboard's active roster, daily telemetry, and productivity metrics."""
+    from datetime import timedelta
 
-    # Attendance percentage
-    att_rate = round((present_today / total_employees * 100), 1) if total_employees > 0 else 0.0
-
-    # Recent employees
-    recent_employees = [
-        dict(r) for r in conn.execute(
-            "SELECT id, employee_code, name, department, designation, active FROM employees ORDER BY id DESC LIMIT 5"
+    today = date.today()
+    today_str = today.isoformat()
+    employees = [
+        dict(row)
+        for row in conn.execute(
+            """SELECT id, employee_code, name, department, designation, joining_date,
+                      active, display_order
+               FROM employees
+               WHERE active=1
+               ORDER BY display_order ASC, name COLLATE NOCASE"""
         ).fetchall()
     ]
+    employee_ids = [int(employee["id"]) for employee in employees]
+    placeholders = ",".join("?" for _ in employee_ids)
 
-    # Today's tasks with employee names
-    today_tasks = [
-        dict(r) for r in conn.execute(
-            """SELECT t.id, t.title, t.status, t.progress, t.due_time, t.priority, e.name as employee_name
+    attendance_by_id = {}
+    if employee_ids:
+        for row in conn.execute(
+            f"""SELECT employee_id, attendance_status, check_in, check_out
+                FROM attendance
+                WHERE work_date=? AND employee_id IN ({placeholders})""",
+            (today_str, *employee_ids),
+        ).fetchall():
+            attendance_by_id[int(row["employee_id"])] = dict(row)
+
+    present_today = absent_today = leave_today = checkins_today = 0
+    attendance_roster = []
+    for employee in employees:
+        record = attendance_by_id.get(int(employee["id"]))
+        status = str((record or {}).get("attendance_status") or "Unmarked").strip()
+        check_in = str((record or {}).get("check_in") or "").strip()
+        check_out = str((record or {}).get("check_out") or "").strip()
+        normalized_status = status.casefold()
+        has_check_in = bool(check_in)
+        if desktop_app.is_present_attendance_status(status) or (
+            normalized_status == "unmarked" and has_check_in
+        ):
+            if normalized_status == "unmarked":
+                status = "Present"
+            present_today += 1
+            if has_check_in:
+                checkins_today += 1
+        elif normalized_status == "absent":
+            status = "Absent"
+            absent_today += 1
+        elif normalized_status == "leave":
+            status = "Leave"
+            leave_today += 1
+        elif normalized_status in {"unmarked", "", "not checked"}:
+            status = "Not checked"
+        else:
+            status = desktop_app.task_status_label(status)
+        attendance_roster.append(
+            {
+                "employee_id": employee["id"],
+                "name": employee["name"],
+                "status": status,
+                "check_in": check_in or "—",
+                "check_out": check_out or "—",
+            }
+        )
+
+    # Match Database.tasks(report_date): all statuses, employee ordering, and the
+    # first twelve visible rows. KPI counts are computed from the complete day.
+    today_tasks_all = [
+        dict(row)
+        for row in conn.execute(
+            """SELECT t.id, t.employee_id, t.title, t.status, t.progress, t.due_time,
+                      t.priority, t.task_date, e.name AS employee_name, e.employee_code,
+                      COALESCE(NULLIF(t.department, ''), e.department, '') AS department
                FROM tasks t
-               LEFT JOIN employees e ON t.employee_id = e.id
+               JOIN employees e ON e.id=t.employee_id
                WHERE t.task_date=?
-               ORDER BY t.id DESC LIMIT 6""",
-            (today_str,)
+               ORDER BY e.display_order ASC, e.name COLLATE NOCASE, t.id DESC""",
+            (today_str,),
         ).fetchall()
     ]
+    open_tasks = sum(
+        1 for task in today_tasks_all
+        if not desktop_app.is_explicitly_completed_task_status(task["status"])
+        and not desktop_app.is_cancelled_task_status(task["status"])
+    )
+    completed_tasks = sum(
+        1 for task in today_tasks_all
+        if desktop_app.is_explicitly_completed_task_status(task["status"])
+    )
 
-    # Attendance roster summary
-    attendance_roster = [
-        dict(r) for r in conn.execute(
-            """SELECT e.id as employee_id, e.name, e.employee_code, e.department,
-                      COALESCE(a.attendance_status, 'Unmarked') as status,
-                      COALESCE(a.check_in, '') as check_in,
-                      COALESCE(a.check_out, '') as check_out
-               FROM employees e
-               LEFT JOIN attendance a ON e.id = a.employee_id AND a.work_date=?
-               WHERE e.active=1
-               ORDER BY e.name ASC LIMIT 6""",
-            (today_str,)
+    # Resolve each employee's desktop tracking start in one batched query. A valid
+    # joining date wins; otherwise use the first task/attendance record, then today.
+    start_by_id = {}
+    activity_by_id = {}
+    if employee_ids:
+        activity_rows = conn.execute(
+            f"""SELECT employee_id, MIN(activity_date) AS first_date
+                FROM (
+                    SELECT employee_id, task_date AS activity_date
+                    FROM tasks
+                    WHERE employee_id IN ({placeholders}) AND task_date<=?
+                    UNION ALL
+                    SELECT employee_id, work_date AS activity_date
+                    FROM attendance
+                    WHERE employee_id IN ({placeholders}) AND work_date<=?
+                )
+                GROUP BY employee_id""",
+            (*employee_ids, today_str, *employee_ids, today_str),
         ).fetchall()
-    ]
+        activity_by_id = {
+            int(row["employee_id"]): row["first_date"] for row in activity_rows
+        }
+
+        for employee in employees:
+            employee_id = int(employee["id"])
+            start = None
+            if employee.get("joining_date"):
+                try:
+                    start = date.fromisoformat(str(employee["joining_date"]))
+                except (TypeError, ValueError):
+                    start = None
+            if start is None and activity_by_id.get(employee_id):
+                try:
+                    start = date.fromisoformat(str(activity_by_id[employee_id]))
+                except (TypeError, ValueError):
+                    start = None
+            start_by_id[employee_id] = start or today
+
+    productivity = []
+    avg_productivity = 0.0
+    if employee_ids:
+        earliest_start = min(start_by_id.values()).isoformat()
+        task_history = conn.execute(
+            f"""SELECT employee_id, task_date, progress, status
+                FROM tasks
+                WHERE employee_id IN ({placeholders})
+                  AND task_date BETWEEN ? AND ?""",
+            (*employee_ids, earliest_start, today_str),
+        ).fetchall()
+        attendance_history = conn.execute(
+            f"""SELECT employee_id, work_date, attendance_status, check_in
+                FROM attendance
+                WHERE employee_id IN ({placeholders})
+                  AND work_date BETWEEN ? AND ?""",
+            (*employee_ids, earliest_start, today_str),
+        ).fetchall()
+        holiday_rows = conn.execute(
+            "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",
+            (earliest_start, today_str),
+        ).fetchall()
+        holidays = {str(row["holiday_date"]) for row in holiday_rows}
+        weekdays = desktop_app.working_weekdays_from_connection(conn)
+
+        tasks_by_employee = {employee_id: [] for employee_id in employee_ids}
+        attendance_by_employee = {employee_id: [] for employee_id in employee_ids}
+        for row in task_history:
+            tasks_by_employee[int(row["employee_id"])].append(row)
+        for row in attendance_history:
+            attendance_by_employee[int(row["employee_id"])].append(row)
+
+        scores = []
+        for employee in employees:
+            employee_id = int(employee["id"])
+            start = start_by_id[employee_id]
+            start_text = start.isoformat()
+            employee_tasks = [
+                row for row in tasks_by_employee[employee_id]
+                if start_text <= str(row["task_date"] or "") <= today_str
+            ]
+            task_progress_total = 0
+            for task in employee_tasks:
+                if not desktop_app.is_known_task_status(task["status"]):
+                    continue
+                try:
+                    progress = int(float(task["progress"] or 0))
+                except (TypeError, ValueError, OverflowError):
+                    progress = 0
+                task_progress_total += max(0, min(100, progress))
+            # Match the desktop denominator: every task row is counted, while
+            # unknown/unselected statuses contribute zero progress.
+            task_score = (
+                task_progress_total / len(employee_tasks) if employee_tasks else None
+            )
+
+            employee_attendance = [
+                row for row in attendance_by_employee[employee_id]
+                if start_text <= str(row["work_date"] or "") <= today_str
+            ]
+
+            def is_scheduled_workday(day_text):
+                try:
+                    work_day = date.fromisoformat(str(day_text))
+                except (TypeError, ValueError):
+                    return False
+                return work_day.weekday() in weekdays and str(day_text) not in holidays
+
+            working_days = 0
+            current_day = start
+            while current_day <= today:
+                day_text = current_day.isoformat()
+                if current_day.weekday() in weekdays and day_text not in holidays:
+                    working_days += 1
+                current_day += timedelta(days=1)
+
+            leave_days = sum(
+                1 for row in employee_attendance
+                if str(row["attendance_status"] or "").strip().casefold() == "leave"
+                and is_scheduled_workday(row["work_date"])
+            )
+            attendance_eligible_days = max(0, working_days - leave_days)
+            present_count = sum(
+                1 for row in employee_attendance
+                if is_scheduled_workday(row["work_date"])
+                and (
+                    desktop_app.is_present_attendance_status(row["attendance_status"])
+                    or (
+                        str(row["attendance_status"] or "").strip().casefold() in {"unmarked", ""}
+                        and bool(str(row["check_in"] or "").strip())
+                    )
+                )
+            )
+            attendance_score = (
+                present_count / attendance_eligible_days * 100
+                if attendance_eligible_days else None
+            )
+
+            if task_score is not None and attendance_score is not None:
+                score = round(task_score * 0.7 + attendance_score * 0.3)
+            elif task_score is not None:
+                score = round(task_score)
+            elif attendance_score is not None:
+                score = round(attendance_score)
+            else:
+                score = 0
+            completed = sum(
+                1 for task in employee_tasks
+                if desktop_app.is_explicitly_completed_task_status(task["status"])
+            )
+            scores.append(score)
+            productivity.append(
+                {
+                    "employee_id": employee_id,
+                    "name": employee["name"],
+                    "active": bool(employee["active"]),
+                    "score": score,
+                    "working_days": working_days,
+                    "attendance_eligible_days": attendance_eligible_days,
+                    "present_count": present_count,
+                    "task_count": len(employee_tasks),
+                    "completed": completed,
+                    "tracking_start": start_text,
+                    "task_score": round(task_score, 1) if task_score is not None else None,
+                    "attendance_score": round(attendance_score, 1) if attendance_score is not None else None,
+                }
+            )
+        avg_productivity = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+    total_employees = len(employees)
+    not_checked_today = max(
+        0, total_employees - present_today - absent_today - leave_today
+    )
+    attendance_rate = round(present_today / total_employees * 100) if total_employees else 0
+    recent_employees = list(reversed(employees[-8:]))
 
     return {
         "today": today_str,
@@ -802,14 +1007,22 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, An
             "present_today": present_today,
             "absent_today": absent_today,
             "leave_today": leave_today,
+            "not_checked_today": not_checked_today,
             "open_tasks": open_tasks,
             "completed_tasks": completed_tasks,
             "checkins_today": checkins_today,
-            "attendance_rate": att_rate,
+            "attendance_rate": attendance_rate,
+            "avg_productivity": avg_productivity,
         },
         "recent_employees": recent_employees,
-        "today_tasks": today_tasks,
-        "attendance_roster": attendance_roster,
+        "today_tasks": today_tasks_all[:12],
+        "attendance_roster": attendance_roster[:8],
+        "productivity": productivity,
+        "attendance_summary": (
+            f"{attendance_rate}% checked in\n"
+            f"{present_today} Present  ·  {absent_today} Absent  ·  "
+            f"{leave_today} Leave  ·  {not_checked_today} Not checked"
+        ),
     }
 
 

@@ -520,7 +520,87 @@ export default function App() {
             {clockMode==='digital'?<span className="flex flex-col items-end text-[10px] leading-tight"><span>{clockNow.toLocaleDateString(undefined,{weekday:'short',day:'2-digit',month:'short'})}</span><span className="font-semibold tabular-nums">{clockNow.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}</span></span>:<span className="flex items-center gap-2"><AnalogClock now={clockNow}/><span className="text-[10px]">Analog</span></span>}
           </button><button onClick={()=>load()} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
-        {(tab==='home'||tab==='dashboard')&&<><div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[['Employees',data.dashboard?.kpis?.total_employees??data.employees.length],['Present today',data.dashboard?.kpis?.present_today??0],['Open tasks',data.dashboard?.kpis?.open_tasks??0],['Completed',data.dashboard?.kpis?.completed_tasks??0]].map(([l,v])=><div className={card} key={l}><p className="text-xs text-slate-400">{l}</p><p className="mt-2 text-3xl font-black text-cyan-300">{v}</p></div>)}</div><Panel title="Today's work"><Rows items={data.dashboard?.today_tasks||data.tasks.slice(0,8)} keys={['title','employee_name','status','task_date','priority']}/></Panel><Panel title="Quick actions"><div className="flex flex-wrap gap-2">{[['employees','Add employee'],['tasks','Create task'],['attendance','Mark attendance'],['reports','Generate report']].map(([t,l])=><button key={t} onClick={()=>setTab(t)} className={btn}>{l}</button>)}</div></Panel></>}
+        {(tab==='home'||tab==='dashboard')&&<>
+          <div className="rounded-2xl border border-cyan-400/25 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><p className="text-sm font-black tracking-wider text-white">⚡ OPERATIONS COMMAND // REAL-TIME WORKFORCE AUDIT</p><p className="mt-1 text-xs text-slate-400">{data.dashboard?.today||today()} · Workforce and task telemetry</p></div>
+              <span className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-xs font-bold text-emerald-300">● REAL-TIME AUDIT METRICS ACTIVE</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+            {[
+              ['TOTAL EMPLOYEES',data.dashboard?.kpis?.total_employees??data.employees.length,'Active roster','employees'],
+              ['PRESENT TODAY',data.dashboard?.kpis?.present_today??0,'Verified on-site','attendance'],
+              ['ABSENT TODAY',data.dashboard?.kpis?.absent_today??0,'Attendance records','attendance'],
+              ['OPEN TASKS',data.dashboard?.kpis?.open_tasks??0,'Active work items','tasks'],
+              ["TODAY'S CHECK-INS",data.dashboard?.kpis?.checkins_today??0,'Clocked in','attendance']
+            ].map(([label,value,subtitle,target])=><button type="button" key={label} onClick={()=>setTab(target)} className={card+' text-left transition hover:border-cyan-400/40'}>
+              <p className="text-[11px] font-extrabold tracking-wide text-slate-400">{label}</p><p className="mt-2 text-3xl font-black tabular-nums text-cyan-300">{value}</p><p className="mt-1 text-[11px] font-semibold text-slate-500">{subtitle}</p>
+            </button>)}
+          </div>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Panel title="Quick Actions">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['employees','➕ Add Employee'],
+                  ['tasks','✓ Assign Task'],
+                  ['attendance','▦ Mark Attendance'],
+                  ['customers','🏪 Store Directory'],
+                  ['reports','▤ Print Center']
+                ].map(([target,label])=><button type="button" key={target} onClick={()=>setTab(target)} className={btn}>{label}</button>)}
+              </div>
+            </Panel>
+            <Panel title="Recent Employees" actions={<button type="button" onClick={()=>setTab('employees')} className="text-xs font-semibold text-cyan-300">View directory</button>}>
+              <div className="overflow-x-auto"><table className="w-full min-w-[430px] text-left text-sm">
+                <thead className="text-[11px] uppercase text-slate-500"><tr>{['#','Employee ID','Name','Role','Status'].map(label=><th key={label} className="border-b border-white/10 px-2 py-2">{label}</th>)}</tr></thead>
+                <tbody>{(data.dashboard?.recent_employees||[]).map((employee,index)=><tr key={employee.id} className="border-b border-white/5 text-slate-300">
+                  <td className="px-2 py-2">{index+1}</td><td className="px-2 py-2">{employee.employee_code||'—'}</td><td className="px-2 py-2 font-semibold text-white">{employee.name}</td><td className="px-2 py-2">{employee.designation||'—'}</td><td className="px-2 py-2 text-emerald-300">{employee.active?'Active':'Inactive'}</td>
+                </tr>)}</tbody>
+              </table>{!(data.dashboard?.recent_employees||[]).length&&<p className="py-5 text-center text-sm text-slate-500">No active employees found.</p>}</div>
+            </Panel>
+            <Panel title="Today's Tasks" actions={<button type="button" onClick={()=>setTab('tasks')} className="text-xs font-semibold text-cyan-300">Open Task Manager</button>}>
+              <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="text-[11px] uppercase text-slate-500"><tr>{['Employee','Task','Status','Progress','Due'].map(label=><th key={label} className="border-b border-white/10 px-2 py-2">{label}</th>)}</tr></thead>
+                <tbody>{(data.dashboard?.today_tasks||[]).map(task=>{const progress=Math.max(0,Math.min(100,Number(task.progress)||0));return <tr key={task.id} className="border-b border-white/5 text-slate-300">
+                  <td className="px-2 py-3">{task.employee_name||'—'}</td><td className="max-w-[180px] whitespace-normal px-2 py-3 font-semibold text-white">{task.title||'—'}</td><td className="px-2 py-3">{task.status||'Not selected'}</td><td className="min-w-[110px] px-2 py-3"><div className="h-2 overflow-hidden rounded-full bg-slate-700"><div className="h-full rounded-full bg-cyan-400" style={{width:progress+'%'}}/></div><span className="mt-1 block text-[10px] tabular-nums text-slate-400">{progress}%</span></td><td className="px-2 py-3">{task.due_time||'—'}</td>
+                </tr>})}</tbody>
+              </table>{!(data.dashboard?.today_tasks||[]).length&&<p className="py-5 text-center text-sm text-slate-500">No tasks scheduled for today.</p>}</div>
+            </Panel>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <Panel title="Today's Attendance" actions={<button type="button" onClick={()=>setTab('attendance')} className="text-xs font-semibold text-cyan-300">Open calendar</button>}>
+              <div className="rounded-xl bg-slate-950/70 p-4">
+                <div className="flex items-center justify-between gap-3"><span className="text-sm font-bold text-white">Attendance gauge</span><span className="text-2xl font-black text-emerald-300">{data.dashboard?.kpis?.attendance_rate??0}%</span></div>
+                <div className="mt-3 h-3 overflow-hidden rounded-full bg-slate-700"><div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400" style={{width:Math.max(0,Math.min(100,Number(data.dashboard?.kpis?.attendance_rate)||0))+'%'}}/></div>
+                <p className="mt-3 whitespace-pre-line text-xs leading-6 text-slate-400">{data.dashboard?.attendance_summary||'Attendance summary is not available yet.'}</p>
+              </div>
+              <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[340px] text-left text-sm">
+                <thead className="text-[11px] uppercase text-slate-500"><tr>{['Employee','Status','Check-in'].map(label=><th key={label} className="border-b border-white/10 px-2 py-2">{label}</th>)}</tr></thead>
+                <tbody>{(data.dashboard?.attendance_roster||[]).map(row=><tr key={row.employee_id} className="border-b border-white/5 text-slate-300">
+                  <td className="px-2 py-2 font-semibold text-white">{row.name}</td><td className="px-2 py-2">{row.status}</td><td className="px-2 py-2 tabular-nums">{row.check_in||'—'}</td>
+                </tr>)}</tbody>
+              </table></div>
+            </Panel>
+            <Panel title="Employee Productivity" actions={<span className="text-xs text-slate-500">70% tasks · 30% attendance</span>}>
+              <div className="space-y-4">
+                {(data.dashboard?.productivity||[]).map(employee=>{const score=Math.max(0,Math.min(100,Number(employee.score)||0));return <div key={employee.employee_id}>
+                  <div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate text-sm font-semibold text-white">{employee.name}</span><span className="text-sm font-black tabular-nums text-cyan-300">{score}%</span></div>
+                  <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-700"><div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{width:score+'%'}}/></div>
+                  <p className="mt-1 text-[10px] text-slate-500">{employee.present_count}/{employee.attendance_eligible_days} eligible attendance days · {employee.completed}/{employee.task_count} completed tasks · Since {employee.tracking_start}</p>
+                </div>})}
+                {!(data.dashboard?.productivity||[]).length&&<p className="py-5 text-center text-sm text-slate-500">Productivity data is not available yet.</p>}
+              </div>
+            </Panel>
+            <Panel title="Productivity Summary">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-slate-950/70 p-3"><p className="text-xs text-slate-500">Average score</p><p className="mt-1 text-2xl font-black text-cyan-300">{data.dashboard?.kpis?.avg_productivity??0}%</p></div>
+                <div className="rounded-xl bg-slate-950/70 p-3"><p className="text-xs text-slate-500">Completed today</p><p className="mt-1 text-2xl font-black text-emerald-300">{data.dashboard?.kpis?.completed_tasks??0}</p></div>
+                <div className="rounded-xl bg-slate-950/70 p-3"><p className="text-xs text-slate-500">On leave</p><p className="mt-1 text-2xl font-black text-violet-300">{data.dashboard?.kpis?.leave_today??0}</p></div>
+                <div className="rounded-xl bg-slate-950/70 p-3"><p className="text-xs text-slate-500">Not checked</p><p className="mt-1 text-2xl font-black text-amber-300">{data.dashboard?.kpis?.not_checked_today??0}</p></div>
+              </div>
+            </Panel>
+          </div>
+        </>}
         {tab==='employees'&&<>
           {canEditEmployees&&<Panel title="Add employee">
             <form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={saveNewEmployee}>
