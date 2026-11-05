@@ -1987,39 +1987,133 @@ def export_report(
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import mm
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Image as RLImage
         from xml.sax.saxutils import escape
 
         output = io.BytesIO()
+        regular_name, bold_name = "Helvetica", "Helvetica-Bold"
+        regular_font = ROOT_DIR / "assets" / "DejaVuSans.ttf"
+        bold_font = ROOT_DIR / "assets" / "DejaVuSans-Bold.ttf"
+        try:
+            if regular_font.is_file() and bold_font.is_file():
+                if "RawStrengthSans" not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont("RawStrengthSans", str(regular_font)))
+                    pdfmetrics.registerFont(TTFont("RawStrengthSans-Bold", str(bold_font)))
+                regular_name, bold_name = "RawStrengthSans", "RawStrengthSans-Bold"
+        except Exception:
+            regular_name, bold_name = "Helvetica", "Helvetica-Bold"
+
+        navy = colors.HexColor("#102B42")
+        cyan = colors.HexColor("#00AEEA")
+        muted = colors.HexColor("#526579")
         styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], alignment=TA_CENTER, fontSize=15, leading=19, textColor=colors.HexColor("#1F3B57")))
-        styles.add(ParagraphStyle(name="ReportBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.5, leading=12, spaceAfter=4))
-        story = [
-            Paragraph("RAW STRENGTH CALISTHENICS", styles["ReportTitle"]),
-            Paragraph(escape(f"{req.report_type or 'Report'} — {req.date}"), styles["Heading2"]),
-            Spacer(1, 5 * mm),
-        ]
-        url_pattern = re.compile(r"https?://[^\s]+")
-        for line in report_text.splitlines():
-            if not line.strip():
-                story.append(Spacer(1, 2 * mm))
-                continue
-            clean = line.replace("■ ", "EMPLOYEE: ").replace("•", "-").replace("—", "-")
+        styles.add(ParagraphStyle(
+            name="RSWebTitle", fontName=bold_name, fontSize=13, leading=17,
+            alignment=TA_CENTER, textColor=cyan, spaceAfter=6,
+        ))
+        styles.add(ParagraphStyle(
+            name="RSWebSubtitle", fontName=regular_name, fontSize=8.5, leading=12,
+            alignment=TA_CENTER, textColor=muted, spaceAfter=12,
+        ))
+        styles.add(ParagraphStyle(
+            name="RSWebName", fontName=regular_name, fontSize=8.5, leading=12,
+            textColor=navy, spaceBefore=8, spaceAfter=5, keepWithNext=True,
+        ))
+        styles.add(ParagraphStyle(
+            name="RSWebSection", fontName=bold_name, fontSize=9.2, leading=12,
+            textColor=navy, spaceBefore=5, spaceAfter=3, keepWithNext=True,
+        ))
+        styles.add(ParagraphStyle(
+            name="RSWebBody", fontName=regular_name, fontSize=8.5, leading=12,
+            textColor=colors.HexColor("#1F2937"), spaceAfter=3, wordWrap="LTR",
+        ))
+        styles.add(ParagraphStyle(
+            name="RSWebBullet", parent=styles["RSWebBody"], leftIndent=13,
+            firstLineIndent=-8, bulletIndent=1, spaceAfter=3,
+        ))
+
+        story = []
+        logo_path = ROOT_DIR / "assets" / "raw_strength_brand.png"
+        if logo_path.is_file():
+            try:
+                logo = RLImage(str(logo_path), width=38 * mm, height=38 * mm)
+                logo.hAlign = "CENTER"
+                story.extend([logo, Spacer(1, 3.5 * mm)])
+            except Exception:
+                pass
+
+        story.extend([
+            Paragraph(escape(str(req.report_type or "Report").upper()), styles["RSWebTitle"]),
+            Paragraph(
+                f"Report date: {escape(str(req.date))} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Scope: {escape('Individual employee' if req.employee_id else ('Consolidated, excluding employee ' + str(req.exclude_employee_id) if req.exclude_employee_id else 'All employees'))}",
+                styles["RSWebSubtitle"],
+            ),
+            HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9),
+        ])
+
+        url_pattern = re.compile(r"https?://[^\\s]+", re.IGNORECASE)
+
+        def linked_markup(value):
+            clean = str(value).replace("■ ", "EMPLOYEE: ").replace("—", "-")
             parts = []
             cursor = 0
             for match in url_pattern.finditer(clean):
                 parts.append(escape(clean[cursor:match.start()]))
-                url = match.group(0)
-                parts.append('<link href="' + escape(url, {"'": "&#39;", '"': "&quot;"}) + '" color="blue">' + escape(url) + "</link>")
+                raw_url = match.group(0)
+                url = raw_url.rstrip(".,;:!?)]}")
+                suffix = raw_url[len(url):]
+                safe_url = escape(url, {"'": "&#39;", '"': "&quot;"})
+                parts.append(
+                    '<link href="' + safe_url + '" color="#0563C1">'
+                    + escape(url) + "</link>"
+                )
+                parts.append(escape(suffix))
                 cursor = match.end()
             parts.append(escape(clean[cursor:]))
-            safe = "".join(parts)
-            if clean.isupper() or clean.startswith("EMPLOYEE:") or clean.startswith("DAILY SUMMARY"):
-                story.append(Paragraph("<b>" + safe + "</b>", styles["Heading3"]))
+            return "".join(parts)
+
+        for raw_line in report_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                story.append(Spacer(1, 2 * mm))
+                continue
+            if line.startswith("RAW STRENGTH CALISTHENICS"):
+                continue
+            if line.startswith("Report date:") or line.startswith("Scope:"):
+                continue
+            if line.startswith("EMPLOYEE:"):
+                name = line.partition(":")[2].strip()
+                story.append(Paragraph("<b>Name :</b> " + linked_markup(name), styles["RSWebName"]))
+            elif line.isupper() or line.startswith("DAILY SUMMARY") or line.startswith("TASKS / WORK ITEMS"):
+                story.append(Paragraph(linked_markup(line), styles["RSWebSection"]))
+            elif line.startswith(("•", "▪", "■")):
+                story.append(Paragraph("&#8226;&nbsp; " + linked_markup(line.lstrip("•▪■ ")), styles["RSWebBullet"]))
             else:
-                story.append(Paragraph(safe, styles["ReportBody"]))
-        pdf = SimpleDocTemplate(output, pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=16 * mm, bottomMargin=16 * mm)
-        pdf.build(story)
+                story.append(Paragraph("&#8226;&nbsp; " + linked_markup(line), styles["RSWebBullet"]))
+
+        def draw_page(canvas, doc_obj):
+            canvas.saveState()
+            page_width, _page_height = A4
+            canvas.setStrokeColor(cyan)
+            canvas.setLineWidth(.6)
+            canvas.line(15 * mm, 13 * mm, page_width - 15 * mm, 13 * mm)
+            canvas.setFont(regular_name, 7)
+            canvas.setFillColor(muted)
+            canvas.drawString(15 * mm, 7.5 * mm, "Raw Strength Calisthenics | Confidential internal report")
+            canvas.drawRightString(page_width - 15 * mm, 7.5 * mm, f"Page {doc_obj.page}")
+            canvas.restoreState()
+
+        pdf = SimpleDocTemplate(
+            output, pagesize=A4, rightMargin=17 * mm, leftMargin=17 * mm,
+            topMargin=16 * mm, bottomMargin=18 * mm,
+            title=str(req.report_type or "Report"),
+            author="Raw Strength Calisthenics",
+            subject=f"{req.report_type or 'Report'} - {req.date}",
+        )
+        pdf.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
         content = output.getvalue()
         media_type = "application/pdf"
 
