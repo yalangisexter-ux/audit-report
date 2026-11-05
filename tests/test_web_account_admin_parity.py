@@ -288,3 +288,159 @@ def test_standalone_role_change_invalidates_persistent_target_sessions(tmp_path,
             conn.close()
     finally:
         cleanup()
+
+
+def test_managed_accounts_allow_case_distinct_customer_and_developer_admins(tmp_path, monkeypatch):
+    client, headers, db_path, cleanup, *_ = setup_account_client(tmp_path, monkeypatch)
+    developer_token = secrets.token_urlsafe(24)
+    api.ACTIVE_SESSIONS[developer_token] = {
+        "id": 3,
+        "username": "developer",
+        "display_name": "Developer Account",
+        "role": "Developer",
+    }
+    developer_headers = {"Authorization": "Bearer " + developer_token}
+    created_tokens = []
+    customer_password = "CustomerAdmin123"
+    developer_password = "DeveloperAdmin123"
+
+    def account_payload(username, display_name, role, password):
+        return {
+            "username": username,
+            "display_name": display_name,
+            "role": role,
+            "password": password,
+            "security_question": desktop_app.SECURITY_QUESTIONS[0],
+            "security_answer": "Recovery answer",
+        }
+
+    try:
+        customer = client.post(
+            "/api/auth/users",
+            headers=headers,
+            json=account_payload("Admin", "Customer Administrator", "Admin", customer_password),
+        )
+        assert customer.status_code == 200, customer.text
+
+        developer = client.post(
+            "/api/auth/users",
+            headers=developer_headers,
+            json=account_payload("admin", "Developer Administrator", "Developer", developer_password),
+        )
+        assert developer.status_code == 200, developer.text
+
+        duplicate = client.post(
+            "/api/auth/users",
+            headers=headers,
+            json=account_payload("Admin", "Duplicate Customer", "Staff", "DuplicatePass123"),
+        )
+        assert duplicate.status_code == 409
+
+        customer_login = client.post(
+            "/api/auth/login",
+            json={"username": "Admin", "password": customer_password},
+        )
+        developer_login = client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": developer_password},
+        )
+        assert customer_login.status_code == 200, customer_login.text
+        assert developer_login.status_code == 200, developer_login.text
+        assert customer_login.json()["user"]["role"] == "Admin"
+        assert developer_login.json()["user"]["role"] == "Developer"
+        created_tokens.extend([customer_login.json()["token"], developer_login.json()["token"]])
+
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = {
+                row[0]: row[1:]
+                for row in conn.execute(
+                    "SELECT username,role,password_salt,password_hash FROM auth_users "
+                    "WHERE username IN ('Admin','admin')"
+                ).fetchall()
+            }
+            assert rows["Admin"][0] == "Admin"
+            assert desktop_app.hash_pin(customer_password, rows["Admin"][1])[1] == rows["Admin"][2]
+            assert rows["admin"][0] == "Developer"
+            assert desktop_app.hash_pin(developer_password, rows["admin"][1])[1] == rows["admin"][2]
+        finally:
+            conn.close()
+    finally:
+        for token in created_tokens:
+            api.ACTIVE_SESSIONS.pop(token, None)
+        api.ACTIVE_SESSIONS.pop(developer_token, None)
+        cleanup()
+
+
+def test_public_registration_allows_case_distinct_admin_and_blocks_exact_duplicate(tmp_path, monkeypatch):
+    client, headers, db_path, cleanup, *_ = setup_account_client(tmp_path, monkeypatch)
+    customer_password = "CustomerAdmin123"
+    registration_password = "PendingCoach123"
+    now = datetime.now().isoformat(timespec="seconds")
+    customer_salt, customer_hash = desktop_app.hash_pin(customer_password)
+    answer_salt, answer_hash = desktop_app.hash_pin("Customer recovery answer")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO auth_users(
+                   username,display_name,role,password_salt,password_hash,
+                   security_question,answer_salt,answer_hash,active,created_at,updated_at
+               ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
+            (
+                "Admin", "Customer Administrator", "Admin", customer_salt, customer_hash,
+                desktop_app.SECURITY_QUESTIONS[0], answer_salt, answer_hash, now, now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    payload = {
+        "username": "admin",
+        "display_name": "Pending Coach",
+        "password": registration_password,
+        "security_question": desktop_app.SECURITY_QUESTIONS[1],
+        "security_answer": "Coach recovery answer",
+    }
+    created_tokens = []
+    try:
+        registered = client.post("/api/auth/register", json=payload)
+        assert registered.status_code == 200, registered.text
+        assert registered.json()["pending_approval"] is True
+
+        duplicate = client.post("/api/auth/register", json=payload)
+        assert duplicate.status_code == 409
+
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT id,active FROM auth_users WHERE username='admin' COLLATE BINARY"
+            ).fetchone()
+            assert row is not None and row[1] == 0
+        finally:
+            conn.close()
+
+        activated = client.patch(
+            f"/api/auth/users/{row[0]}/active",
+            headers=headers,
+            json={"active": True},
+        )
+        assert activated.status_code == 200, activated.text
+
+        customer_login = client.post(
+            "/api/auth/login",
+            json={"username": "Admin", "password": customer_password},
+        )
+        registered_login = client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": registration_password},
+        )
+        assert customer_login.status_code == 200, customer_login.text
+        assert registered_login.status_code == 200, registered_login.text
+        assert customer_login.json()["user"]["role"] == "Admin"
+        assert registered_login.json()["user"]["role"] == "Staff"
+        created_tokens.extend([customer_login.json()["token"], registered_login.json()["token"]])
+    finally:
+        for token in created_tokens:
+            api.ACTIVE_SESSIONS.pop(token, None)
+        cleanup()

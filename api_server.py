@@ -468,7 +468,7 @@ def register_account(req: RegistrationRequest, conn: sqlite3.Connection = Depend
         raise HTTPException(status_code=422, detail="Choose a recovery question and enter a recovery answer")
     if not conn.execute("SELECT 1 FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1").fetchone():
         raise HTTPException(status_code=403, detail="An active Admin must complete initial setup before new account registration")
-    if conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE", (username,)).fetchone():
+    if conn.execute("SELECT 1 FROM auth_users WHERE username=? COLLATE BINARY", (username,)).fetchone():
         raise HTTPException(status_code=409, detail="That username already exists")
     password_salt, password_hash = desktop_app.hash_pin(req.password)
     answer_salt, answer_hash = desktop_app.hash_pin(answer)
@@ -573,10 +573,10 @@ def create_managed_account(
     if item.security_question not in desktop_app.SECURITY_QUESTIONS or len(answer) < 2:
         raise HTTPException(status_code=422, detail="Select a recovery question and enter a valid recovery answer")
     if conn.execute(
-        "SELECT 1 FROM auth_users WHERE username=? COLLATE NOCASE",
+        "SELECT 1 FROM auth_users WHERE username=? COLLATE BINARY",
         (username,),
     ).fetchone():
-        raise HTTPException(status_code=409, detail="That username already exists. Usernames are case-insensitive and must be unique.")
+        raise HTTPException(status_code=409, detail="That username already exists.")
     password_salt, password_hash = desktop_app.hash_pin(item.password)
     answer_salt, answer_hash = desktop_app.hash_pin(answer)
     now = desktop_app.now_text()
@@ -2197,6 +2197,11 @@ import web_standalone_routes  # noqa: E402,F401
 
 # --- Serve Built React Frontend (SPA Fallback) ---
 DIST_DIR = ROOT_DIR / "frontend" / "dist"
+
+@app.head("/")
+def render_root_health_probe():
+    """Return 200 for Render's default HEAD / probe; the configured API check remains /api/health."""
+    return Response(status_code=200, headers={"Cache-Control": "no-store"})
 
 if (ROOT_DIR / "assets").is_dir():
     app.mount("/brand-assets", StaticFiles(directory=str(ROOT_DIR / "assets")), name="brand-assets")

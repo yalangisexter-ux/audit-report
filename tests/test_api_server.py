@@ -54,6 +54,11 @@ def test_api_health():
     assert "version" in data
     assert data["database_connected"] is True
 
+def test_render_root_head_probe_returns_success():
+    response = client.head("/")
+    assert response.status_code == 200
+    assert response.content == b""
+
 def test_api_dashboard():
     res = client.get("/api/dashboard")
     assert res.status_code == 200

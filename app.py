@@ -2157,6 +2157,7 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
     if not isinstance(data, dict):
         return stats
 
+    owns_transaction = not local_conn.in_transaction
     local_conn.execute("PRAGMA foreign_keys=OFF")
     local_conn.execute("SAVEPOINT remote_json_snapshot_merge")
     try:
@@ -2384,10 +2385,15 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
                     )
 
         local_conn.execute("RELEASE SAVEPOINT remote_json_snapshot_merge")
+        if owns_transaction:
+            # Preserve SyncableSQLiteConnection commit callbacks for top-level merges.
+            local_conn.commit()
     except Exception as exc:
         local_conn.execute("ROLLBACK TO SAVEPOINT remote_json_snapshot_merge")
         local_conn.execute("RELEASE SAVEPOINT remote_json_snapshot_merge")
-        raise exc
+        if owns_transaction:
+            local_conn.rollback()
+        raise
     finally:
         local_conn.execute("PRAGMA foreign_keys=ON")
     return stats
@@ -2495,6 +2501,7 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
             r[0] for r in remote.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
         }
         
+        owns_transaction = not local_conn.in_transaction
         local_conn.execute("PRAGMA foreign_keys=OFF")
         local_conn.execute("SAVEPOINT remote_database_snapshot_merge")
         
@@ -2763,9 +2770,14 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
                     )
 
         local_conn.execute("RELEASE SAVEPOINT remote_database_snapshot_merge")
+        if owns_transaction:
+            # Preserve SyncableSQLiteConnection commit callbacks for top-level merges.
+            local_conn.commit()
     except Exception:
         local_conn.execute("ROLLBACK TO SAVEPOINT remote_database_snapshot_merge")
         local_conn.execute("RELEASE SAVEPOINT remote_database_snapshot_merge")
+        if owns_transaction:
+            local_conn.rollback()
         raise
     finally:
         local_conn.execute("PRAGMA foreign_keys=ON")

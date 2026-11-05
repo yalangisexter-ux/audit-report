@@ -32,7 +32,7 @@ Before running it, configure these values in GitHub repository settings:
 
 Do not paste secrets into issues, commits, source files, or this chat. Prefer a narrowly scoped Cloudflare API token; never use your Cloudflare account password. The GitHub environment named `cloudflare-chat` may require approval depending on repository environment settings.
 
-Then open **Actions → Deploy Cloudflare Live Chat → Run workflow**, select the `feature/cloudflare-live-chat` branch, and run it. Review the logs for migration and deployment errors. The workflow must complete successfully before the Worker is considered deployed.
+Then open **Actions → Deploy Cloudflare Live Chat → Run workflow**, select `main` only, and run it. The workflow rejects any non-main ref. Review the logs for migration and deployment errors. The workflow must complete successfully before the Worker is considered deployed.
 
 ## First administrator
 
