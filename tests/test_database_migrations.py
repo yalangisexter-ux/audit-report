@@ -149,3 +149,51 @@ def test_admin_and_admin_are_preserved_as_distinct_case_sensitive_accounts(tmp_p
         assert "COLLATE BINARY" in schema.upper()
     finally:
         database.conn.close()
+
+
+def test_desktop_login_uses_exact_customer_and_developer_accounts(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = app.QApplication.instance() or app.QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "login.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    database = app.Database()
+    try:
+        customer_salt, customer_hash = app.hash_pin("Shiva@01")
+        timestamp = app.now_text()
+        database.conn.execute(
+            """INSERT INTO auth_users(
+                username, display_name, role, password_salt, password_hash,
+                security_question, answer_salt, answer_hash, active, created_at, updated_at
+            ) VALUES('Admin', 'Customer Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
+            (customer_salt, customer_hash, timestamp, timestamp),
+        )
+        database.conn.commit()
+
+        customer_dialog = app.LoginDialog(database)
+        customer_button = next(
+            button for button in customer_dialog.findChildren(app.QPushButton)
+            if button.text() == "👑 Admin (Customer Master)"
+        )
+        customer_button.click()
+        assert customer_dialog.username.text() == "Admin"
+        customer_dialog.password.setText("Shiva@01")
+        customer_dialog.check()
+        assert customer_dialog.user["username"] == "Admin"
+        assert customer_dialog.user["role"] == "Admin"
+
+        developer_dialog = app.LoginDialog(database)
+        developer_dialog.username.setText("admin")
+        developer_dialog.password.setText("kiran123")
+        developer_dialog.check()
+        assert developer_dialog.user["username"] == "admin"
+        assert developer_dialog.user["role"] == "Developer"
+
+        saved_developer = database.conn.execute(
+            "SELECT password_salt, password_hash, role FROM auth_users "
+            "WHERE username='admin' COLLATE BINARY"
+        ).fetchone()
+        _, expected_hash = app.hash_pin("kiran123", saved_developer["password_salt"])
+        assert saved_developer["role"] == "Developer"
+        assert saved_developer["password_hash"] == expected_hash
+    finally:
+        database.conn.close()
