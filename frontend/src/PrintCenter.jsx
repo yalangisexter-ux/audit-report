@@ -114,12 +114,38 @@ export default function PrintCenter({ employees = [], apiFetch, notify = () => {
     }
   };
 
-  const print = () => {
+  const print = async () => {
     if (!reportText) return notify('Generate a report preview first.');
-    const target = window.open('','_blank');
-    if (!target) return notify('Allow pop-ups to open the print preview.');
-    target.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Raw Strength Report</title><style>@page{size:A4;margin:16mm}body{font:12px Arial,sans-serif;color:#111;line-height:1.45}h1{font-size:18px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px Arial,sans-serif}</style></head><body><h1>Raw Strength Calisthenics</h1><pre>'+escapeHtml(reportText)+'</pre><script>window.onload=()=>{window.focus();window.print()}<\/script></body></html>');
+    const target = window.open('', '_blank');
+    if (!target) return notify('Allow pop-ups to open the PDF preview.');
+    target.document.write('<!doctype html><html><head><title>Preparing Raw Strength PDF…</title></head><body style="font:14px Arial,sans-serif;padding:32px;color:#102B42">Preparing your branded PDF…</body></html>');
     target.document.close();
+    setBusy(true);
+    try {
+      const token = localStorage.getItem('rsc_auth_token');
+      const response = await fetch('/api/reports/export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: 'Bearer ' + token } : {})
+        },
+        body: JSON.stringify({ ...payload(), output_format: 'pdf' })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.detail || 'PDF generation failed (' + response.status + ').');
+      }
+      const blob = await response.blob();
+      if (blob.type !== 'application/pdf') throw new Error('The report service did not return a PDF file.');
+      const url = window.URL.createObjectURL(blob);
+      target.location.href = url;
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60000);
+    } catch (error) {
+      target.close();
+      notify(error.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const toggleOption = (key, checked) => {
@@ -150,7 +176,7 @@ export default function PrintCenter({ employees = [], apiFetch, notify = () => {
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" className={button} onClick={download} disabled={busy}><Download size={16}/>{busy?'Preparing…':'Generate / Download '+report.output_format.toUpperCase()}</button>
-        <button type="button" className={secondary} onClick={print} disabled={!reportText||busy}><Printer size={16}/>Print preview / Save PDF</button>
+        <button type="button" className={secondary} onClick={print} disabled={!reportText||busy}><Printer size={16}/>Open PDF preview / Print</button>
       </div>
       <p className="mt-3 text-xs text-slate-500">Employee exclusion applies only to this report. It never deletes or changes employee records. Report exports use the same filters and content options as the preview.</p>
     </section>
