@@ -1871,3 +1871,32 @@ def test_web_store_directory_ui_exposes_location_filters_and_map_links():
     assert 'target="_blank" rel="noopener noreferrer"' in source
     assert "kind==='prospects'?'/customers/prospects/'+id" in source
 
+def test_sensitive_read_endpoints_require_an_authenticated_session(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    paths = (
+        "/api/dashboard",
+        "/api/employees?active_only=false",
+        "/api/chat/messages?channel=general",
+        "/api/print-center/summary",
+    )
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == 401, (path, response.status_code, response.text)
+
+    token = "protected-read-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[token] = {
+        "id": 9820,
+        "username": "protected-read-qa",
+        "display_name": "Protected Read QA",
+        "role": "Admin",
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        for path in paths:
+            response = client.get(path, headers=headers)
+            assert response.status_code == 200, (path, response.status_code, response.text)
+    finally:
+        api_server.ACTIVE_SESSIONS.pop(token, None)

@@ -696,7 +696,7 @@ def reset_managed_account_password(
 
 # --- Dashboard Analytics ---
 @app.get("/api/dashboard")
-def get_dashboard(conn: sqlite3.Connection = Depends(get_db)):
+def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, Any] = Depends(get_current_user)):
     today_str = date.today().isoformat()
     
     total_employees = conn.execute("SELECT COUNT(*) FROM employees WHERE active=1").fetchone()[0]
@@ -794,7 +794,7 @@ def _ensure_employee_group(conn, department, timestamp):
 
 
 @app.get("/api/employees")
-def list_employees(search: Optional[str] = None, department: Optional[str] = None, active_only: bool = True, conn: sqlite3.Connection = Depends(get_db)):
+def list_employees(search: Optional[str] = None, department: Optional[str] = None, active_only: bool = True, conn: sqlite3.Connection = Depends(get_db), user: Dict[str, Any] = Depends(get_current_user)):
     query = "SELECT * FROM employees WHERE 1=1"
     params = []
     if active_only:
@@ -2037,7 +2037,7 @@ def export_report(
 
 # --- Live Chat ---
 @app.get("/api/chat/messages")
-def get_chat_messages(channel: str = "general", conn: sqlite3.Connection = Depends(get_db)):
+def get_chat_messages(channel: str = "general", conn: sqlite3.Connection = Depends(get_db), user: Dict[str, Any] = Depends(get_current_user)):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS local_chat_messages(
             id INTEGER PRIMARY KEY AUTOINCREMENT,

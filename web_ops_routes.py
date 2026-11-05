@@ -606,7 +606,7 @@ def create_prospect(
 
 
 @api.app.get("/api/print-center/summary")
-def print_center_summary(report_date: Optional[str] = None, conn: sqlite3.Connection = Depends(api.get_db)):
+def print_center_summary(report_date: Optional[str] = None, conn: sqlite3.Connection = Depends(api.get_db), user: dict = Depends(api.get_current_user)):
     day = report_date or date.today().isoformat()
     tasks = _rows(
         conn,

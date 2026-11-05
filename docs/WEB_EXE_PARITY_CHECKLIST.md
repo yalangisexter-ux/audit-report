@@ -173,3 +173,10 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - The desktop `Database.working_weekdays()` always includes Sunday, including for older databases whose saved setting is Monday–Friday. The web attendance-summary route previously parsed the saved value independently and did not force Sunday, so the same customer DB could show different working-day, present and total-present counts in the browser.
 - The web summary now uses the same Sunday-required rule. Admin/Developer users receive a responsive Working week settings panel and authenticated GET/PUT endpoints for the remaining weekdays; Sunday is visible, selected and disabled. The generic `/api/settings` read/write endpoints are now Admin/Developer-only because they expose and mutate the complete settings table.
 - Added regression coverage for legacy Monday–Friday settings, Sunday attendance summary counts, Admin/Developer-only weekday configuration, invalid weekday values, and authorization of the generic settings API. CI and production deployment verification for this correction are pending.
+
+## Protected operational read APIs — implementation added; CI verification pending
+
+- The parity/security audit found four data-bearing GET routes callable without a session while `WEB_REQUIRE_LOGIN=1`: dashboard KPIs, employee directory, chat messages, and Print Center summary.
+- Added the shared `get_current_user` dependency to all four routes. Public health, login, registration/recovery, static assets, and release-check endpoints remain public by design.
+- Added a regression test proving each route returns HTTP 401 without a session and HTTP 200 with a valid in-memory Admin session.
+- No customer rows, auth identities, PBKDF2 salts/hashes, sync callback, installation IDs, encryption settings, schema, or version metadata are changed. CI and production authentication verification are pending.
