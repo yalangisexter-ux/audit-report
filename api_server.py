@@ -1134,23 +1134,47 @@ def bulk_attendance(
     return {"success": True, "count": len(employees)}
 
 @app.get("/api/holidays")
-def list_holidays(conn: sqlite3.Connection = Depends(get_db)):
+def list_holidays(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     rows = conn.execute("SELECT holiday_date, holiday_name, created_at FROM holidays ORDER BY holiday_date ASC").fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/holidays")
-def add_holiday(h: HolidayModel, conn: sqlite3.Connection = Depends(get_db)):
+def add_holiday(
+    h: HolidayModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _require_employee_roles(user, {"hr", "admin", "developer"})
+    try:
+        holiday_date = date.fromisoformat(str(h.holiday_date)).isoformat()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Holiday date must use YYYY-MM-DD.")
+    holiday_name = str(h.holiday_name or "").strip()
+    if not holiday_name:
+        raise HTTPException(status_code=422, detail="Holiday name is required.")
     now = desktop_app.now_text()
     conn.execute(
         "INSERT INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?) "
         "ON CONFLICT(holiday_date) DO UPDATE SET holiday_name=excluded.holiday_name",
-        (h.holiday_date, h.holiday_name, now)
+        (holiday_date, holiday_name, now)
     )
     conn.commit()
     return {"success": True}
 
 @app.delete("/api/holidays/{holiday_date}")
-def delete_holiday(holiday_date: str, conn: sqlite3.Connection = Depends(get_db)):
+def delete_holiday(
+    holiday_date: str,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _require_employee_roles(user, {"hr", "admin", "developer"})
+    try:
+        holiday_date = date.fromisoformat(str(holiday_date)).isoformat()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Holiday date must use YYYY-MM-DD.")
     conn.execute("DELETE FROM holidays WHERE holiday_date=?", (holiday_date,))
     conn.commit()
     return {"success": True}
