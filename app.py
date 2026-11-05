@@ -1657,18 +1657,48 @@ class Database:
 
             # Repair legacy role corruption using exact-case identity only.
             # Password hashes, account IDs and customer data remain untouched.
-            self.conn.execute(
-                "UPDATE auth_users SET role='Admin', "
-                "display_name=CASE WHEN display_name LIKE '%Developer - Test Mode%' "
-                "THEN 'Customer Administrator' ELSE display_name END, updated_at=? "
-                "WHERE username='Admin' COLLATE BINARY",
-                (now_text(),)
-            )
-            self.conn.execute(
-                "UPDATE auth_users SET role='Developer', updated_at=? "
-                "WHERE username='admin' COLLATE BINARY",
-                (now_text(),)
-            )
+            customer_admin = self.conn.execute(
+                "SELECT * FROM auth_users WHERE username='Admin' COLLATE BINARY"
+            ).fetchone()
+            developer_admin = self.conn.execute(
+                "SELECT * FROM auth_users WHERE username='admin' COLLATE BINARY"
+            ).fetchone()
+            legacy_customer = self.conn.execute(
+                "SELECT * FROM auth_users WHERE username='taruna' COLLATE BINARY"
+            ).fetchone()
+
+            if customer_admin:
+                self.conn.execute(
+                    "UPDATE auth_users SET role='Admin', "
+                    "display_name=CASE WHEN display_name LIKE '%Developer - Test Mode%' "
+                    "THEN 'Customer Administrator' ELSE display_name END, updated_at=? "
+                    "WHERE id=?",
+                    (now_text(), customer_admin["id"])
+                )
+
+            if developer_admin:
+                # Older releases used lowercase admin as the only bootstrap account.
+                # Preserve its customer login as taruna only when no distinct uppercase
+                # Admin customer exists; never clone/overwrite an existing Admin.
+                if not customer_admin and not legacy_customer:
+                    self.conn.execute(
+                        """INSERT INTO auth_users(
+                            username, display_name, role, password_salt, password_hash,
+                            security_question, answer_salt, answer_hash, active, created_at, updated_at
+                        ) VALUES('taruna', 'Admin / Taruna (Customer Master)', 'Admin', ?, ?, ?, ?, ?, 1, ?, ?)""",
+                        (
+                            developer_admin["password_salt"], developer_admin["password_hash"],
+                            developer_admin["security_question"], developer_admin["answer_salt"],
+                            developer_admin["answer_hash"], now_text(), now_text()
+                        )
+                    )
+                self.conn.execute(
+                    "UPDATE auth_users SET role='Developer', "
+                    "display_name=CASE WHEN display_name IN ('', 'Administrator', 'admin') "
+                    "THEN 'admin (Developer - Test Mode)' ELSE display_name END, updated_at=? "
+                    "WHERE id=?",
+                    (now_text(), developer_admin["id"])
+                )
 
             # Never infer identity or change roles by a case-insensitive username
             # lookup. Preserve all existing customer/developer credentials.
