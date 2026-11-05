@@ -208,3 +208,63 @@ def test_present_absent_leave_dropdown_updates_persist_and_refresh_monthly_summa
             db.conn.close()
         except Exception:
             pass
+
+
+def test_changing_attendance_date_saves_each_status_to_the_selected_date(monkeypatch, tmp_path):
+    import sqlite3
+
+    qt_app, db, window, employee_id, today_text = make_attendance_window(monkeypatch, tmp_path)
+    try:
+        today = date.fromisoformat(today_text)
+        selected_dates = [
+            date.fromordinal(today.toordinal() - 3),
+            date.fromordinal(today.toordinal() - 2),
+            date.fromordinal(today.toordinal() - 1),
+        ]
+        statuses = ("Present", "Absent", "Leave")
+
+        for selected_day, status in zip(selected_dates, statuses):
+            qdate = app.QDate(selected_day.year, selected_day.month, selected_day.day)
+            window.att_date.setDate(qdate)
+            qt_app.processEvents()
+
+            assert window.att_date.date().toString("yyyy-MM-dd") == selected_day.isoformat()
+            assert window.att_table.item(0, 1).text() == selected_day.isoformat()
+
+            status_cell = window.att_table.cellWidget(0, 2)
+            status_combo = status_cell.findChild(app.QComboBox)
+            assert status_combo is not None
+            status_combo.setCurrentText(status)
+            qt_app.processEvents()
+
+            saved = db.conn.execute(
+                "SELECT work_date, attendance_status FROM attendance "
+                "WHERE employee_id=? AND work_date=?",
+                (employee_id, selected_day.isoformat()),
+            ).fetchone()
+            assert saved is not None
+            assert tuple(saved) == (selected_day.isoformat(), status)
+
+        window.close()
+        db.conn.close()
+        reopened = sqlite3.connect(tmp_path / "attendance.db")
+        try:
+            records = reopened.execute(
+                "SELECT work_date, attendance_status FROM attendance "
+                "WHERE employee_id=? ORDER BY work_date",
+                (employee_id,),
+            ).fetchall()
+            assert records == sorted(
+                [(day.isoformat(), status) for day, status in zip(selected_dates, statuses)]
+            )
+        finally:
+            reopened.close()
+    finally:
+        try:
+            window.close()
+        except Exception:
+            pass
+        try:
+            db.conn.close()
+        except Exception:
+            pass
