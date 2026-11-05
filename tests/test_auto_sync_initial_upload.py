@@ -11,7 +11,7 @@ def test_customer_first_login_pushes_initial_snapshot_to_its_installation(monkey
         is_configured = True
         is_busy = False
         is_dirty = False
-        installation_id = installation_id
+        installation_id = "c4cf201d3c68e2fcaf60aa05fd423d9a"
 
         def download_latest_snapshot(self, **kwargs):
             calls["pull"] = kwargs
