@@ -105,3 +105,41 @@ def test_promote_promotes_backup_to_stable_and_cleans_pending(tmp_path):
     assert not backup_dir.exists()
     assert (stable_dir / "RawStrengthEmployeeAuditManager.exe").read_bytes() == b"backed-up binary"
     assert (stable_dir / "backup_marker.txt").exists()
+
+
+
+def test_update_startup_check_uses_real_windows_qt_platform():
+    script_path = Path(__file__).resolve().parents[1] / "update_recovery.ps1"
+    source = script_path.read_text(encoding="utf-8")
+    # The app uses Qt/WebEngine. Forcing the offscreen platform during an installer
+    # startup check can make a valid Windows GUI build exit before the customer sees it.
+    assert "$env:QT_QPA_PLATFORM = 'offscreen'" not in source
+    assert "$env:LOCALAPPDATA = $smokeLocalAppData" in source
+
+
+def test_failed_fresh_install_cleanup_never_touches_customer_database(tmp_path):
+    script_path = Path(__file__).resolve().parents[1] / "update_recovery.ps1"
+    install_dir = tmp_path / "Program Files" / "Raw Strength Employee Audit Manager"
+    install_dir.mkdir(parents=True)
+    (install_dir / "RawStrengthEmployeeAuditManager.exe").write_bytes(b"new app")
+    customer_data = tmp_path / "CustomerProfile" / "AppData" / "Local" / "EmployeeAuditManager"
+    customer_data.mkdir(parents=True)
+    database = customer_data / "employee_audit.db"
+    database.write_bytes(b"customer sqlite bytes")
+    wal = customer_data / "employee_audit.db-wal"
+    wal.write_bytes(b"customer wal bytes")
+
+    proc = run_powershell(
+        script_path,
+        [
+            "-Mode", "remove-new",
+            "-InstallDir", str(install_dir),
+            "-BackupDir", str(customer_data / "pending-update-backup"),
+            "-StableBackupDir", str(customer_data / "previous-version"),
+            "-DataDir", str(customer_data),
+        ],
+    )
+    assert proc.returncode == 0, f"STDOUT: {proc.stdout}\\nSTDERR: {proc.stderr}"
+    assert not install_dir.exists()
+    assert database.read_bytes() == b"customer sqlite bytes"
+    assert wal.read_bytes() == b"customer wal bytes"
