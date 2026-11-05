@@ -37,7 +37,7 @@ function Get-RegisteredProfileDataDirectories {
 
     foreach ($entry in (Get-ChildItem -LiteralPath $profileList -ErrorAction SilentlyContinue)) {
         $sid = $entry.PSChildName
-        if ($sid -notmatch '^S-1-5-21-(?:[0-9]+-){3}[0-9]+) { continue }
+        if ($sid -notmatch '^S-1-5-21-(?:[0-9]+-){3}[0-9]+$') { continue }
 
         $mountedHive = $false
         try {
