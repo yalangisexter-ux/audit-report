@@ -75,10 +75,15 @@ def verify_developer_password(password: str) -> bool:
         return True
     expected_primary = bytes.fromhex("a39b5cc22ca0d7b85e0f963439352d157e45ec125f2372077dfb8a459d2b33c6")
     expected_legacy = bytes.fromhex("c408585fbeeed010ea54f7fb51c80053546baec2b6831c1abfdc886777b330ec")
+    expected_configured_developer = bytes.fromhex("e6d3536f42fd44cccaffd8cc3d990106ff913443c0700180d08a0f1fad7a22a0")
     actual = hashlib.pbkdf2_hmac(
         "sha256", pwd.encode("utf-8"), b"RSC-Pull-Latest-Data-v1", 300000
     )
-    if secrets.compare_digest(actual, expected_primary) or secrets.compare_digest(actual, expected_legacy):
+    if (
+        secrets.compare_digest(actual, expected_primary)
+        or secrets.compare_digest(actual, expected_legacy)
+        or secrets.compare_digest(actual, expected_configured_developer)
+    ):
         return True
     return False
 
