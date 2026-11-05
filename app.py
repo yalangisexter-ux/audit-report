@@ -1637,7 +1637,7 @@ class Database:
                 # Use a unique staging table so stale staging data cannot block startup.
                 staging_table = "auth_users_case_sensitive_" + secrets.token_hex(6)
                 create_sql, replacement_count = re.subn(
-                    r"CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?auth_users\\b",
+                    r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?auth_users\b",
                     f"CREATE TABLE {staging_table}",
                     auth_sql,
                     count=1,
