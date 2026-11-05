@@ -34,9 +34,19 @@ def test_dual_admin_provisioning_preserves_ids_and_sets_requested_roles(tmp_path
     conn.close()
 
     assert ensure_admin_accounts(db_path, "Shiva@01", "kiran123") == 2
+    conn = sqlite3.connect(db_path)
+    first_hashes = dict(conn.execute(
+        "SELECT username, password_salt || ':' || password_hash FROM auth_users"
+    ).fetchall())
+    conn.close()
+
     assert ensure_admin_accounts(db_path, "Shiva@01", "kiran123") == 2
 
     conn = sqlite3.connect(db_path)
+    second_hashes = dict(conn.execute(
+        "SELECT username, password_salt || ':' || password_hash FROM auth_users"
+    ).fetchall())
+    assert second_hashes == first_hashes
     conn.row_factory = sqlite3.Row
     try:
         rows = {
