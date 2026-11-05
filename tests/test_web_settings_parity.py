@@ -1,7 +1,9 @@
 """Regression coverage for Windows Settings actions migrated to the web app."""
+import ast
 import csv
 import io
 import sqlite3
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -306,3 +308,79 @@ def test_settings_screen_exposes_google_sheets_sync_and_developer_password_gate(
     assert "/settings/google-sheets-sync" in source
     assert "Developer password (required for lowercase developer account)" in source
     assert "This is a pull operation, not an upload to Google Sheets." in source
+
+
+
+def test_web_appearance_options_match_windows_desktop():
+    root = Path(__file__).resolve().parents[1]
+    desktop = (root / "app.py").read_text(encoding="utf-8")
+    web = (root / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+
+    desktop_wallpapers = re.search(
+        r"class AnimatedBackground.*?STYLES\s*=\s*(\([^\n]+\))",
+        desktop,
+        re.DOTALL,
+    )
+    web_wallpapers = re.search(
+        r"const WALLPAPER_STYLES\s*=\s*(\[[^\n]+\])\s*;",
+        web,
+    )
+    assert desktop_wallpapers and web_wallpapers
+    assert tuple(ast.literal_eval(web_wallpapers.group(1))) == ast.literal_eval(
+        desktop_wallpapers.group(1)
+    )
+
+    desktop_themes = re.search(
+        r"self\.theme_combo\.addItems\((\[[^\]]+\])\)",
+        desktop,
+    )
+    web_themes = re.search(
+        r"const APPEARANCE_THEMES\s*=\s*(\[[^\]]+\])",
+        web,
+    )
+    assert desktop_themes and web_themes
+    assert [value.lower() for value in ast.literal_eval(desktop_themes.group(1))] == (
+        ast.literal_eval(web_themes.group(1))
+    )
+
+
+def test_web_custom_wallpaper_is_local_and_does_not_write_shared_customer_settings():
+    root = Path(__file__).resolve().parents[1]
+    web = (root / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    helper_section = web[
+        web.index("const APPEARANCE_THEMES") : web.index("export default function App()")
+    ]
+
+    assert "window.indexedDB.open('rsc-web-appearance',1)" in helper_section
+    assert "get('custom-wallpaper')" in helper_section
+    assert "put(file,'custom-wallpaper')" in helper_section
+    assert "delete('custom-wallpaper')" in helper_section
+    assert "localStorage.setItem('rsc_web_theme',theme)" in web
+    assert "localStorage.setItem('rsc_web_wallpaper',wallpaper)" in web
+    assert "15*1024*1024" in web
+    assert "writeCustomWallpaper(file)" in web
+    assert "deleteCustomWallpaper()" in web
+    assert "/api/settings" not in helper_section
+
+
+def test_web_appearance_controls_and_wallpaper_contrast_styles_render():
+    root = Path(__file__).resolve().parents[1]
+    web = (root / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    css = (root / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+
+    assert 'Panel title="Appearance & wallpaper"' in web
+    assert 'aria-label="Application theme"' in web
+    assert 'aria-label="Live wallpaper"' in web
+    assert 'onChange={uploadCustomWallpaper}' in web
+    assert "onClick={resetCustomWallpaper}" in web
+    assert 'className="webapp-root' in web
+    for theme in ("day", "night", "ocean", "sunset"):
+        assert f'data-rsc-theme="{theme}"' in web + css
+    for style in (
+        "Ambient Glow", "Aurora Waves", "Starfield", "Floating Bubbles",
+        "Rainfall", "Matrix Drift", "Galaxy", "Milky Way", "Milky Way Waves",
+        "Ocean Waves", "Lord Shiva", "Love Couple", "Love & Couples",
+        "Cyberpunk Neon", "Calisthenics Power", "Cosmic Nebula", "Custom Image",
+    ):
+        assert f'data-rsc-wallpaper="{style}"' in css or style in web
+    assert "opaque workspace cards keep employee data readable" in css
