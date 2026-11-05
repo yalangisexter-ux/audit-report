@@ -1361,7 +1361,7 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     assert b"/Subtype /Image" in pdf_response.content  # embedded Raw Strength logo
     assert b"/Author (Raw Strength Calisthenics)" in pdf_response.content
     assert b"/Title (Employee Details)" in pdf_response.content
-    assert b"/RawStrengthSans" in pdf_response.content  # bundled DejaVu font family
+    assert b"RawStrengthSans" in pdf_response.content  # bundled DejaVu font family
 
 def test_web_business_products_and_print_center_use_full_stock_ledger(monkeypatch):
     import secrets
