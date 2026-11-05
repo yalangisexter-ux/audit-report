@@ -849,6 +849,45 @@ def list_employees(search: Optional[str] = None, department: Optional[str] = Non
     return [dict(row) for row in conn.execute(query, params).fetchall()]
 
 
+@app.get("/api/employees/export.csv")
+def export_employees_csv(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Export every employee, including inactive records, in the Windows CSV format."""
+    rows = conn.execute(
+        "SELECT * FROM employees ORDER BY active DESC, display_order ASC, name COLLATE NOCASE"
+    ).fetchall()
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow([
+        "Record ID", "Employee ID", "Name", "Department", "Role",
+        "Phone", "Email", "Joining date", "Status", "Notes",
+    ])
+    for employee in rows:
+        writer.writerow([
+            employee["id"],
+            employee["employee_code"],
+            employee["name"],
+            employee["department"],
+            employee["designation"],
+            employee["phone"],
+            employee["email"],
+            employee["joining_date"],
+            "Active" if employee["active"] else "Inactive",
+            employee["notes"],
+        ])
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="employees.csv"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @app.post("/api/employees")
 def create_employee(emp: EmployeeModel, conn: sqlite3.Connection = Depends(get_db), user=Depends(get_current_user)):
     _require_employee_roles(user, {"HR", "Admin", "Developer"})
@@ -2298,6 +2337,28 @@ def send_chat_message(
     )
     conn.commit()
     return {"id": cursor.lastrowid, "sender": sender, "role": role, "content": msg.content, "created_at": now}
+
+
+@app.post("/api/settings/expose-all-links")
+def enable_global_expose_links(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Match the desktop action: expose every task proof URL and default report URLs."""
+    task_count = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] or 0)
+    timestamp = desktop_app.now_text()
+    conn.execute("UPDATE tasks SET expose_link=1, updated_at=?", (timestamp,))
+    for key in ("global_expose_link", "report_opt_expose_link"):
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, "1"),
+        )
+    _record_account_audit(conn, "Global expose links enabled", f"Updated {task_count} tasks")
+    # Keep this on the normal connection commit path so encrypted snapshot sync
+    # receives the same dirty notification as other web writes.
+    conn.commit()
+    return {"success": True, "enabled": True, "updated": task_count}
 
 
 # --- Settings ---
