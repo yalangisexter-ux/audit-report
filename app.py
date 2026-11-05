@@ -3137,7 +3137,7 @@ class LoginDialog(QDialog):
         quick_layout.setSpacing(8)
         lbl_quick = QLabel("Quick Account:")
         lbl_quick.setStyleSheet("font-size: 8.5pt; color: #94A3B8; font-weight: 600;")
-        btn_taruna = QPushButton("👑 Admin / Taruna (Customer Master)")
+        btn_taruna = QPushButton("👑 Admin (Customer Master)")
         btn_taruna.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_taruna.setToolTip("Sign in as Customer Master (live synchronization enabled)")
         btn_taruna.setStyleSheet(
@@ -3145,7 +3145,7 @@ class LoginDialog(QDialog):
             "border: 1px solid rgba(59, 130, 246, 0.45); border-radius: 6px; padding: 4px 10px; font-size: 8.5pt; font-weight: 600; } "
             "QPushButton:hover { background: rgba(59, 130, 246, 0.40); color: #FFFFFF; }"
         )
-        btn_taruna.clicked.connect(lambda: (self.username.setText("taruna"), self.password.setFocus()))
+        btn_taruna.clicked.connect(lambda: (self.username.setText("Admin"), self.password.setFocus()))
 
         btn_admin = QPushButton("🧪 admin (Developer Test)")
         btn_admin.setCursor(Qt.CursorShape.PointingHandCursor)
