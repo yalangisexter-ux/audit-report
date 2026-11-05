@@ -224,8 +224,9 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 
 ### Next Store Directory milestone
 
-- Implement API offset pagination and UI pagination without rendering thousands of table rows at once.
-- Add workbook import, CSV/XLSX/PDF/DOC exports, regional dashboard and desktop-equivalent contact/website/verification/exclusion filters.
+- API keyset pagination is already implemented in `/api/customers/prospects` (`limit` up to 1,000 plus descending `before_id` cursor). React `fetchAllProspects()` walks every page and the UI renders a 100-row client-side page; filtering covers business/contact/address/website/Maps fields, state, record kind, website presence and verification state.
+- Regression test `test_customer_prospect_api_keyset_pagination_returns_every_row_once` inserts 2,505 records and verifies every ID is returned exactly once in descending order. The 5,003-row production restore still needs a direct authenticated browser/API count and no-gap/no-duplicate check.
+- Remaining Store Directory gaps: workbook import, CSV/XLSX/PDF/DOC exports, regional dashboard, desktop exclusion/print workflows, and browser-side comparison of all actions/permissions. Consider server-side filtering/pagination if loading all 5,003 rows proves too slow in production.
 - Verify one-tap scraping updates the same customer dataset and triggers encrypted snapshot sync.
 - Complete browser-side comparison with the EXE before marking the screen complete.
 ## Print Center PDF font regression diagnosis — 2026-11-05
@@ -235,7 +236,8 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - The regression assertion is corrected to verify the embedded `DejaVuSans` face name and `/FontFile2` font program rather than the Python-side registration alias. This tests the actual embedded font and avoids a false negative.
 - The correction is not considered verified until the next complete GitHub Actions run passes; no version bump is appropriate for this test-only fix.
 
-## Store Directory pagination remains open
+## Store Directory pagination re-inspection — 2026-11-05
 
-- Re-inspection of the current `main` checklist confirms the earlier pagination claim has not landed in this repository state: the API/UI pagination, workbook import/export, regional dashboard and browser-side EXE comparison are still outstanding.
-- The confirmed 5,003-record restore count is a visibility target, not proof that the browser currently retrieves all rows. Keep Store Directory Partial until API paging is implemented and a no-gap/no-duplicate production check is completed.
+- Re-inspection of current `main` confirms keyset pagination is present in `web_ops_routes.py`: `limit` is capped at 1,000 and `before_id` advances a descending ID cursor. The React `fetchAllProspects()` requests every page, then `prospectRows` applies the current search/filter set and displays 100 rows at a time.
+- `test_customer_prospect_api_keyset_pagination_returns_every_row_once` verifies a 2,505-record fixture returns all IDs exactly once. This is source/test evidence, not production proof that all 5,003 restored records are visible to a real authenticated browser session.
+- The earlier statement that pagination had not landed was incorrect and is superseded by this evidence. Store Directory remains Partial for workbook import/export, regional dashboard, desktop exclusions/print parity, and production/browser verification.
