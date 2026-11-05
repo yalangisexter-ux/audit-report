@@ -74,6 +74,11 @@ jobs:
           foreach ($path in $installerPaths) {
             if ($changed -contains $path) { $mustBuild = $true }
           }
+          foreach ($path in $changed) {
+            if ($path -match "^[^/]+\\.py$" -or $path -like "assets/*" -or $path -like "tests/*" -or $path -like "*.spec") {
+              $mustBuild = $true
+            }
+          }
           "installer_changed=$($mustBuild.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           Write-Host "Installer-impacting changes: $mustBuild"
           Write-Host ($changed -join "`n")
