@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $true)][string]$OutputFile,
     [string]$ProfilesRoot = (Join-Path $env:SystemDrive "Users"),
     [string]$InteractiveProfilePath = "",
+    [string]$ProfileListRoot = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList",
+    [string]$UserHivesRoot = "Registry::HKEY_USERS",
     [switch]$DisableInteractiveLookup
 )
 
@@ -11,10 +13,10 @@ function Write-ResolvedDirectory([string]$Directory) {
     [System.IO.File]::WriteAllText($OutputFile, $Directory, [System.Text.Encoding]::UTF8)
 }
 
-function Get-ProfileLocalAppData([string]$ProfilePath, [string]$Sid) {
+function Get-ProfileLocalAppData([string]$ProfilePath, [string]$Sid, [string]$UserHivesRoot = "Registry::HKEY_USERS") {
     $localAppData = Join-Path $ProfilePath "AppData\Local"
     if (-not [string]::IsNullOrWhiteSpace($Sid)) {
-        $userShellFolders = "Registry::HKEY_USERS\" + $Sid + "\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        $userShellFolders = $UserHivesRoot + "\\" + $Sid + "\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
         if (Test-Path -LiteralPath $userShellFolders) {
             $shellFolders = Get-ItemProperty -LiteralPath $userShellFolders -ErrorAction SilentlyContinue
             $configuredPath = [string]$shellFolders."Local AppData"
@@ -30,7 +32,7 @@ function Get-ProfileLocalAppData([string]$ProfilePath, [string]$Sid) {
 
 function Get-RegisteredProfileDataDirectories {
     $directories = @()
-    $profileList = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+    $profileList = $ProfileListRoot
     if (-not (Test-Path -LiteralPath $profileList)) { return $directories }
 
     foreach ($entry in (Get-ChildItem -LiteralPath $profileList -ErrorAction SilentlyContinue)) {
@@ -43,7 +45,7 @@ function Get-RegisteredProfileDataDirectories {
             $profilePath = [Environment]::ExpandEnvironmentVariables([string]$profile.ProfileImagePath)
             if ([string]::IsNullOrWhiteSpace($profilePath) -or -not (Test-Path -LiteralPath $profilePath -PathType Container)) { continue }
 
-            $hivePath = "Registry::HKEY_USERS\" + $sid
+            $hivePath = $UserHivesRoot + "\\" + $sid
             if (-not (Test-Path -LiteralPath $hivePath)) {
                 $ntUserFile = Join-Path $profilePath "NTUSER.DAT"
                 if (Test-Path -LiteralPath $ntUserFile -PathType Leaf) {
@@ -53,7 +55,7 @@ function Get-RegisteredProfileDataDirectories {
             }
 
             try {
-                $localAppData = Get-ProfileLocalAppData -ProfilePath $profilePath -Sid $sid
+                $localAppData = Get-ProfileLocalAppData -ProfilePath $profilePath -Sid $sid -UserHivesRoot $UserHivesRoot
                 $dataDirectory = Join-Path $localAppData "EmployeeAuditManager"
                 if (Test-Path -LiteralPath (Join-Path $dataDirectory "employee_audit.db") -PathType Leaf) {
                     $directories += $dataDirectory
@@ -109,7 +111,7 @@ try {
 
     $interactiveDataDirectory = ""
     if (-not [string]::IsNullOrWhiteSpace($profilePath) -and (Test-Path -LiteralPath $profilePath -PathType Container)) {
-        $localAppData = Get-ProfileLocalAppData -ProfilePath $profilePath -Sid $interactiveSid
+        $localAppData = Get-ProfileLocalAppData -ProfilePath $profilePath -Sid $interactiveSid -UserHivesRoot $UserHivesRoot
         $interactiveDataDirectory = Join-Path $localAppData "EmployeeAuditManager"
     }
 
