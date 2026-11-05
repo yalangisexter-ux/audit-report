@@ -140,6 +140,23 @@ def test_admin_creates_active_account_with_desktop_pbkdf2_hashes(tmp_path, monke
         finally:
             conn.close()
 
+        # Usernames are exact-case identities, matching the desktop database:
+        # "STAFF" and "staff" are distinct accounts.
+        case_variant = client.post(
+            "/api/auth/users",
+            headers=headers,
+            json={
+                "username": "STAFF",
+                "display_name": "Uppercase Staff",
+                "role": "Staff",
+                "password": password,
+                "security_question": desktop_app.SECURITY_QUESTIONS[0],
+                "security_answer": "Answer",
+            },
+        )
+        assert case_variant.status_code == 200, case_variant.text
+
+        # An exact duplicate must still be rejected.
         duplicate = client.post(
             "/api/auth/users",
             headers=headers,
