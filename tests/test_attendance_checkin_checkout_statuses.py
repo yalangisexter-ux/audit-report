@@ -294,17 +294,28 @@ def test_legacy_required_date_and_status_columns_accept_new_attendance(monkeypat
     legacy.commit()
     legacy.close()
 
+    qt_app = app.QApplication.instance() or app.QApplication([])
     db = app.Database()
+    window = None
     try:
+        today = date.today()
+        work_dates = []
+        current = today.replace(day=1)
+        while current <= today:
+            if current.weekday() in db.working_weekdays():
+                work_dates.append(current.isoformat())
+            current = date.fromordinal(current.toordinal() + 1)
+        assert len(work_dates) >= 3
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         employee_id = db.conn.execute(
             "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
-            ("Legacy Attendance", date.today().replace(day=1).isoformat(), 1, timestamp),
+            ("Legacy Attendance", today.replace(day=1).isoformat(), 1, timestamp),
         ).lastrowid
 
-        db.upsert_attendance(employee_id, "2026-11-02", status="Present")
-        db.upsert_attendance(employee_id, "2026-11-03", status="Absent")
-        db.upsert_attendance(employee_id, "2026-11-04", status="Leave")
+        db.upsert_attendance(employee_id, work_dates[0], status="Present")
+        db.upsert_attendance(employee_id, work_dates[1], status="Absent")
+        db.upsert_attendance(employee_id, work_dates[2], status="Leave")
 
         rows = db.conn.execute(
             "SELECT date, work_date, status, attendance_status "
@@ -312,20 +323,34 @@ def test_legacy_required_date_and_status_columns_accept_new_attendance(monkeypat
             (employee_id,),
         ).fetchall()
         assert [tuple(row) for row in rows] == [
-            ("2026-11-02", "2026-11-02", "Present", "Present"),
-            ("2026-11-03", "2026-11-03", "Absent", "Absent"),
-            ("2026-11-04", "2026-11-04", "Leave", "Leave"),
+            (work_dates[0], work_dates[0], "Present", "Present"),
+            (work_dates[1], work_dates[1], "Absent", "Absent"),
+            (work_dates[2], work_dates[2], "Leave", "Leave"),
         ]
 
         # Updating an existing row must keep both schema generations aligned.
-        db.upsert_attendance(employee_id, "2026-11-03", status="Present", check_in="09:00")
+        db.upsert_attendance(employee_id, work_dates[1], status="Present", check_in="09:00")
         updated = db.conn.execute(
             "SELECT date, work_date, status, attendance_status, check_in "
             "FROM attendance WHERE employee_id=? AND work_date=?",
-            (employee_id, "2026-11-03"),
+            (employee_id, work_dates[1]),
         ).fetchone()
         assert tuple(updated) == (
-            "2026-11-03", "2026-11-03", "Present", "Present", "09:00"
+            work_dates[1], work_dates[1], "Present", "Present", "09:00"
         )
+
+        # The monthly UI summary must read those same legacy-backed rows.
+        window = app.MainWindow(db, {"username": "Preview", "role": "Admin"})
+        window.att_date.setDate(app.QDate(today.year, today.month, today.day))
+        window.refresh_attendance_summary()
+        qt_app.processEvents()
+        summary = window.attendance_summary_table
+        assert summary.rowCount() == 1
+        assert int(summary.item(0, 3).text()) == 2
+        assert int(summary.item(0, 4).text()) == 0
+        assert int(summary.item(0, 5).text()) == 1
+        assert int(summary.item(0, 7).text()) == 2
     finally:
+        if window is not None:
+            window.close()
         db.conn.close()
