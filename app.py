@@ -1604,7 +1604,7 @@ class Database:
                )'''
         )
         if not self.get_setting("working_weekdays"):
-            self.set_setting("working_weekdays", "0,1,2,3,4")
+            self.set_setting("working_weekdays", "0,1,2,3,4,6")
         # Restore task-employee links only when unambiguous
         try:
             migrate_legacy_task_employee_links(self.conn)
@@ -1914,9 +1914,17 @@ class Database:
         return self.conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
 
     def working_weekdays(self):
-        raw = self.get_setting("working_weekdays", "0,1,2,3,4")
-        try: return {int(x) for x in raw.split(",") if x.strip() != ""}
-        except ValueError: return {0,1,2,3,4}
+        """Return configured working days, with Sunday always included."""
+        raw = self.get_setting("working_weekdays", "0,1,2,3,4,6")
+        try:
+            weekdays = {int(value.strip()) for value in str(raw).split(",") if value.strip()}
+            weekdays = {value for value in weekdays if 0 <= value <= 6}
+        except (TypeError, ValueError):
+            weekdays = {0, 1, 2, 3, 4}
+        # Sunday is a required working day for this business, including for
+        # databases created by older releases whose setting was Monday-Friday.
+        weekdays.add(6)
+        return weekdays
 
     def get_holiday(self, day_text):
         row = self.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (day_text,)).fetchone()
@@ -4435,11 +4443,13 @@ class DashboardProductivityWorker(QThread):
             ).fetchone()
             try:
                 weekdays = {
-                    int(value) for value in (setting["value"] if setting else "0,1,2,3,4").split(",")
+                    int(value) for value in (setting["value"] if setting else "0,1,2,3,4,6").split(",")
                     if value.strip()
                 }
+                weekdays = {value for value in weekdays if 0 <= value <= 6}
             except (TypeError, ValueError):
                 weekdays = {0, 1, 2, 3, 4}
+            weekdays.add(6)
             holidays = {row["holiday_date"] for row in holiday_rows}
             tasks_by_employee = {employee_id: [] for employee_id in employee_ids}
             attendance_by_employee = {employee_id: [] for employee_id in employee_ids}
@@ -9242,7 +9252,9 @@ class MainWindow(QMainWindow):
         self.att_date.setDate(QDate.currentDate())
         self.att_date.setMinimumWidth(140)
         self.att_date.setMinimumHeight(34)
-        self.att_date.dateChanged.connect(self.refresh_attendance)
+        self.att_date.dateChanged.connect(
+            lambda selected_date: self.refresh_attendance(selected_date)
+        )
         row1.addWidget(self.att_date)
 
         filter_label = QLabel("Filter employee:")
@@ -9853,7 +9865,10 @@ class MainWindow(QMainWindow):
         saved_days = self.db.working_weekdays()
         for idx, day_name in enumerate(day_names):
             checkbox = QCheckBox(day_name)
-            checkbox.setChecked(idx in saved_days)
+            checkbox.setChecked(idx in saved_days or idx == 6)
+            if idx == 6:
+                checkbox.setEnabled(False)
+                checkbox.setToolTip("Sunday is always treated as a working day.")
             self.workday_checks.append(checkbox)
             days_layout.addWidget(checkbox, idx // 4, idx % 4)
         for col in range(4):
@@ -11765,12 +11780,18 @@ class MainWindow(QMainWindow):
             self.refresh_attendance_summary()
             self.refresh_dashboard()
 
-    def refresh_attendance(self):
+    def refresh_attendance(self, selected_date=None):
         if not hasattr(self,"att_table"): return
+        # Use the exact QDate emitted by the date control. Keeping the selected
+        # date explicit prevents refresh/editor focus transitions from binding
+        # newly rendered rows to a stale date captured by the previous table.
+        if selected_date is not None and hasattr(selected_date, "toString"):
+            d = selected_date.toString("yyyy-MM-dd")
+        else:
+            d = self.att_date.date().toString("yyyy-MM-dd")
         self.refresh_employee_filter()
         # Remember selected employee so check-in/out stay on the same row
         selected_eid = self.attendance_selected_employee()
-        d=self.att_date.date().toString("yyyy-MM-dd")
         holiday=self.db.get_holiday(d)
         if holiday:
             self.holiday_banner.setText(f"🎉 HOLIDAY: {holiday} — excluded from all working-day counts")
@@ -13505,9 +13526,13 @@ class MainWindow(QMainWindow):
             error(self, f"Restore failed.\n{ex}")
 
     def save_working_week(self):
-        days=[str(i) for i,cb in enumerate(self.workday_checks) if cb.isChecked()]
-        if not days: return error(self,"Select at least one working weekday.")
-        self.db.set_setting("working_weekdays",",".join(days))
+        days = [str(i) for i, checkbox in enumerate(self.workday_checks) if checkbox.isChecked()]
+        # Sunday is mandatory even when saving settings from an older UI state.
+        if "6" not in days:
+            days.append("6")
+        if not days:
+            return error(self, "Select at least one working weekday.")
+        self.db.set_setting("working_weekdays", ",".join(sorted(days, key=int)))
         self.db.log("Working week changed",",".join(days))
         self.refresh_all(); info(self,"Working week saved. Working-day and productivity calculations have been refreshed.")
 
