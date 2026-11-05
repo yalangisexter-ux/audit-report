@@ -28,6 +28,53 @@ function Get-ProfileLocalAppData([string]$ProfilePath, [string]$Sid) {
     return $localAppData
 }
 
+function Get-RegisteredProfileDataDirectories {
+    $directories = @()
+    $profileList = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+    if (-not (Test-Path -LiteralPath $profileList)) { return $directories }
+
+    foreach ($entry in (Get-ChildItem -LiteralPath $profileList -ErrorAction SilentlyContinue)) {
+        $sid = $entry.PSChildName
+        if ($sid -notmatch '^S-1-5-21-(?:[0-9]+-){2}[0-9]+$') { continue }
+
+        $mountedHive = $false
+        try {
+            $profile = Get-ItemProperty -LiteralPath $entry.PSPath -ErrorAction Stop
+            $profilePath = [Environment]::ExpandEnvironmentVariables([string]$profile.ProfileImagePath)
+            if ([string]::IsNullOrWhiteSpace($profilePath) -or -not (Test-Path -LiteralPath $profilePath -PathType Container)) { continue }
+
+            $hivePath = "Registry::HKEY_USERS\" + $sid
+            if (-not (Test-Path -LiteralPath $hivePath)) {
+                $ntUserFile = Join-Path $profilePath "NTUSER.DAT"
+                if (Test-Path -LiteralPath $ntUserFile -PathType Leaf) {
+                    & "$env:SystemRoot\System32\reg.exe" load "HKU\$sid" "$ntUserFile" 2>$null | Out-Null
+                    $mountedHive = ($LASTEXITCODE -eq 0)
+                }
+            }
+
+            try {
+                $localAppData = Get-ProfileLocalAppData -ProfilePath $profilePath -Sid $sid
+                $dataDirectory = Join-Path $localAppData "EmployeeAuditManager"
+                if (Test-Path -LiteralPath (Join-Path $dataDirectory "employee_audit.db") -PathType Leaf) {
+                    $directories += $dataDirectory
+                }
+            }
+            finally {
+                if ($mountedHive) {
+                    & "$env:SystemRoot\System32\reg.exe" unload "HKU\$sid" 2>$null | Out-Null
+                }
+            }
+        }
+        catch {
+            if ($mountedHive) {
+                & "$env:SystemRoot\System32\reg.exe" unload "HKU\$sid" 2>$null | Out-Null
+            }
+        }
+    }
+
+    return $directories
+}
+
 try {
     $interactiveUser = ""
     $interactiveSid = ""
@@ -69,6 +116,9 @@ try {
     # Recover customer data even when the old EXE was removed or another admin
     # account launched Setup. Never guess between multiple customer databases.
     $candidates = @()
+    if (-not $DisableInteractiveLookup) {
+        $candidates += @(Get-RegisteredProfileDataDirectories)
+    }
     if (Test-Path -LiteralPath $ProfilesRoot -PathType Container) {
         Get-ChildItem -LiteralPath $ProfilesRoot -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
             $candidate = Join-Path $_.FullName "AppData\Local\EmployeeAuditManager"
@@ -77,6 +127,7 @@ try {
             }
         }
     }
+    $candidates = @($candidates | Sort-Object -Unique)
 
     if (-not [string]::IsNullOrWhiteSpace($interactiveDataDirectory) -and
         (Test-Path -LiteralPath (Join-Path $interactiveDataDirectory "employee_audit.db") -PathType Leaf)) {
