@@ -1357,6 +1357,11 @@ def test_web_print_center_exports_pdf_docx_and_csv():
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
     assert pdf_response.content.startswith(b"%PDF-")
+    # Print Center must generate the same branded, multi-page PDF structure as the desktop EXE.
+    assert b"/Subtype /Image" in pdf_response.content  # embedded Raw Strength logo
+    assert b"/Author (Raw Strength Calisthenics)" in pdf_response.content
+    assert b"/Title (Employee Details)" in pdf_response.content
+    assert b"/RawStrengthSans" in pdf_response.content  # bundled DejaVu font family
 
 def test_web_business_products_and_print_center_use_full_stock_ledger(monkeypatch):
     import secrets
