@@ -11,7 +11,6 @@ on:
       - "tools/**"
       - ".github/workflows/apply-*.yml"
       - ".github/workflows/restore-*.yml"
-      - ".github/workflows/master.yml"
   workflow_dispatch:
 
 permissions:
@@ -68,7 +67,8 @@ jobs:
             "version_info.txt",
             "assets/raw_strength_icon.ico",
             "tests/test_resolve_customer_data_dir.py",
-            "tests/test_update_recovery.py"
+            "tests/test_update_recovery.py",
+            ".github/workflows/master.yml"
           )
           $mustBuild = $false
           foreach ($path in $installerPaths) {
