@@ -935,6 +935,31 @@ def _validate_task_fields(task):
     }
 
 
+def _sync_employee_target_from_task(conn, task, values, now):
+    """Keep the desktop's per-employee/per-day target record in sync with task edits."""
+    fields_set = set(
+        getattr(task, "model_fields_set", getattr(task, "__fields_set__", set())) or ()
+    )
+    if not fields_set.intersection({"target_qty", "actual_qty"}):
+        return
+    employee_id = int(values["employee_id"])
+    target_date = str(values["task_date"])
+    existing = conn.execute(
+        "SELECT target,target_status FROM employee_targets WHERE employee_id=? AND target_date=?",
+        (employee_id, target_date),
+    ).fetchone()
+    target = values["target_qty"] if "target_qty" in fields_set else (existing["target"] if existing else "")
+    target_status = values["actual_qty"] if "actual_qty" in fields_set else (existing["target_status"] if existing else "")
+    conn.execute(
+        """INSERT INTO employee_targets(employee_id,target_date,target,target_status,updated_at)
+           VALUES(?,?,?,?,?)
+           ON CONFLICT(employee_id,target_date) DO UPDATE SET
+             target=excluded.target,
+             target_status=excluded.target_status,
+             updated_at=excluded.updated_at""",
+        (employee_id, target_date, str(target or "").strip(), str(target_status or "").strip(), now),
+    )
+
 @app.get("/api/tasks")
 def list_tasks(
     employee_id: Optional[int] = None,
@@ -993,6 +1018,30 @@ def list_tasks(
     return result
 
 
+@app.get("/api/employee-targets")
+def get_employee_target(
+    employee_id: int,
+    target_date: str,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    try:
+        selected_date = date.fromisoformat(str(target_date)).isoformat()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="target_date must use YYYY-MM-DD format.")
+    if not conn.execute("SELECT 1 FROM employees WHERE id=?", (employee_id,)).fetchone():
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    row = conn.execute(
+        "SELECT target,target_status FROM employee_targets WHERE employee_id=? AND target_date=?",
+        (employee_id, selected_date),
+    ).fetchone()
+    return {
+        "employee_id": employee_id,
+        "target_date": selected_date,
+        "target": (row["target"] if row else "") or "",
+        "target_status": (row["target_status"] if row else "") or "",
+    }
+
 @app.post("/api/tasks")
 def create_task(
     task: TaskModel,
@@ -1016,6 +1065,7 @@ def create_task(
             values["expose_link"], values["custom_values"], now, now,
         ),
     )
+    _sync_employee_target_from_task(conn, task, values, now)
     conn.commit()
     return {
         "id": cursor.lastrowid,
@@ -1055,6 +1105,7 @@ def update_task(
             values["expose_link"], values["custom_values"], now, task_id,
         ),
     )
+    _sync_employee_target_from_task(conn, task, values, now)
     conn.commit()
     return {
         "id": task_id,

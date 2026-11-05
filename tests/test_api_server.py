@@ -1078,6 +1078,96 @@ def test_task_api_round_trips_desktop_fields_and_preserves_submission_timestamp(
         connection.close()
 
 
+def test_web_task_create_edit_round_trips_employee_daily_target_to_print_center():
+    import secrets
+    import sqlite3
+
+    suffix = secrets.token_hex(4).upper()
+    employee = client.post("/api/employees", json={
+        "name": "Daily Target API " + suffix,
+        "employee_code": "DAILY-TARGET-" + suffix,
+        "department": "Operations",
+    })
+    assert employee.status_code == 200
+    employee_id = employee.json()["id"]
+    target_date = date.today().isoformat()
+    task_id = None
+    try:
+        created = client.post("/api/tasks", json={
+            "employee_id": employee_id,
+            "task_date": target_date,
+            "title": "Daily employee target sync",
+            "target_qty": "12",
+            "actual_qty": "5",
+        })
+        assert created.status_code == 200, created.text
+        task_id = created.json()["id"]
+
+        target = client.get("/api/employee-targets", params={
+            "employee_id": employee_id, "target_date": target_date,
+        })
+        assert target.status_code == 200
+        assert target.json()["target"] == "12"
+        assert target.json()["target_status"] == "5"
+
+        preview_payload = {
+            "date": target_date,
+            "report_type": "Audit / EOD",
+            "employee_id": employee_id,
+            "options": {
+                "summary": False, "identity": False, "target": True, "target_status": True,
+                "contact": False, "work_status": False, "late_links": False,
+                "missing_proof": False, "tasks": False, "attendance": False,
+            },
+        }
+        preview = client.post("/api/reports/preview", json=preview_payload)
+        assert preview.status_code == 200, preview.text
+        assert "Target: 12" in preview.json()["preview_text"]
+        assert "Target status: 5" in preview.json()["preview_text"]
+
+        updated = client.put(f"/api/tasks/{task_id}", json={
+            "employee_id": employee_id,
+            "task_date": target_date,
+            "title": "Daily employee target sync updated",
+            "target_qty": "20",
+            "actual_qty": "10",
+        })
+        assert updated.status_code == 200, updated.text
+        target = client.get("/api/employee-targets", params={
+            "employee_id": employee_id, "target_date": target_date,
+        })
+        assert target.status_code == 200
+        assert target.json()["target"] == "20"
+        assert target.json()["target_status"] == "10"
+
+        # Older API clients that omit quantity fields must not erase the daily target record.
+        minimal_update = client.put(f"/api/tasks/{task_id}", json={
+            "employee_id": employee_id,
+            "task_date": target_date,
+            "title": "Daily employee target sync legacy client",
+        })
+        assert minimal_update.status_code == 200, minimal_update.text
+        target = client.get("/api/employee-targets", params={
+            "employee_id": employee_id, "target_date": target_date,
+        })
+        assert target.json()["target"] == "20"
+        assert target.json()["target_status"] == "10"
+
+        source = (ROOT / "frontend" / "src" / "TaskManager.jsx").read_text(encoding="utf-8")
+        assert "/employee-targets?employee_id=" in source
+        assert "target.target_status" in source
+    finally:
+        connection = sqlite3.connect(str(desktop_app.DB_PATH))
+        try:
+            if task_id is not None:
+                connection.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+            connection.execute("DELETE FROM employee_targets WHERE employee_id=?", (employee_id,))
+            connection.execute("DELETE FROM employees WHERE id=?", (employee_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
+
 def test_task_bulk_edit_changes_only_selected_fields_and_sets_submission_time():
     import secrets
     import sqlite3

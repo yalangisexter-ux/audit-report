@@ -1,6 +1,6 @@
 # Raw Strength Calisthenics — Employee Audit Manager & Operations OS
 
-## Modern React SPA + FastAPI REST API Interface (v1.3.79)
+## Modern React SPA + FastAPI REST API Interface (v1.3.81)
 
 A React web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a **FastAPI REST API** backend and the shared SQLite data model. Existing PBKDF2 account hashes and installation-scoped sync behavior are preserved. Desktop-to-web feature parity is tracked screen by screen and is not yet complete.
 
@@ -20,8 +20,8 @@ python run_web.py
 - **Responsive Dialog Modals:** Center-anchored with max-height limits and internal scrolling to prevent modals from hiding under taskbars or screen edges.
 - **Silent Background Sync HUD:** Real-time green auto-sync badge without disruptive loading screens or UI blocking.
 - **Web account management:** Admin/Developer accounts can create active users, approve registrations, change roles, activate/deactivate accounts and reset passwords with the desktop PBKDF2 hash format and session invalidation.
-- **Web Print Center:** Report preview and browser print/save-to-PDF are available; full desktop report options, archived-report workflows, and PDF/DOCX/CSV export parity remain in progress.
-- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; the latest verified CI run passed 226 regression tests. Full feature parity remains in progress.
+- **Web Print Center:** Dedicated React workspace supports four report types, consolidated/individual/excluded employee scope, report-specific field toggles, preview, and PDF/DOCX/CSV export APIs. Side-by-side document layout and field verification remain in progress.
+- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; run #1099 passed 270 regression tests plus React, Worker, EXE, installer, legacy-upgrade and customer-database-preservation checks. The daily employee target/report correction added after #1099 is awaiting the next CI run. Full feature parity remains in progress.
 
 ---
 
@@ -60,7 +60,7 @@ The target Windows PC does not need Python installed. Use the setup installer fo
 - Web navigation uses a collapsible left sidebar. The Windows EXE retains its native navigation and controls; the parity ledger records missing web actions.
 - The Home page opens first with signed-in session details and concise instructions and examples for each section.
 - The interface follows the supplied purple dashboard and blue project-management references, with Raw Strength branding and the bundled DejaVu Sans font.
-- Forms use readable controls; web report scope/options and export formats are still being brought to desktop parity.
+- Forms use readable controls; report scope/options and PDF/DOCX/CSV exports are implemented, while side-by-side document layout and field parity remain under verification.
 - The first run against a fresh database requires creating an Admin username, password, and recovery question/answer before login. No default password is provided.
 
 ## Reports
@@ -69,7 +69,8 @@ The target Windows PC does not need Python installed. Use the setup installer fo
 - **Employee Productivity:** separate report for productivity score, calculation explanation, and task progress percentages.
 - **Employee Attendance:** separate attendance report.
 - **Employee Details:** separate employee register.
-- The Windows EXE supports Consolidated and Individual scopes, employee exclusions, selected sections, and PDF/Word/CSV exports. The web client currently has date/type/employee selection, preview, and browser print/save-to-PDF; full scope/options and DOCX/CSV parity remain open.
+- **Daily target/status:** Task Manager loads and saves the selected employee's target and target status by work date, matching the desktop Task Dialog and Audit / EOD report data model.
+- The Windows EXE and web Print Center both support Consolidated and Individual scopes, employee exclusions, selected sections, and PDF/Word/CSV exports. Remaining work is document-layout/field-by-field comparison and browser verification against the EXE.
 - Missing Employee ID, Department, or Role is shown as `N/A`.
 
 ## Data and existing installations

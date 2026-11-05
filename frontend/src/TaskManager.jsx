@@ -26,6 +26,10 @@ function customRowsFrom(task) {
 function TaskFields({value,onChange,employees,customRows,setCustomRows,lockAssignment=false,lockDate=false}) {
   const update = (key,next) => onChange(previous => {
     const updated = {...previous,[key]:next};
+    if (key === 'employee_id' || key === 'task_date') {
+      updated.target_qty = '';
+      updated.actual_qty = '';
+    }
     if (key === 'status' && next === 'Completed') updated.progress = 100;
     if (key === 'progress' && Number(next) === 100) updated.status = 'Completed';
     if (key === 'target_qty' || key === 'actual_qty') {
@@ -78,7 +82,25 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
     if(!trackerMode)return;
     setForm(previous=>({...previous,task_date:filters.date,employee_id:filters.employee||''}));
   },[trackerMode,filters.date,filters.employee]);
-  const [selected,setSelected] = useState([]);
+  useEffect(()=>{
+    const activeForm = editing ? editForm : form;
+    const employeeId = Number(activeForm.employee_id);
+    const taskDate = String(activeForm.task_date||'').trim();
+    if(!employeeId||!taskDate)return;
+    let active = true;
+    apiFetch('/employee-targets?employee_id='+encodeURIComponent(employeeId)+'&target_date='+encodeURIComponent(taskDate))
+      .then(target=>{
+        if(!active)return;
+        const setActiveForm = editing ? setEditForm : setForm;
+        setActiveForm(previous=>{
+          if(Number(previous.employee_id)!==employeeId||String(previous.task_date||'')!==taskDate)return previous;
+          return {...previous,target_qty:previous.target_qty||target.target||'',actual_qty:previous.actual_qty||target.target_status||''};
+        });
+      })
+      .catch(()=>{});
+    return ()=>{active=false;};
+  },[editing,form.employee_id,form.task_date,editForm.employee_id,editForm.task_date]);
+  const [selected,setSelected = useState([]);
   const [bulkOpen,setBulkOpen] = useState(false);
   const [bulk,setBulk] = useState({
     title:{apply:false,value:''},status:{apply:false,value:'In progress'},priority:{apply:false,value:'Normal'},custom_values:{apply:false,value:''},
