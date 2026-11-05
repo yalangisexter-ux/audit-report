@@ -2126,6 +2126,10 @@ def test_store_directory_web_ui_exposes_workbook_import_regional_dashboard_and_e
     assert "disabled={!canAdminEmployees||!storeWorkbook||storeImportBusy}" in source
     assert "disabled={!canAdminEmployees||!dashboardWorkbook||dashboardImportBusy}" in source
     assert "Existing customer IDs, notes, follow-ups and records are merged, not deleted or replaced." in source
+    assert "openStorePrintPreview" in source
+    assert "openRegionalPrintPreview" in source
+    assert "regionalTerritoryFilter" in source
+    assert "Print Preview" in source
 
 
 def test_store_directory_workbook_import_regional_dashboard_and_exports_are_safe(monkeypatch):
