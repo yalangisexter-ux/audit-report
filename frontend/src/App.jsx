@@ -295,7 +295,7 @@ export default function App() {
         </>}
         {tab==='tasks'&&<TaskManager tasks={data.tasks} employees={data.employees} user={user} apiFetch={apiFetch} onReload={()=>load()} notify={notify}/>}
         {tab==='tracker'&&<TaskManager tasks={data.tasks} employees={data.employees} user={user} apiFetch={apiFetch} onReload={()=>load()} notify={notify} mode="tracker"/>}
-        {tab==='settings'&&<Panel title="User account management">
+        {tab==='settings'&&canAdminEmployees&&<Panel title="User account management">
           <p className="mb-3 text-sm text-slate-400">Create active accounts, approve registrations, assign roles and reset passwords. Passwords are stored using the same PBKDF2 hashing as the Windows application.</p>
           <form className="mb-4 grid gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={createManagedAccount}>
             <label className="text-xs text-slate-400">Username<input className={field+' mt-1'} value={newAccount.username} onChange={e=>setNewAccount(p=>({...p,username:e.target.value}))} maxLength={64} required/></label>
