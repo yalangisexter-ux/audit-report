@@ -1329,8 +1329,22 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
         "id": 952, "username": "web-db-admin", "display_name": "Web DB Admin", "role": "Admin"
     }
     monkeypatch.setattr(desktop_app, "EXPORT_DIR", tmp_path)
+    previous_sessions = dict(api_server.ACTIVE_SESSIONS)
     staff_headers = {"Authorization": f"Bearer {staff_token}"}
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    import sys
+    from types import SimpleNamespace
+    # Keep this API test isolated from the production boot shim while exercising
+    # the restore endpoint's existing post-import normalization hook.
+    monkeypatch.setitem(
+        sys.modules,
+        "web_auth_shim",
+        SimpleNamespace(_normalize_web_login_accounts=lambda _path: None),
+    )
+    database_path = Path(desktop_app.DB_PATH)
+    preimport_backups = set(database_path.parent.glob(
+        database_path.stem + ".before-import-*" + database_path.suffix
+    ))
     try:
         assert client.get("/api/web-database/export").status_code == 401
         backup = client.get("/api/web-database/export", headers=staff_headers)
@@ -1338,10 +1352,20 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
         assert backup.content.startswith(b"SQLite format 3\x00")
         assert "no-store" in backup.headers.get("cache-control", "")
 
+        db = sqlite3.connect(str(database_path))
+        try:
+            accounts_before = db.execute(
+                "SELECT id, username, password_salt, password_hash FROM auth_users ORDER BY id"
+            ).fetchall()
+            employees_before = db.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
+            tasks_before = db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+        finally:
+            db.close()
+
         denied = client.post(
             "/api/web-database/import",
             headers=staff_headers,
-            files={"file": ("customer.db", b"not a database", "application/octet-stream")},
+            files={"file": ("customer.db", backup.content, "application/octet-stream")},
         )
         assert denied.status_code == 403
 
@@ -1351,6 +1375,34 @@ def test_web_database_backup_is_authenticated_and_restore_is_admin_only(monkeypa
             files={"file": ("customer.db", b"not a database", "application/octet-stream")},
         )
         assert invalid.status_code == 400
+
+        restored = client.post(
+            "/api/web-database/import",
+            headers=admin_headers,
+            files={"file": ("customer.db", backup.content, "application/octet-stream")},
+        )
+        assert restored.status_code == 200
+        assert restored.json()["success"] is True
+        assert restored.json()["counts"]["auth_users"] == len(accounts_before)
+        assert not api_server.ACTIVE_SESSIONS.get(admin_token)
+
+        db = sqlite3.connect(str(database_path))
+        try:
+            accounts_after = db.execute(
+                "SELECT id, username, password_salt, password_hash FROM auth_users ORDER BY id"
+            ).fetchall()
+            employees_after = db.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
+            tasks_after = db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+            assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        finally:
+            db.close()
+        assert accounts_after == accounts_before
+        assert employees_after == employees_before
+        assert tasks_after == tasks_before
     finally:
-        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
-        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+        api_server.ACTIVE_SESSIONS.clear()
+        api_server.ACTIVE_SESSIONS.update(previous_sessions)
+        for backup_path in set(database_path.parent.glob(
+            database_path.stem + ".before-import-*" + database_path.suffix
+        )) - preimport_backups:
+            backup_path.unlink(missing_ok=True)
