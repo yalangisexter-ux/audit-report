@@ -2044,11 +2044,26 @@ def export_report(
             except Exception:
                 pass
 
+        report_titles = {
+            "Audit / EOD": "EMPLOYEE AUDIT / END-OF-DAY REPORT",
+            "Employee Attendance": "EMPLOYEE ATTENDANCE REPORT",
+            "Employee Details": "EMPLOYEE DETAILS REGISTER",
+            "Employee Productivity": "EMPLOYEE PRODUCTIVITY REPORT",
+        }
+        if req.employee_id:
+            scope_row = conn.execute("SELECT name FROM employees WHERE id=?", (req.employee_id,)).fetchone()
+            scope_label = str(scope_row["name"] or "Selected employee") if scope_row else "Selected employee"
+        elif req.exclude_employee_id:
+            excluded_row = conn.execute("SELECT name FROM employees WHERE id=?", (req.exclude_employee_id,)).fetchone()
+            excluded_name = str(excluded_row["name"] or req.exclude_employee_id) if excluded_row else str(req.exclude_employee_id)
+            scope_label = "All employees except " + excluded_name
+        else:
+            scope_label = "All employees"
+
         story.extend([
-            Paragraph(escape(str(req.report_type or "Report").upper()), styles["RSWebTitle"]),
+            Paragraph(escape(report_titles.get(req.report_type or "", "EMPLOYEE AUDIT / END-OF-DAY REPORT")), styles["RSWebTitle"]),
             Paragraph(
-                f"Report date: {escape(str(req.date))} &nbsp;&nbsp; | &nbsp;&nbsp; "
-                f"Scope: {escape('Individual employee' if req.employee_id else ('Consolidated, excluding employee ' + str(req.exclude_employee_id) if req.exclude_employee_id else 'All employees'))}",
+                f"Report date: {escape(str(req.date))} &nbsp;&nbsp; | &nbsp;&nbsp; Scope: {escape(scope_label)}",
                 styles["RSWebSubtitle"],
             ),
             HRFlowable(width="100%", thickness=1.2, color=cyan, spaceAfter=9),
