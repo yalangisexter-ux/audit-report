@@ -2046,3 +2046,36 @@ def test_store_directory_scrape_uses_managed_connection_for_encrypted_sync(monke
     finally:
         connection.close()
         web_parity_routes._jobs.pop(job_id, None)
+
+def test_customer_prospect_api_keyset_pagination_returns_every_row_once():
+    import web_ops_routes
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute(
+            "CREATE TABLE customer_prospects (id INTEGER PRIMARY KEY, business_name TEXT, state TEXT)"
+        )
+        connection.executemany(
+            "INSERT INTO customer_prospects(id,business_name,state) VALUES(?,?,?)",
+            [(record_id, f"Pagination Store {record_id}", "Haryana") for record_id in range(1, 2506)],
+        )
+        connection.commit()
+
+        collected = []
+        before_id = None
+        while True:
+            page = web_ops_routes.list_customer_prospects(
+                state="Haryana", limit=1000, before_id=before_id,
+                conn=connection, user={"username": "pagination-test", "role": "Staff"},
+            )
+            collected.extend(int(row["id"]) for row in page)
+            if len(page) < 1000:
+                break
+            before_id = int(page[-1]["id"])
+
+        assert len(collected) == 2505
+        assert collected == list(range(2505, 0, -1))
+        assert len(set(collected)) == 2505
+    finally:
+        connection.close()

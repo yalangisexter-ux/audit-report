@@ -494,6 +494,7 @@ def list_customer_prospects(
     state: Optional[str] = None,
     q: Optional[str] = None,
     limit: int = Query(200, ge=1, le=1000),
+    before_id: Optional[int] = Query(None, ge=1),
     conn: sqlite3.Connection = Depends(api.get_db),
     user: dict = Depends(api.get_current_user),
 ):
@@ -513,6 +514,9 @@ def list_customer_prospects(
             f"IFNULL({field},'') LIKE ?" for field in search_fields
         ) + ")"
         params.extend([term] * len(search_fields))
+    if before_id is not None:
+        sql += " AND id < ?"
+        params.append(before_id)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
     return _rows(conn, sql, tuple(params))
