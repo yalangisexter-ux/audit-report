@@ -87,11 +87,15 @@ var
 	OutputPath: String;
 	ResultCode: Integer;
 	OutputLines: TArrayOfString;
+	Resolved: Boolean;
 begin
+	Resolved := False;
 	Result := Trim(ExpandConstant('{param:DATA_DIR|}'));
 	if Result <> '' then
 		Exit;
 
+	// Legacy installers may omit DATA_DIR. Discover the original customer profile, including after EXE uninstall.
+	// Never use the elevated administrator's LocalAppData for the customer database.
 	// Very old clients do not pass DATA_DIR. Resolve the interactive user's
 	// actual profile instead of using the elevated administrator's LOCALAPPDATA.
 	ScriptPath := ExpandConstant('{tmp}\resolve_customer_data_dir.ps1');
@@ -101,14 +105,18 @@ begin
 	if Exec(RecoveryPowerShellPath, '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) + ' -OutputFile ' + AddQuotes(OutputPath), '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) and LoadStringsFromFile(OutputPath, OutputLines) and (GetArrayLength(OutputLines) > 0) then
 	begin
 		Result := Trim(OutputLines[0]);
-		if (Result <> '') and (Result <> '__RSC_NO_EXISTING_PROFILE__') then
-			Exit;
 		if Result = '__RSC_NO_EXISTING_PROFILE__' then
+		begin
 			Result := '';
-	end
-	else
-		Result := '__RSC_RESOLUTION_FAILED__';
-	if Result = '' then
+			Resolved := True;
+		end
+		else if Result <> '' then
+		begin
+			Resolved := True;
+			Exit;
+		end;
+	end;
+	if not Resolved then
 		Result := '__RSC_RESOLUTION_FAILED__';
 
 	// Never fall back to the elevated installer's LocalAppData.
