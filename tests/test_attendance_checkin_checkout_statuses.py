@@ -354,3 +354,61 @@ def test_legacy_required_date_and_status_columns_accept_new_attendance(monkeypat
         if window is not None:
             window.close()
         db.conn.close()
+
+
+def test_bulk_attendance_transaction_uses_legacy_safe_schema_and_commits_once(monkeypatch, tmp_path):
+    import sqlite3
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "legacy-bulk-attendance.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+
+    legacy = sqlite3.connect(tmp_path / "legacy-bulk-attendance.db")
+    legacy.execute("""
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            check_in TEXT NOT NULL DEFAULT '',
+            check_out TEXT NOT NULL DEFAULT '',
+            remarks TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )
+    """)
+    legacy.commit()
+    legacy.close()
+
+    db = app.Database()
+    try:
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        employee_ids = [
+            db.conn.execute(
+                "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
+                (f"Bulk Legacy {index}", date.today().isoformat(), 1, stamp),
+            ).lastrowid
+            for index in range(2)
+        ]
+
+        db.conn.execute("BEGIN")
+        for employee_id, status in zip(employee_ids, ("Present", "Leave")):
+            db.upsert_attendance(
+                employee_id,
+                date.today().isoformat(),
+                status=status,
+                commit=False,
+            )
+        assert db.conn.in_transaction
+        db.conn.commit()
+        assert not db.conn.in_transaction
+
+        saved = db.conn.execute(
+            "SELECT employee_id,date,work_date,status,attendance_status "
+            "FROM attendance ORDER BY employee_id"
+        ).fetchall()
+        assert [tuple(row) for row in saved] == [
+            (employee_ids[0], date.today().isoformat(), date.today().isoformat(), "Present", "Present"),
+            (employee_ids[1], date.today().isoformat(), date.today().isoformat(), "Leave", "Leave"),
+        ]
+    finally:
+        db.conn.close()
