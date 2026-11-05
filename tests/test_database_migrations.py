@@ -89,3 +89,63 @@ def test_tracker_counts_are_mutually_exclusive():
     counted = completed + blocked + in_progress + pending
     non_cancelled = sum(1 for s in statuses if s != "Cancelled")
     assert counted == non_cancelled
+
+
+def test_admin_and_admin_are_preserved_as_distinct_case_sensitive_accounts(tmp_path, monkeypatch):
+    db_path = tmp_path / "case_sensitive_auth.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("""
+        CREATE TABLE auth_users(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          display_name TEXT NOT NULL DEFAULT '',
+          role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
+          password_salt TEXT NOT NULL,
+          password_hash TEXT NOT NULL,
+          security_question TEXT NOT NULL DEFAULT '',
+          answer_salt TEXT NOT NULL DEFAULT '',
+          answer_hash TEXT NOT NULL DEFAULT '',
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        INSERT INTO auth_users(
+          id, username, display_name, role, password_salt, password_hash,
+          security_question, answer_salt, answer_hash, active, created_at, updated_at
+        ) VALUES(41, 'Admin', 'Customer Administrator', 'Admin', 'customer-salt',
+                 'customer-hash', '', '', '', 1, 'created', 'updated')
+    """)
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(app, "DB_PATH", str(db_path))
+    database = app.Database()
+    try:
+        customer = database.conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE BINARY", ("Admin",)
+        ).fetchone()
+        assert customer is not None
+        assert customer["id"] == 41
+        assert customer["role"] == "Admin"
+        assert customer["password_salt"] == "customer-salt"
+        assert customer["password_hash"] == "customer-hash"
+
+        database.conn.execute("""
+            INSERT INTO auth_users(
+              username, display_name, role, password_salt, password_hash,
+              security_question, answer_salt, answer_hash, active, created_at, updated_at
+            ) VALUES('admin', 'Developer', 'Developer', 'developer-salt',
+                     'developer-hash', '', '', '', 1, 'created', 'updated')
+        """)
+        database.conn.commit()
+        assert database.conn.execute(
+            "SELECT COUNT(*) FROM auth_users WHERE username IN ('Admin','admin') COLLATE BINARY"
+        ).fetchone()[0] == 2
+        schema = database.conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
+        ).fetchone()[0]
+        assert "COLLATE BINARY" in schema.upper()
+    finally:
+        database.conn.close()
