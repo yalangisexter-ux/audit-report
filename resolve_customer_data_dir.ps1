@@ -16,7 +16,7 @@ function Write-ResolvedDirectory([string]$Directory) {
 function Get-ProfileLocalAppData([string]$ProfilePath, [string]$Sid, [string]$UserHivesRoot = "Registry::HKEY_USERS") {
     $localAppData = Join-Path $ProfilePath "AppData\Local"
     if (-not [string]::IsNullOrWhiteSpace($Sid)) {
-        $userShellFolders = $UserHivesRoot + "\\" + $Sid + "\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        $userShellFolders = $UserHivesRoot + "\" + $Sid + "\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
         if (Test-Path -LiteralPath $userShellFolders) {
             $shellFolders = Get-ItemProperty -LiteralPath $userShellFolders -ErrorAction SilentlyContinue
             $configuredPath = [string]$shellFolders."Local AppData"
@@ -45,7 +45,7 @@ function Get-RegisteredProfileDataDirectories {
             $profilePath = [Environment]::ExpandEnvironmentVariables([string]$profile.ProfileImagePath)
             if ([string]::IsNullOrWhiteSpace($profilePath) -or -not (Test-Path -LiteralPath $profilePath -PathType Container)) { continue }
 
-            $hivePath = $UserHivesRoot + "\\" + $sid
+            $hivePath = $UserHivesRoot + "\" + $sid
             if (-not (Test-Path -LiteralPath $hivePath)) {
                 $ntUserFile = Join-Path $profilePath "NTUSER.DAT"
                 if (Test-Path -LiteralPath $ntUserFile -PathType Leaf) {
