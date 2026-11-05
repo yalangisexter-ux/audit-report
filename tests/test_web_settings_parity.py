@@ -384,3 +384,62 @@ def test_web_appearance_controls_and_wallpaper_contrast_styles_render():
     ):
         assert f'data-rsc-wallpaper="{style}"' in css or style in web
     assert "opaque workspace cards keep employee data readable" in css
+
+
+def test_clock_mode_setting_is_shared_and_available_to_staff(tmp_path):
+    path = tmp_path / "clock-mode.db"
+    _create_settings_database(path)
+    client, connections = _client_for_database(
+        path, {"id": 12, "username": "Staff", "role": "Staff"}, track_commits=True
+    )
+    try:
+        default = client.get("/api/settings/clock-mode")
+        assert default.status_code == 200
+        assert default.json() == {"mode": "digital"}
+
+        saved = client.put("/api/settings/clock-mode", json={"mode": "Analog"})
+        assert saved.status_code == 200, saved.text
+        assert saved.json() == {"success": True, "mode": "analog"}
+        assert connections[-1].commit_calls == 1
+
+        conn = sqlite3.connect(path)
+        try:
+            assert conn.execute(
+                "SELECT value FROM settings WHERE key='clock_mode'"
+            ).fetchone() == ("analog",)
+        finally:
+            conn.close()
+
+        invalid = client.put("/api/settings/clock-mode", json={"mode": "binary"})
+        assert invalid.status_code == 422
+    finally:
+        _clear_overrides()
+
+
+def test_clock_mode_setting_requires_authentication(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    path = tmp_path / "clock-mode-auth.db"
+    _create_settings_database(path)
+    client, _connections = _client_for_database(path)
+    try:
+        assert client.get("/api/settings/clock-mode").status_code == 401
+        assert client.put(
+            "/api/settings/clock-mode", json={"mode": "analog"}
+        ).status_code == 401
+    finally:
+        _clear_overrides()
+
+
+def test_web_clock_controls_match_desktop_digital_analog_setting():
+    root = Path(__file__).resolve().parents[1]
+    desktop = (root / "app.py").read_text(encoding="utf-8")
+    web = (root / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+
+    assert 'self.clock_mode_combo.addItems(["Digital", "Analog"])' in desktop
+    assert 'self.db.get_setting("clock_mode", "digital")' in desktop
+    assert 'className="block space-y-2 text-xs font-semibold text-slate-400">Clock display mode' in web
+    assert 'aria-label="Clock display mode"' in web
+    assert 'function AnalogClock({ now })' in web
+    assert '/settings/clock-mode' in web
+    assert 'toLocaleTimeString(undefined,{hour:' in web
+    assert 'saveClockMode(clockMode===\'digital\'?\'analog\':\'digital\')' in web

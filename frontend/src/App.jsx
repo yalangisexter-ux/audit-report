@@ -62,6 +62,28 @@ const deleteCustomWallpaper = async () => {
   return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite');tx.objectStore('assets').delete('custom-wallpaper');tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>{db.close();reject(tx.error)};tx.onabort=()=>{db.close();reject(tx.error)};});
 };
 
+function AnalogClock({ now }) {
+  const seconds = now.getSeconds() + now.getMilliseconds() / 1000;
+  const minuteAngle = now.getMinutes() * 6 + seconds * 0.1;
+  const hourAngle = (now.getHours() % 12) * 30 + minuteAngle / 12;
+  const secondAngle = seconds * 6;
+  return <svg viewBox="0 0 64 64" width="44" height="44" role="img"
+    aria-label={"Analog clock " + now.toLocaleTimeString()}
+    className="shrink-0 text-cyan-300">
+    <circle cx="32" cy="32" r="29" fill="rgba(2,6,23,.82)" stroke="currentColor" strokeWidth="2"/>
+    {Array.from({length:12},(_,index)=><line key={index} x1="32" y1="5" x2="32" y2={index%3===0?10:8}
+      stroke="currentColor" strokeWidth={index%3===0?2:1} strokeLinecap="round"
+      transform={"rotate("+(index*30)+" 32 32)"}/>)}
+    <line x1="32" y1="32" x2="32" y2="20" stroke="#e2e8f0" strokeWidth="3.2" strokeLinecap="round"
+      transform={"rotate("+hourAngle+" 32 32)"}/>
+    <line x1="32" y1="32" x2="32" y2="11" stroke="#67e8f9" strokeWidth="2.2" strokeLinecap="round"
+      transform={"rotate("+minuteAngle+" 32 32)"}/>
+    <line x1="32" y1="35" x2="32" y2="8" stroke="#f59e0b" strokeWidth="1.1" strokeLinecap="round"
+      transform={"rotate("+secondAngle+" 32 32)"}/>
+    <circle cx="32" cy="32" r="2.6" fill="#f59e0b"/>
+  </svg>;
+}
+
 export default function App() {
   const [tab,setTab]=useState('home'),[sidebar,setSidebar]=useState(true);
   const [token,setToken]=useState(()=>localStorage.getItem('rsc_auth_token')||'');
@@ -110,6 +132,7 @@ export default function App() {
   const [workingWeekdays,setWorkingWeekdays]=useState([0,1,2,3,4,6]),[workingWeekdaysBusy,setWorkingWeekdaysBusy]=useState(false);
   const [theme,setTheme]=useState(()=>{const saved=localStorage.getItem('rsc_web_theme')||'night';return APPEARANCE_THEMES.includes(saved)?saved:'night';});
   const [wallpaper,setWallpaper]=useState(()=>{const saved=localStorage.getItem('rsc_web_wallpaper')||'Galaxy';return WALLPAPER_STYLES.includes(saved)?saved:'Galaxy';});
+  const [clockMode,setClockMode]=useState('digital'),[clockNow,setClockNow]=useState(()=>new Date()),[clockModeBusy,setClockModeBusy]=useState(false);
   const [customWallpaperUrl,setCustomWallpaperUrl]=useState('');
   const [customWallpaperName,setCustomWallpaperName]=useState(()=>localStorage.getItem('rsc_web_custom_wallpaper_name')||'');
   const [appearanceBusy,setAppearanceBusy]=useState(false);
@@ -166,6 +189,18 @@ export default function App() {
   useEffect(()=>{(async()=>{if(!token){setChecked(true);return;}try{const r=await fetch(API+'/auth/me',{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw 0;const j=await r.json();setUser(j.user);setChecked(true);}catch{localStorage.removeItem('rsc_auth_token');setToken('');setUser(null);setChecked(true);}})()},[]);
   useEffect(()=>{if(user&&token)load()},[user,token]);
   useEffect(()=>{
+    const timer=window.setInterval(()=>setClockNow(new Date()),1000);
+    return ()=>window.clearInterval(timer);
+  },[]);
+  useEffect(()=>{
+    if(!user||!token)return;
+    let active=true;
+    apiFetch('/settings/clock-mode').then(result=>{
+      if(active)setClockMode(result.mode==='analog'?'analog':'digital');
+    }).catch(()=>{});
+    return ()=>{active=false;};
+  },[user,token]);
+  useEffect(()=>{
     document.documentElement.dataset.rscTheme=theme;
     document.body.dataset.rscTheme=theme;
     document.body.dataset.rscWallpaper=wallpaper;
@@ -186,6 +221,18 @@ export default function App() {
   useEffect(()=>{if(user&&token&&tab==='customers')load()},[tab,user,token]);
   useEffect(()=>{if(tab==='settings'&&user&&['admin','developer'].includes(String(user.role||'').toLowerCase())){Promise.all([apiFetch('/auth/users'),apiFetch('/settings/working-weekdays')]).then(([accounts,working])=>{setAuthUsers(accounts);setWorkingWeekdays(working.weekdays||[0,1,2,3,4,6])}).catch(e=>notify(e.message))}},[tab,user,token]);
   const notify=(s)=>{setNotice(s);setTimeout(()=>setNotice(''),3500)};
+  const saveClockMode=async mode=>{
+    const normalized=String(mode||'').trim().toLowerCase();
+    if(!['digital','analog'].includes(normalized)||clockModeBusy)return;
+    const previous=clockMode;
+    setClockModeBusy(true);
+    setClockMode(normalized);
+    try{
+      const result=await apiFetch('/settings/clock-mode',{method:'PUT',body:JSON.stringify({mode:normalized})});
+      setClockMode(result.mode==='analog'?'analog':'digital');
+    }catch(error){setClockMode(previous);notify(error.message||'Could not save clock mode.');}
+    finally{setClockModeBusy(false);}
+  };
   const uploadCustomWallpaper=async event=>{
     const file=event.target.files?.[0];event.target.value='';
     if(!file)return;
@@ -468,7 +515,9 @@ export default function App() {
       <div className="border-t border-white/10 p-4"><p className="truncate text-sm font-bold">{user.display_name||user.username}</p><p className="text-xs text-slate-500">{user.role}</p><button onClick={logout} className="mt-3 flex items-center gap-2 text-xs text-rose-300"><LogOut size={14}/> Sign out</button></div>
     </aside>
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/50 px-4"><div className="flex min-w-0 items-center gap-3"><button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden"><Menu size={18}/></button><div><h1 className="truncate text-sm font-black uppercase tracking-wide">{heading}</h1><p className="text-[10px] text-slate-500">Employee Audit Manager · Operations</p></div></div><div className="flex items-center gap-2"><select aria-label="Application theme" className="hidden lg:block max-w-28 rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-xs text-slate-200" value={theme} onChange={e=>setTheme(e.target.value)}>{APPEARANCE_THEMES.map(value=><option key={value} value={value}>{value[0].toUpperCase()+value.slice(1)}</option>)}</select><select aria-label="Live wallpaper" className="hidden xl:block max-w-40 rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-xs text-slate-200" value={wallpaper} onChange={e=>setWallpaper(e.target.value)}>{WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}</select><span className="hidden text-xs text-cyan-300 sm:inline">{new Date().toLocaleString()}</span><button onClick={()=>load()} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/50 px-4"><div className="flex min-w-0 items-center gap-3"><button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden"><Menu size={18}/></button><div><h1 className="truncate text-sm font-black uppercase tracking-wide">{heading}</h1><p className="text-[10px] text-slate-500">Employee Audit Manager · Operations</p></div></div><div className="flex items-center gap-2"><select aria-label="Application theme" className="hidden lg:block max-w-28 rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-xs text-slate-200" value={theme} onChange={e=>setTheme(e.target.value)}>{APPEARANCE_THEMES.map(value=><option key={value} value={value}>{value[0].toUpperCase()+value.slice(1)}</option>)}</select><select aria-label="Live wallpaper" className="hidden xl:block max-w-40 rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-xs text-slate-200" value={wallpaper} onChange={e=>setWallpaper(e.target.value)}>{WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}</select><button type="button" disabled={clockModeBusy} aria-label={"Switch to "+(clockMode==='digital'?'analog':'digital')+" clock"} title={"Switch to "+(clockMode==='digital'?'Analog':'Digital')+" clock"} onClick={()=>saveClockMode(clockMode==='digital'?'analog':'digital')} className="hidden min-w-[108px] items-center justify-center rounded-lg border border-white/10 px-2 py-1 text-cyan-300 hover:border-cyan-400/40 disabled:opacity-50 sm:flex">
+            {clockMode==='digital'?<span className="flex flex-col items-end text-[10px] leading-tight"><span>{clockNow.toLocaleDateString(undefined,{weekday:'short',day:'2-digit',month:'short'})}</span><span className="font-semibold tabular-nums">{clockNow.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}</span></span>:<span className="flex items-center gap-2"><AnalogClock now={clockNow}/><span className="text-[10px]">Analog</span></span>}
+          </button><button onClick={()=>load()} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
         {(tab==='home'||tab==='dashboard')&&<><div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[['Employees',data.dashboard?.kpis?.total_employees??data.employees.length],['Present today',data.dashboard?.kpis?.present_today??0],['Open tasks',data.dashboard?.kpis?.open_tasks??0],['Completed',data.dashboard?.kpis?.completed_tasks??0]].map(([l,v])=><div className={card} key={l}><p className="text-xs text-slate-400">{l}</p><p className="mt-2 text-3xl font-black text-cyan-300">{v}</p></div>)}</div><Panel title="Today's work"><Rows items={data.dashboard?.today_tasks||data.tasks.slice(0,8)} keys={['title','employee_name','status','task_date','priority']}/></Panel><Panel title="Quick actions"><div className="flex flex-wrap gap-2">{[['employees','Add employee'],['tasks','Create task'],['attendance','Mark attendance'],['reports','Generate report']].map(([t,l])=><button key={t} onClick={()=>setTab(t)} className={btn}>{l}</button>)}</div></Panel></>}
         {tab==='employees'&&<>
@@ -551,13 +600,18 @@ export default function App() {
             <label className="block space-y-2 text-xs font-semibold text-slate-400">Live wallpaper
               <select className={field} value={wallpaper} onChange={e=>setWallpaper(e.target.value)}>{WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}</select>
             </label>
+            <label className="block space-y-2 text-xs font-semibold text-slate-400">Clock display mode
+              <select aria-label="Clock display mode" className={field} value={clockMode} disabled={clockModeBusy} onChange={e=>saveClockMode(e.target.value)}>
+                <option value="digital">Digital</option><option value="analog">Analog</option>
+              </select>
+            </label>
             <label className="block space-y-2 text-xs font-semibold text-slate-400">Custom wallpaper · PNG, JPG, WEBP or BMP · 15 MB max
               <input className={field} type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" disabled={appearanceBusy} onChange={uploadCustomWallpaper}/>
               <span className="block font-normal text-slate-500">{customWallpaperName?'Saved in this browser: '+customWallpaperName:'No custom image selected.'}</span>
             </label>
             <div className="flex flex-wrap items-end gap-2">
               <button type="button" className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={appearanceBusy} onClick={resetCustomWallpaper}>{appearanceBusy?'Saving…':'Reset wallpaper'}</button>
-              <span className="text-xs text-slate-500">Changes apply immediately. Appearance is stored locally in this browser and is not written to shared employee records or cloud snapshots.</span>
+              <span className="text-xs text-slate-500">Theme and wallpaper remain local to this browser. Clock display mode is saved to the shared clock_mode setting, matching the Windows desktop preference across signed-in devices.</span>
             </div>
           </div>
         </Panel>}

@@ -44,6 +44,10 @@ def _read_working_weekdays(conn):
     return sorted(api.desktop_app.working_weekdays_from_connection(conn))
 
 
+class ClockModeModel(BaseModel):
+    mode: str
+
+
 @api.app.get("/api/business/orders")
 def list_business_orders(
     conn: sqlite3.Connection = Depends(api.get_db),
@@ -790,6 +794,36 @@ def save_working_weekdays(
     api._record_account_audit(conn, "Working week changed", serialized)
     conn.commit()
     return {"success": True, "weekdays": weekdays, "sunday_required": True}
+
+
+@api.app.get("/api/settings/clock-mode")
+def get_clock_mode(
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    """Return the shared Digital/Analog preference used by the Windows client."""
+    row = conn.execute("SELECT value FROM settings WHERE key='clock_mode'").fetchone()
+    mode = str(row[0] if row else "digital").strip().lower()
+    return {"mode": mode if mode in {"digital", "analog"} else "digital"}
+
+
+@api.app.put("/api/settings/clock-mode")
+def save_clock_mode(
+    body: ClockModeModel,
+    conn: sqlite3.Connection = Depends(api.get_db),
+    user: dict = Depends(api.get_current_user),
+):
+    """Persist the shared clock mode without exposing the generic settings API."""
+    mode = str(body.mode or "").strip().lower()
+    if mode not in {"digital", "analog"}:
+        raise HTTPException(status_code=422, detail="Clock mode must be Digital or Analog.")
+    conn.execute(
+        "INSERT INTO settings(key, value) VALUES('clock_mode', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (mode,),
+    )
+    conn.commit()
+    return {"success": True, "mode": mode}
 
 
 @api.app.get("/api/attendance/summary")
