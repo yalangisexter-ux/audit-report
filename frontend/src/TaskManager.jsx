@@ -100,7 +100,7 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
       .catch(()=>{});
     return ()=>{active=false;};
   },[editing,form.employee_id,form.task_date,editForm.employee_id,editForm.task_date]);
-  const [selected,setSelected = useState([]);
+  const [selected,setSelected] = useState([]);
   const [bulkOpen,setBulkOpen] = useState(false);
   const [bulk,setBulk] = useState({
     title:{apply:false,value:''},status:{apply:false,value:'In progress'},priority:{apply:false,value:'Normal'},custom_values:{apply:false,value:''},

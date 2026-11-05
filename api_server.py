@@ -1083,11 +1083,16 @@ def update_task(
     conn: sqlite3.Connection = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    existing = conn.execute("SELECT submitted_at FROM tasks WHERE id=?", (task_id,)).fetchone()
+    existing = conn.execute("SELECT submitted_at,target_qty,actual_qty FROM tasks WHERE id=?", (task_id,)).fetchone()
     if not existing:
         raise HTTPException(status_code=404, detail="Task not found.")
     now = desktop_app.now_text()
     values = _validate_task_fields(task)
+    fields_set = set(getattr(task, "model_fields_set", getattr(task, "__fields_set__", set())) or ())
+    if "target_qty" not in fields_set:
+        values["target_qty"] = existing["target_qty"] or ""
+    if "actual_qty" not in fields_set:
+        values["actual_qty"] = existing["actual_qty"] or ""
     submitted_at = (existing["submitted_at"] or "").strip()
     if not submitted_at and values["status"] in ("Submitted", "Completed"):
         submitted_at = now

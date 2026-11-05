@@ -1140,13 +1140,18 @@ def test_web_task_create_edit_round_trips_employee_daily_target_to_print_center(
         assert target.json()["target"] == "20"
         assert target.json()["target_status"] == "10"
 
-        # Older API clients that omit quantity fields must not erase the daily target record.
+        # Older API clients that omit quantity fields must not erase the task or daily target record.
         minimal_update = client.put(f"/api/tasks/{task_id}", json={
             "employee_id": employee_id,
             "task_date": target_date,
             "title": "Daily employee target sync legacy client",
         })
         assert minimal_update.status_code == 200, minimal_update.text
+        task_rows = client.get(f"/api/tasks?employee_id={employee_id}&task_date={target_date}")
+        assert task_rows.status_code == 200
+        saved_task = next(row for row in task_rows.json() if row["id"] == task_id)
+        assert saved_task["target_qty"] == "20"
+        assert saved_task["actual_qty"] == "10"
         target = client.get("/api/employee-targets", params={
             "employee_id": employee_id, "target_date": target_date,
         })

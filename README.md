@@ -21,7 +21,7 @@ python run_web.py
 - **Silent Background Sync HUD:** Real-time green auto-sync badge without disruptive loading screens or UI blocking.
 - **Web account management:** Admin/Developer accounts can create active users, approve registrations, change roles, activate/deactivate accounts and reset passwords with the desktop PBKDF2 hash format and session invalidation.
 - **Web Print Center:** Dedicated React workspace supports four report types, consolidated/individual/excluded employee scope, report-specific field toggles, preview, and PDF/DOCX/CSV export APIs. Side-by-side document layout and field verification remain in progress.
-- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; run #1099 passed 270 regression tests plus React, Worker, EXE, installer, legacy-upgrade and customer-database-preservation checks. The daily employee target/report correction added after #1099 is awaiting the next CI run. Full feature parity remains in progress.
+- **Compatibility and regression:** The web and Windows apps use the same SQLite data model and preserve existing PBKDF2 account hashes; run #1099 passed 270 regression tests plus React, Worker, EXE, installer, legacy-upgrade and customer-database-preservation checks. Run #1100 exposed a missing JSX closing bracket in the new Task Manager target loader before Python tests; the follow-up fixes it and preserves task quantity fields for older clients that omit them. Run #1101 is pending. Full feature parity remains in progress.
 
 ---
 
