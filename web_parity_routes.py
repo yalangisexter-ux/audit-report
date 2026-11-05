@@ -762,3 +762,54 @@ def export_customer_regional_dashboard(
         [126, 102, 70, 80, 70, 70, 100, 70],
         totals_row=total_row,
     )
+
+@api.app.post("/api/settings/google-sheets-sync")
+def sync_google_sheets_master(
+    payload: dict,
+    conn=Depends(api.get_db),
+    user=Depends(api.get_current_user),
+):
+    """Pull the desktop's public master workbook using its additive merge routine.
+
+    The exact lowercase developer identity must prove the existing developer
+    password for each explicit sync. The customer Admin identity does not.
+    This endpoint never uploads local data to Google Sheets and never deletes
+    local records; the existing sync module performs the desktop-compatible
+    workbook upserts and commits through the managed SQLite connection.
+    """
+    _admin(user)
+    if api.desktop_app.is_developer_test_user(user):
+        from cloudflare_chat import verify_developer_password
+
+        if not verify_developer_password(payload.get("developer_password", "")):
+            raise HTTPException(
+                status_code=403,
+                detail="A valid developer password is required to sync the customer master workbook.",
+            )
+
+    db = SimpleNamespace(conn=conn, active_user=user)
+    try:
+        import google_sheets_sync
+
+        stats = google_sheets_sync.sync_from_live_google_sheet(db)
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail="Google Sheets sync failed. The local database remains available.",
+        ) from exc
+
+    if not stats:
+        return {
+            "status": "offline",
+            "updated": 0,
+            "stats": {},
+            "message": "Google Sheets is unavailable or returned no workbook. Local records were preserved.",
+        }
+
+    return {
+        "status": "synced",
+        "updated": sum(int(value or 0) for value in stats.values()),
+        "stats": stats,
+        "message": "The master workbook was merged into the web database. Local-only records were not deleted.",
+    }
