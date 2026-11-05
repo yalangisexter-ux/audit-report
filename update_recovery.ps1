@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('backup', 'launch-check', 'restore', 'promote', 'remove-new')]
+    [ValidateSet('backup', 'cleanup', 'launch-check', 'restore', 'promote', 'remove-new')]
     [string]$Mode,
 
     [Parameter(Mandatory = $true)]
@@ -135,6 +135,12 @@ function Get-ProductVersion([string]$Path) {
 
 try {
     switch ($Mode) {
+        'cleanup' {
+            # Only remove app-owned transaction folders matching exact product naming patterns.
+            # Customer data and unknown files are never traversed or deleted.
+            Cleanup-StaleDirectories -InstallDir $InstallDir -BackupDir $BackupDir
+        }
+
         'backup' {
             Stop-RunningAppProcesses
             Cleanup-StaleDirectories -InstallDir $InstallDir -BackupDir $BackupDir -CleanBackupDir
