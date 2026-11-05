@@ -9546,9 +9546,7 @@ class MainWindow(QMainWindow):
         self.att_date.setDate(QDate.currentDate())
         self.att_date.setMinimumWidth(140)
         self.att_date.setMinimumHeight(34)
-        self.att_date.dateChanged.connect(
-            lambda selected_date: self.refresh_attendance(selected_date)
-        )
+        self.att_date.dateChanged.connect(self._on_attendance_date_changed)
         row1.addWidget(self.att_date)
 
         filter_label = QLabel("Filter employee:")
@@ -11649,6 +11647,8 @@ class MainWindow(QMainWindow):
         work_date = self.att_date.date().toString("yyyy-MM-dd")
         if self.db.is_holiday(work_date):
             return error(self, "This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
+        if not self._flush_attendance_editor_changes():
+            return
         dialog = QDialog(self)
         dialog.setWindowTitle("Bulk edit attendance")
         dialog.setMinimumWidth(540)
@@ -11715,6 +11715,7 @@ class MainWindow(QMainWindow):
             self.db.conn.execute("RELEASE SAVEPOINT bulk_attendance_update")
             savepoint_started = False
             self.db.conn.commit()
+            self._mark_attendance_editors_committed(employee_ids, work_date)
         except (sqlite3.Error, ValueError) as exc:
             if savepoint_started:
                 try:
@@ -11789,6 +11790,7 @@ class MainWindow(QMainWindow):
         status = str(status or "").strip()
         if status in ("Absent", "Leave", "Unmarked"):
             self.db.upsert_attendance(eid, d, check_in="", check_out="", status=status)
+            self._mark_attendance_editors_committed([eid], d)
         else:
             self.db.upsert_attendance(eid, d, status=status)
         e=self.db.employee(eid)
@@ -12028,6 +12030,169 @@ class MainWindow(QMainWindow):
         else: score=0
         return {"start":start,"working_days":working_days,"attendance_eligible_days":attendance_eligible_days,"present":present,"tasks":len(task_rows),"completed":sum(1 for t in task_rows if is_explicitly_completed_task_status(t["status"])),"task_score":task_score,"attendance_score":attendance_score,"score":score}
 
+    def _mark_attendance_editors_committed(self, employee_ids=None, work_date=None):
+        """Mark visible editor values as acknowledged after a toolbar/bulk write."""
+        if not hasattr(self, "att_table"):
+            return
+        allowed_ids = None if employee_ids is None else {int(value) for value in employee_ids}
+        for row in range(self.att_table.rowCount()):
+            employee_item = self.att_table.item(row, 0)
+            date_item = self.att_table.item(row, 1)
+            if not employee_item or not date_item:
+                continue
+            try:
+                employee_id = int(employee_item.data(Qt.UserRole))
+            except (TypeError, ValueError):
+                continue
+            if allowed_ids is not None and employee_id not in allowed_ids:
+                continue
+            if work_date and date_item.text() != work_date:
+                continue
+            for column in (3, 4):
+                cell = self.att_table.cellWidget(row, column)
+                editor = cell.findChild(QLineEdit) if cell else None
+                if editor is not None:
+                    editor.setProperty("attendance_initial_value", editor.text())
+            remarks_cell = self.att_table.cellWidget(row, 6)
+            remarks_combo = remarks_cell.findChild(QComboBox) if remarks_cell else None
+            if remarks_combo is not None:
+                remarks_combo.setProperty("attendance_initial_value", remarks_combo.currentText())
+
+    def _attendance_editor_value(self, row, column):
+        """Return (current, initially-rendered) text for an inline attendance editor."""
+        cell = self.att_table.cellWidget(row, column)
+        if cell is None:
+            return None
+        if column == 6:
+            editor = cell.findChild(QComboBox)
+            if editor is not None:
+                initial = editor.property("attendance_initial_value")
+                return str(editor.currentText() or "").strip(), str(initial if initial is not None else "").strip()
+        else:
+            editor = cell.findChild(QLineEdit)
+            if editor is not None:
+                initial = editor.property("attendance_initial_value")
+                return str(editor.text() or "").strip(), str(initial if initial is not None else "").strip()
+        return None
+
+    def _flush_attendance_editor_changes(self):
+        """Commit pending inline edits before a date change can destroy their widgets."""
+        if not hasattr(self, "att_table") or self.att_table.rowCount() == 0:
+            return True
+        if getattr(self, "_attendance_editor_flush_active", False):
+            return True
+        self._attendance_editor_flush_active = True
+        savepoint_started = False
+        saved_rows = 0
+        try:
+            self.db.conn.execute("SAVEPOINT attendance_editor_navigation_flush")
+            savepoint_started = True
+            for row in range(self.att_table.rowCount()):
+                employee_item = self.att_table.item(row, 0)
+                date_item = self.att_table.item(row, 1)
+                if not employee_item or not date_item:
+                    continue
+                try:
+                    employee_id = int(employee_item.data(Qt.UserRole))
+                except (TypeError, ValueError):
+                    continue
+                work_date = str(date_item.text() or "").strip()
+                if not work_date or self.db.is_holiday(work_date):
+                    continue
+                old = self.db.conn.execute(
+                    "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+                    (employee_id, work_date),
+                ).fetchone()
+                old_check_in = str(old["check_in"] or "") if old else ""
+                old_check_out = str(old["check_out"] or "") if old else ""
+                old_note = str(old["attendance_note"] or "") if old else ""
+                check_in = old_check_in
+                check_out = old_check_out
+                note = old_note
+                time_changed = False
+                changed = False
+
+                check_in_state = self._attendance_editor_value(row, 3)
+                if check_in_state and check_in_state[0] != check_in_state[1] and check_in_state[0] != old_check_in:
+                    check_in = check_in_state[0]
+                    time_changed = changed = True
+                check_out_state = self._attendance_editor_value(row, 4)
+                if check_out_state and check_out_state[0] != check_out_state[1] and check_out_state[0] != old_check_out:
+                    check_out = check_out_state[0]
+                    time_changed = changed = True
+                note_state = self._attendance_editor_value(row, 6)
+                if note_state and note_state[0] != note_state[1] and note_state[0] != old_note:
+                    note = note_state[0]
+                    changed = True
+                if not changed:
+                    continue
+
+                if check_in and not valid_hhmm(check_in):
+                    raise ValueError(f"{employee_item.text()}: Check-in must use 24-hour HH:MM format.")
+                if check_out and not valid_hhmm(check_out):
+                    raise ValueError(f"{employee_item.text()}: Check-out must use 24-hour HH:MM format.")
+                if check_out and not check_in:
+                    raise ValueError(f"{employee_item.text()}: Check-out requires a Check-in.")
+
+                status = str(old["attendance_status"] or "Unmarked") if old else "Unmarked"
+                if time_changed:
+                    if check_in or check_out:
+                        if not is_present_attendance_status(status):
+                            status = "Present"
+                    elif is_present_attendance_status(status):
+                        status = "Unmarked"
+                self.db.upsert_attendance(
+                    employee_id,
+                    work_date,
+                    check_in=check_in,
+                    check_out=check_out,
+                    note=note,
+                    status=status,
+                    commit=False,
+                )
+                saved_rows += 1
+
+            self.db.conn.execute("RELEASE SAVEPOINT attendance_editor_navigation_flush")
+            savepoint_started = False
+            if saved_rows:
+                self.db.conn.commit()
+                try:
+                    self.db.log(
+                        "Attendance inline edits saved",
+                        f"{saved_rows} row(s) saved before changing the attendance date.",
+                    )
+                except Exception:
+                    logging.getLogger("app").exception("Could not write attendance navigation audit log")
+                try:
+                    self.schedule_auto_sync()
+                except Exception:
+                    logging.getLogger("app").exception("Could not schedule attendance sync after navigation save")
+            return True
+        except (ValueError, sqlite3.Error) as exc:
+            if savepoint_started:
+                try:
+                    self.db.conn.execute("ROLLBACK TO SAVEPOINT attendance_editor_navigation_flush")
+                    self.db.conn.execute("RELEASE SAVEPOINT attendance_editor_navigation_flush")
+                except sqlite3.Error:
+                    self.db.conn.rollback()
+            error(self, f"Attendance edits were not saved. {exc}")
+            return False
+        finally:
+            self._attendance_editor_flush_active = False
+
+    def _on_attendance_date_changed(self, selected_date):
+        """Save the previous roster before rebuilding it for a different date."""
+        previous_date = getattr(self, "_attendance_loaded_date", "")
+        if not self._flush_attendance_editor_changes():
+            if previous_date:
+                previous_qdate = QDate.fromString(previous_date, "yyyy-MM-dd")
+                if previous_qdate.isValid():
+                    self.att_date.blockSignals(True)
+                    self.att_date.setDate(previous_qdate)
+                    self.att_date.blockSignals(False)
+            return
+        self.refresh_attendance(selected_date)
+
     def save_attendance_inline(self, employee_id, work_date, field, value):
         """Validate and persist inline attendance edits without losing unrelated fields."""
         if self.db.is_holiday(work_date):
@@ -12227,6 +12392,7 @@ class MainWindow(QMainWindow):
                 editor = QLineEdit(str(value or ""))
                 editor.setObjectName("attendanceFieldEditor")
                 editor.setProperty("in_table_cell", True)
+                editor.setProperty("attendance_initial_value", str(value or ""))
                 editor.setMinimumWidth(0)
                 editor.setFixedHeight(32)
                 editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -12267,6 +12433,7 @@ class MainWindow(QMainWindow):
             if current_rem and current_rem not in ATTENDANCE_REMARK_OPTIONS:
                 rem_combo.addItem(current_rem)
             rem_combo.setEditText(current_rem)
+            rem_combo.setProperty("attendance_initial_value", current_rem)
             rem_combo.setMinimumWidth(150)
             rem_combo.setFixedHeight(32)
             rem_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -12311,6 +12478,7 @@ class MainWindow(QMainWindow):
             self.att_table.selectRow(restore_row)
         self.refresh_attendance_summary()
         self.refresh_dashboard()
+        self._attendance_loaded_date = d
 
     @staticmethod
     def is_attendance_scheduled_workday(day_text, weekdays):

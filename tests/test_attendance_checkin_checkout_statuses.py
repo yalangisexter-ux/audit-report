@@ -270,6 +270,114 @@ def test_changing_attendance_date_saves_each_status_to_the_selected_date(monkeyp
             pass
 
 
+def test_date_change_flushes_uncommitted_inline_attendance_edits(monkeypatch, tmp_path):
+    import sqlite3
+
+    qt_app, db, window, employee_id, today_text = make_attendance_window(monkeypatch, tmp_path)
+    previous_day = date.fromordinal(date.fromisoformat(today_text).toordinal() - 1)
+    try:
+        window.att_date.setDate(app.QDate(previous_day.year, previous_day.month, previous_day.day))
+        qt_app.processEvents()
+
+        check_in = window.att_table.cellWidget(0, 3).findChild(app.QLineEdit)
+        check_out = window.att_table.cellWidget(0, 4).findChild(app.QLineEdit)
+        remarks = window.att_table.cellWidget(0, 6).findChild(app.QComboBox)
+        check_in.setText("09:30")
+        check_out.setText("18:00")
+        remarks.setEditText("Overtime")
+
+        # Changing the date destroys the old row widgets. Their pending values
+        # must be committed against the date displayed in that old row first.
+        today = date.fromisoformat(today_text)
+        window.att_date.setDate(app.QDate(today.year, today.month, today.day))
+        qt_app.processEvents()
+
+        saved = db.conn.execute(
+            "SELECT work_date, attendance_status, check_in, check_out, attendance_note "
+            "FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, previous_day.isoformat()),
+        ).fetchone()
+        assert tuple(saved) == (previous_day.isoformat(), "Present", "09:30", "18:00", "Overtime")
+        assert window.att_table.item(0, 1).text() == today_text
+
+        window.close()
+        db.conn.close()
+        reopened = sqlite3.connect(tmp_path / "attendance.db")
+        try:
+            persisted = reopened.execute(
+                "SELECT attendance_status, check_in, check_out, attendance_note "
+                "FROM attendance WHERE employee_id=? AND work_date=?",
+                (employee_id, previous_day.isoformat()),
+            ).fetchone()
+            assert persisted == ("Present", "09:30", "18:00", "Overtime")
+        finally:
+            reopened.close()
+    finally:
+        try:
+            window.close()
+        except Exception:
+            pass
+        try:
+            db.conn.close()
+        except Exception:
+            pass
+
+
+def test_invalid_pending_attendance_time_prevents_date_change(monkeypatch, tmp_path):
+    errors = []
+    monkeypatch.setattr(app, "error", lambda *args: errors.append(str(args[-1])))
+
+    qt_app, db, window, employee_id, today_text = make_attendance_window(monkeypatch, tmp_path)
+    previous_day = date.fromordinal(date.fromisoformat(today_text).toordinal() - 1)
+    try:
+        window.att_date.setDate(app.QDate(previous_day.year, previous_day.month, previous_day.day))
+        qt_app.processEvents()
+        check_in = window.att_table.cellWidget(0, 3).findChild(app.QLineEdit)
+        check_in.setText("9:30")
+
+        today = date.fromisoformat(today_text)
+        window.att_date.setDate(app.QDate(today.year, today.month, today.day))
+        qt_app.processEvents()
+
+        assert window.att_date.date().toString("yyyy-MM-dd") == previous_day.isoformat()
+        assert window.att_table.item(0, 1).text() == previous_day.isoformat()
+        assert db.conn.execute(
+            "SELECT 1 FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, previous_day.isoformat()),
+        ).fetchone() is None
+        assert errors and "HH:MM" in errors[0]
+    finally:
+        window.close()
+        db.conn.close()
+
+
+def test_toolbar_absent_status_is_not_overwritten_by_stale_inline_times_on_date_change(monkeypatch, tmp_path):
+    qt_app, db, window, employee_id, today_text = make_attendance_window(monkeypatch, tmp_path)
+    previous_day = date.fromordinal(date.fromisoformat(today_text).toordinal() - 1)
+    try:
+        window.att_date.setDate(app.QDate(previous_day.year, previous_day.month, previous_day.day))
+        qt_app.processEvents()
+        check_in = window.att_table.cellWidget(0, 3).findChild(app.QLineEdit)
+        check_in.setText("09:00")
+
+        # The toolbar write clears times. A subsequent date change must not
+        # replay the text that was visible before that intentional status write.
+        window.set_attendance_status("Absent")
+        today = date.fromisoformat(today_text)
+        window.att_date.setDate(app.QDate(today.year, today.month, today.day))
+        qt_app.processEvents()
+
+        saved = db.conn.execute(
+            "SELECT attendance_status, check_in, check_out FROM attendance "
+            "WHERE employee_id=? AND work_date=?",
+            (employee_id, previous_day.isoformat()),
+        ).fetchone()
+        assert tuple(saved) == ("Absent", "", "")
+    finally:
+        window.close()
+        db.conn.close()
+
+
 def test_legacy_required_date_and_status_columns_accept_new_attendance(monkeypatch, tmp_path):
     import sqlite3
 
