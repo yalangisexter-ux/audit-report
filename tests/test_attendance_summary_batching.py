@@ -129,3 +129,28 @@ def test_attendance_summary_ignores_weekends_and_counts_case_insensitive_statuse
         assert int(table.item(0, 7).text()) == 1
     finally:
         db.conn.close()
+
+
+def test_sunday_is_always_counted_as_a_working_day_for_legacy_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    qt_app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "sunday-working-day.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+    db = app.Database()
+    try:
+        # Existing customer databases may still store the old Monday-Friday setting.
+        db.set_setting("working_weekdays", "0,1,2,3,4")
+        assert 6 in db.working_weekdays()
+
+        sunday = date(2026, 11, 1)
+        fake_window = SimpleNamespace(db=db)
+        assert app.MainWindow.count_working_days(fake_window, sunday, sunday) == 1
+
+        db.conn.execute(
+            "INSERT INTO holidays(holiday_date,holiday_name,created_at) VALUES(?,?,?)",
+            (sunday.isoformat(), "Sunday holiday", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        db.conn.commit()
+        assert app.MainWindow.count_working_days(fake_window, sunday, sunday) == 0
+    finally:
+        db.conn.close()
