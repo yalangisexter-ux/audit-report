@@ -181,6 +181,45 @@ def test_api_attendance_and_holidays():
     assert h_res.status_code == 200
     assert isinstance(h_res.json(), list)
 
+def test_holiday_management_requires_authorized_role_and_valid_dates():
+    from fastapi import HTTPException
+
+    dependency = api_server.get_current_user
+    app.dependency_overrides[dependency] = lambda: {"username": "customer-test", "role": "Customer"}
+    try:
+        denied = client.post("/api/holidays", json={
+            "holiday_date": "2026-12-25",
+            "holiday_name": "Christmas",
+        })
+        assert denied.status_code == 403
+    finally:
+        app.dependency_overrides.pop(dependency, None)
+
+    app.dependency_overrides[dependency] = lambda: {"username": "hr-test", "role": "HR"}
+    try:
+        invalid = client.post("/api/holidays", json={
+            "holiday_date": "25-12-2026",
+            "holiday_name": "Christmas",
+        })
+        assert invalid.status_code == 422
+
+        saved = client.post("/api/holidays", json={
+            "holiday_date": "2026-12-25",
+            "holiday_name": " Christmas ",
+        })
+        assert saved.status_code == 200
+        rows = client.get("/api/holidays")
+        assert rows.status_code == 200
+        assert any(
+            row["holiday_date"] == "2026-12-25" and row["holiday_name"] == "Christmas"
+            for row in rows.json()
+        )
+        removed = client.delete("/api/holidays/2026-12-25")
+        assert removed.status_code == 200
+    finally:
+        app.dependency_overrides.pop(dependency, None)
+
+
 def test_api_attendance_saves_selected_date_and_clears_absent_times():
     import secrets
     import sqlite3
