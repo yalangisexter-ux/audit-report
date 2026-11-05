@@ -286,6 +286,6 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 
 ## Live Chat regression assertion correction — CI failure isolated
 
-- Runs #1113 and #1115 reached the Python regression step and failed on one stale source assertion: the test expected a prop-less <LiveChat/> even though the integration now passes messages, user identity and the authenticated general-channel send callback.
-- The React production build, frontend publisher, Worker checks and database-sync Worker tests had passed before the regression step.
-- Updated the test to assert that the chat tab renders LiveChat with its required props; the implementation and separate chat authentication boundary are unchanged. The next full regression run must pass before this correction is marked verified.
+- Runs #1113 and #1114 reached the Python regression step and each failed on one stale source assertion (277 passed, 1 failed): the test expected a prop-less <LiveChat/> even though the integration passes messages, user identity and the authenticated general-channel send callback.
+- The React production build, frontend publisher, Worker checks and database-sync Worker tests passed before the regression step.
+- Updated the test to assert that the chat tab renders LiveChat with its required props; the implementation and separate chat authentication boundary are unchanged. Runs #1115 and #1116 are still rechecking earlier commits; run #1117 is validating the corrected assertion on the current main line.
