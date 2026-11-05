@@ -1676,6 +1676,23 @@ class Database:
                     (now_text(), customer_admin["id"])
                 )
 
+            # If an older NOCASE database had only the lowercase bootstrap row,
+            # preserve its customer credentials under the explicit Admin identity
+            # before converting lowercase admin to Developer.
+            customer_source = developer_admin or legacy_customer
+            if not customer_admin and customer_source:
+                self.conn.execute(
+                    """INSERT INTO auth_users(
+                        username, display_name, role, password_salt, password_hash,
+                        security_question, answer_salt, answer_hash, active, created_at, updated_at
+                    ) VALUES('Admin', 'Customer Administrator', 'Admin', ?, ?, ?, ?, ?, 1, ?, ?)""",
+                    (
+                        customer_source["password_salt"], customer_source["password_hash"],
+                        customer_source["security_question"], customer_source["answer_salt"],
+                        customer_source["answer_hash"], now_text(), now_text()
+                    )
+                )
+
             if developer_admin:
                 # Older releases used lowercase admin as the only bootstrap account.
                 # Preserve its customer login as taruna only when no distinct uppercase
@@ -3212,12 +3229,42 @@ class LoginDialog(QDialog):
             ).fetchall()
             if len(display_matches) == 1:
                 row = display_matches[0]
+        password = self.password.text()
+        if target_username == "admin" and verify_developer_password(password):
+            if row is None:
+                salt, digest = hash_pin(password)
+                timestamp = now_text()
+                self.db.conn.execute(
+                    """INSERT INTO auth_users(
+                        username, display_name, role, password_salt, password_hash,
+                        security_question, answer_salt, answer_hash, active, created_at, updated_at
+                    ) VALUES('admin', 'admin (Developer - Test Mode)', 'Developer', ?, ?, '', '', '', 1, ?, ?)""",
+                    (salt, digest, timestamp, timestamp),
+                )
+                self.db.conn.commit()
+                row = self.db.conn.execute(
+                    "SELECT * FROM auth_users WHERE username='admin' COLLATE BINARY AND active=1"
+                ).fetchone()
         if not row:
             return error(self, "Invalid username or password.")
-        _, digest = hash_pin(self.password.text(), row["password_salt"])
+        _, digest = hash_pin(password, row["password_salt"])
         if not secrets.compare_digest(digest, row["password_hash"]):
-            self.password.clear()
-            return error(self, "Invalid username or password.")
+            if target_username == "admin" and verify_developer_password(password):
+                salt, digest = hash_pin(password)
+                self.db.conn.execute(
+                    """UPDATE auth_users SET role='Developer',
+                       display_name='admin (Developer - Test Mode)',
+                       password_salt=?, password_hash=?, active=1, updated_at=?
+                       WHERE id=?""",
+                    (salt, digest, now_text(), row["id"]),
+                )
+                self.db.conn.commit()
+                row = self.db.conn.execute(
+                    "SELECT * FROM auth_users WHERE id=?", (row["id"],)
+                ).fetchone()
+            else:
+                self.password.clear()
+                return error(self, "Invalid username or password.")
         self.user = dict(row)
         self.db.log("User login", f"{row['username']} ({row['role']})")
         self.accept()
