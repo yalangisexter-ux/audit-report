@@ -11,6 +11,7 @@ import uuid
 from fastapi import Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 
+import customer_prospects as prospect_store
 import api_server as api
 
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-parity")
@@ -149,19 +150,76 @@ def customer_scrape_status(job_id: str, user=Depends(api.get_current_user)):
 
 @api.app.patch("/api/customers/prospects/{prospect_id}")
 def update_prospect(prospect_id: int, payload: dict, conn=Depends(api.get_db), user=Depends(api.get_current_user)):
-    allowed = {"business_name","business_category","state","city","area","contact_person","phone","email",
+    _admin(user)
+    allowed = {"business_name","business_category","kind","state","city","area","contact_person","phone","email",
                "address","website","maps","followup_date","call_time","connection","verified","response",
                "notes","source_status","verification_status","last_verified"}
     changes = {k:v for k,v in payload.items() if k in allowed}
-    if not changes: raise HTTPException(status_code=400, detail="No editable prospect fields supplied.")
+    if not changes:
+        raise HTTPException(status_code=400, detail="No editable prospect fields supplied.")
+
     columns = {r["name"] for r in conn.execute("PRAGMA table_info(customer_prospects)").fetchall()}
     changes = {k:v for k,v in changes.items() if k in columns}
-    changes["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sql = ", ".join(f'"{k}"=?' for k in changes)
-    cur = conn.execute(f"UPDATE customer_prospects SET {sql} WHERE id=?", (*changes.values(), prospect_id))
-    conn.commit()
-    if not cur.rowcount: raise HTTPException(status_code=404, detail="Prospect not found.")
-    return {"success":True}
+    if not changes:
+        raise HTTPException(status_code=400, detail="No supported prospect fields supplied.")
+    if "dedupe_key" not in columns:
+        raise HTTPException(status_code=500, detail="Store Directory deduplication schema is unavailable.")
+
+    existing = conn.execute("SELECT * FROM customer_prospects WHERE id=?", (prospect_id,)).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Prospect not found.")
+
+    record = dict(existing)
+    record.update(changes)
+    record["business_name"] = str(record.get("business_name") or "").strip()
+    record["kind"] = str(record.get("kind") or "Store").strip()
+    record["state"] = prospect_store.normalise_state(record.get("state"))
+    record["city"] = str(record.get("city") or "").strip()
+    record["address"] = str(record.get("address") or "").strip()
+    record["maps"] = str(record.get("maps") or "").strip()
+    if not record["business_name"]:
+        raise HTTPException(status_code=422, detail="Business / store name is required.")
+    if not record["state"] or not record["city"]:
+        raise HTTPException(status_code=422, detail="City and state are required to identify a unique store branch.")
+
+    if not record["maps"] and record["address"]:
+        record["maps"] = prospect_store.google_maps_search_url(record)
+
+    new_dedupe_key = prospect_store.prospect_dedupe_key(record)
+    other_rows = conn.execute(
+        "SELECT id,business_name,state,city FROM customer_prospects WHERE id<>?",
+        (prospect_id,),
+    ).fetchall()
+    for other in other_rows:
+        if prospect_store.prospect_dedupe_key(dict(other)) == new_dedupe_key:
+            raise HTTPException(
+                status_code=409,
+                detail="A store with the same business name, city and state already exists.",
+            )
+
+    for field in ("business_name", "kind", "state", "city", "address"):
+        if field in changes:
+            changes[field] = record[field]
+    if "maps" in changes or (not str(existing["maps"] or "").strip() and record["maps"]):
+        changes["maps"] = record["maps"]
+    changes["dedupe_key"] = new_dedupe_key
+    if "updated_at" in columns:
+        changes["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    changes = {k:v for k,v in changes.items() if k in columns}
+
+    assignments = ", ".join(f'"{key}"=?' for key in changes)
+    try:
+        cur = conn.execute(
+            f"UPDATE customer_prospects SET {assignments} WHERE id=?",
+            (*changes.values(), prospect_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    if not cur.rowcount:
+        raise HTTPException(status_code=404, detail="Prospect not found.")
+    return {"success": True, "dedupe_key": new_dedupe_key}
 
 @api.app.delete("/api/customers/prospects/{prospect_id}")
 def delete_prospect(prospect_id: int, conn=Depends(api.get_db), user=Depends(api.get_current_user)):

@@ -1869,7 +1869,10 @@ def test_web_store_directory_ui_exposes_location_filters_and_map_links():
     assert "prospectVerificationFilter" in source
     assert "Open Maps" in source
     assert 'target="_blank" rel="noopener noreferrer"' in source
-    assert "kind==='prospects'?'/customers/prospects/'+id" in source
+    assert "editRecord.editType==='prospects'" in source
+    assert "editType==='prospects'?'/customers/prospects/'+id" in source
+    assert "onEdit={canAdminEmployees?" in source
+    assert "onDelete={canAdminEmployees?" in source
 
 def test_sensitive_read_endpoints_require_an_authenticated_session(monkeypatch):
     import secrets
@@ -1900,3 +1903,85 @@ def test_sensitive_read_endpoints_require_an_authenticated_session(monkeypatch):
             assert response.status_code == 200, (path, response.status_code, response.text)
     finally:
         api_server.ACTIVE_SESSIONS.pop(token, None)
+
+def test_web_store_directory_edit_is_admin_only_and_recomputes_branch_dedupe(monkeypatch):
+    import secrets
+    import customer_prospects as prospects
+
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    admin_token = "store-edit-admin-" + secrets.token_hex(8)
+    staff_token = "store-edit-staff-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 9821, "username": "store-edit-admin", "display_name": "Store Edit Admin", "role": "Admin"
+    }
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 9822, "username": "store-edit-staff", "display_name": "Store Edit Staff", "role": "Staff"
+    }
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    suffix = secrets.token_hex(4).upper()
+    first_id = second_id = None
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    connection.row_factory = sqlite3.Row
+    try:
+        first = client.post("/api/customers/prospects", headers=admin_headers, json={
+            "business_name": "Directory Edit Alpha " + suffix,
+            "kind": "Store", "state": "Andhra Pradesh", "city": "Vijayawada",
+            "address": "12 Alpha Road, Vijayawada, Andhra Pradesh 520010",
+        })
+        assert first.status_code == 200, first.text
+        first_id = int(first.json()["id"])
+        second = client.post("/api/customers/prospects", headers=admin_headers, json={
+            "business_name": "Directory Edit Beta " + suffix,
+            "kind": "Store", "state": "Andhra Pradesh", "city": "Vijayawada",
+            "address": "14 Beta Road, Vijayawada, Andhra Pradesh 520010",
+        })
+        assert second.status_code == 200, second.text
+        second_id = int(second.json()["id"])
+
+        staff_edit = client.patch(
+            f"/api/customers/prospects/{first_id}", headers=staff_headers,
+            json={"contact_person": "Unauthorized edit"},
+        )
+        staff_delete = client.delete(
+            f"/api/customers/prospects/{first_id}", headers=staff_headers
+        )
+        assert staff_edit.status_code == 403
+        assert staff_delete.status_code == 403
+
+        duplicate_edit = client.patch(
+            f"/api/customers/prospects/{first_id}", headers=admin_headers,
+            json={"business_name": "Directory Edit Beta " + suffix},
+        )
+        assert duplicate_edit.status_code == 409, duplicate_edit.text
+
+        unique_name = "Directory Edit Gym " + suffix
+        updated = client.patch(
+            f"/api/customers/prospects/{first_id}", headers=admin_headers,
+            json={
+                "business_name": unique_name, "kind": "Gym", "state": "Telangana",
+                "city": "Hyderabad", "address": "8 Test Avenue, Hyderabad, Telangana 500001",
+                "maps": "",
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        saved = connection.execute(
+            "SELECT * FROM customer_prospects WHERE id=?", (first_id,)
+        ).fetchone()
+        assert saved is not None
+        assert saved["business_name"] == unique_name
+        assert saved["kind"] == "Gym"
+        assert saved["state"] == "Telangana"
+        assert saved["city"] == "Hyderabad"
+        assert saved["maps"].startswith("https://www.google.com/maps/search/")
+        assert saved["dedupe_key"] == prospects.prospect_dedupe_key(dict(saved))
+        assert saved["contact_person"] != "Unauthorized edit"
+    finally:
+        ids = [value for value in (first_id, second_id) if value is not None]
+        if ids:
+            connection.executemany("DELETE FROM customer_prospects WHERE id=?", [(value,) for value in ids])
+            connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
