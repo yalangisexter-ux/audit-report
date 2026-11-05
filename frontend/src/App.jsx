@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import brandLogo from '../../assets/raw_strength_brand.png';
+import galaxyWallpaper from '../../assets/wallpapers/photos/galaxy.jpg';
+import milkyWayWallpaper from '../../assets/wallpapers/photos/milky_way.jpg';
+import oceanWallpaper from '../../assets/wallpapers/photos/ocean_waves.jpg';
+import shivaWallpaper from '../../assets/wallpapers/photos/lord_shiva.jpg';
+import couplesWallpaper from '../../assets/wallpapers/photos/love_couples.jpg';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase, Settings,
   RefreshCw, CheckCircle2, Menu, LogOut, MessageCircle, Store, Archive, ClipboardList,
@@ -25,6 +30,37 @@ const navItems = [
 const card='rounded-2xl border border-white/10 bg-slate-900/65 p-4 shadow-xl shadow-black/10';
 const field='w-full min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400';
 const btn='inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-50';
+
+const APPEARANCE_THEMES = ['day','night','ocean','sunset'];
+const WALLPAPER_STYLES = ['Ambient Glow','Aurora Waves','Starfield','Floating Bubbles','Rainfall','Matrix Drift','Galaxy','Milky Way','Milky Way Waves','Ocean Waves','Lord Shiva','Love Couple','Love & Couples','Cyberpunk Neon','Calisthenics Power','Cosmic Nebula','Custom Image'];
+const PHOTO_WALLPAPER_URLS = {
+  'Galaxy': galaxyWallpaper,
+  'Milky Way': milkyWayWallpaper,
+  'Milky Way Waves': milkyWayWallpaper,
+  'Ocean Waves': oceanWallpaper,
+  'Lord Shiva': shivaWallpaper,
+  'Love Couple': couplesWallpaper,
+  'Love & Couples': couplesWallpaper
+};
+const openAppearanceDb = () => new Promise((resolve,reject) => {
+  if(!window.indexedDB){reject(new Error('This browser does not support local wallpaper storage.'));return;}
+  const request=window.indexedDB.open('rsc-web-appearance',1);
+  request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('assets'))db.createObjectStore('assets');};
+  request.onsuccess=()=>resolve(request.result);
+  request.onerror=()=>reject(request.error||new Error('Could not open local appearance storage.'));
+});
+const readCustomWallpaper = async () => {
+  const db=await openAppearanceDb();
+  return new Promise((resolve,reject)=>{const request=db.transaction('assets','readonly').objectStore('assets').get('custom-wallpaper');request.onsuccess=()=>{db.close();resolve(request.result||null)};request.onerror=()=>{db.close();reject(request.error)};});
+};
+const writeCustomWallpaper = async file => {
+  const db=await openAppearanceDb();
+  return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite');tx.objectStore('assets').put(file,'custom-wallpaper');tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>{db.close();reject(tx.error)};tx.onabort=()=>{db.close();reject(tx.error||new Error('Wallpaper save was cancelled.'))};});
+};
+const deleteCustomWallpaper = async () => {
+  const db=await openAppearanceDb();
+  return new Promise((resolve,reject)=>{const tx=db.transaction('assets','readwrite');tx.objectStore('assets').delete('custom-wallpaper');tx.oncomplete=()=>{db.close();resolve(true)};tx.onerror=()=>{db.close();reject(tx.error)};tx.onabort=()=>{db.close();reject(tx.error)};});
+};
 
 export default function App() {
   const [tab,setTab]=useState('home'),[sidebar,setSidebar]=useState(true);
@@ -72,6 +108,11 @@ export default function App() {
   const [scrapeStatus,setScrapeStatus]=useState('');
   const [restoreFile,setRestoreFile]=useState(null),[restoreBusy,setRestoreBusy]=useState(false);
   const [workingWeekdays,setWorkingWeekdays]=useState([0,1,2,3,4,6]),[workingWeekdaysBusy,setWorkingWeekdaysBusy]=useState(false);
+  const [theme,setTheme]=useState(()=>{const saved=localStorage.getItem('rsc_web_theme')||'night';return APPEARANCE_THEMES.includes(saved)?saved:'night';});
+  const [wallpaper,setWallpaper]=useState(()=>{const saved=localStorage.getItem('rsc_web_wallpaper')||'Galaxy';return WALLPAPER_STYLES.includes(saved)?saved:'Galaxy';});
+  const [customWallpaperUrl,setCustomWallpaperUrl]=useState('');
+  const [customWallpaperName,setCustomWallpaperName]=useState(()=>localStorage.getItem('rsc_web_custom_wallpaper_name')||'');
+  const [appearanceBusy,setAppearanceBusy]=useState(false);
 
   const apiFetch=async(path,options={})=>{
     const headers={...(options.headers||{})};
@@ -124,9 +165,60 @@ export default function App() {
   };
   useEffect(()=>{(async()=>{if(!token){setChecked(true);return;}try{const r=await fetch(API+'/auth/me',{headers:{Authorization:'Bearer '+token}});if(!r.ok)throw 0;const j=await r.json();setUser(j.user);setChecked(true);}catch{localStorage.removeItem('rsc_auth_token');setToken('');setUser(null);setChecked(true);}})()},[]);
   useEffect(()=>{if(user&&token)load()},[user,token]);
+  useEffect(()=>{
+    document.documentElement.dataset.rscTheme=theme;
+    document.body.dataset.rscTheme=theme;
+    document.body.dataset.rscWallpaper=wallpaper;
+    const imageUrl=wallpaper==='Custom Image'?customWallpaperUrl:(PHOTO_WALLPAPER_URLS[wallpaper]||'');
+    document.body.style.setProperty('--rsc-wallpaper-image',imageUrl?('url("'+imageUrl+'")'):'none');
+    localStorage.setItem('rsc_web_theme',theme);
+    localStorage.setItem('rsc_web_wallpaper',wallpaper);
+  },[theme,wallpaper,customWallpaperUrl]);
+  useEffect(()=>{
+    let active=true,loadedUrl='';
+    readCustomWallpaper().then(blob=>{
+      if(!active||!blob)return;
+      loadedUrl=URL.createObjectURL(blob);
+      setCustomWallpaperUrl(loadedUrl);
+    }).catch(()=>{});
+    return ()=>{active=false;if(loadedUrl)URL.revokeObjectURL(loadedUrl);};
+  },[]);
   useEffect(()=>{if(user&&token&&tab==='customers')load()},[tab,user,token]);
   useEffect(()=>{if(tab==='settings'&&user&&['admin','developer'].includes(String(user.role||'').toLowerCase())){Promise.all([apiFetch('/auth/users'),apiFetch('/settings/working-weekdays')]).then(([accounts,working])=>{setAuthUsers(accounts);setWorkingWeekdays(working.weekdays||[0,1,2,3,4,6])}).catch(e=>notify(e.message))}},[tab,user,token]);
   const notify=(s)=>{setNotice(s);setTimeout(()=>setNotice(''),3500)};
+  const uploadCustomWallpaper=async event=>{
+    const file=event.target.files?.[0];event.target.value='';
+    if(!file)return;
+    const supported=/\.(png|jpe?g|webp|bmp)$/i.test(file.name)||['image/png','image/jpeg','image/webp','image/bmp'].includes(file.type);
+    if(!supported){notify('Choose a PNG, JPG, WEBP or BMP image.');return;}
+    if(file.size>15*1024*1024){notify('Custom wallpaper must be 15 MB or smaller.');return;}
+    const previewUrl=URL.createObjectURL(file);
+    try{
+      const image=new Image();
+      await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('The selected image could not be opened.'));image.src=previewUrl;});
+      if(!image.naturalWidth||!image.naturalHeight)throw new Error('The selected image is invalid.');
+      setAppearanceBusy(true);
+      await writeCustomWallpaper(file);
+      setCustomWallpaperUrl(previous=>{if(previous)URL.revokeObjectURL(previous);return previewUrl;});
+      setCustomWallpaperName(file.name);
+      localStorage.setItem('rsc_web_custom_wallpaper_name',file.name);
+      setWallpaper('Custom Image');
+      notify('Custom wallpaper saved in this browser.');
+    }catch(error){URL.revokeObjectURL(previewUrl);notify(error.message||'Could not save custom wallpaper.');}
+    finally{setAppearanceBusy(false);}
+  };
+  const resetCustomWallpaper=async()=>{
+    setAppearanceBusy(true);
+    try{
+      await deleteCustomWallpaper();
+      setCustomWallpaperUrl(previous=>{if(previous)URL.revokeObjectURL(previous);return '';});
+      setCustomWallpaperName('');
+      localStorage.removeItem('rsc_web_custom_wallpaper_name');
+      setWallpaper('Ambient Glow');
+      notify('Wallpaper reset to Ambient Glow.');
+    }catch(error){notify(error.message||'Could not reset wallpaper.');}
+    finally{setAppearanceBusy(false);}
+  };
   const submitLogin=async(e)=>{e.preventDefault();setError('');setBusy(true);try{const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(login)});const j=await r.json();if(!r.ok)throw new Error(j.detail||'Invalid username or password');localStorage.setItem('rsc_auth_token',j.token);setToken(j.token);setUser(j.user);notify('Signed in');}catch(e){let message=e.message;try{const s=await fetch(API+'/auth/status').then(x=>x.json());if(Array.isArray(s.usernames)&&s.usernames.length)message+=' Available account username(s): '+s.usernames.join(', ')+'.';}catch{}setError(message)}finally{setBusy(false)}};
   const submitRegistration=async(e)=>{e.preventDefault();setError('');setAuthNotice('');if(login.password!==authProfile.confirm_password){setError('Passwords do not match');return;}setBusy(true);try{const r=await fetch(API+'/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:login.username,display_name:authProfile.display_name,password:login.password,security_question:authProfile.security_question,security_answer:authProfile.security_answer})});const j=await r.json();if(!r.ok)throw new Error(j.detail||'Account registration failed');setAuthNotice(j.message||'Account request submitted for Admin approval.');setAuthMode('login');setLogin(p=>({...p,password:''}));setAuthProfile(p=>({...p,confirm_password:'',security_answer:''}));}catch(e){setError(e.message)}finally{setBusy(false)}};
   const findRecoveryQuestion=async()=>{setError('');setRecoveryReady(false);setRecoveryQuestion('');try{const r=await fetch(API+'/auth/recovery-question',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:login.username})});const j=await r.json();if(!r.ok)throw new Error(j.detail||'Could not find a recovery question');setRecoveryQuestion(j.security_question);setRecoveryReady(true);}catch(e){setError(e.message)}};
@@ -357,7 +449,7 @@ export default function App() {
   <button type="button" className="mt-4 w-full text-sm text-cyan-300" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button>
 </form>}</div></div>;
 
-  return <div className="flex h-screen min-h-0 overflow-hidden bg-[#080d18] text-slate-100">
+  return <div className="webapp-root flex h-screen min-h-0 overflow-hidden bg-[#080d18] text-slate-100">
     {groupManagerOpen&&<div className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-black/75 p-4"><section className="my-6 w-full max-w-3xl rounded-2xl border border-cyan-400/20 bg-slate-900 p-5 shadow-2xl">
       <div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold text-white">Manage Employee Sections & Groups</h2><p className="mt-1 text-xs text-slate-400">Create, rename, reorder and remove employee sections.</p></div><button className="text-slate-400" onClick={()=>setGroupManagerOpen(false)}>Close</button></div>
       <form className="mb-4 flex flex-wrap gap-2" onSubmit={createEmployeeGroup}><input className={field+' min-w-0 flex-1'} placeholder="New section name" value={groupNameDraft} onChange={e=>setGroupNameDraft(e.target.value)} required/><button className={btn}><Plus size={15}/> Add Section</button></form>
@@ -376,7 +468,7 @@ export default function App() {
       <div className="border-t border-white/10 p-4"><p className="truncate text-sm font-bold">{user.display_name||user.username}</p><p className="text-xs text-slate-500">{user.role}</p><button onClick={logout} className="mt-3 flex items-center gap-2 text-xs text-rose-300"><LogOut size={14}/> Sign out</button></div>
     </aside>
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/50 px-4"><div className="flex min-w-0 items-center gap-3"><button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden"><Menu size={18}/></button><div><h1 className="truncate text-sm font-black uppercase tracking-wide">{heading}</h1><p className="text-[10px] text-slate-500">Employee Audit Manager · Operations</p></div></div><div className="flex items-center gap-3"><span className="hidden text-xs text-cyan-300 sm:inline">{new Date().toLocaleString()}</span><button onClick={()=>load()} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/50 px-4"><div className="flex min-w-0 items-center gap-3"><button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden"><Menu size={18}/></button><div><h1 className="truncate text-sm font-black uppercase tracking-wide">{heading}</h1><p className="text-[10px] text-slate-500">Employee Audit Manager · Operations</p></div></div><div className="flex items-center gap-2"><select aria-label="Application theme" className="hidden lg:block max-w-28 rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-xs text-slate-200" value={theme} onChange={e=>setTheme(e.target.value)}>{APPEARANCE_THEMES.map(value=><option key={value} value={value}>{value[0].toUpperCase()+value.slice(1)}</option>)}</select><select aria-label="Live wallpaper" className="hidden xl:block max-w-40 rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-xs text-slate-200" value={wallpaper} onChange={e=>setWallpaper(e.target.value)}>{WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}</select><span className="hidden text-xs text-cyan-300 sm:inline">{new Date().toLocaleString()}</span><button onClick={()=>load()} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
         {(tab==='home'||tab==='dashboard')&&<><div className="grid grid-cols-2 gap-3 xl:grid-cols-4">{[['Employees',data.dashboard?.kpis?.total_employees??data.employees.length],['Present today',data.dashboard?.kpis?.present_today??0],['Open tasks',data.dashboard?.kpis?.open_tasks??0],['Completed',data.dashboard?.kpis?.completed_tasks??0]].map(([l,v])=><div className={card} key={l}><p className="text-xs text-slate-400">{l}</p><p className="mt-2 text-3xl font-black text-cyan-300">{v}</p></div>)}</div><Panel title="Today's work"><Rows items={data.dashboard?.today_tasks||data.tasks.slice(0,8)} keys={['title','employee_name','status','task_date','priority']}/></Panel><Panel title="Quick actions"><div className="flex flex-wrap gap-2">{[['employees','Add employee'],['tasks','Create task'],['attendance','Mark attendance'],['reports','Generate report']].map(([t,l])=><button key={t} onClick={()=>setTab(t)} className={btn}>{l}</button>)}</div></Panel></>}
         {tab==='employees'&&<>
@@ -450,6 +542,24 @@ export default function App() {
           <button type="button" className={btn} disabled={googleSheetsBusy||(isDeveloperSyncUser&&!googleSheetsPassword.trim())} onClick={syncGoogleSheets}>{googleSheetsBusy?'Syncing master workbook…':'Sync Google Sheets'}</button>
           {googleSheetsStatus&&<p role="status" className="mt-3 rounded-lg bg-slate-950 p-3 text-sm text-cyan-200">{googleSheetsStatus}</p>}
           <p className="mt-2 text-xs text-slate-500">Customer Admin sync does not require a developer password. Developer sync authorization is checked for each request and is never stored.</p>
+        </Panel>}
+        {tab==='settings'&&<Panel title="Appearance & wallpaper">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block space-y-2 text-xs font-semibold text-slate-400">Theme
+              <select className={field} value={theme} onChange={e=>setTheme(e.target.value)}>{APPEARANCE_THEMES.map(value=><option key={value} value={value}>{value[0].toUpperCase()+value.slice(1)}</option>)}</select>
+            </label>
+            <label className="block space-y-2 text-xs font-semibold text-slate-400">Live wallpaper
+              <select className={field} value={wallpaper} onChange={e=>setWallpaper(e.target.value)}>{WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}</select>
+            </label>
+            <label className="block space-y-2 text-xs font-semibold text-slate-400">Custom wallpaper · PNG, JPG, WEBP or BMP · 15 MB max
+              <input className={field} type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" disabled={appearanceBusy} onChange={uploadCustomWallpaper}/>
+              <span className="block font-normal text-slate-500">{customWallpaperName?'Saved in this browser: '+customWallpaperName:'No custom image selected.'}</span>
+            </label>
+            <div className="flex flex-wrap items-end gap-2">
+              <button type="button" className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={appearanceBusy} onClick={resetCustomWallpaper}>{appearanceBusy?'Saving…':'Reset wallpaper'}</button>
+              <span className="text-xs text-slate-500">Changes apply immediately. Appearance is stored locally in this browser and is not written to shared employee records or cloud snapshots.</span>
+            </div>
+          </div>
         </Panel>}
         {tab==='settings'&&<><Panel title="Employee data actions"><div className="flex flex-wrap gap-2"><button type="button" className={btn} onClick={downloadEmployeesCsv}>Export employees CSV</button><button type="button" className={btn} onClick={exposeAllProofLinks}>Expose all proof links</button></div><p className="mt-2 text-xs text-slate-500">CSV includes active and inactive employee records. Global exposure enables full proof URLs for every task and the default reports.</p></Panel><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><button className="mt-3 rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300" onClick={logout}>Sign out</button></Panel><Panel title="Database and encrypted sync"><div className="mb-3 grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database</p><p className="mt-1 text-sm font-semibold">{data.db?.database_connected?'Connected':'Unavailable'}</p><p className="text-xs text-slate-500">{data.db?.database_name||'Waiting for status'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database size</p><p className="mt-1 text-sm font-semibold">{data.db?.database_size_bytes!=null?(data.db.database_size_bytes/1024/1024).toFixed(2)+' MB':'—'}</p><p className="text-xs text-slate-500">Integrity: {data.db?.database_integrity||'Unknown'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Encrypted sync</p><p className="mt-1 text-sm font-semibold">{data.db?.sync?.status||'Status unavailable'}</p><p className="text-xs text-slate-500">{data.db?.sync?.configured?'Configured':'Not configured'}</p></div></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(data.db?.counts||{},null,2)}</pre><div className="mt-3 flex flex-wrap gap-2"><button className={btn} onClick={downloadDatabaseBackup}><Download size={16}/> Download database backup</button><button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={Boolean(data.db?.sync?.busy)} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Encrypted sync completed':(r.error||r.status||'Sync did not complete'));await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></div>{canAdminEmployees&&<div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/5 p-3"><label className="block text-xs text-slate-300">Restore database backup (Admin / Developer)<input className={field+' mt-2'} type="file" accept=".db,.sqlite,.sqlite3" onChange={e=>setRestoreFile(e.target.files?.[0]||null)}/></label><button className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2.5 text-sm text-rose-200 disabled:opacity-40" disabled={!restoreFile||restoreBusy} onClick={restoreDatabaseBackup}><Upload size={16}/>{restoreBusy?'Validating and restoring…':'Restore selected backup'}</button><p className="mt-2 text-xs text-slate-500">The server validates the SQLite file and creates a safety backup before replacement. Account names and password hashes in the restored database are preserved; browser sessions are cleared.</p></div>}</Panel></>}
       </main>
