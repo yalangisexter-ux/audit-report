@@ -743,7 +743,7 @@ def export_customer_regional_dashboard(
             row["state"], row["territory_type"], row["web_leads"], row["workbook_leads"],
             row["stores"], row["gyms"],
             row["dashboard_stores"] if row["dashboard_stores"] is not None else "—",
-            (f'{row["variance"]:+d}' if row["variance"] is not None else "—'),
+            (f'{row["variance"]:+d}' if row["variance"] is not None else "—"),
         ])
     total_row = [
         "TOTAL", str(len(rows)) + " Territories",
