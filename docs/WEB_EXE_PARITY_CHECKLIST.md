@@ -148,3 +148,13 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - The live Render service settings have not yet adopted the Blueprint. Its dashboard still reports auto-deploy on every commit, no health-check path, and older build/start commands. Apply/sync the Blueprint before treating the configuration as reconciled.
 - The Free filesystem is not durable. Bootstrap from the encrypted snapshot is required after restarts; any write not uploaded before a process stop can be lost. This remains a production data-durability blocker until the write-through path and restart recovery are functionally verified.
 
+
+
+## Case-sensitive customer/developer account sync milestone — v1.3.81
+
+- Found a data-integrity defect in both desktop snapshot merge paths: `merge_remote_json_snapshot` and `merge_remote_database_snapshot` normalized usernames to lowercase, so exact-case `Admin` and `admin` could resolve to the same local account and overwrite the other account's role or password hash.
+- Corrected both merge paths to key accounts by exact username. Password recovery and Change Password now resolve exact-case usernames first and allow a case-insensitive fallback only when there is exactly one active match; ambiguous mixed-case input is rejected.
+- Added regression tests for SQLite snapshot merge, JSON snapshot merge, preservation of separate account roles/salts/hashes, exact-case recovery lookup, and unambiguous legacy casing.
+- Added a Render build-filter regression and changed the CI-generated `frontend/dist` commit to use `[skip render]`, so generated assets do not restart the Free service.
+- Version metadata is advanced consistently to v1.3.81 for this cross-device account-identity integrity milestone. Windows installer build, legacy upgrade, launch smoke test, production deployment and live account/sync round-trip remain pending until CI and deployment finish.
+

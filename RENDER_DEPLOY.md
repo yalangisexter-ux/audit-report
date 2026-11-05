@@ -23,7 +23,7 @@ The current Render service is on the Free plan and has no persistent disk. The r
 - `WEB_STANDALONE=1` for a separate web SQLite working copy;
 - `DB_SYNC_WORKER_URL`, `DB_SYNC_INSTALLATION_ID`, and `DB_SYNC_ENCRYPTION_SECRET` for encrypted snapshot sync;
 - `/api/health` as the configured health-check path;
-- deployment only after GitHub checks pass, with build filters excluding encrypted customer snapshot files.
+- deployment only after GitHub checks pass, with build filters excluding encrypted customer snapshots and generated `frontend/dist` bundles. CI-generated frontend bundle commits also carry `[skip render]`.
 
 Because the Free filesystem is ephemeral, the local SQLite file, local backups, sync-device credentials, and login sessions can disappear after a restart or redeploy. The database is reconstructed from the encrypted snapshot on the next bootstrap. Users may need to sign in again after a restart.
 

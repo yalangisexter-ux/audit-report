@@ -17,4 +17,8 @@ def test_render_blueprint_uses_free_snapshot_backed_single_instance():
 
     build_filter = config.split("buildFilter:", 1)[1].split("buildCommand:", 1)[0]
     assert "customer-data" not in build_filter
-    assert "frontend/**" in build_filter
+    assert "frontend/src/**" in build_filter
+    assert "frontend/dist" not in build_filter
+
+    workflow = (root / ".github" / "workflows" / "master.yml").read_text(encoding="utf-8")
+    assert 'git commit -m "Publish freshly built web frontend bundle [skip render]"' in workflow

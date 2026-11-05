@@ -2098,6 +2098,24 @@ def is_master_customer_user(user_or_role) -> bool:
     return raw_username == "Admin" or "taruna" in uname or "taruna" in dname or "master" in dname
 
 
+def find_active_auth_user(conn: sqlite3.Connection, username: str):
+    """Resolve an exact username first; allow a case-insensitive fallback only when unique."""
+    value = str(username or "").strip()
+    if not value:
+        return None
+    exact = conn.execute(
+        "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1",
+        (value,),
+    ).fetchone()
+    if exact is not None:
+        return exact
+    candidates = conn.execute(
+        "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+        (value,),
+    ).fetchall()
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _ensure_local_task_columns(conn: sqlite3.Connection):
     """Ensure newer task columns exist in any local connection before inserting/updating."""
     try:
@@ -2146,13 +2164,13 @@ def merge_remote_json_snapshot(local_conn: sqlite3.Connection, json_data: bytes 
         remote_users = data.get("auth_users") or []
         if isinstance(remote_users, list):
             local_users = {
-                dict(r)["username"].strip().lower(): dict(r)
+                str(dict(r)["username"] or "").strip(): dict(r)
                 for r in local_conn.execute("SELECT * FROM auth_users").fetchall()
             }
             for ru in remote_users:
                 if not isinstance(ru, dict):
                     continue
-                uname = str(ru.get("username", "")).strip().lower()
+                uname = str(ru.get("username", "")).strip()
                 if not uname:
                     continue
                 if uname not in local_users:
@@ -2378,7 +2396,7 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
     """
     Intelligently merge a downloaded remote database snapshot into local_conn.
     All data is union-merged without destructive table replacement:
-    - auth_users: matched by username COLLATE NOCASE; new users added, updates merged, admin privileges preserved.
+    - auth_users: matched by exact username COLLATE BINARY; case-distinct Admin/admin credentials remain separate.
     - employees: matched by employee_code / name; new employees appended, remote_to_local_id mapped.
     - attendance: matched by (employee, work_date); check-ins/outs and statuses merged without loss.
     - tasks: matched by (employee, task_date, title); merged by progress/updated_at, non-duplicates appended.
@@ -2483,12 +2501,12 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
         if "auth_users" in remote_tables:
             remote_users = remote.execute("SELECT * FROM auth_users").fetchall()
             local_users = {
-                dict(r)["username"].strip().lower(): dict(r)
+                str(dict(r)["username"] or "").strip(): dict(r)
                 for r in local_conn.execute("SELECT * FROM auth_users").fetchall()
             }
             for ru in remote_users:
                 ru_dict = dict(ru)
-                uname = str(ru_dict.get("username", "")).strip().lower()
+                uname = str(ru_dict.get("username", "")).strip()
                 if not uname:
                     continue
                 if uname not in local_users:
@@ -3062,7 +3080,7 @@ class ForgotPasswordDialog(QDialog):
 
     def find_question(self):
         username = self.username.text().strip()
-        self.user_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)).fetchone()
+        self.user_row = find_active_auth_user(self.db.conn, username)
         if not self.user_row:
             self.username.setEnabled(True)
             self.question_label.setText("No active account found for that username.")
@@ -3408,7 +3426,7 @@ class LoginDialog(QDialog):
         username = self.username.text().strip()
         if not username:
             return error(self, "Enter your username first, then select Change password.")
-        row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1", (username,)).fetchone()
+        row = find_active_auth_user(self.db.conn, username)
         if not row:
             return error(self, "No active account found for that username.")
         _prompt_and_update_password(self, self.db, row, "Password changed. Sign in with your new password.")

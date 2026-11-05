@@ -20,7 +20,13 @@ services:
         - build_info.py
         - requirements.txt
         - requirements-web.txt
-        - frontend/**
+        - frontend/src/**
+        - frontend/index.html
+        - frontend/package.json
+        - frontend/package-lock.json
+        - frontend/vite.config.js
+        - frontend/tailwind.config.js
+        - frontend/postcss.config.js
         - assets/**
         - tools/force_admin_login_heal.py
         - render.yaml
