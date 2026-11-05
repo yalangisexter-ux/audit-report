@@ -268,3 +268,64 @@ def test_changing_attendance_date_saves_each_status_to_the_selected_date(monkeyp
             db.conn.close()
         except Exception:
             pass
+
+
+def test_legacy_required_date_and_status_columns_accept_new_attendance(monkeypatch, tmp_path):
+    import sqlite3
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(app, "DB_PATH", str(tmp_path / "legacy-attendance.db"))
+    monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
+
+    # Reproduce customer DBs from releases that used NOT NULL date/status columns.
+    legacy = sqlite3.connect(tmp_path / "legacy-attendance.db")
+    legacy.execute("""
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            check_in TEXT NOT NULL DEFAULT '',
+            check_out TEXT NOT NULL DEFAULT '',
+            remarks TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )
+    """)
+    legacy.commit()
+    legacy.close()
+
+    db = app.Database()
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        employee_id = db.conn.execute(
+            "INSERT INTO employees(name,joining_date,active,created_at) VALUES(?,?,?,?)",
+            ("Legacy Attendance", date.today().replace(day=1).isoformat(), 1, timestamp),
+        ).lastrowid
+
+        db.upsert_attendance(employee_id, "2026-11-02", status="Present")
+        db.upsert_attendance(employee_id, "2026-11-03", status="Absent")
+        db.upsert_attendance(employee_id, "2026-11-04", status="Leave")
+
+        rows = db.conn.execute(
+            "SELECT date, work_date, status, attendance_status "
+            "FROM attendance WHERE employee_id=? ORDER BY work_date",
+            (employee_id,),
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            ("2026-11-02", "2026-11-02", "Present", "Present"),
+            ("2026-11-03", "2026-11-03", "Absent", "Absent"),
+            ("2026-11-04", "2026-11-04", "Leave", "Leave"),
+        ]
+
+        # Updating an existing row must keep both schema generations aligned.
+        db.upsert_attendance(employee_id, "2026-11-03", status="Present", check_in="09:00")
+        updated = db.conn.execute(
+            "SELECT date, work_date, status, attendance_status, check_in "
+            "FROM attendance WHERE employee_id=? AND work_date=?",
+            (employee_id, "2026-11-03"),
+        ).fetchone()
+        assert tuple(updated) == (
+            "2026-11-03", "2026-11-03", "Present", "Present", "09:00"
+        )
+    finally:
+        db.conn.close()
