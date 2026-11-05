@@ -288,8 +288,7 @@ jobs:
           retention-days: 14
 
       - name: Publish versioned release with retry and asset verification
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]'))
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
