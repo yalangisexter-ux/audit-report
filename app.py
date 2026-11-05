@@ -1872,18 +1872,92 @@ class Database:
         return self.conn.execute(q + " ORDER BY e.display_order ASC, e.name COLLATE NOCASE", args).fetchall()
 
     def upsert_attendance(self, emp_id, work_date, check_in=None, check_out=None, note=None, status=None):
-        old = self.conn.execute("SELECT * FROM attendance WHERE employee_id=? AND work_date=?", (emp_id, work_date)).fetchone()
+        """Persist attendance across current and legacy customer DB schemas.
+
+        Older releases may retain NOT NULL date/status columns alongside the
+        current work_date/attendance_status columns. Populate both generations
+        so existing customer databases continue accepting new attendance rows.
+        """
+        old = self.conn.execute(
+            "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+            (emp_id, work_date),
+        ).fetchone()
         if old:
             ci = check_in if check_in is not None else old["check_in"]
             co = check_out if check_out is not None else old["check_out"]
             nt = note if note is not None else old["attendance_note"]
             st = status if status is not None else ("Present" if ci else old["attendance_status"])
-            self.conn.execute("UPDATE attendance SET check_in=?,check_out=?,attendance_note=?,attendance_status=?,updated_at=? WHERE id=?",
-                              (ci, co, nt, st, now_text(), old["id"]))
         else:
-            st = status or ("Present" if check_in else "Unmarked")
-            self.conn.execute("INSERT INTO attendance(employee_id,work_date,check_in,check_out,attendance_status,attendance_note,updated_at) VALUES(?,?,?,?,?,?,?)",
-                              (emp_id, work_date, check_in or "", check_out or "", st, note or "", now_text()))
+            ci = check_in or ""
+            co = check_out or ""
+            nt = note or ""
+            st = status or ("Present" if ci else "Unmarked")
+
+        values = {
+            "employee_id": emp_id,
+            "work_date": work_date,
+            "date": work_date,
+            "attendance_date": work_date,
+            "record_date": work_date,
+            "check_in": ci,
+            "check_out": co,
+            "attendance_status": st,
+            "status": st,
+            "attendance_note": nt,
+            "remarks": nt,
+            "break_minutes": old["break_minutes"] if old and "break_minutes" in old.keys() else 0,
+            "updated_at": now_text(),
+        }
+        columns = {
+            row["name"]: row
+            for row in self.conn.execute("PRAGMA table_info(attendance)").fetchall()
+        }
+        if old:
+            updates = {
+                name: value for name, value in values.items()
+                if name in columns and name not in ("employee_id", "work_date", "date", "attendance_date", "record_date")
+            }
+            # Keep any legacy date column synchronized as well as the canonical key.
+            for name in ("date", "attendance_date", "record_date"):
+                if name in columns:
+                    updates[name] = work_date
+            assignments = ", ".join(f'"{name}"=?' for name in updates)
+            self.conn.execute(
+                f"UPDATE attendance SET {assignments} WHERE id=?",
+                (*updates.values(), old["id"]),
+            )
+        else:
+            insert_values = {
+                name: value for name, value in values.items()
+                if name in columns
+            }
+            # Honour any other legacy NOT NULL fields only when the old schema
+            # provides a safe empty/default representation.
+            for name, metadata in columns.items():
+                if name in insert_values or name == "id" or metadata["notnull"] != 1 or metadata["dflt_value"] is not None:
+                    continue
+                if name in ("created_at",):
+                    insert_values[name] = now_text()
+                elif name in ("note", "remark", "remarks", "attendance_note"):
+                    insert_values[name] = nt
+                elif name in ("status", "attendance_status"):
+                    insert_values[name] = st
+                elif name in ("date", "attendance_date", "record_date", "work_date"):
+                    insert_values[name] = work_date
+                elif name in ("check_in", "check_out"):
+                    insert_values[name] = ci if name == "check_in" else co
+                elif name == "break_minutes":
+                    insert_values[name] = 0
+                else:
+                    raise sqlite3.IntegrityError(
+                        f"Cannot safely populate required legacy attendance column: {name}"
+                    )
+            names = list(insert_values)
+            self.conn.execute(
+                "INSERT INTO attendance (" + ",".join(f'"{name}"' for name in names) +
+                ") VALUES (" + ",".join("?" for _ in names) + ")",
+                tuple(insert_values[name] for name in names),
+            )
         self.conn.commit()
 
     def get_employee_target(self, emp_id, target_date):
