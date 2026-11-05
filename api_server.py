@@ -226,6 +226,11 @@ class PasswordResetRequest(BaseModel):
     security_answer: str
     new_password: str
 
+class PasswordChangeRequest(BaseModel):
+    username: str
+    current_password: str
+    new_password: str
+
 class AccountActiveRequest(BaseModel):
     active: bool
 
@@ -453,6 +458,40 @@ def _record_account_audit(conn: sqlite3.Connection, action: str, details: str) -
             "INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)",
             (desktop_app.now_text(), action, details),
         )
+
+
+@app.post("/api/auth/change-password")
+def change_account_password(req: PasswordChangeRequest, conn: sqlite3.Connection = Depends(get_db)):
+    """Change an active account password using the same PBKDF2 scheme as the Windows login dialog."""
+    username = str(req.username or "").strip()
+    row = conn.execute(
+        "SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1",
+        (username,),
+    ).fetchone()
+    if row is None:
+        matches = conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",
+            (username,),
+        ).fetchall()
+        row = matches[0] if len(matches) == 1 else None
+    if row is None:
+        raise HTTPException(status_code=400, detail="No active account found for that username.")
+
+    _, current_digest = desktop_app.hash_pin(req.current_password, row["password_salt"])
+    if not secrets.compare_digest(str(current_digest), str(row["password_hash"])):
+        raise HTTPException(status_code=403, detail="Current password is incorrect.")
+    if not desktop_app.password_is_strong(req.new_password or ""):
+        raise HTTPException(status_code=422, detail="Use at least 8 characters, including a letter and a number.")
+
+    salt, digest = desktop_app.hash_pin(req.new_password)
+    conn.execute(
+        "UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?",
+        (salt, digest, desktop_app.now_text(), row["id"]),
+    )
+    _invalidate_account_sessions(int(row["id"]), conn)
+    _record_account_audit(conn, "Password changed", str(row["username"]))
+    conn.commit()
+    return {"success": True, "message": "Password changed successfully. Sign in with your new password."}
 
 
 @app.post("/api/auth/register")
