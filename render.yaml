@@ -2,11 +2,11 @@ services:
   - type: web
     name: audit-report-web
     runtime: python
-    # SQLite and the file-backed web sessions require one persistent instance.
-    # Render disks are available on paid services; Free instances are ephemeral.
-    plan: starter
+    # Free-tier single instance. SQLite is an ephemeral working copy restored from the
+    # installation-scoped encrypted snapshot before customer sign-in is enabled.
+    plan: free
     numInstances: 1
-    autoDeploy: true
+    autoDeployTrigger: checksPass
     region: oregon
     # Deploy application/runtime changes, not encrypted customer snapshot commits.
     # This prevents every database sync from restarting the web service.
@@ -23,6 +23,7 @@ services:
         - frontend/**
         - assets/**
         - tools/force_admin_login_heal.py
+        - render.yaml
     # Keep the existing full-featured web client and web-only FastAPI entrypoint.
     # Do not build or replace the Windows EXE from this Render service.
     buildCommand: pip install --upgrade pip && pip install -r requirements-web.txt && npm --prefix frontend ci --include=dev && rm -rf frontend/dist && npm --prefix frontend run build && python -c "from pathlib import Path; p=Path('frontend/dist/index.html'); s=p.read_text(encoding='utf-8'); assert '/assets/' in s and 'loginView' not in s, 'React production bundle was not generated; refusing to deploy stale legacy frontend'"
@@ -44,8 +45,6 @@ services:
         value: "080717e78653166d64cd2bcf72c75c76"
       - key: DB_SYNC_ENCRYPTION_SECRET
         sync: false
-      - key: AUDIT_DATA_DIR
-        value: "/var/data"
       - key: WEB_REQUIRE_LOGIN
         value: "1"
       - key: SKIP_INITIAL_AUDIT_SEED
@@ -54,8 +53,4 @@ services:
         value: "0"
       - key: WEB_PURGE_DEMO_ROSTER
         value: "0"
-    disk:
-      name: audit-report-web-data
-      mountPath: /var/data
-      sizeGB: 10
     healthCheckPath: /api/health
