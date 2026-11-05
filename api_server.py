@@ -2097,17 +2097,27 @@ def export_report(
                 continue
             if line.startswith("RAW STRENGTH CALISTHENICS"):
                 continue
-            if line.startswith("Report date:") or line.startswith("Scope:"):
+            if line.startswith(("Report date:", "Scope:", "Date:", "Generated:")):
                 continue
             if line.startswith("EMPLOYEE:"):
                 name = line.partition(":")[2].strip()
                 story.append(Paragraph("<b>Name :</b> " + linked_markup(name), styles["RSWebName"]))
+            elif line.startswith("SUMMARY:"):
+                story.append(Paragraph(linked_markup(line), styles["RSWebSection"]))
+            elif req.report_type in {"Employee Attendance", "Employee Details"} and "|" in line:
+                parts = [part.strip() for part in line.split("|")]
+                story.append(Paragraph("<b>Name :</b> " + linked_markup(parts[0]), styles["RSWebName"]))
+                for part in parts[1:]:
+                    if part:
+                        story.append(Paragraph("&#8226;&nbsp; " + linked_markup(part), styles["RSWebBullet"]))
+            elif req.report_type in {"Employee Attendance", "Employee Details"} and not line.startswith(("No records",)):
+                story.append(Paragraph("<b>Name :</b> " + linked_markup(line), styles["RSWebName"]))
+            elif req.report_type == "Employee Productivity" and ":" not in line and "|" not in line and line != "No tasks recorded for the selected date." and not line.startswith(("•", "▪", "■")):
+                story.append(Paragraph("<b>Name :</b> " + linked_markup(line), styles["RSWebName"]))
             elif line.isupper() or line.startswith("DAILY SUMMARY") or line.startswith("TASKS / WORK ITEMS"):
                 story.append(Paragraph(linked_markup(line), styles["RSWebSection"]))
-            elif line.startswith(("•", "▪", "■")):
-                story.append(Paragraph("&#8226;&nbsp; " + linked_markup(line.lstrip("•▪■ ")), styles["RSWebBullet"]))
             else:
-                story.append(Paragraph("&#8226;&nbsp; " + linked_markup(line), styles["RSWebBullet"]))
+                story.append(Paragraph("&#8226;&nbsp; " + linked_markup(line.lstrip("•▪■ ")), styles["RSWebBullet"]))
 
         def draw_page(canvas, doc_obj):
             canvas.saveState()
