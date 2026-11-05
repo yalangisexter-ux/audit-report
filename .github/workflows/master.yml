@@ -33,6 +33,50 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Windows installer-impacting changes
+        id: installer_changes
+        shell: pwsh
+        run: |
+          $changed = @()
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            "installer_changed=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $base = "${{ github.event.before }}"
+          $head = "${{ github.sha }}"
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $base = "${{ github.event.pull_request.base.sha }}"
+            $changed = @(git diff --name-only "$base...$head")
+          }
+          elseif ($base -match "^[0-9a-f]{40}$" -and $base -ne "0000000000000000000000000000000000000000") {
+            $changed = @(git diff --name-only "$base" "$head")
+          }
+          else {
+            $changed = @(git show --format= --name-only HEAD)
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Could not determine changed files for installer build selection." }
+          $installerPaths = @(
+            "installer.iss",
+            "resolve_customer_data_dir.ps1",
+            "update_recovery.ps1",
+            "app.py",
+            "build_info.py",
+            "requirements.txt",
+            "version_info.txt",
+            "assets/raw_strength_icon.ico",
+            "tests/test_resolve_customer_data_dir.py",
+            "tests/test_update_recovery.py"
+          )
+          $mustBuild = $false
+          foreach ($path in $installerPaths) {
+            if ($changed -contains $path) { $mustBuild = $true }
+          }
+          "installer_changed=$($mustBuild.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          Write-Host "Installer-impacting changes: $mustBuild"
+          Write-Host ($changed -join "`n")
 
       - name: Set up Node.js for chat syntax checks
         uses: actions/setup-node@v4
@@ -193,21 +237,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Pytest regression tests failed with exit code $LASTEXITCODE" }
 
       - name: Download Microsoft Visual C++ runtime prerequisite
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]')
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "vc_redist.x64.exe"
           if ((Get-Item "vc_redist.x64.exe").Length -lt 1000000) { throw "Visual C++ runtime download is incomplete." }
 
       - name: Install Inno Setup
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]')
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]')
         shell: pwsh
         run: |
           choco install innosetup --yes --no-progress
           if (-not (Test-Path "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe")) { throw "Inno Setup compiler was not installed." }
 
       - name: Compile standalone Windows application with bundled dependencies
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         run: |
           python -m py_compile app.py build_info.py business_tracking.py cloudflare_chat.py database_sync.py
@@ -217,7 +261,7 @@ jobs:
           if (-not (Test-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe")) { throw "Application executable was not created." }
 
       - name: Build standalone Windows installer
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         env:
           APP_VERSION: "1.3.81"
@@ -228,7 +272,7 @@ jobs:
           if ((Get-Item "installer-output/RawStrengthEmployeeAuditManager-Setup.exe").Length -lt 10000000) { throw "Setup installer is unexpectedly small." }
 
       - name: Verify legacy v1.1.74 in-place upgrade preserves customer database
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         run: |
           $legacySetup = Join-Path $env:RUNNER_TEMP "RawStrengthEmployeeAuditManager-Setup-v1.1.74.exe"
@@ -284,7 +328,7 @@ jobs:
           Write-Host "PASS: uninstall + reinstall preserved the customer database hash, integrity, and sentinel record."
 
       - name: Launch smoke test
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         shell: pwsh
         run: |
           $exe = (Resolve-Path "dist/RawStrengthEmployeeAuditManager/RawStrengthEmployeeAuditManager.exe").Path
@@ -297,7 +341,7 @@ jobs:
           Write-Host "PASS: packaged application remained running for 8 seconds."
 
       - name: Upload installer as a build artifact
-        if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
+        if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]') || (github.event_name == 'push' && contains(join(github.event.head_commit.modified, ','), 'installer.iss'))
         uses: actions/upload-artifact@v4
         with:
           name: RawStrengthEmployeeAuditManager-Setup-v1.3.81
