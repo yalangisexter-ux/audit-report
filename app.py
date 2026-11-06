@@ -1657,9 +1657,12 @@ class Database:
                 # A prior process may have been interrupted during migration.
                 # Use a unique staging table so stale staging data cannot block startup.
                 staging_table = "auth_users_case_sensitive_" + secrets.token_hex(6)
+                # sqlite_master preserves identifier quoting from legacy CREATE TABLE
+                # statements (for example, CREATE TABLE "auth_users"). Replace the
+                # actual table identifier, not only the unquoted spelling.
                 create_sql, replacement_count = re.subn(
-                    r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?auth_users\b",
-                    f"CREATE TABLE {staging_table}",
+                    r"(\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)(?:(?:main|"main"|\x60main\x60|\[main\])\s*\.\s*)?(?:"auth_users"|\x60auth_users\x60|\[auth_users\]|auth_users)(?=\s|\()",
+                    lambda match: match.group(1) + staging_table,
                     auth_sql,
                     count=1,
                     flags=re.IGNORECASE,

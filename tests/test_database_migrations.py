@@ -236,3 +236,66 @@ def test_auth_case_sensitive_migration_ignores_stale_staging_table(tmp_path, mon
     finally:
         database.conn.close()
 
+def test_auth_case_sensitive_migration_supports_quoted_table_identifiers(tmp_path, monkeypatch):
+    """Legacy SQLite schemas may preserve quoted auth_users identifiers in sqlite_master."""
+    for suffix, table_identifier in (
+        ("double_quote", '"auth_users"'),
+        ("backtick", "\x60auth_users\x60"),
+        ("bracket", "[auth_users]"),
+    ):
+        db_path = tmp_path / f"auth_quoted_{suffix}.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute(f"""
+            CREATE TABLE {table_identifier}(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+              display_name TEXT NOT NULL DEFAULT '',
+              role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
+              password_salt TEXT NOT NULL, password_hash TEXT NOT NULL,
+              security_question TEXT NOT NULL DEFAULT '', answer_salt TEXT NOT NULL DEFAULT '',
+              answer_hash TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            INSERT INTO auth_users(
+              id,username,display_name,role,password_salt,password_hash,
+              security_question,answer_salt,answer_hash,active,created_at,updated_at
+            ) VALUES(73,'Admin','Customer','Admin','customer-salt','customer-hash',
+                     'question','answer-salt','answer-hash',1,'created','updated')
+        """)
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setattr(app, "DB_PATH", str(db_path))
+        database = app.Database()
+        try:
+            customer = database.conn.execute(
+                "SELECT id,username,password_salt,password_hash,security_question,answer_hash "
+                "FROM auth_users WHERE username='Admin' COLLATE BINARY"
+            ).fetchone()
+            assert customer is not None
+            assert customer["id"] == 73
+            assert customer["username"] == "Admin"
+            assert customer["password_salt"] == "customer-salt"
+            assert customer["password_hash"] == "customer-hash"
+            assert customer["security_question"] == "question"
+            assert customer["answer_hash"] == "answer-hash"
+
+            schema = database.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
+            ).fetchone()[0]
+            assert "COLLATE BINARY" in schema.upper()
+            database.conn.execute("""
+                INSERT INTO auth_users(
+                  username,display_name,role,password_salt,password_hash,
+                  security_question,answer_salt,answer_hash,active,created_at,updated_at
+                ) VALUES('admin','Developer','Developer','developer-salt','developer-hash',
+                         '','','',1,'created','updated')
+            """)
+            assert database.conn.execute(
+                "SELECT COUNT(*) FROM auth_users WHERE username IN ('Admin','admin') COLLATE BINARY"
+            ).fetchone()[0] == 2
+        finally:
+            database.conn.close()
+
