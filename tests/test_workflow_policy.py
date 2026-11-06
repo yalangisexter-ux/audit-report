@@ -38,6 +38,7 @@ def test_main_build_and_chat_checks_do_not_use_pull_requests_or_feature_branches
     assert '"cloudflare-chat/**"' in chat
     assert '"chat-web/**"' in chat
     assert '"cloudflare_chat.py"' in chat
+    assert '"tests/*chat*.py"' in chat
     assert "feature/" not in chat
     assert "Chat checks are main-only" in chat
 
