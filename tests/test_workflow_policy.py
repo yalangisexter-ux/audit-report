@@ -37,3 +37,11 @@ def test_main_build_and_chat_checks_do_not_use_pull_requests_or_feature_branches
     assert "branches: [main]" in chat
     assert "feature/" not in chat
     assert "Chat checks are main-only" in chat
+
+def test_every_manually_dispatchable_workflow_refuses_non_main_refs():
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        source = path.read_text(encoding="utf-8")
+        if re.search(r"(?m)^\\s*workflow_dispatch\\s*:", source):
+            assert "main-only; refusing ref" in source, (
+                f"{path.name} allows manual execution without a main-branch guard"
+            )
