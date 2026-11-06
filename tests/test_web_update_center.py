@@ -118,7 +118,7 @@ def test_update_center_selects_latest_published_stable_installer_and_rejects_unt
     _mock_release_catalog(
         monkeypatch,
         [
-            _release("v1.3.82", digest="sha256:" + ("a" * 64)),
+            _release("v1.3.83", digest="sha256:" + ("a" * 64)),
             _release("v1.3.80", digest="sha256:" + ("b" * 64)),
             _release("v1.3.79"),
             _release("v1.3.99", draft=True),
@@ -137,13 +137,34 @@ def test_update_center_selects_latest_published_stable_installer_and_rejects_unt
         body = response.json()
         assert body["status"] == "ok"
         assert body["current_version"] == "1.3.82"
-        assert body["latest_version"] == "1.3.82"
+        assert body["latest_version"] == "1.3.83"
         assert body["update_available"] is True
         assert body["previous_release_count"] == 2
         assert body["latest_release"]["download_url"].startswith(
             "https://github.com/yalangisexter-ux/audit-report/releases/download/"
         )
         assert body["latest_release"]["sha256"] == "a" * 64
+    finally:
+        _clear_overrides()
+
+
+def test_update_center_reports_no_update_when_latest_matches_current_version(tmp_path, monkeypatch):
+    path = tmp_path / "update-center-current.db"
+    _create_update_database(path)
+    _mock_release_catalog(
+        monkeypatch,
+        [_release("v1.3.82", digest="sha256:" + ("d" * 64))],
+    )
+    client = _client_for_database(
+        path, {"id": 3, "username": "Staff", "role": "Staff"}
+    )
+    try:
+        response = client.get("/api/update-center")
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["current_version"] == "1.3.82"
+        assert body["latest_version"] == "1.3.82"
+        assert body["update_available"] is False
     finally:
         _clear_overrides()
 
