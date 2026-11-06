@@ -10,7 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Write-ResolvedDirectory([string]$Directory) {
-    [System.IO.File]::WriteAllText($OutputFile, $Directory, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($OutputFile, $Directory, [System.Text.UTF8Encoding]::new($false))
 }
 
 function Get-ProfileLocalAppData([string]$ProfilePath, [string]$Sid, [string]$UserHivesRoot = "Registry::HKEY_USERS") {
