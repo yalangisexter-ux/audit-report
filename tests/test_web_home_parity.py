@@ -112,6 +112,7 @@ def test_web_home_is_a_distinct_screen_with_the_desktop_workspace_guide():
     home_source = (root / "frontend" / "src" / "HomeWorkspace.jsx").read_text(encoding="utf-8")
 
     assert "tab==='home'&&<HomeWorkspace" in app_source
+    assert "apiFetch('/home/business-snapshot')" in app_source
     assert "tab==='dashboard'&&<>" in app_source
     assert "['homeBusiness','/home/business-snapshot',null]" in app_source
 
