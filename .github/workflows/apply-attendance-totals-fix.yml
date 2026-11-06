@@ -13,6 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Require main branch
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Attendance fix is main-only; refusing ref $GITHUB_REF." >&2
+            exit 1
+          fi
       - name: Apply attendance fix
         run: |
           set -euo pipefail
