@@ -26,6 +26,50 @@ import api_server as api
 _pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web-parity")
 _jobs = {}
 _jobs_lock = threading.Lock()
+_SCRAPE_JOB_TTL_SECONDS = 60 * 60
+_SCRAPE_JOB_MAX_RETAINED = 200
+
+
+def _scrape_owner_key(user):
+    user_id = user.get("id")
+    if user_id is not None:
+        return f"id:{user_id}"
+    username = str(user.get("username") or "").strip()
+    if username:
+        # Keep username case intact: customer Admin and developer admin are
+        # distinct accounts in this application.
+        return f"username:{username}"
+    raise HTTPException(status_code=401, detail="Authenticated account identity is unavailable.")
+
+
+def _prune_scrape_jobs_locked(now=None):
+    """Expire old finished jobs and cap retained history; caller holds _jobs_lock."""
+    now = time.monotonic() if now is None else float(now)
+    for job_id, job in list(_jobs.items()):
+        if job.get("status") == "running":
+            continue
+        try:
+            created_at = float(job.get("created_at", now))
+        except (TypeError, ValueError):
+            created_at = now
+        if now - created_at >= _SCRAPE_JOB_TTL_SECONDS:
+            _jobs.pop(job_id, None)
+
+    if len(_jobs) <= _SCRAPE_JOB_MAX_RETAINED:
+        return
+    finished = []
+    for job_id, job in _jobs.items():
+        if job.get("status") == "running":
+            continue
+        try:
+            created_at = float(job.get("created_at", now))
+        except (TypeError, ValueError):
+            created_at = now
+        finished.append((created_at, job_id))
+    for _, job_id in sorted(finished):
+        if len(_jobs) <= _SCRAPE_JOB_MAX_RETAINED:
+            break
+        _jobs.pop(job_id, None)
 
 
 def _admin(user):
@@ -149,17 +193,28 @@ def start_customer_scrape(payload: dict, user=Depends(api.get_current_user)):
     except (TypeError, ValueError): max_results = 10
     deep = bool(payload.get("deep_scrape", True))
     job_id = uuid.uuid4().hex
+    owner_key = _scrape_owner_key(user)
+    created_at = time.monotonic()
     with _jobs_lock:
-        _jobs[job_id] = {"id":job_id,"status":"running","state":state,"query":query,"found":0,"error":""}
+        _prune_scrape_jobs_locked(created_at)
+        _jobs[job_id] = {
+            "id": job_id, "status": "running", "state": state, "query": query,
+            "found": 0, "error": "", "owner_key": owner_key, "created_at": created_at,
+        }
     _pool.submit(_run_scrape, job_id, state, query, max_results, deep)
     return {"job_id":job_id,"status":"running"}
 
 @api.app.get("/api/customers/scrape/{job_id}")
 def customer_scrape_status(job_id: str, user=Depends(api.get_current_user)):
+    owner_key = _scrape_owner_key(user)
     with _jobs_lock:
+        _prune_scrape_jobs_locked()
         job = _jobs.get(job_id)
-        if not job: raise HTTPException(status_code=404, detail="Scrape job not found or expired.")
-        return dict(job)
+        # Return 404 for another account's job so the endpoint does not reveal
+        # whether a guessed or leaked job identifier is valid.
+        if not job or job.get("owner_key") != owner_key:
+            raise HTTPException(status_code=404, detail="Scrape job not found or expired.")
+        return {key: value for key, value in job.items() if key not in {"owner_key", "created_at"}}
 
 
 @api.app.patch("/api/customers/prospects/{prospect_id}")

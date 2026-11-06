@@ -461,3 +461,70 @@ def test_public_registration_allows_case_distinct_admin_and_blocks_exact_duplica
         for token in created_tokens:
             api.ACTIVE_SESSIONS.pop(token, None)
         cleanup()
+
+def test_customer_scrape_job_status_is_private_to_creator(tmp_path, monkeypatch):
+    import web_parity_routes
+
+    client, admin_headers, _, cleanup, _, staff_token = setup_account_client(tmp_path, monkeypatch)
+    staff_headers = {"Authorization": "Bearer " + staff_token}
+    submitted = []
+    monkeypatch.setattr(
+        web_parity_routes._pool,
+        "submit",
+        lambda function, *args: submitted.append((function, args)),
+    )
+    job_id = None
+    try:
+        started = client.post(
+            "/api/customers/scrape",
+            headers=admin_headers,
+            json={"state": "Andhra Pradesh", "query": "sports nutrition", "max_results": 3},
+        )
+        assert started.status_code == 200, started.text
+        job_id = started.json()["job_id"]
+        assert len(submitted) == 1
+
+        own_status = client.get(f"/api/customers/scrape/{job_id}", headers=admin_headers)
+        assert own_status.status_code == 200, own_status.text
+        assert own_status.json()["query"] == "sports nutrition"
+        assert "owner_key" not in own_status.json()
+        assert "created_at" not in own_status.json()
+
+        other_status = client.get(f"/api/customers/scrape/{job_id}", headers=staff_headers)
+        assert other_status.status_code == 404
+    finally:
+        if job_id:
+            with web_parity_routes._jobs_lock:
+                web_parity_routes._jobs.pop(job_id, None)
+        cleanup()
+
+
+def test_scrape_job_pruning_expires_finished_jobs_but_keeps_running_jobs():
+    import web_parity_routes
+
+    with web_parity_routes._jobs_lock:
+        original = dict(web_parity_routes._jobs)
+        try:
+            web_parity_routes._jobs.clear()
+            web_parity_routes._jobs.update({
+                "expired": {"id": "expired", "status": "completed", "created_at": 0},
+                "recent": {"id": "recent", "status": "failed", "created_at": 100},
+                "active": {"id": "active", "status": "running", "created_at": 0},
+            })
+            web_parity_routes._prune_scrape_jobs_locked(
+                now=web_parity_routes._SCRAPE_JOB_TTL_SECONDS + 101
+            )
+            assert "expired" not in web_parity_routes._jobs
+            assert "recent" in web_parity_routes._jobs
+            assert "active" in web_parity_routes._jobs
+        finally:
+            web_parity_routes._jobs.clear()
+            web_parity_routes._jobs.update(original)
+
+
+def test_scrape_owner_fallback_keeps_case_sensitive_account_names():
+    import web_parity_routes
+
+    assert web_parity_routes._scrape_owner_key({"username": "Admin"}) != (
+        web_parity_routes._scrape_owner_key({"username": "admin"})
+    )
