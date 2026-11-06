@@ -132,14 +132,12 @@ def test_admin_and_admin_are_preserved_as_distinct_case_sensitive_accounts(tmp_p
         assert customer["password_salt"] == "customer-salt"
         assert customer["password_hash"] == "customer-hash"
 
-        database.conn.execute("""
-            INSERT INTO auth_users(
-              username, display_name, role, password_salt, password_hash,
-              security_question, answer_salt, answer_hash, active, created_at, updated_at
-            ) VALUES('admin', 'Developer', 'Developer', 'developer-salt',
-                     'developer-hash', '', '', '', 1, 'created', 'updated')
-        """)
-        database.conn.commit()
+        developer = database.conn.execute(
+            "SELECT * FROM auth_users WHERE username=? COLLATE BINARY", ("admin",)
+        ).fetchone()
+        assert developer is not None
+        assert developer["role"] == "Developer"
+        assert developer["id"] != customer["id"]
         assert database.conn.execute(
             "SELECT COUNT(*) FROM auth_users WHERE username IN ('Admin','admin') COLLATE BINARY"
         ).fetchone()[0] == 2
@@ -158,16 +156,8 @@ def test_desktop_login_uses_exact_customer_and_developer_accounts(tmp_path, monk
     monkeypatch.setattr(app, "BACKUP_DIR", str(tmp_path / "backups"))
     database = app.Database()
     try:
-        customer_salt, customer_hash = app.hash_pin("Shiva@01")
-        timestamp = app.now_text()
-        database.conn.execute(
-            """INSERT INTO auth_users(
-                username, display_name, role, password_salt, password_hash,
-                security_question, answer_salt, answer_hash, active, created_at, updated_at
-            ) VALUES('Admin', 'Customer Administrator', 'Admin', ?, ?, '', '', '', 1, ?, ?)""",
-            (customer_salt, customer_hash, timestamp, timestamp),
-        )
-        database.conn.commit()
+        # Database.setup() provisions the exact customer and developer accounts
+        # only when missing; verify their real seeded credentials without duplicating rows.
 
         customer_dialog = app.LoginDialog(database)
         customer_button = next(
@@ -287,13 +277,14 @@ def test_auth_case_sensitive_migration_supports_quoted_table_identifiers(tmp_pat
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
             ).fetchone()[0]
             assert "COLLATE BINARY" in schema.upper()
-            database.conn.execute("""
-                INSERT INTO auth_users(
-                  username,display_name,role,password_salt,password_hash,
-                  security_question,answer_salt,answer_hash,active,created_at,updated_at
-                ) VALUES('admin','Developer','Developer','developer-salt','developer-hash',
-                         '','','',1,'created','updated')
-            """)
+            developer = database.conn.execute(
+                "SELECT username,role,password_salt,password_hash FROM auth_users "
+                "WHERE username='admin' COLLATE BINARY"
+            ).fetchone()
+            assert developer is not None
+            assert developer["role"] == "Developer"
+            _, expected_developer_hash = app.hash_pin("kiran123", developer["password_salt"])
+            assert developer["password_hash"] == expected_developer_hash
             assert database.conn.execute(
                 "SELECT COUNT(*) FROM auth_users WHERE username IN ('Admin','admin') COLLATE BINARY"
             ).fetchone()[0] == 2
