@@ -1,8 +1,6 @@
 name: Master Build and Test
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
     paths-ignore:
@@ -31,7 +29,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -84,8 +82,9 @@ jobs:
           Write-Host ($changed -join "`n")
 
       - name: Set up Node.js for chat syntax checks
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
+          package-manager-cache: false
           node-version: "22"
 
       - name: Build and verify Render React frontend
@@ -199,7 +198,7 @@ jobs:
           finally { Pop-Location }
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -383,7 +382,7 @@ jobs:
 
       - name: Upload installer as a build artifact
         if: steps.installer_changes.outputs.installer_changed == 'true' || contains(github.event.head_commit.message, '[release]')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: RawStrengthEmployeeAuditManager-Setup-v1.3.81
           path: installer-output/RawStrengthEmployeeAuditManager-Setup.exe
