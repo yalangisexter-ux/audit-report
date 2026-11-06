@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 from web_parity_routes import _store_directory_rows
 
@@ -81,3 +82,57 @@ def test_store_directory_search_requires_every_term_and_state_filter_supports_mu
         )} == {1, 2, 4}
     finally:
         conn.close()
+
+
+
+def test_store_directory_kind_filters_match_desktop_strict_pure_product_rules():
+    conn = _directory_db()
+    try:
+        extra_rows = [
+            (5, "Peak Nutrition Retailer", "Sports nutrition / supplement retailer", "Store",
+             "Andhra Pradesh", "Rajahmundry", "Main Road", "", "9000000000", "peak@example.com",
+             "Shop 4, Main Road, Rajahmundry, Andhra Pradesh 533101", "https://peak.example",
+             "https://www.google.com/maps/place/Peak", "", "", "", "Yes", "", "", "", "",
+             "Web", "", "", "verified"),
+            (6, "Whey Shop", "Whey protein retailer", "Store", "Andhra Pradesh", "Kakinada",
+             "Main Road", "", "", "", "Main Road", "https://whey.example",
+             "https://maps.google.com/?q=Whey", "", "", "", "No", "", "", "", "", "Web", "", "",
+             "verified"),
+            (7, "Town Nutrition", "Sports nutrition retailer", "Store", "Telangana", "Warangal",
+             "Main Road", "", "", "", "Shop 2, Main Road, Warangal, Telangana 506001",
+             "https://town.example", "https://maps.google.com/?q=Town", "", "", "", "No", "",
+             "pharmacy", "", "", "Web", "", "", "verified"),
+            (8, "Hybrid Fitness Store", "Gym sports nutrition counter", "Gym + Store",
+             "Andhra Pradesh", "Vijayawada", "Main Road", "", "", "",
+             "Shop 8, Main Road, Vijayawada, Andhra Pradesh 520010", "https://hybrid.example",
+             "https://www.google.com/maps/place/Hybrid", "", "", "", "Yes", "", "", "", "",
+             "Web", "", "", "verified"),
+            (9, "Supplement Outlet", "Protein retailer", "Supplement Store", "Kerala", "Kochi",
+             "Market Road", "", "", "", "Unit 3, Market Road, Kochi, Kerala 682001",
+             "https://outlet.example", "https://maps.app.goo.gl/outlet", "", "", "", "Yes", "",
+             "", "", "", "Web", "", "", "verified"),
+        ]
+        conn.executemany(
+            "INSERT INTO customer_prospects VALUES (" + ",".join("?" for _ in range(25)) + ")",
+            extra_rows,
+        )
+        assert {row["id"] for row in _store_directory_rows(
+            conn, kind="Pure Product Selling Stores"
+        )} == {5, 9}
+        assert {row["id"] for row in _store_directory_rows(conn, kind="Store")} == {
+            1, 3, 4, 5, 6, 7, 9
+        }
+        assert {row["id"] for row in _store_directory_rows(
+            conn, kind="Gyms which sell products also"
+        )} == {8}
+    finally:
+        conn.close()
+
+
+def test_store_directory_web_defaults_to_desktop_pure_product_view_and_clear_exclusions():
+    app_source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text(
+        encoding="utf-8"
+    )
+    assert "const [prospectKindFilter,setProspectKindFilter]=useState('pure product selling stores')" in app_source
+    assert "clearStoreExclusions" in app_source
+    assert "Clear exclusions" in app_source
