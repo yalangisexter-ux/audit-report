@@ -1389,7 +1389,7 @@ class Database:
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS auth_users(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          username TEXT NOT NULL COLLATE BINARY UNIQUE,
           display_name TEXT NOT NULL DEFAULT '',
           role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
           password_salt TEXT NOT NULL,
@@ -1640,7 +1640,47 @@ class Database:
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='auth_users'"
             ).fetchone()
             auth_sql = auth_sql_row[0] if auth_sql_row else ""
-            if auth_sql and "COLLATE NOCASE" in auth_sql.upper():
+            needs_case_migration = bool(auth_sql) and "COLLATE NOCASE" in auth_sql.upper()
+            if needs_case_migration:
+                # Drop leftover staging tables from interrupted upgrades so they
+                # cannot collide with a new staging name or confuse diagnostics.
+                for row in self.conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name LIKE 'auth_users_case_sensitive%'"
+                ).fetchall():
+                    try:
+                        self.conn.execute('DROP TABLE IF EXISTS "%s"' % str(row[0]).replace('"', '""'))
+                    except Exception:
+                        pass
+                columns_info = list(self.conn.execute("PRAGMA table_info(auth_users)").fetchall())
+                columns = [row["name"] for row in columns_info]
+                if not columns or "username" not in columns:
+                    raise RuntimeError("auth_users schema is missing its username column")
+                # Build a deterministic staging schema instead of regex-rewriting the
+                # legacy CREATE TABLE text. Some quoted/IF-NOT-EXISTS variants left the
+                # table name as auth_users and raised "table auth_users already exists"
+                # or failed the regex with "Could not safely prepare...".
+                staging_table = "auth_users_case_sensitive_" + secrets.token_hex(6)
+                col_defs = []
+                for row in columns_info:
+                    name = row["name"]
+                    decl = (row["type"] or "TEXT").strip() or "TEXT"
+                    if name == "id":
+                        decl = "INTEGER PRIMARY KEY AUTOINCREMENT"
+                    elif name == "username":
+                        decl = "TEXT NOT NULL COLLATE BINARY"
+                    piece = '"%s" %s' % (name.replace('"', '""'), decl)
+                    if name not in {"id", "username"} and row["notnull"] and "NOT NULL" not in decl.upper():
+                        piece += " NOT NULL"
+                    if name != "id" and row["dflt_value"] is not None and "DEFAULT" not in decl.upper():
+                        piece += " DEFAULT %s" % row["dflt_value"]
+                    col_defs.append(piece)
+                create_sql = (
+                    'CREATE TABLE "%s" (' % staging_table
+                    + ", ".join(col_defs)
+                    + ', UNIQUE("username")'
+                    + ")"
+                )
                 index_sql = [
                     row[0] for row in self.conn.execute(
                         "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='auth_users' AND sql IS NOT NULL"
@@ -1651,43 +1691,38 @@ class Database:
                         "SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name='auth_users' AND sql IS NOT NULL"
                     ).fetchall()
                 ]
-                columns = [row["name"] for row in self.conn.execute("PRAGMA table_info(auth_users)").fetchall()]
-                if not columns or "username" not in columns:
-                    raise RuntimeError("auth_users schema is missing its username column")
-                # A prior process may have been interrupted during migration.
-                # Use a unique staging table so stale staging data cannot block startup.
-                staging_table = "auth_users_case_sensitive_" + secrets.token_hex(6)
-                # sqlite_master preserves identifier quoting from legacy CREATE TABLE
-                # statements (for example, CREATE TABLE "auth_users"). Replace the
-                # actual table identifier, not only the unquoted spelling.
-                create_sql, replacement_count = re.subn(
-                    r'(\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)(?:(?:main|"main"|\'main\'|\x60main\x60|\[main\])\s*\.\s*)?(?:"auth_users"|\'auth_users\'|\x60auth_users\x60|\[auth_users\]|auth_users)(?=\s|\()',
-                    lambda match: match.group(1) + staging_table,
-                    auth_sql,
-                    count=1,
-                    flags=re.IGNORECASE,
-                )
-                if replacement_count != 1:
-                    raise sqlite3.DatabaseError(
-                        "Could not safely prepare auth_users case-sensitive migration."
-                    )
-                create_sql = re.sub(r"COLLATE\s+NOCASE", "COLLATE BINARY", create_sql, flags=re.IGNORECASE)
                 if not self.conn.in_transaction:
                     self.conn.execute("BEGIN IMMEDIATE")
                 try:
                     self.conn.execute(create_sql)
                     column_list = ", ".join('"' + name.replace('"', '""') + '"' for name in columns)
                     self.conn.execute(
-                        f"INSERT INTO {staging_table} ({column_list}) "
-                        f"SELECT {column_list} FROM auth_users"
+                        'INSERT INTO "%s" (%s) SELECT %s FROM auth_users'
+                        % (staging_table, column_list, column_list)
                     )
                     self.conn.execute("DROP TABLE auth_users")
-                    self.conn.execute(f"ALTER TABLE {staging_table} RENAME TO auth_users")
+                    self.conn.execute('ALTER TABLE "%s" RENAME TO auth_users' % staging_table)
                     for statement in index_sql + trigger_sql:
-                        self.conn.execute(statement)
+                        if not statement:
+                            continue
+                        if "NOCASE" in statement.upper():
+                            statement = re.sub(
+                                r"COLLATE\s+NOCASE", "COLLATE BINARY", statement, flags=re.IGNORECASE
+                            )
+                        try:
+                            self.conn.execute(statement)
+                        except sqlite3.Error as idx_exc:
+                            logging.getLogger("db").warning(
+                                "auth_users index/trigger rebuild skipped: %s", idx_exc
+                            )
                     self.conn.commit()
                 except Exception:
                     self.conn.rollback()
+                    try:
+                        self.conn.execute('DROP TABLE IF EXISTS "%s"' % staging_table)
+                        self.conn.commit()
+                    except Exception:
+                        pass
                     raise
 
             # Repair legacy role corruption using exact-case identity only.
