@@ -16,6 +16,7 @@ import ArchiveManager from './ArchiveManager';
 import BusinessTracking from './BusinessTracking';
 import LiveChat from './LiveChat';
 import UpdateCenter from './UpdateCenter';
+import HomeWorkspace from './HomeWorkspace';
 
 const API = '/api';
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-'); };
@@ -101,7 +102,7 @@ export default function App() {
   const [accountPasswordDraft,setAccountPasswordDraft]=useState({password:'',confirm:''});
   const [newAccount,setNewAccount]=useState({username:'',display_name:'',role:'Staff',password:'',security_question:'What was the name of your first school?',security_answer:''});
   const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
-  const [data,setData]=useState({dashboard:null,employees:[],employeeGroups:[],tasks:[],attendance:{date:today(),roster:[]},attendanceSummary:{rows:[]},holidays:[],products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,archive:[],db:null});
+  const [data,setData]=useState({dashboard:null,homeBusiness:null,employees:[],employeeGroups:[],tasks:[],attendance:{date:today(),roster:[]},attendanceSummary:{rows:[]},holidays:[],products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,archive:[],db:null});
   const [query,setQuery]=useState('');
   const [prospectStateFilter,setProspectStateFilter]=useState('all');
   const [prospectKindFilter,setProspectKindFilter]=useState('all');
@@ -168,7 +169,7 @@ export default function App() {
     setBusy(true);
     const selectedAttendanceDate=attendanceDate||today();
     const jobs=[
-      ['dashboard','/dashboard',null],['employees','/employees?active_only=false',[]],['employeeGroups','/employee-groups',[]],['tasks','/tasks',[]],
+      ['dashboard','/dashboard',null],['homeBusiness','/home/business-snapshot',null],['employees','/employees?active_only=false',[]],['employeeGroups','/employee-groups',[]],['tasks','/tasks',[]],
       ['attendance','/attendance?work_date='+encodeURIComponent(selectedAttendanceDate),{date:selectedAttendanceDate,roster:[]}],
       ['attendanceSummary','/attendance/summary?work_date='+encodeURIComponent(selectedAttendanceDate),{rows:[]}],
       ['holidays','/holidays',[]],
@@ -506,7 +507,8 @@ export default function App() {
             {clockMode==='digital'?<span className="flex flex-col items-end text-[10px] leading-tight"><span>{clockNow.toLocaleDateString(undefined,{weekday:'short',day:'2-digit',month:'short'})}</span><span className="font-semibold tabular-nums">{clockNow.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true})}</span></span>:<span className="flex items-center gap-2"><AnalogClock now={clockNow}/><span className="text-[10px]">Analog</span></span>}
           </button><button onClick={()=>load()} className="rounded-lg border border-white/10 p-2 text-cyan-300" title="Refresh"><RefreshCw size={16} className={busy?'animate-spin':''}/></button></div></header>
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
-        {(tab==='home'||tab==='dashboard')&&<>
+        {tab==='home'&&<HomeWorkspace user={user} business={data.homeBusiness} theme={theme} onThemeChange={setTheme} wallpaper={wallpaper} wallpaperStyles={WALLPAPER_STYLES} onWallpaperChange={setWallpaper} onCustomWallpaperUpload={uploadCustomWallpaper} canRollback={canAdminEmployees} onNavigate={setTab}/>}
+        {tab==='dashboard'&&<>
           <div className="rounded-2xl border border-cyan-400/25 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><p className="text-sm font-black tracking-wider text-white">⚡ OPERATIONS COMMAND // REAL-TIME WORKFORCE AUDIT</p><p className="mt-1 text-xs text-slate-400">{data.dashboard?.today||today()} · Workforce and task telemetry</p></div>
