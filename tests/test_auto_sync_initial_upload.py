@@ -64,3 +64,42 @@ def test_customer_login_marks_pending_but_waits_for_remote_pull_before_upload():
     )
 
     assert calls == ["mark_pending"]
+
+def test_failed_customer_pull_does_not_upload_stale_local_snapshot(monkeypatch):
+    calls = []
+
+    class FakeSync:
+        is_configured = True
+        is_busy = False
+        is_dirty = True
+        installation_id = "customer-installation"
+
+        def download_latest_snapshot(self, **kwargs):
+            calls.append(("pull", kwargs))
+            raise OSError("temporary network failure")
+
+        def request_sync(self):
+            calls.append(("push",))
+            return True
+
+    class InlineThread:
+        def __init__(self, target, name=None, daemon=None):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    fake_window = SimpleNamespace(
+        current_user={"username": "Admin", "role": "Admin"},
+        db=SimpleNamespace(github_sync=FakeSync()),
+        _auto_sync_running=False,
+    )
+    monkeypatch.setattr(app.threading, "Thread", InlineThread)
+
+    app.MainWindow._background_auto_sync(fake_window)
+
+    assert calls == [("pull", {
+        "target_installation_id": "customer-installation",
+        "prefer_latest": False,
+    })]
+    assert fake_window._auto_sync_running is False
