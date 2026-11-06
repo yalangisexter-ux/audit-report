@@ -109,7 +109,7 @@ def test_commit_hook_suppressed_for_developer_test_user(tmp_path, monkeypatch):
     db.conn.execute("INSERT INTO test_t VALUES (2)")
     db.conn.commit()
     assert len(marked) == 1, "Customer commit MUST trigger mark_pending"
-    assert scheduled == [2.0], "Customer commit MUST schedule a debounced background sync"
+    assert scheduled == [], "Customer commit must mark pending and let MainWindow reconcile before upload"
 
 
 def test_google_sheets_continuous_sync_paused_in_dev_test_mode():
