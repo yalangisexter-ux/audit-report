@@ -1,8 +1,11 @@
 # Raw Strength Calisthenics — Employee Audit Manager & Operations OS
 
-## Modern React SPA + FastAPI REST API Interface (v1.3.81)
+## Modern React SPA + FastAPI REST API Interface (v1.3.82)
 
 A React web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a **FastAPI REST API** backend and the shared SQLite data model. Existing PBKDF2 account hashes and installation-scoped sync behavior are preserved. Desktop-to-web feature parity is tracked screen by screen and is not yet complete.
+
+
+> **Release status (2026-11-06):** Source/build metadata is v1.3.82. GitHub Actions run #1186 verified the React build, 339 Python regression tests and the Windows EXE/installer upgrade/data-preservation pipeline. Its v1.3.82 installer is a private Actions artifact; the latest public GitHub Release is still v1.3.81 until a v1.3.82 release is published.
 
 ### Quick Start
 To launch the modern web application and automatically open it in your browser:
@@ -35,7 +38,7 @@ python run_web.py
 
 ## Live Chat (Cloudflare)
 
-- The Windows app supports private employee conversations and authorized groups. The current web screen supports general-channel messaging only; private/group chat, unread state, and reconnect parity remain open.
+- The web Live Chat screen keeps the existing audit-app general-channel history/send workflow and embeds the Cloudflare-served client for private conversations, groups, calls and screen sharing. The embedded chat currently has a separate chat-service sign-in; it is not yet unified with the Audit Manager account identity. Browser verification of unread state, reconnect, membership and desktop parity remains open.
 - A responsive browser/mobile client is served from the Cloudflare Worker. The chat backend is separate from the local audit database.
 - Deploy the service using the instructions in [Cloudflare Live Chat setup](cloudflare-chat/README.md). Configure a real D1 database ID and Cloudflare secrets before deploying; source-control changes alone do not deploy the service.
 - Chat accounts are provisioned by the chat administrator and use separate credentials from the existing local Audit Manager login.
