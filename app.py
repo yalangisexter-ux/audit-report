@@ -10389,6 +10389,7 @@ class MainWindow(QMainWindow):
             raw = None
             merge_handed_off = False
             remote_snapshot_missing = False
+            remote_snapshot_loaded = False
             try:
                 try:
                     # Pull only this customer's canonical installation snapshot.
@@ -10397,11 +10398,16 @@ class MainWindow(QMainWindow):
                         target_installation_id=sync.installation_id,
                         prefer_latest=False,
                     )
+                    remote_snapshot_loaded = True
                 except Exception as ex:
                     if "No remote snapshot" in str(ex):
                         remote_snapshot_missing = True
                     else:
-                        logging.getLogger("auto_sync").debug(f"Auto-sync pull check: {ex}")
+                        # A failed pull is not permission to publish a stale local
+                        # snapshot. Keep it pending and let the next poll retry.
+                        logging.getLogger("auto_sync").warning(
+                            f"Auto-sync pull failed; refusing stale upload: {ex}"
+                        )
 
                 if raw:
                     import tempfile
@@ -10419,7 +10425,9 @@ class MainWindow(QMainWindow):
                     # This is queued only after the exact installation pull confirms
                     # that no remote customer snapshot exists.
                     sync.request_sync()
-                elif sync.is_dirty:
+                elif remote_snapshot_loaded and sync.is_dirty:
+                    # A dirty local database may be uploaded only after a successful
+                    # pull confirms the canonical remote state was checked.
                     sync.request_sync()
             except Exception as e:
                 logging.getLogger("auto_sync").debug(f"Auto-sync worker note: {e}")
