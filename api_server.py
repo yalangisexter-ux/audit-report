@@ -733,6 +733,41 @@ def reset_managed_account_password(
     return {"success": True, "user_id": user_id, "message": "Password reset successfully. The account must sign in again."}
 
 
+# --- Home workspace business snapshot ---
+@app.get("/api/home/business-snapshot")
+def get_home_business_snapshot(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Return the business counters shown on the desktop Home workspace."""
+    from business_tracking import available_stock
+
+    products = conn.execute("SELECT * FROM bt_products ORDER BY name COLLATE NOCASE ASC").fetchall()
+    low_stock = 0
+    for product in products:
+        reorder_level = float(product["reorder_level"] or 0)
+        if reorder_level > 0 and available_stock(product) <= reorder_level:
+            low_stock += 1
+
+    orders = conn.execute(
+        "SELECT COUNT(*) AS total, COALESCE(SUM(order_value), 0) AS sales FROM bt_orders"
+    ).fetchone()
+    active_members = conn.execute(
+        "SELECT COUNT(*) FROM bt_members WHERE status='Active'"
+    ).fetchone()[0]
+    activities = conn.execute("SELECT COUNT(*) FROM bt_activities").fetchone()[0]
+
+    return {
+        "version": APP_VERSION,
+        "products": len(products),
+        "low_stock": low_stock,
+        "orders": int(orders["total"] or 0),
+        "members": int(active_members or 0),
+        "activities": int(activities or 0),
+        "total_sales": float(orders["sales"] or 0),
+    }
+
+
 # --- Dashboard Analytics ---
 @app.get("/api/dashboard")
 def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, Any] = Depends(get_current_user)):
