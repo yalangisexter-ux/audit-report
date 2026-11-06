@@ -377,7 +377,30 @@ def _store_directory_rows(
             "OR (',' || replace(lower(IFNULL(state,'')),' ','') || ',') LIKE ?)"
         )
         params.extend([state, "%," + state_key + ",%"])
-    if kind:
+    normalized_kind = kind.strip().casefold()
+    if normalized_kind == "store":
+        sql += (
+            " AND lower(trim(IFNULL(kind,'Store'))) "
+            "IN ('store','supplement store','pure product selling store')"
+        )
+    elif normalized_kind in {"gym", "gyms"}:
+        sql += " AND lower(trim(IFNULL(kind,''))) IN ('gym','gyms')"
+    elif normalized_kind in {
+        "gyms which sell products also", "gym + store", "gyms which sell products"
+    }:
+        sql += (
+            " AND (lower(trim(IFNULL(kind,''))) IN "
+            "('gym + store','gym which sells products','gym + store (hybrid)') "
+            "OR lower(IFNULL(business_category,'')) LIKE '%product%' "
+            "OR (lower(IFNULL(business_category,'')) LIKE '%gym%' AND ("
+            "lower(IFNULL(business_category,'')) LIKE '%supplement%' "
+            "OR lower(IFNULL(business_category,'')) LIKE '%nutrition%' "
+            "OR lower(IFNULL(business_category,'')) LIKE '%counter%' "
+            "OR lower(IFNULL(business_category,'')) LIKE '%pro-shop%' "
+            "OR lower(IFNULL(business_category,'')) LIKE '%protein%' "
+            "OR lower(IFNULL(business_category,'')) LIKE '%shake%')))"
+        )
+    elif kind and normalized_kind != "pure product selling stores":
         sql += " AND lower(trim(IFNULL(kind,'Store')))=lower(trim(?))"
         params.append(kind)
     if contact == "has":
@@ -462,7 +485,38 @@ def _store_directory_rows(
         params.extend(["%" + term + "%"] * len(fields))
 
     sql += " ORDER BY id DESC"
-    return _rows(conn, sql, tuple(params))
+    records = _rows(conn, sql, tuple(params))
+    if normalized_kind == "pure product selling stores":
+        product_evidence = re.compile(
+            r"\\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\\b",
+            re.IGNORECASE,
+        )
+        pure_product_stores = []
+        for record in records:
+            record_kind = str(record.get("kind") or "Store").strip().casefold()
+            if record_kind not in {"store", "supplement store", "pure product selling store"}:
+                continue
+            evidence_blob = " ".join(
+                str(record.get(field) or "")
+                for field in ("business_name", "business_category", "source_status", "notes")
+            )
+            address_value = str(record.get("address") or "").strip()
+            maps_value = str(record.get("maps") or "").strip().casefold()
+            full_address = len(address_value) >= 20 and bool(re.search(r"\\b\\d{6}\\b", address_value))
+            has_maps_link = maps_value.startswith((
+                "https://www.google.com/maps/",
+                "https://maps.google.com/",
+                "https://maps.app.goo.gl/",
+            ))
+            if (
+                product_evidence.search(evidence_blob)
+                and full_address
+                and has_maps_link
+                and not prospect_store.NEGATIVE_FILTER_PATTERN.search(evidence_blob + " " + address_value)
+            ):
+                pure_product_stores.append(record)
+        records = pure_product_stores
+    return records
 
 
 
