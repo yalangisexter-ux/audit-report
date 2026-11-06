@@ -57,9 +57,12 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
   const [report,setReport] = useState({date:today(),report_type:'Audit / EOD',employee_id:'',exclude_employee_id:'',output_format:'docx',options:{...defaults}});
   const [preferencesLoaded,setPreferencesLoaded] = useState(false);
   const preferenceWrites = useRef({});
+  const previewSequence = useRef(0);
+  const previewTimer = useRef(null);
   const [reportText,setReportText] = useState('');
   const [recordCount,setRecordCount] = useState(null);
   const [busy,setBusy] = useState(false);
+  const [previewBusy,setPreviewBusy] = useState(false);
   const [archivedReportId,setArchivedReportId] = useState('');
   const individual = Boolean(report.employee_id);
   const selectedArchivedReport = archive.find(item => String(item.id) === String(archivedReportId)) || null;
@@ -111,20 +114,48 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
     options:report.options
   });
 
+  const runPreview = async () => {
+    const requestId = ++previewSequence.current;
+    setPreviewBusy(true);
+    try {
+      const result = await apiFetch('/reports/preview',{method:'POST',body:JSON.stringify(payload())});
+      if (requestId === previewSequence.current) {
+        setReportText(result.preview_text || 'The report service returned no preview content.');
+        setRecordCount(result.record_count ?? null);
+      }
+    } catch (error) {
+      if (requestId === previewSequence.current) notify(error.message);
+    } finally {
+      if (requestId === previewSequence.current) setPreviewBusy(false);
+    }
+  };
+
   const preview = async event => {
     if (event) event.preventDefault();
     if (archivedSelected) return;
-    setBusy(true);
-    try {
-      const result = await apiFetch('/reports/preview',{method:'POST',body:JSON.stringify(payload())});
-      setReportText(result.preview_text || 'The report service returned no preview content.');
-      setRecordCount(result.record_count ?? null);
-    } catch (error) {
-      notify(error.message);
-    } finally {
-      setBusy(false);
+    if (previewTimer.current !== null) {
+      window.clearTimeout(previewTimer.current);
+      previewTimer.current = null;
     }
+    await runPreview();
   };
+
+  useEffect(() => {
+    if (!preferencesLoaded || archivedSelected) return undefined;
+    const timer = window.setTimeout(() => {
+      previewTimer.current = null;
+      runPreview();
+    }, 300);
+    previewTimer.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+      if (previewTimer.current === timer) previewTimer.current = null;
+      previewSequence.current += 1;
+    };
+  }, [
+    preferencesLoaded, archivedSelected, report.date, report.report_type,
+    report.employee_id, report.exclude_employee_id, report.options
+  ]);
 
   const download = async () => {
     setBusy(true);
@@ -251,7 +282,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
             {archive.map(item=><option key={item.id} value={item.id}>{item.report_date||'Unknown date'} — {item.file_name} — {item.employee_name||'All employees'}</option>)}
           </select>
         </label>
-        <div className="flex items-end sm:col-span-2 xl:col-span-2"><button className={button+' w-full'} disabled={busy||!report.date||archivedSelected||!preferencesLoaded}><Eye size={16}/>{busy?'Working…':'Generate preview'}</button></div>
+        <div className="flex items-end sm:col-span-2 xl:col-span-2"><button className={button+' w-full'} disabled={busy||previewBusy||!report.date||archivedSelected||!preferencesLoaded}><Eye size={16}/>{previewBusy?'Previewing…':'Generate preview'}</button></div>
       </form>
       <div className="mt-5 rounded-xl border border-white/10 bg-slate-950/60 p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-bold text-cyan-200">{archivedSelected ? 'Historical archived PDF selected' : report.report_type+' content options'}</h3><span className="text-xs text-slate-500">Unchecked fields are omitted from preview and exports.</span></div>
@@ -266,9 +297,9 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" className={button} onClick={download} disabled={busy||!preferencesLoaded}><Download size={16}/>{busy?'Preparing…':archivedSelected?'Export archived PDF copy':'Generate / Download '+report.output_format.toUpperCase()}</button>
-        <button type="button" className={secondary} onClick={print} disabled={(!reportText&&!archivedSelected)||busy}><Printer size={16}/>{archivedSelected?'View / Print archived PDF':'Open PDF preview / Print'}</button>
-        <button type="button" className={secondary} onClick={onOpenArchive} disabled={busy}><FolderOpen size={16}/>Browse saved reports</button>
+        <button type="button" className={button} onClick={download} disabled={busy||previewBusy||!preferencesLoaded}><Download size={16}/>{busy?'Preparing…':archivedSelected?'Export archived PDF copy':'Generate / Download '+report.output_format.toUpperCase()}</button>
+        <button type="button" className={secondary} onClick={print} disabled={(!reportText&&!archivedSelected)||busy||previewBusy}><Printer size={16}/>{archivedSelected?'View / Print archived PDF':'Open PDF preview / Print'}</button>
+        <button type="button" className={secondary} onClick={onOpenArchive} disabled={busy||previewBusy}><FolderOpen size={16}/>Browse saved reports</button>
       </div>
       <p className="mt-3 text-xs text-slate-500">Employee exclusion applies only to this report. It never deletes or changes employee records. Report exports use the same filters and content options as the preview. Historical PDFs are read from the shared archive and are never modified by viewing or exporting.</p>
     </section>
