@@ -14895,7 +14895,15 @@ def restore_first_run_cloud_snapshot(db):
         return True, "Secure sync is not configured; local first-run setup is allowed."
 
     try:
-        raw = sync.download_latest_snapshot(prefer_latest=True)
+        installation_id = str(getattr(sync, "installation_id", "") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{32}", installation_id):
+        return False, "The customer installation ID is unavailable; refusing unsafe global snapshot discovery."
+
+    try:
+        raw = sync.download_latest_snapshot(
+            target_installation_id=installation_id,
+            prefer_latest=False,
+        )
     except Exception as exc:
         message = str(exc)
         if "No remote snapshot exists for this installation yet" in message or "No snapshot exists for this installation yet" in message:
