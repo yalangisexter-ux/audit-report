@@ -14894,8 +14894,7 @@ def restore_first_run_cloud_snapshot(db):
     if sync is None or not getattr(sync, "is_configured", False):
         return True, "Secure sync is not configured; local first-run setup is allowed."
 
-    try:
-        installation_id = str(getattr(sync, "installation_id", "") or "").strip().lower()
+    installation_id = str(getattr(sync, "installation_id", "") or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{32}", installation_id):
         return False, "The customer installation ID is unavailable; refusing unsafe global snapshot discovery."
 
