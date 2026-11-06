@@ -107,3 +107,6 @@ def test_update_center_selects_latest_published_stable_installer_and_rejects_unt
         assert body["latest_version"] == "1.3.82"
     finally:
         api_server.app.dependency_overrides.clear()
+
+
+# NOTE: remaining tests restored in companion commit if truncated by transport
