@@ -3067,8 +3067,8 @@ class AccountSetupDialog(QDialog):
                 (username, self.display_name.text().strip(), "Admin", psalt, phash,
                  self.question.currentText(), asalt, ahash, now_text(), now_text()))
             self.db.conn.commit()
-            if hasattr(self.db, "github_sync") and self.db.github_sync.is_configured:
-                self.db.github_sync.request_sync()
+            # The commit hook marks this database dirty. MainWindow performs the
+            # pull/merge/push reconciliation after sign-in; do not push from setup.
         except sqlite3.IntegrityError:
             return error(self, "That username already exists. Choose another one.")
         self.db.log("Administrator account created", username)
@@ -14883,6 +14883,51 @@ class StartupSplashScreen(QWidget):
         QApplication.processEvents()
 
 
+def restore_first_run_cloud_snapshot(db):
+    """Restore a verified customer snapshot before allowing first-admin setup.
+
+    A network/authentication/decryption failure must never be treated as an empty
+    installation: creating a new admin and pushing immediately could overwrite the
+    only remote copy of an existing customer's database.
+    """
+    sync = getattr(db, "github_sync", None)
+    if sync is None or not getattr(sync, "is_configured", False):
+        return True, "Secure sync is not configured; local first-run setup is allowed."
+
+    try:
+        raw = sync.download_latest_snapshot(prefer_latest=True)
+    except Exception as exc:
+        message = str(exc)
+        if "No remote snapshot exists for this installation yet" in message or "No snapshot exists for this installation yet" in message:
+            return True, "No remote customer snapshot exists; first-admin setup is safe."
+        return False, f"Secure customer snapshot could not be downloaded: {message[:220]}"
+
+    if not raw:
+        return False, "The secure sync service returned an empty customer snapshot."
+
+    import tempfile
+    try:
+        with tempfile.NamedTemporaryFile(prefix="rsc_init_", suffix=".sqlite3", delete=False) as handle:
+            snapshot_path = Path(handle.name)
+            handle.write(raw)
+        try:
+            merge_remote_database_snapshot(db.conn, snapshot_path)
+        finally:
+            snapshot_path.unlink(missing_ok=True)
+    except Exception as exc:
+        return False, f"The downloaded customer snapshot could not be merged safely: {str(exc)[:220]}"
+
+    try:
+        active_accounts = int(
+            db.conn.execute("SELECT COUNT(*) FROM auth_users WHERE active=1").fetchone()[0]
+        )
+    except Exception as exc:
+        return False, f"Could not verify restored customer accounts: {str(exc)[:180]}"
+    if active_accounts < 1:
+        return False, "The existing customer snapshot contains no active login account; setup remains blocked."
+    return True, "Existing customer snapshot and active login account restored."
+
+
 def main():
     app=QApplication(sys.argv); app.setStyle("Fusion"); ensure_combobox_wheel_filter(app)
     QFontDatabase.addApplicationFont(resource_path("assets/DejaVuSans.ttf"))
@@ -14926,20 +14971,20 @@ def main():
 
     splash.set_status("Verifying user accounts & cloud sync...", 60)
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
-        if hasattr(db, "github_sync") and db.github_sync.is_configured:
-            try:
-                raw = db.github_sync.download_latest_snapshot(prefer_latest=True)
-                if raw:
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(prefix="rsc_init_", suffix=".sqlite3", delete=False) as h:
-                        tpath = Path(h.name)
-                        h.write(raw)
-                    try:
-                        merge_remote_database_snapshot(db.conn, tpath)
-                    finally:
-                        tpath.unlink(missing_ok=True)
-            except Exception as e:
-                logging.getLogger("startup").debug(f"Initial cloud pull skipped: {e}")
+        sync = getattr(db, "github_sync", None)
+        if sync is not None and getattr(sync, "is_configured", False):
+            setup_allowed, sync_reason = restore_first_run_cloud_snapshot(db)
+            if not setup_allowed:
+                splash.close_splash()
+                QMessageBox.critical(
+                    None,
+                    APP_NAME,
+                    "The existing customer database could not be verified safely. "
+                    "First-admin setup has been blocked to prevent overwriting customer data.\n\n"
+                    f"Details: {sync_reason}\n\n"
+                    "Reconnect to the secure sync service and restart the application.",
+                )
+                return 1
 
     if db.conn.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0] == 0:
         splash.hide_splash()
