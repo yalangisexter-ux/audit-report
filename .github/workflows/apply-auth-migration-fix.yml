@@ -1,0 +1,27 @@
+name: Apply auth_users migration fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/fix_auth_users_migration.py'
+      - '.github/workflows/apply-auth-migration-fix.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply fix to app.py
+        run: python3 tools/fix_auth_users_migration.py
+      - name: Commit if changed
+        run: |
+          git config user.name "Audit Engineer"
+          git config user.email "engineer@audit-report.local"
+          git add app.py
+          if git diff --cached --quiet; then
+            echo "No app.py changes"
+          else
+            git commit -m "fix(desktop): harden auth_users case-sensitive migration (customer upgrade)"
+            git push origin HEAD:main
+          fi
