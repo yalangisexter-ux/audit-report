@@ -12,6 +12,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Require main branch
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Status-heal workflow is main-only; refusing ref $GITHUB_REF." >&2
+            exit 1
+          fi
       - run: |
           python3 tools/apply_status_heal.py
           python3 -m py_compile web_auth_shim.py
