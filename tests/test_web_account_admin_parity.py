@@ -508,7 +508,7 @@ def test_scrape_job_pruning_expires_finished_jobs_but_keeps_running_jobs():
             web_parity_routes._jobs.clear()
             web_parity_routes._jobs.update({
                 "expired": {"id": "expired", "status": "completed", "created_at": 0},
-                "recent": {"id": "recent", "status": "failed", "created_at": 100},
+                "recent": {"id": "recent", "status": "failed", "created_at": 102},
                 "active": {"id": "active", "status": "running", "created_at": 0},
             })
             web_parity_routes._prune_scrape_jobs_locked(
