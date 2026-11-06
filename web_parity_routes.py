@@ -363,11 +363,13 @@ def _store_directory_rows(
     has_website = usable_value("website")
     verified_expr = "lower(trim(IFNULL(verified,''))) IN ('1','true','yes','verified','y')"
     fields = (
-        "business_name", "business_category", "kind", "area", "city", "state",
+        "id", "dedupe_key", "business_name", "business_category", "kind", "area", "city", "state",
         "contact_person", "phone", "email", "address", "website", "maps",
         "followup_date", "call_time", "connection", "verified", "response", "notes",
+        "store_id", "store_type", "product_categories", "product_evidence", "postal_code",
+        "country", "product_catalog", "verification_status", "last_verified",
         "source_name", "source_url", "source_type", "source_checked_at", "source_sheet",
-        "source_status",
+        "source_row", "source_status", "created_at", "updated_at",
     )
 
     if state:

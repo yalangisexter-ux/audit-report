@@ -4,6 +4,24 @@ from pathlib import Path
 from web_parity_routes import _store_directory_rows
 
 
+_BASE_PROSPECT_COLUMNS = (
+    "id", "business_name", "business_category", "kind", "state", "city", "area",
+    "contact_person", "phone", "email", "address", "website", "maps",
+    "followup_date", "call_time", "connection", "verified", "response", "notes",
+    "source_name", "source_url", "source_type", "source_checked_at", "source_sheet",
+    "source_status",
+)
+
+
+def _insert_base_rows(conn, rows):
+    columns = ",".join(_BASE_PROSPECT_COLUMNS)
+    placeholders = ",".join("?" for _ in _BASE_PROSPECT_COLUMNS)
+    conn.executemany(
+        f"INSERT INTO customer_prospects ({columns}) VALUES ({placeholders})",
+        rows,
+    )
+
+
 def _directory_db():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
@@ -16,7 +34,11 @@ def _directory_db():
             address TEXT, website TEXT, maps TEXT, followup_date TEXT, call_time TEXT,
             connection TEXT, verified TEXT, response TEXT, notes TEXT, source_name TEXT,
             source_url TEXT, source_type TEXT, source_checked_at TEXT, source_sheet TEXT,
-            source_status TEXT
+            source_status TEXT,
+            dedupe_key TEXT, source_row INTEGER, created_at TEXT, updated_at TEXT,
+            store_id TEXT, store_type TEXT, product_categories TEXT, product_evidence TEXT,
+            postal_code TEXT, country TEXT, product_catalog TEXT, verification_status TEXT,
+            last_verified TEXT
         )
         """
     )
@@ -35,10 +57,7 @@ def _directory_db():
          "Kakinada", "Main Road", "", "9999999999", "", "Address", "-", "", "", "",
          "", "Yes", "", "safe", "", "", "Workbook", "", "", "Needs direct confirmation"),
     ]
-    conn.executemany(
-        "INSERT INTO customer_prospects VALUES (" + ",".join("?" for _ in range(25)) + ")",
-        rows,
-    )
+    _insert_base_rows(conn, rows)
     return conn
 
 
@@ -112,10 +131,7 @@ def test_store_directory_kind_filters_match_desktop_strict_pure_product_rules():
              "https://outlet.example", "https://maps.app.goo.gl/outlet", "", "", "", "Yes", "",
              "", "", "", "Web", "", "", "verified"),
         ]
-        conn.executemany(
-            "INSERT INTO customer_prospects VALUES (" + ",".join("?" for _ in range(25)) + ")",
-            extra_rows,
-        )
+        _insert_base_rows(conn, extra_rows)
         assert {row["id"] for row in _store_directory_rows(
             conn, kind="Pure Product Selling Stores"
         )} == {5, 9}
@@ -125,6 +141,31 @@ def test_store_directory_kind_filters_match_desktop_strict_pure_product_rules():
         assert {row["id"] for row in _store_directory_rows(
             conn, kind="Gyms which sell products also"
         )} == {8}
+    finally:
+        conn.close()
+
+
+
+def test_store_directory_search_and_exclusions_cover_desktop_product_metadata_fields():
+    conn = _directory_db()
+    try:
+        conn.execute(
+            "UPDATE customer_prospects SET product_catalog=? WHERE id=1",
+            ("UniqueCatalogNeedle",),
+        )
+        conn.execute(
+            "UPDATE customer_prospects SET product_evidence=? WHERE id=4",
+            ("UniqueEvidenceNeedle",),
+        )
+        assert {row["id"] for row in _store_directory_rows(
+            conn, query="UniqueCatalogNeedle"
+        )} == {1}
+        assert {row["id"] for row in _store_directory_rows(
+            conn, query="UniqueEvidenceNeedle"
+        )} == {4}
+        assert {row["id"] for row in _store_directory_rows(
+            conn, exclude_keywords="UniqueCatalogNeedle"
+        )} == {2, 3, 4}
     finally:
         conn.close()
 
