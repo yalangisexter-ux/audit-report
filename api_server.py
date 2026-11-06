@@ -1683,13 +1683,14 @@ def list_holidays(
     rows = conn.execute("SELECT holiday_date, holiday_name, created_at FROM holidays ORDER BY holiday_date ASC").fetchall()
     return [dict(r) for r in rows]
 
+
 @app.post("/api/holidays")
 def add_holiday(
     h: HolidayModel,
     conn: sqlite3.Connection = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    _require_employee_roles(user, {"hr", "admin", "developer"})
+    _require_employee_roles(user, {"admin", "developer"})
     try:
         holiday_date = date.fromisoformat(str(h.holiday_date)).isoformat()
     except (TypeError, ValueError):
@@ -1697,14 +1698,24 @@ def add_holiday(
     holiday_name = str(h.holiday_name or "").strip()
     if not holiday_name:
         raise HTTPException(status_code=422, detail="Holiday name is required.")
+    existing = conn.execute(
+        "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+        (holiday_date,),
+    ).fetchone()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Holiday already declared: {existing['holiday_name'] or 'Holiday'}",
+        )
     now = desktop_app.now_text()
     conn.execute(
-        "INSERT INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?) "
-        "ON CONFLICT(holiday_date) DO UPDATE SET holiday_name=excluded.holiday_name",
-        (holiday_date, holiday_name, now)
+        "INSERT INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?)",
+        (holiday_date, holiday_name, now),
     )
+    _record_account_audit(conn, "Holiday declared", f"{holiday_date}: {holiday_name}")
     conn.commit()
     return {"success": True}
+
 
 @app.delete("/api/holidays/{holiday_date}")
 def delete_holiday(
@@ -1712,14 +1723,25 @@ def delete_holiday(
     conn: sqlite3.Connection = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    _require_employee_roles(user, {"hr", "admin", "developer"})
+    _require_employee_roles(user, {"admin", "developer"})
     try:
         holiday_date = date.fromisoformat(str(holiday_date)).isoformat()
     except (TypeError, ValueError):
         raise HTTPException(status_code=422, detail="Holiday date must use YYYY-MM-DD.")
+    existing = conn.execute(
+        "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+        (holiday_date,),
+    ).fetchone()
+    if existing is None:
+        return {"success": True, "removed": False}
     conn.execute("DELETE FROM holidays WHERE holiday_date=?", (holiday_date,))
+    _record_account_audit(
+        conn,
+        "Holiday removed",
+        f"{holiday_date}: {existing['holiday_name'] or 'Holiday'}",
+    )
     conn.commit()
-    return {"success": True}
+    return {"success": True, "removed": True}
 
 
 # --- Business Tracking (Products & Services) ---

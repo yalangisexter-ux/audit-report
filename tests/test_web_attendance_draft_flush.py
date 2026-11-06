@@ -53,3 +53,22 @@ def test_attendance_screen_exposes_save_all_and_disables_concurrent_date_changes
     assert "onClick={saveAllAttendanceDrafts}" in source
     assert "Save all {Object.keys(attendanceDrafts).length} pending" in source
     assert "disabled={attendanceBusy}" in source
+
+
+
+def test_generic_refresh_preserves_pending_attendance_drafts_until_logout():
+    source = _web_source()
+    load = _const_block(source, "const load=")
+    logout = _const_block(source, "const logout=")
+
+    assert "setAttendanceDrafts({})" not in load
+    assert "attendanceDraftFor=r=>({...r,...(attendanceDrafts[r.employee_id]||{})})" in source
+    assert "setAttendanceDrafts({})" in logout
+
+
+def test_generic_attendance_post_removes_only_the_saved_employee_draft():
+    source = _web_source()
+    post = _const_block(source, "const post=")
+
+    assert "delete next[String(payload?.employee_id)]" in post
+    assert "setAttendanceDrafts({})" not in post

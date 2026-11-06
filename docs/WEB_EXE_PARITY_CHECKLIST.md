@@ -395,9 +395,20 @@ No 100% parity claim is permitted while any row above remains Partial or In prog
 - Browser-side mobile/desktop verification and Render production deployment/health remain outstanding. The CI build publishes the frontend bundle to `main`; that does not prove the live Render service has deployed or is healthy.
 
 
-## Web attendance draft persistence across date navigation — CI validation pending
+## Web attendance draft persistence across date navigation — date-navigation path CI-verified in run #1158; refresh-resilience follow-up pending
 
 - The web Attendance screen previously cleared all unsaved row drafts immediately after fetching a newly selected date. Saving one row also used the shared generic POST helper, which cleared every other employee's pending draft.
 - Date navigation now flushes every pending employee row against the old selected work date before requesting the next date. If any write or the next-date read fails, the old date remains selected and the draft state is retained for retry.
 - Individual Save now removes only the saved employee's draft; other employees' unsaved edits remain intact. A Save all action is provided, and overlapping save/date-change operations are disabled.
-- Added regression guards for write-before-read ordering, per-row draft preservation, Save all visibility and busy-state protection. CI validation is pending; browser verification against the Windows EXE and representative customer data remains open.
+- Added regression guards for write-before-read ordering, per-row draft preservation, Save all visibility and busy-state protection. Run #1158 passed **321 regression tests** and completed the React build/publication, Worker validation, Python compilation, Windows EXE/installer build, legacy v1.1.74 upgrade, uninstall/reinstall database hash/integrity/sentinel checks and packaged launch smoke. Run #1157 had one brittle source-assertion failure (320 passed); the assertion was corrected and run #1158 passed. Browser verification against the Windows EXE and representative customer data remains open.
+
+
+
+## Attendance refresh resilience and holiday permission parity — validation pending
+
+- Generic web data refresh no longer clears pending Attendance row drafts. The existing date-change flow still flushes the old date before reading the new date, and explicit Save all still clears drafts only after all writes and the refresh succeed. Logout continues to clear drafts so one account's unsaved work cannot leak into another session.
+- The generic attendance POST helper now removes only the saved employee's draft rather than clearing every employee's pending edits.
+- Windows `app.py` guards both Declare Holiday and Remove Holiday with `is_admin_or_dev`. The web form and delete action are now shown only to Admin/Developer accounts, and the API enforces the same role gate; HR and Staff are denied. Holiday creation rejects duplicate dates rather than silently overwriting an existing declaration. Create/remove operations record the matching audit events and commit through the existing database connection so the configured encrypted-sync commit callback remains in place.
+- Added regressions for generic refresh and POST draft retention, Admin/Developer-only holiday controls, role-denial behavior, date validation, duplicate declarations and Developer removal.
+- No schema, account identity/password hash, encryption key, snapshot format, sync callback contract, updater or application version metadata changed. Version remains v1.3.81.
+- CI validation and production browser verification are pending. Render production deployment/health and representative customer-data checks remain open.

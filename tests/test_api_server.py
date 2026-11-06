@@ -223,43 +223,64 @@ def test_legacy_bulk_attendance_requires_authenticated_session(monkeypatch):
             connection.close()
 
 
-def test_holiday_management_requires_authorized_role_and_valid_dates():
-    from fastapi import HTTPException
+def test_holiday_management_matches_desktop_admin_developer_permissions_and_validates_dates():
+    import sqlite3
 
     dependency = api_server.get_current_user
-    app.dependency_overrides[dependency] = lambda: {"username": "customer-test", "role": "Customer"}
+    holiday_date = "2999-12-25"
+    payload = {"holiday_date": holiday_date, "holiday_name": "Christmas"}
     try:
-        denied = client.post("/api/holidays", json={
-            "holiday_date": "2026-12-25",
-            "holiday_name": "Christmas",
-        })
-        assert denied.status_code == 403
-    finally:
-        app.dependency_overrides.pop(dependency, None)
+        for role in ("Customer", "HR", "Staff"):
+            app.dependency_overrides[dependency] = (
+                lambda role=role: {"username": role.lower() + "-holiday-test", "role": role}
+            )
+            denied_create = client.post("/api/holidays", json=payload)
+            assert denied_create.status_code == 403
+            denied_remove = client.delete(f"/api/holidays/{holiday_date}")
+            assert denied_remove.status_code == 403
 
-    app.dependency_overrides[dependency] = lambda: {"username": "hr-test", "role": "HR"}
-    try:
+        app.dependency_overrides[dependency] = lambda: {
+            "username": "admin-holiday-test",
+            "role": "Admin",
+        }
         invalid = client.post("/api/holidays", json={
-            "holiday_date": "25-12-2026",
+            "holiday_date": "25-12-2999",
             "holiday_name": "Christmas",
         })
         assert invalid.status_code == 422
 
-        saved = client.post("/api/holidays", json={
-            "holiday_date": "2026-12-25",
-            "holiday_name": " Christmas ",
-        })
+        saved = client.post("/api/holidays", json=payload)
         assert saved.status_code == 200
+        duplicate = client.post("/api/holidays", json={
+            "holiday_date": holiday_date,
+            "holiday_name": "Replacement name",
+        })
+        assert duplicate.status_code == 409
         rows = client.get("/api/holidays")
         assert rows.status_code == 200
         assert any(
-            row["holiday_date"] == "2026-12-25" and row["holiday_name"] == "Christmas"
+            row["holiday_date"] == holiday_date and row["holiday_name"] == "Christmas"
             for row in rows.json()
         )
-        removed = client.delete("/api/holidays/2026-12-25")
+
+        app.dependency_overrides[dependency] = lambda: {
+            "username": "developer-holiday-test",
+            "role": "Developer",
+        }
+        removed = client.delete(f"/api/holidays/{holiday_date}")
         assert removed.status_code == 200
+        assert removed.json()["removed"] is True
+        remaining = client.get("/api/holidays")
+        assert all(row["holiday_date"] != holiday_date for row in remaining.json())
     finally:
         app.dependency_overrides.pop(dependency, None)
+        connection = sqlite3.connect(str(desktop_app.DB_PATH))
+        try:
+            connection.execute("DELETE FROM holidays WHERE holiday_date=?", (holiday_date,))
+            connection.commit()
+        finally:
+            connection.close()
+
 
 
 def test_api_attendance_saves_selected_date_and_clears_absent_times():
