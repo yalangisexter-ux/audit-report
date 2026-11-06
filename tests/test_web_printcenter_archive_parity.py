@@ -85,6 +85,19 @@ def test_web_eod_report_default_matches_desktop_attendance_visibility():
         connection.close()
 
 
+def test_print_center_refreshes_preview_automatically_for_desktop_trigger_fields():
+    source = PRINT_CENTER.read_text(encoding="utf-8")
+
+    assert "const previewSequence = useRef(0);" in source
+    assert "const previewTimer = useRef(null);" in source
+    assert "window.setTimeout" in source
+    assert "}, 300);" in source
+    assert "report.date, report.report_type" in source
+    assert "report.employee_id, report.exclude_employee_id, report.options" in source
+    assert "requestId === previewSequence.current" in source
+    assert "Previewing…" in source
+
+
 def test_print_center_restores_desktop_report_preferences_and_uses_desktop_default_format():
     source = PRINT_CENTER.read_text(encoding="utf-8")
     assert "apiFetch('/reports/options')" in source
