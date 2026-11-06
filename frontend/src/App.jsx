@@ -213,6 +213,7 @@ export default function App() {
     return ()=>{active=false;if(loadedUrl)URL.revokeObjectURL(loadedUrl);};
   },[]);
   useEffect(()=>{if(user&&token&&tab==='customers')load()},[tab,user,token]);
+  useEffect(()=>{if(user&&token&&tab==='home'){apiFetch('/home/business-snapshot').then(snapshot=>setData(previous=>({...previous,homeBusiness:snapshot}))).catch(error=>notify('Home business snapshot refresh failed: '+error.message));}},[tab,user,token]);
   useEffect(()=>{if(tab==='settings'&&user&&['admin','developer'].includes(String(user.role||'').toLowerCase())){Promise.all([apiFetch('/auth/users'),apiFetch('/settings/working-weekdays')]).then(([accounts,working])=>{setAuthUsers(accounts);setWorkingWeekdays(working.weekdays||[0,1,2,3,4,6])}).catch(e=>notify(e.message))}},[tab,user,token]);
   const notify=(s)=>{setNotice(s);setTimeout(()=>setNotice(''),3500)};
   const saveClockMode=mode=>{
