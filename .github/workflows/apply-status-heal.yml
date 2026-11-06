@@ -11,7 +11,7 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           python3 tools/apply_status_heal.py
           python3 -m py_compile web_auth_shim.py
