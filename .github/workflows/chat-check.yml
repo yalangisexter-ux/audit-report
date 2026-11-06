@@ -3,6 +3,11 @@ name: Cloudflare Live Chat Checks
 on:
   push:
     branches: [main]
+    paths:
+      - "cloudflare-chat/**"
+      - "chat-web/**"
+      - "cloudflare_chat.py"
+      - "tests/test_web_live_chat_parity.py"
   workflow_dispatch:
 
 permissions:
