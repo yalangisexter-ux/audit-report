@@ -1295,8 +1295,9 @@ def crawl_search_engine_results(
         r"amino acid|bcaa|mass gainer|nutrition store|protein store|fitness supplement)\b",
         re.IGNORECASE,
     )
-    gym_terms = re.compile(r"\b(gym|fitness centre|fitness center|crossfit|personal training)\b", re.I)
+    gym_terms = re.compile(r"\b(gym|fitness centre|fitness center|crossfit|personal training|health club|fitness studio)\b", re.I)
     retail_terms = re.compile(r"\b(buy now|add to cart|shop now|order online|store locator|retailer|supplement store|nutrition store|products|product catalogue|product catalog)\b", re.I)
+    explicit_retail_terms = re.compile(r"\b(supplement store|nutrition store|retailer|shop supplements|buy supplements|protein store)\b", re.I)
     phone_pattern = re.compile(r"(?<!\w)(?:\+?91[\s().-]*)?(?:\d[\s().-]*){10,13}(?!\w)")
     email_pattern = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
     headers = {
@@ -1422,24 +1423,56 @@ def crawl_search_engine_results(
             links.append((href, label))
         return links
 
-    # This directory is specifically for product-selling stores, not gyms.
-    # Keep existing category choices in the UI, but only store leads can enter this directory.
-    cat = (category or "Pure Product Selling Stores").casefold()
-    store_only = True
-    base_query = query_term.strip() or "sports nutrition supplement store whey protein creatine"
-    kind, default_category = "Store", "Sports nutrition / supplement retailer"
+    category_value = str(category or "Pure Product Selling Stores").strip().casefold()
+    category_modes = {
+        "pure product selling stores": "store",
+        "store": "store",
+        "gym": "gym",
+        "gyms which sell products also": "hybrid",
+        "gym + store": "hybrid",
+        "all categories": "all",
+        "all": "all",
+    }
+    category_mode = category_modes.get(category_value, "store")
 
     region = str(state or "").strip()
     if region.casefold() in {"all states / uts", "all states", "all india"}:
         region = ""
     location = region or "India"
-    base_terms = [
-        base_query,
-        "sports nutrition retailer " + location,
-        "whey protein creatine supplement shop " + location,
-        "sports supplements store full address " + location,
-        "authorized sports nutrition retailer " + location,
-    ]
+    if category_mode == "gym":
+        base_query = query_term.strip() or "gym fitness centre health club"
+        base_terms = [
+            base_query,
+            "gym fitness centre health club " + location,
+            "crossfit strength training studio " + location,
+            "personal training centre full postal address " + location,
+        ]
+    elif category_mode == "hybrid":
+        base_query = query_term.strip() or "gym supplement counter sports nutrition store"
+        base_terms = [
+            base_query,
+            "gym supplement counter protein bar " + location,
+            "fitness centre sports nutrition retail shop " + location,
+            "gym protein supplement store full address " + location,
+        ]
+    elif category_mode == "all":
+        base_query = query_term.strip() or "sports nutrition supplement store gym fitness centre"
+        base_terms = [
+            base_query,
+            "sports nutrition retailer " + location,
+            "whey protein creatine supplement shop " + location,
+            "gym fitness centre health club " + location,
+            "gym supplement counter sports nutrition shop " + location,
+        ]
+    else:
+        base_query = query_term.strip() or "sports nutrition supplement store whey protein creatine"
+        base_terms = [
+            base_query,
+            "sports nutrition retailer " + location,
+            "whey protein creatine supplement shop " + location,
+            "sports supplements store full address " + location,
+            "authorized sports nutrition retailer " + location,
+        ]
     if query_term.strip():
         base_terms.insert(0, query_term.strip() + " " + location)
     # Keep the query set bounded while still using multiple independent result pages.
@@ -1485,14 +1518,40 @@ def crawl_search_engine_results(
         if not text_blob or negative.search(title + " " + text_blob[:12000]):
             continue
         page_evidence = title + " " + text_blob[:20000]
-        if not product_terms.search(page_evidence):
+        gym_evidence = bool(gym_terms.search(title) or gym_terms.search(text_blob[:1800]))
+        product_evidence = bool(product_terms.search(page_evidence))
+        retail_evidence = bool(retail_terms.search(page_evidence))
+        explicit_retail_evidence = bool(explicit_retail_terms.search(page_evidence))
+        is_hybrid = gym_evidence and product_evidence and explicit_retail_evidence
+        is_product_store = (
+            product_evidence and retail_evidence
+            and (not gym_evidence or explicit_retail_evidence)
+        )
+
+        if category_mode == "store" and (not is_product_store or gym_evidence):
             continue
-        if not retail_terms.search(page_evidence):
+        if category_mode == "gym" and (not gym_evidence or is_hybrid):
             continue
-        # Exclude gyms and training studios even if they mention supplements in blogs.
-        if gym_terms.search(title) or gym_terms.search(text_blob[:1800]):
-            if not re.search(r"\b(supplement store|nutrition store|retailer|shop supplements|buy supplements|protein store)\b", page_evidence, re.I):
-                continue
+        if category_mode == "hybrid" and not is_hybrid:
+            continue
+        if category_mode == "all" and not (is_product_store or gym_evidence):
+            continue
+
+        if is_hybrid:
+            record_kind = "Gym + Store"
+            record_category = "Gym with sports nutrition retail"
+            record_source_status = "Public gym and product-retail evidence; not call-verified"
+            record_notes = "Gym activity and sports-nutrition retail evidence found on the linked public page."
+        elif gym_evidence:
+            record_kind = "Gym"
+            record_category = "Fitness centre / gym"
+            record_source_status = "Public fitness-centre page; not call-verified"
+            record_notes = "Fitness-centre evidence and a full postal address found on the linked public page."
+        else:
+            record_kind = "Store"
+            record_category = "Sports nutrition / supplement retailer"
+            record_source_status = "Public product listing; not call-verified"
+            record_notes = "Product-selling evidence and a full postal address found on the linked public page."
 
         business_name = title.split("|")[0].split(" - ")[0].split(" — ")[0].strip()
         business_name = re.sub(r"\s+", " ", business_name).strip(" -|•")
@@ -1568,9 +1627,9 @@ def crawl_search_engine_results(
             maps_link = "https://www.google.com/maps/search/?" + urllib.parse.urlencode({"api": "1", "query": query})
         seen_names.add(branch_key)
         found.append({
-            "kind": kind,
+            "kind": record_kind,
             "business_name": business_name,
-            "business_category": default_category,
+            "business_category": record_category,
             "state": state_name,
             "city": city,
             "area": "",
@@ -1583,9 +1642,9 @@ def crawl_search_engine_results(
             "source_url": url,
             "source_type": "Public merchant page",
             "source_checked_at": date.today().isoformat(),
-            "source_status": "Public product listing; not call-verified",
+            "source_status": record_source_status,
             "verified": "No",
-            "notes": "Product-selling evidence and a full postal address found on the linked public page.",
+            "notes": record_notes,
         })
     report(f"Deep search complete: {len(found)} evidence-backed records; no synthetic records added.", 100)
     return found

@@ -28,6 +28,12 @@ _jobs = {}
 _jobs_lock = threading.Lock()
 _SCRAPE_JOB_TTL_SECONDS = 60 * 60
 _SCRAPE_JOB_MAX_RETAINED = 200
+_SCRAPE_CATEGORIES = {
+    "Pure Product Selling Stores",
+    "Gym",
+    "Gyms which sell products also",
+    "All Categories",
+}
 
 
 def _scrape_owner_key(user):
@@ -156,11 +162,11 @@ def delete_archive(document_id: int, conn=Depends(api.get_db), user=Depends(api.
     return {"success": True}
 
 
-def _run_scrape(job_id, state, query, max_results, deep_scrape):
+def _run_scrape(job_id, state, query, max_results, deep_scrape, category="Pure Product Selling Stores"):
     try:
         import customer_prospects as cp
         records = cp.crawl_search_engine_results(
-            category="Pure Product Selling Stores", state=state, query_term=query,
+            category=category, state=state, query_term=query,
             max_results=max_results, deep_scrape=deep_scrape
         )
         result = {"inserted": 0, "duplicates": 0}
@@ -189,6 +195,12 @@ def _run_scrape(job_id, state, query, max_results, deep_scrape):
 def start_customer_scrape(payload: dict, user=Depends(api.get_current_user)):
     state = str(payload.get("state") or "").strip()
     query = str(payload.get("query") or "").strip()
+    category = str(payload.get("category") or "Pure Product Selling Stores").strip()
+    if category not in _SCRAPE_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail="Unsupported business type. Choose a desktop-compatible Store Directory category.",
+        )
     try: max_results = max(1, min(30, int(payload.get("max_results", 10))))
     except (TypeError, ValueError): max_results = 10
     deep = bool(payload.get("deep_scrape", True))
@@ -199,9 +211,10 @@ def start_customer_scrape(payload: dict, user=Depends(api.get_current_user)):
         _prune_scrape_jobs_locked(created_at)
         _jobs[job_id] = {
             "id": job_id, "status": "running", "state": state, "query": query,
-            "found": 0, "error": "", "owner_key": owner_key, "created_at": created_at,
+            "category": category, "found": 0, "error": "",
+            "owner_key": owner_key, "created_at": created_at,
         }
-    _pool.submit(_run_scrape, job_id, state, query, max_results, deep)
+    _pool.submit(_run_scrape, job_id, state, query, max_results, deep, category)
     return {"job_id":job_id,"status":"running"}
 
 @api.app.get("/api/customers/scrape/{job_id}")

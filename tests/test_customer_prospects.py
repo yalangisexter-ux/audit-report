@@ -1068,3 +1068,79 @@ def test_same_retailer_domain_keeps_distinct_city_branches(tmp_path, monkeypatch
         assert {row["city"] for row in saved} == {"Vijayawada", "Hyderabad"}
     finally:
         db.conn.close()
+
+
+
+def test_deep_scraper_honors_desktop_store_gym_and_hybrid_categories(monkeypatch):
+    import time
+
+    class Headers(dict):
+        def get_content_charset(self):
+            return "utf-8"
+
+    class FakeResponse:
+        def __init__(self, body):
+            self.body = body.encode("utf-8")
+            self.headers = Headers({"Content-Type": "text/html; charset=utf-8"})
+
+        def read(self, _limit):
+            return self.body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(time, "sleep", lambda *_args: None)
+
+    def scrape(page_html, category):
+        def fake_urlopen(request, timeout=8):
+            url = request.full_url
+            if "duckduckgo.com" in url or "bing.com" in url:
+                return FakeResponse(
+                    '<html><body><a href="https://merchant.example/">Merchant result</a></body></html>'
+                )
+            return FakeResponse(page_html)
+
+        monkeypatch.setattr(prospects.urllib.request, "urlopen", fake_urlopen)
+        return prospects.crawl_search_engine_results(
+            category=category,
+            state="Andhra Pradesh",
+            query_term="",
+            max_results=1,
+            deep_scrape=True,
+        )
+
+    address = "<address>Shop 4, Main Road, Vijayawada, Andhra Pradesh 533101</address>"
+    gym_page = (
+        "<html><head><title>Iron Core Fitness Center</title></head><body>"
+        "<p>Gym fitness centre with strength training and personal training classes.</p>"
+        + address + "</body></html>"
+    )
+    store_page = (
+        "<html><head><title>Fit Fuel Sports Nutrition</title></head><body>"
+        "<p>Sports nutrition supplements, whey protein, creatine and supplement store. Buy now.</p>"
+        + address + "</body></html>"
+    )
+    hybrid_page = (
+        "<html><head><title>Iron Core Gym Supplement Store</title></head><body>"
+        "<p>Gym fitness centre with sports nutrition products and a supplement store. Buy now.</p>"
+        + address + "</body></html>"
+    )
+
+    gym_records = scrape(gym_page, "Gym")
+    assert len(gym_records) == 1
+    assert gym_records[0]["kind"] == "Gym"
+    assert gym_records[0]["business_category"] == "Fitness centre / gym"
+    assert scrape(gym_page, "Pure Product Selling Stores") == []
+
+    store_records = scrape(store_page, "Pure Product Selling Stores")
+    assert len(store_records) == 1
+    assert store_records[0]["kind"] == "Store"
+
+    hybrid_records = scrape(hybrid_page, "Gyms which sell products also")
+    assert len(hybrid_records) == 1
+    assert hybrid_records[0]["kind"] == "Gym + Store"
+    assert "533101" in hybrid_records[0]["address"]
+    assert scrape(hybrid_page, "Pure Product Selling Stores") == []

@@ -478,7 +478,7 @@ def test_customer_scrape_job_status_is_private_to_creator(tmp_path, monkeypatch)
         started = client.post(
             "/api/customers/scrape",
             headers=admin_headers,
-            json={"state": "Andhra Pradesh", "query": "sports nutrition", "max_results": 3},
+            json={"state": "Andhra Pradesh", "category": "Gym", "query": "gym fitness centre", "max_results": 3},
         )
         assert started.status_code == 200, started.text
         job_id = started.json()["job_id"]
@@ -486,7 +486,9 @@ def test_customer_scrape_job_status_is_private_to_creator(tmp_path, monkeypatch)
 
         own_status = client.get(f"/api/customers/scrape/{job_id}", headers=admin_headers)
         assert own_status.status_code == 200, own_status.text
-        assert own_status.json()["query"] == "sports nutrition"
+        assert own_status.json()["query"] == "gym fitness centre"
+        assert own_status.json()["category"] == "Gym"
+        assert submitted[0][1][-1] == "Gym"
         assert "owner_key" not in own_status.json()
         assert "created_at" not in own_status.json()
 
@@ -528,3 +530,40 @@ def test_scrape_owner_fallback_keeps_case_sensitive_account_names():
     assert web_parity_routes._scrape_owner_key({"username": "Admin"}) != (
         web_parity_routes._scrape_owner_key({"username": "admin"})
     )
+
+
+
+def test_customer_scrape_rejects_unknown_desktop_business_category(tmp_path, monkeypatch):
+    import web_parity_routes
+
+    client, admin_headers, _, cleanup, *_ = setup_account_client(tmp_path, monkeypatch)
+    submitted = []
+    monkeypatch.setattr(
+        web_parity_routes._pool,
+        "submit",
+        lambda function, *args: submitted.append((function, args)),
+    )
+    try:
+        response = client.post(
+            "/api/customers/scrape",
+            headers=admin_headers,
+            json={"category": "Pharmacy", "query": "pharmacy", "max_results": 3},
+        )
+        assert response.status_code == 422
+        assert submitted == []
+    finally:
+        cleanup()
+
+
+def test_web_scraper_exposes_desktop_business_categories_and_submits_selection():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text(
+        encoding="utf-8"
+    )
+    assert "const [scrapeCategory,setScrapeCategory]=useState('Pure Product Selling Stores')" in source
+    assert "<option>Pure Product Selling Stores</option>" in source
+    assert "<option>Gym</option>" in source
+    assert "<option>Gyms which sell products also</option>" in source
+    assert "<option>All Categories</option>" in source
+    assert "category:scrapeCategory" in source
