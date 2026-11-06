@@ -7,7 +7,7 @@ on:
       - "cloudflare-chat/**"
       - "chat-web/**"
       - "cloudflare_chat.py"
-      - "tests/test_web_live_chat_parity.py"
+      - "tests/*chat*.py"
   workflow_dispatch:
 
 permissions:
