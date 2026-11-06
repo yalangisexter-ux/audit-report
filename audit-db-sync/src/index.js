@@ -155,43 +155,52 @@ async function handlePush(request, env) {
   return json({ success: true });
 }
 
+function isAuthorizedLegacyPull(request, env, auth, targetId) {
+  const canonicalId = String(env.CANONICAL_INSTALLATION_ID || "").trim().toLowerCase();
+  const allowedLegacyIds = new Set(
+    String(env.LEGACY_INSTALLATION_IDS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean)
+  );
+  const expected = String(env.LEGACY_MIGRATION_TOKEN || "");
+  const supplied = String(request.headers.get("X-Legacy-Migration-Token") || "");
+  return Boolean(
+    canonicalId &&
+    expected &&
+    auth.installation_id === canonicalId &&
+    allowedLegacyIds.has(targetId) &&
+    constantTimeEqual(supplied, expected)
+  );
+}
+
 async function handlePull(request, env) {
   const auth = await authenticate(request, env);
   if (auth instanceof Response) return auth;
 
+  const body = await readJson(request, 16 * 1024);
+  if (body instanceof Response) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json({ error: "Invalid pull request" }, 400);
+  }
+
+  // "latest" remains a backward-compatible alias for this device's own installation.
+  // It never performs global snapshot discovery.
   let targetId = auth.installation_id;
-  let preferLatest = false;
-  try {
-    const body = await readJson(request, 16 * 1024);
-    if (body) {
-      if (typeof body.target_installation_id === "string" && INSTALLATION_RE.test(body.target_installation_id)) {
-        targetId = body.target_installation_id;
+  if (Object.prototype.hasOwnProperty.call(body, "target_installation_id")) {
+    const requested = body.target_installation_id;
+    if (typeof requested !== "string") return json({ error: "Invalid target installation" }, 400);
+    if (requested !== "latest") {
+      if (!INSTALLATION_RE.test(requested)) return json({ error: "Invalid target installation" }, 400);
+      if (requested !== auth.installation_id && !isAuthorizedLegacyPull(request, env, auth, requested)) {
+        return json({ error: "Cross-installation pull is not authorized" }, 403);
       }
-      if (body.target_installation_id === "latest" || body.prefer_latest === true) {
-        preferLatest = true;
-      }
-    }
-  } catch {}
-
-  let response = null;
-  if (preferLatest) {
-    const latestPath = await resolveLatestSnapshotPath(env);
-    if (latestPath) {
-      response = await fetch(githubContentsUrl(env, latestPath), {
-        method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
-      });
+      targetId = requested;
     }
   }
 
-  if (!response || !response.ok) {
-    const path = "customer-data/" + targetId + ".db.enc";
-    response = await fetch(githubContentsUrl(env, path), {
-      method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
-    });
-  }
+  const path = "customer-data/" + targetId + ".db.enc";
+  const response = await fetch(githubContentsUrl(env, path), {
+    method: "GET", headers: githubHeaders(env, "application/vnd.github.raw+json"),
+  });
 
-  // Exact installation pulls must never fall back to another customer's latest snapshot.
-  // Latest-snapshot discovery is an explicit operation only.
   if (response.status === 404) return json({ error: "No remote snapshot for this installation" }, 404);
   if (!response.ok) return json({ error: "Could not retrieve the encrypted snapshot" }, 502);
   const length = Number(response.headers.get("Content-Length") || 0);
@@ -200,43 +209,6 @@ async function handlePull(request, env) {
     status: 200,
     headers: { "Content-Type": "application/octet-stream", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
   });
-}
-
-async function resolveLatestSnapshotPath(env) {
-  try {
-    const owner = String(env.GITHUB_OWNER || "");
-    const repo = String(env.GITHUB_REPO || "");
-    const commitsUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/commits?path=customer-data&per_page=1";
-    const commitsRes = await fetch(commitsUrl, {
-      method: "GET", headers: githubHeaders(env, "application/vnd.github+json"),
-    });
-    if (commitsRes.ok) {
-      const commits = await commitsRes.json();
-      if (Array.isArray(commits) && commits.length > 0) {
-        const msg = String(commits[0]?.commit?.message || "");
-        const match = /([0-9a-f]{32})/.exec(msg);
-        if (match) return "customer-data/" + match[1] + ".db.enc";
-      }
-    }
-  } catch {}
-
-  try {
-    const listRes = await fetch(githubContentsUrl(env, "customer-data"), {
-      method: "GET", headers: githubHeaders(env, "application/vnd.github+json"),
-    });
-    if (listRes.ok) {
-      const files = await listRes.json();
-      if (Array.isArray(files) && files.length > 0) {
-        const encFiles = files.filter(f => f.name && f.name.endsWith(".db.enc"));
-        if (encFiles.length > 0) {
-          const latestFile = encFiles[encFiles.length - 1];
-          return latestFile.path || ("customer-data/" + latestFile.name);
-        }
-      }
-    }
-  } catch {}
-
-  return null;
 }
 
 async function authenticate(request, env) {

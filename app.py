@@ -10609,7 +10609,11 @@ class MainWindow(QMainWindow):
             Path(BACKUP_DIR).mkdir(parents=True, exist_ok=True)
             create_validated_sqlite_copy(self.db.conn, backup_path)
             try:
-                raw = sync.download_latest_snapshot(candidate_secret=password, prefer_latest=True)
+                raw = sync.download_latest_snapshot(
+                    target_installation_id=sync.installation_id,
+                    candidate_secret=password,
+                    prefer_latest=False,
+                )
             except Exception as dl_err:
                 if "Snapshot decryption failed" in str(dl_err):
                     if not developer_session:
@@ -10624,7 +10628,11 @@ class MainWindow(QMainWindow):
                         QLineEdit.EchoMode.Password,
                     )
                     if ok and custom_key.strip():
-                        raw = sync.download_latest_snapshot(candidate_secret=custom_key.strip(), prefer_latest=True)
+                        raw = sync.download_latest_snapshot(
+                            target_installation_id=sync.installation_id,
+                            candidate_secret=custom_key.strip(),
+                            prefer_latest=False,
+                        )
                     else:
                         raise
                 else:

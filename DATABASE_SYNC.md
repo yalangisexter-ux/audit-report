@@ -12,6 +12,16 @@ intentionally want a separate cloud namespace.
 Snapshots may be a full SQLite database (desktop) or a JSON business manifest (mobile). Both
 formats are accepted on pull. Merges are additive: local users and records are preserved.
 
+Normal Worker pulls are bound to the installation ID inside the authenticated device token.
+The legacy prefer_latest request flag remains accepted for older EXE builds, but it now means
+"pull this device's own installation"; the Worker no longer searches globally for the newest
+customer snapshot. Cross-installation reads are denied except for the explicitly configured
+Render account-recovery migration: the authenticated canonical installation, an allowlisted
+legacy installation ID, and a matching private migration token are all required. Configure
+LEGACY_MIGRATION_TOKEN as a Cloudflare Worker secret and the same value as Render's
+DB_SYNC_LEGACY_MIGRATION_TOKEN. Never place this secret in the EXE, browser bundle, or
+customer database. Desktop manual pulls now explicitly request the device's own installation.
+
 ## Configure and push
 
 1. Sign in with an Admin account and open **Settings & Backup**.

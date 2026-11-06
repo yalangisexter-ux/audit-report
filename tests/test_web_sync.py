@@ -162,6 +162,7 @@ def test_legacy_snapshot_recovery_merges_accounts_only_for_matching_employee(tmp
     monkeypatch.setenv("DB_SYNC_ENCRYPTION_SECRET", "test-encryption-secret")
     monkeypatch.setenv("DB_SYNC_INSTALLATION_ID", "c4cf201d3c68e2fcaf60aa05fd423d9a")
     monkeypatch.setenv("DB_SYNC_LEGACY_INSTALLATION_IDS", "080717e78653166d64cd2bcf72c75c76")
+    monkeypatch.setenv("DB_SYNC_LEGACY_MIGRATION_TOKEN", "test-legacy-migration-token")
     monkeypatch.setenv("DB_SYNC_WORKER_URL", "https://sync.example")
 
     local_path = tmp_path / "canonical.db"
@@ -192,6 +193,7 @@ def test_legacy_snapshot_recovery_merges_accounts_only_for_matching_employee(tmp
     class FakeSync:
         def download_latest_snapshot(self, **kwargs):
             assert kwargs["target_installation_id"] == "080717e78653166d64cd2bcf72c75c76"
+            assert kwargs["legacy_migration_token"] == "test-legacy-migration-token"
             return remote_path.read_bytes()
 
     original_sync = manager.sync
@@ -222,3 +224,26 @@ def test_merge_reports_no_changes_when_snapshot_is_already_merged(tmp_path):
     assert result["inserted"] == 0
     assert result["updated"] == 0
     assert result["changed"] is False
+
+
+def test_legacy_snapshot_recovery_fails_closed_without_migration_token(tmp_path, monkeypatch):
+    from web_sync import WebDatabaseSync
+
+    monkeypatch.setenv("DB_SYNC_ENCRYPTION_SECRET", "test-encryption-secret")
+    monkeypatch.setenv("DB_SYNC_INSTALLATION_ID", "c4cf201d3c68e2fcaf60aa05fd423d9a")
+    monkeypatch.setenv("DB_SYNC_WORKER_URL", "https://sync.example")
+    monkeypatch.delenv("DB_SYNC_LEGACY_MIGRATION_TOKEN", raising=False)
+    manager = WebDatabaseSync(tmp_path / "web-no-legacy-token.db")
+
+    class UnexpectedSync:
+        def download_latest_snapshot(self, **kwargs):
+            raise AssertionError("Legacy snapshot must not be requested without migration authorization")
+
+    original_sync = manager.sync
+    manager.sync = UnexpectedSync()
+    try:
+        assert manager._recover_accounts_from_legacy_snapshot() is False
+    finally:
+        manager.sync = original_sync
+        if original_sync is not None:
+            original_sync.close()

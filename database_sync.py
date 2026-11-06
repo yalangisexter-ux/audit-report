@@ -490,7 +490,7 @@ class GitHubDatabaseSync:
                 if self.is_dirty and not self._closed:
                     self.schedule_sync(2.0)
 
-    def _worker_request(self, method: str, endpoint: str, *, payload=None, binary=False, allow_404=False, _retry_auth=True):
+    def _worker_request(self, method: str, endpoint: str, *, payload=None, binary=False, allow_404=False, legacy_migration_token: str = "", _retry_auth=True):
         if not self.worker_url:
             raise RuntimeError("The secure database-sync service is not configured in this build.")
         body = None
@@ -509,6 +509,8 @@ class GitHubDatabaseSync:
         token = str(credentials.get("token") or "")
         if token:
             headers["Authorization"] = "Bearer " + token
+        if legacy_migration_token:
+            headers["X-Legacy-Migration-Token"] = str(legacy_migration_token)
         request = Request(self.worker_url + endpoint, data=body, method=method, headers=headers)
         try:
             with urlopen(request, timeout=75) as response:
@@ -530,7 +532,7 @@ class GitHubDatabaseSync:
                 # Device JWTs expire or require re-auth; re-registration proves possession of credentials.
                 try:
                     self._register_device()
-                    return self._worker_request(method, endpoint, payload=payload, binary=binary, allow_404=allow_404, _retry_auth=False)
+                    return self._worker_request(method, endpoint, payload=payload, binary=binary, allow_404=allow_404, legacy_migration_token=legacy_migration_token, _retry_auth=False)
                 except Exception:
                     pass
             try:
@@ -580,20 +582,21 @@ class GitHubDatabaseSync:
         if not self._device_credentials.get("token"):
             self._register_device()
 
-    def _pull_encrypted_snapshot(self, target_installation_id: str = "", prefer_latest: bool = False):
+    def _pull_encrypted_snapshot(self, target_installation_id: str = "", prefer_latest: bool = False, legacy_migration_token: str = ""):
         self._ensure_device()
         payload = {}
         if target_installation_id and re_full_hex(target_installation_id, 32):
             payload["target_installation_id"] = target_installation_id
         elif target_installation_id == "latest" or prefer_latest:
             payload["prefer_latest"] = True
-        return self._worker_request("POST", "/pull", payload=payload, binary=True, allow_404=True)
+        return self._worker_request("POST", "/pull", payload=payload, binary=True, allow_404=True, legacy_migration_token=legacy_migration_token)
 
     def download_latest_snapshot(
         self,
         target_installation_id: str = "",
         candidate_secret: str = "",
         prefer_latest: bool = True,
+        legacy_migration_token: str = "",
     ) -> bytes:
         """Download, decrypt, and integrity-check this installation's latest business snapshot."""
         with self._lock:
@@ -605,6 +608,7 @@ class GitHubDatabaseSync:
         encrypted = self._pull_encrypted_snapshot(
             target_installation_id=target_installation_id,
             prefer_latest=prefer_latest,
+            legacy_migration_token=legacy_migration_token,
         )
         if encrypted is None:
             raise RuntimeError("No remote snapshot exists for this installation yet.")

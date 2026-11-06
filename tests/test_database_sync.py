@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 
 import pytest
+import database_sync
 
 from database_sync import (
     create_encrypted_database_snapshot,
@@ -327,3 +328,39 @@ def test_automatic_sync_scheduler_is_cancelled_on_shutdown(tmp_path, monkeypatch
     import time
     time.sleep(0.25)
     assert calls == []
+
+
+def test_worker_request_sends_legacy_migration_token_header(tmp_path, monkeypatch):
+    sync = GitHubDatabaseSync(
+        tmp_path / "customer.db", "example/repository", "a" * 32,
+        worker_url="https://sync.example", encryption_secret=TEST_TOKEN,
+        device_credentials={"device_id": "1" * 32, "device_secret": "test-device-secret-" * 3, "token": "test-device-jwt"},
+    )
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self, limit=-1):
+            return b"encrypted snapshot"
+
+    def fake_urlopen(request, timeout):
+        captured["headers"] = {name.lower(): value for name, value in request.header_items()}
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(database_sync, "urlopen", fake_urlopen)
+    try:
+        result = sync._worker_request(
+            "POST", "/pull", payload={"target_installation_id": "b" * 32},
+            binary=True, legacy_migration_token="test-legacy-migration-token",
+        )
+        assert result == b"encrypted snapshot"
+        assert captured["headers"]["x-legacy-migration-token"] == "test-legacy-migration-token"
+        assert captured["headers"]["authorization"] == "Bearer test-device-jwt"
+    finally:
+        sync.close()

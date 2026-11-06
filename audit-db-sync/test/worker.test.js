@@ -17,22 +17,34 @@ class MemoryStorage {
 function makeEnv() {
   const registry = new DeviceRegistry({ storage: new MemoryStorage() });
   const binding = { idFromName: name => name, get: () => ({ fetch: (url, init) => registry.fetch(new Request(url, init)) }) };
-  return { JWT_SECRET: "test-jwt-secret-that-is-long-enough-123456789", RELEASE_TOKEN_2: "test-github-token", GITHUB_OWNER: "test-owner", GITHUB_REPO: "test-repo", DEVICE_REGISTRY: binding };
+  return {
+    JWT_SECRET: "test-jwt-secret-that-is-long-enough-123456789",
+    RELEASE_TOKEN_2: "test-github-token",
+    GITHUB_OWNER: "test-owner",
+    GITHUB_REPO: "test-repo",
+    DEVICE_REGISTRY: binding,
+    CANONICAL_INSTALLATION_ID: installA,
+    LEGACY_INSTALLATION_IDS: installB,
+    LEGACY_MIGRATION_TOKEN: "test-legacy-migration-token-2026",
+  };
 }
 function makeGitHubMock() {
   const files = new Map();
   const shas = new Map();
   const commitMessages = [];
+  const snapshotReads = [];
   let commit = 0;
   return {
     files,
     commitMessages,
+    snapshotReads,
     fetch: async (input, init = {}) => {
       const url = new URL(input);
       if (url.hostname !== "api.github.com") throw new Error("unexpected fetch host");
       const path = decodeURIComponent(url.pathname.split("/contents/")[1] || "");
       const accept = init.headers?.Accept || init.headers?.get?.("Accept") || "";
       if (init.method === "GET") {
+        if (path.startsWith("customer-data/")) snapshotReads.push(path);
         const bytes = files.get(path);
         if (!bytes) return new Response(JSON.stringify({ message: "Not Found" }), { status: 404 });
         if (accept.includes("raw+json")) return new Response(bytes, { status: 200, headers: { "Content-Type": "application/octet-stream" } });
@@ -96,12 +108,68 @@ test("push and pull are installation-scoped and return raw encrypted bytes", asy
     assert.ok(github.commitMessages[0].includes("[skip render]"));
     assert.ok(github.files.has("customer-data/" + installA + ".db.enc"));
     assert.equal(github.files.has("customer-data/" + installB + ".db.enc"), false);
-    const pull = await worker.fetch(new Request("https://worker/pull", { method: "POST", headers: { Authorization: "Bearer " + tokenA, "Content-Type": "application/json" }, body: "{}" }), env);
+    const pull = await worker.fetch(new Request("https://worker/pull", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + tokenA, "Content-Type": "application/json" },
+      body: JSON.stringify({ prefer_latest: true }),
+    }), env);
     assert.equal(pull.status, 200);
     assert.deepEqual(Buffer.from(await pull.arrayBuffer()), snapshot);
+    assert.equal(github.snapshotReads.at(-1), "customer-data/" + installA + ".db.enc");
     const noSnapshot = await worker.fetch(new Request("https://worker/pull", { method: "POST", headers: { Authorization: "Bearer " + tokenB, "Content-Type": "application/json" }, body: "{}" }), env);
     assert.equal(noSnapshot.status, 404);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test("cross-installation pulls require the canonical legacy migration token", async () => {
+  const env = makeEnv();
+  const github = makeGitHubMock();
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = github.fetch;
+  try {
+    const register = async (installation_id, device_id, device_secret) => {
+      const response = await worker.fetch(new Request("https://worker/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ installation_id, device_id, device_secret }),
+      }), env);
+      return (await response.json()).token;
+    };
+    const tokenA = await register(installA, deviceA, secretA);
+    const tokenB = await register(installB, deviceB, secretB);
+    const legacySnapshot = Buffer.from("legacy customer snapshot");
+    github.files.set("customer-data/" + installB + ".db.enc", legacySnapshot);
+
+    const request = (token, headers = {}) => worker.fetch(new Request("https://worker/pull", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({ target_installation_id: installB }),
+    }), env);
+
+    const denied = await request(tokenA);
+    assert.equal(denied.status, 403);
+    const wrongToken = await request(tokenA, { "X-Legacy-Migration-Token": "wrong-token" });
+    assert.equal(wrongToken.status, 403);
+    assert.equal(github.snapshotReads.length, 0);
+
+    const allowed = await request(tokenA, { "X-Legacy-Migration-Token": env.LEGACY_MIGRATION_TOKEN });
+    assert.equal(allowed.status, 200);
+    assert.deepEqual(Buffer.from(await allowed.arrayBuffer()), legacySnapshot);
+    assert.equal(github.snapshotReads.at(-1), "customer-data/" + installB + ".db.enc");
+
+    const otherInstallation = await worker.fetch(new Request("https://worker/pull", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + tokenB,
+        "Content-Type": "application/json",
+        "X-Legacy-Migration-Token": env.LEGACY_MIGRATION_TOKEN,
+      },
+      body: JSON.stringify({ target_installation_id: installA }),
+    }), env);
+    assert.equal(otherInstallation.status, 403);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("bad registration data is rejected", async () => {

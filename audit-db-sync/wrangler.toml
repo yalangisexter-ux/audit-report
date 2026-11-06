@@ -13,3 +13,5 @@ new_sqlite_classes = ["DeviceRegistry"]
 [vars]
 GITHUB_OWNER = "yalangisexter-ux"
 GITHUB_REPO = "audit-report"
+CANONICAL_INSTALLATION_ID = "c4cf201d3c68e2fcaf60aa05fd423d9a"
+LEGACY_INSTALLATION_IDS = "080717e78653166d64cd2bcf72c75c76"

@@ -241,6 +241,7 @@ class WebDatabaseSync:
         self.worker_url = (os.environ.get("DB_SYNC_WORKER_URL") or DEFAULT_WORKER).strip().rstrip("/")
         self.installation_id = (os.environ.get("DB_SYNC_INSTALLATION_ID") or DEFAULT_INSTALLATION).strip().lower()
         self.secret = (os.environ.get("DB_SYNC_ENCRYPTION_SECRET") or "").strip()
+        self.legacy_migration_token = (os.environ.get("DB_SYNC_LEGACY_MIGRATION_TOKEN") or "").strip()
         self.credentials_path = self.db_path.parent / "web_sync_device.json"
         self.lock = threading.RLock()
         self.stop_event = threading.Event()
@@ -320,6 +321,9 @@ class WebDatabaseSync:
         accounts and share at least one employee identity with the canonical database.
         Its rows are union-merged; the canonical installation remains the only write target.
         """
+        if not self.legacy_migration_token:
+            print("[Web Sync] Legacy account recovery skipped: DB_SYNC_LEGACY_MIGRATION_TOKEN is not configured")
+            return False
         configured_ids = os.environ.get(
             "DB_SYNC_LEGACY_INSTALLATION_IDS", "080717e78653166d64cd2bcf72c75c76"
         )
@@ -333,6 +337,7 @@ class WebDatabaseSync:
                     target_installation_id=legacy_id,
                     candidate_secret=self.secret,
                     prefer_latest=False,
+                    legacy_migration_token=self.legacy_migration_token,
                 )
                 temp.write_bytes(payload)
                 legacy_stats = validate_snapshot(temp)

@@ -49,6 +49,8 @@ services:
         value: "c4cf201d3c68e2fcaf60aa05fd423d9a"
       - key: DB_SYNC_LEGACY_INSTALLATION_IDS
         value: "080717e78653166d64cd2bcf72c75c76"
+      - key: DB_SYNC_LEGACY_MIGRATION_TOKEN
+        sync: false
       - key: DB_SYNC_ENCRYPTION_SECRET
         sync: false
       - key: WEB_REQUIRE_LOGIN
