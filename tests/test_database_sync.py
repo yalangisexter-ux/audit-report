@@ -229,15 +229,17 @@ def test_download_latest_snapshot_with_candidate_secret_and_prefer_latest(tmp_pa
     )
     passed_args = {}
 
-    def fake_pull(target_installation_id="", prefer_latest=False):
+    def fake_pull(target_installation_id="", prefer_latest=False, legacy_migration_token=""):
         passed_args["target_installation_id"] = target_installation_id
         passed_args["prefer_latest"] = prefer_latest
+        passed_args["legacy_migration_token"] = legacy_migration_token
         return encrypted
 
     monkeypatch.setattr(sync, "_pull_encrypted_snapshot", fake_pull)
     raw = sync.download_latest_snapshot(candidate_secret=secret, prefer_latest=True)
     assert len(raw) > 0
     assert passed_args["prefer_latest"] is True
+    assert passed_args["legacy_migration_token"] == ""
 
     # Validate decrypted database contents
     test_conn = sqlite3.connect(f"file:memdb?mode=memory&cache=shared")
