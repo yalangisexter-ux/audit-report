@@ -44,3 +44,23 @@ def test_customer_first_login_pushes_initial_snapshot_to_its_installation(monkey
     }
     assert calls["push"] is True
     assert fake_window._auto_sync_running is False
+
+def test_customer_login_marks_pending_but_waits_for_remote_pull_before_upload():
+    calls = []
+
+    class FakeSync:
+        is_configured = True
+
+        def mark_pending(self):
+            calls.append("mark_pending")
+
+        def schedule_sync(self, delay):
+            calls.append(("unsafe_direct_upload", delay))
+
+    fake_db = SimpleNamespace(github_sync=FakeSync())
+    app.Database.set_active_user(
+        fake_db,
+        {"username": "Admin", "role": "Admin"},
+    )
+
+    assert calls == ["mark_pending"]
