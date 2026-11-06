@@ -110,7 +110,7 @@ def test_first_run_setup_is_allowed_only_when_exact_installation_snapshot_is_con
 
     class MissingSnapshotSync:
         is_configured = True
-        installation_id = installation_id
+        installation_id = "c4cf201d3c68e2fcaf60aa05fd423d9a"
 
         def download_latest_snapshot(self, **kwargs):
             calls["pull"] = kwargs
