@@ -1358,12 +1358,10 @@ class Database:
                 # Developer test mode: do NOT mark pending for cloud sync
                 return
             if hasattr(self, "github_sync") and hasattr(self.github_sync, "mark_pending"):
+                # Route customer writes through MainWindow's pull/merge/push
+                # reconciliation loop. A direct snapshot push here could overwrite
+                # newer web changes that have not yet been pulled.
                 self.github_sync.mark_pending()
-                # Debounced background upload: local commits remain immediate and
-                # network failures never block the customer's work.
-                schedule = getattr(self.github_sync, "schedule_sync", None)
-                if callable(schedule):
-                    schedule(2.0)
         self.conn.set_commit_callback(_safe_commit_callback)
 
     def _store_sync_device_credentials(self, credentials):
@@ -1763,18 +1761,17 @@ class Database:
 
     def set_active_user(self, user):
         self.active_user = user
-        # On customer sign-in, publish the current database even if no new edit
-        # has happened in this session. This also retries a previously pending
-        # first upload after the customer reconnects to the internet.
+        # Customer sign-in marks the installation for reconciliation, but must
+        # not upload before the first remote pull. MainWindow's startup sync first
+        # downloads/merges the canonical snapshot, then publishes the combined DB.
         if not is_developer_test_user(user):
             sync = getattr(self, "github_sync", None)
             if sync is not None and getattr(sync, "is_configured", False):
                 try:
                     sync.mark_pending()
-                    sync.schedule_sync(1.0)
                 except Exception:
                     logging.getLogger("db_sync").exception(
-                        "Could not schedule the initial customer database sync"
+                        "Could not mark the customer database for initial sync"
                     )
 
     def get_setting(self, key, default=""):
