@@ -83,3 +83,12 @@ def test_web_eod_report_default_matches_desktop_attendance_visibility():
         assert "Attendance: Present" not in report["preview_text"]
     finally:
         connection.close()
+
+
+def test_print_center_restores_desktop_report_preferences_and_uses_desktop_default_format():
+    source = PRINT_CENTER.read_text(encoding="utf-8")
+    assert "apiFetch('/reports/options')" in source
+    assert "method:'PUT'" in source
+    assert "preferencesLoaded" in source
+    assert "output_format:'docx'" in source
+    assert "preferenceWrites.current[key]" in source

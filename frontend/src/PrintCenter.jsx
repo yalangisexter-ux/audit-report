@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Eye, FileText, FolderOpen, Printer } from 'lucide-react';
 
 const field = 'w-full min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400';
@@ -54,7 +54,9 @@ const today = () => {
 const escapeHtml = value => String(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
 export default function PrintCenter({ employees = [], archive = [], apiFetch, notify = () => {}, onOpenArchive = () => {} }) {
-  const [report,setReport] = useState({date:today(),report_type:'Audit / EOD',employee_id:'',exclude_employee_id:'',output_format:'pdf',options:{...defaults}});
+  const [report,setReport] = useState({date:today(),report_type:'Audit / EOD',employee_id:'',exclude_employee_id:'',output_format:'docx',options:{...defaults}});
+  const [preferencesLoaded,setPreferencesLoaded] = useState(false);
+  const preferenceWrites = useRef({});
   const [reportText,setReportText] = useState('');
   const [recordCount,setRecordCount] = useState(null);
   const [busy,setBusy] = useState(false);
@@ -71,6 +73,27 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
       setRecordCount(null);
     }
   }, [archive, archivedReportId]);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch('/reports/options').then(result => {
+      if (!active) return;
+      setReport(previous => ({
+        ...previous,
+        options: {
+          ...defaults,
+          ...(result?.options || {}),
+          business_products: previous.options.business_products,
+          business_services: previous.options.business_services
+        }
+      }));
+    }).catch(error => {
+      if (active) notify('Could not load saved report options: ' + error.message);
+    }).finally(() => {
+      if (active) setPreferencesLoaded(true);
+    });
+    return () => { active = false; };
+  }, []);
 
   const changeArchivedReport = event => {
     const value = event.target.value;
@@ -195,6 +218,17 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
 
   const toggleOption = (key, checked) => {
     setReport(previous=>({...previous,options:{...previous.options,[key]:checked}}));
+    if (key !== 'business_products' && key !== 'business_services') {
+      const previousWrite = preferenceWrites.current[key] || Promise.resolve();
+      const nextWrite = previousWrite.catch(() => {}).then(() =>
+        apiFetch('/reports/options', {
+          method:'PUT',
+          body:JSON.stringify({options:{[key]:checked}})
+        })
+      );
+      preferenceWrites.current[key] = nextWrite;
+      nextWrite.catch(error => notify('Could not save report option: ' + error.message));
+    }
     setReportText('');
   };
 
@@ -217,12 +251,12 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
             {archive.map(item=><option key={item.id} value={item.id}>{item.report_date||'Unknown date'} — {item.file_name} — {item.employee_name||'All employees'}</option>)}
           </select>
         </label>
-        <div className="flex items-end sm:col-span-2 xl:col-span-2"><button className={button+' w-full'} disabled={busy||!report.date||archivedSelected}><Eye size={16}/>{busy?'Working…':'Generate preview'}</button></div>
+        <div className="flex items-end sm:col-span-2 xl:col-span-2"><button className={button+' w-full'} disabled={busy||!report.date||archivedSelected||!preferencesLoaded}><Eye size={16}/>{busy?'Working…':'Generate preview'}</button></div>
       </form>
       <div className="mt-5 rounded-xl border border-white/10 bg-slate-950/60 p-3">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-bold text-cyan-200">{archivedSelected ? 'Historical archived PDF selected' : report.report_type+' content options'}</h3><span className="text-xs text-slate-500">Unchecked fields are omitted from preview and exports.</span></div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {visibleOptions.map(([key,label])=><label key={key} className="flex items-start gap-2 rounded-lg border border-white/5 px-3 py-2 text-xs text-slate-300"><input type="checkbox" className="mt-0.5 accent-cyan-400" checked={Boolean(report.options[key])} disabled={archivedSelected} onChange={e=>toggleOption(key,e.target.checked)}/><span>{label}</span></label>)}
+          {visibleOptions.map(([key,label])=><label key={key} className="flex items-start gap-2 rounded-lg border border-white/5 px-3 py-2 text-xs text-slate-300"><input type="checkbox" className="mt-0.5 accent-cyan-400" checked={Boolean(report.options[key])} disabled={archivedSelected||!preferencesLoaded} onChange={e=>toggleOption(key,e.target.checked)}/><span>{label}</span></label>)}
         </div>
       </div>
       <div className="mt-5 rounded-xl border border-white/10 bg-slate-950/60 p-3">
@@ -232,7 +266,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" className={button} onClick={download} disabled={busy}><Download size={16}/>{busy?'Preparing…':archivedSelected?'Export archived PDF copy':'Generate / Download '+report.output_format.toUpperCase()}</button>
+        <button type="button" className={button} onClick={download} disabled={busy||!preferencesLoaded}><Download size={16}/>{busy?'Preparing…':archivedSelected?'Export archived PDF copy':'Generate / Download '+report.output_format.toUpperCase()}</button>
         <button type="button" className={secondary} onClick={print} disabled={(!reportText&&!archivedSelected)||busy}><Printer size={16}/>{archivedSelected?'View / Print archived PDF':'Open PDF preview / Print'}</button>
         <button type="button" className={secondary} onClick={onOpenArchive} disabled={busy}><FolderOpen size={16}/>Browse saved reports</button>
       </div>

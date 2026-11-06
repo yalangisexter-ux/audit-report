@@ -350,6 +350,10 @@ class ReportOptionsModel(BaseModel):
     output_format: Optional[str] = "pdf"
 
 
+class ReportOptionPreferencesModel(BaseModel):
+    options: Dict[str, bool]
+
+
 # ----------------- Endpoints ----------------- #
 
 @app.get("/api/health")
@@ -1874,6 +1878,13 @@ _REPORT_OPTION_DEFAULTS = {
     "business_products": False, "business_services": False,
 }
 
+# These are the report checkboxes persisted by the desktop EXE as report_opt_*.
+# Business catalog toggles remain per-report choices in both clients.
+_REPORT_PERSISTED_OPTION_KEYS = frozenset(
+    key for key in _REPORT_OPTION_DEFAULTS
+    if key not in {"attendance", "business_products", "business_services"}
+)
+
 
 def _report_is_completed(status):
     helper = getattr(desktop_app, "is_explicitly_completed_task_status", None)
@@ -2283,6 +2294,50 @@ def _build_report_preview(req, conn):
             )
 
     return {"preview_text": "\n".join(lines), "report_type": report_type, "record_count": len(employee_records)}
+
+
+@app.get("/api/reports/options")
+def get_report_option_preferences(
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Return the shared Print Center checkbox preferences used by the desktop EXE."""
+    options = {
+        key: bool(_REPORT_OPTION_DEFAULTS[key])
+        for key in _REPORT_PERSISTED_OPTION_KEYS
+    }
+    rows = conn.execute(
+        "SELECT key, value FROM settings WHERE key LIKE 'report_opt_%'"
+    ).fetchall()
+    for row in rows:
+        key = str(row["key"])[len("report_opt_"):]
+        value = str(row["value"])
+        if key in _REPORT_PERSISTED_OPTION_KEYS and value in {"0", "1"}:
+            options[key] = value == "1"
+    return {"options": options}
+
+
+@app.put("/api/reports/options")
+def save_report_option_preferences(
+    data: ReportOptionPreferencesModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Persist only known desktop report checkboxes; any authenticated role may use Print Center."""
+    unknown = sorted(set(data.options) - _REPORT_PERSISTED_OPTION_KEYS)
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail="Unsupported report option(s): " + ", ".join(unknown),
+        )
+    for key, enabled in data.options.items():
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (f"report_opt_{key}", "1" if enabled else "0"),
+        )
+    conn.commit()
+    return {"success": True, "options": data.options}
 
 
 @app.post("/api/reports/preview")

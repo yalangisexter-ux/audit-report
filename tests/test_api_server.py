@@ -2480,3 +2480,71 @@ def test_api_attendance_roster_matches_desktop_order_and_remark_presets():
                 cleanup.commit()
             finally:
                 cleanup.close()
+
+
+def test_print_center_report_option_preferences_round_trip_for_authenticated_roles(monkeypatch):
+    import secrets
+
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    staff_token = "print-options-staff-" + secrets.token_hex(8)
+    admin_token = "print-options-admin-" + secrets.token_hex(8)
+    api_server.ACTIVE_SESSIONS[staff_token] = {
+        "id": 993101, "username": "print-options-staff",
+        "display_name": "Print Options Staff", "role": "Staff",
+    }
+    api_server.ACTIVE_SESSIONS[admin_token] = {
+        "id": 993102, "username": "print-options-admin",
+        "display_name": "Print Options Admin", "role": "Admin",
+    }
+    headers_staff = {"Authorization": f"Bearer {staff_token}"}
+    headers_admin = {"Authorization": f"Bearer {admin_token}"}
+    keys = ("report_opt_summary", "report_opt_contact", "report_opt_identity")
+    connection = sqlite3.connect(str(desktop_app.DB_PATH))
+    try:
+        assert client.get("/api/reports/options").status_code == 401
+        connection.execute(
+            "DELETE FROM settings WHERE key IN (?,?,?)", keys
+        )
+        connection.executemany(
+            "INSERT INTO settings(key,value) VALUES(?,?)",
+            (("report_opt_summary", "0"), ("report_opt_contact", "1")),
+        )
+        connection.commit()
+
+        loaded = client.get("/api/reports/options", headers=headers_staff)
+        assert loaded.status_code == 200
+        assert loaded.json()["options"]["summary"] is False
+        assert loaded.json()["options"]["contact"] is True
+        assert loaded.json()["options"]["identity"] is True
+
+        saved = client.put(
+            "/api/reports/options",
+            headers=headers_staff,
+            json={"options": {"summary": True, "contact": False}},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["options"] == {"summary": True, "contact": False}
+
+        shared = client.get("/api/reports/options", headers=headers_admin)
+        assert shared.status_code == 200
+        assert shared.json()["options"]["summary"] is True
+        assert shared.json()["options"]["contact"] is False
+        assert connection.execute(
+            "SELECT value FROM settings WHERE key='report_opt_summary'"
+        ).fetchone()[0] == "1"
+
+        rejected = client.put(
+            "/api/reports/options",
+            headers=headers_staff,
+            json={"options": {"not_a_report_option": True}},
+        )
+        assert rejected.status_code == 422
+    finally:
+        connection.execute(
+            "DELETE FROM settings WHERE key IN (?,?,?)", keys
+        )
+        connection.commit()
+        connection.close()
+        api_server.ACTIVE_SESSIONS.pop(staff_token, None)
+        api_server.ACTIVE_SESSIONS.pop(admin_token, None)
