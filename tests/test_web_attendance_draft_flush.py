@@ -23,10 +23,14 @@ def test_date_navigation_saves_pending_rows_before_loading_the_next_date():
     assert "await apiFetch('/attendance/mark'" in flush
     assert "work_date:workDate" in flush
 
-    marker = "value={selectedAttendanceDate} disabled={attendanceBusy} onChange={async e=>{"
-    start = source.index(marker)
+    date_input = source.index("value={selectedAttendanceDate}")
+    handler_marker = "onChange={async e=>{"
+    start = source.index(handler_marker, date_input)
     end = source.index("}/></label>", start)
     date_handler = source[start:end]
+    assert "disabled={attendanceBusy||Boolean(attendanceRemarksTarget)}" in source[
+        source.rfind("<input", 0, date_input):start
+    ]
     assert date_handler.index("await flushAttendanceDrafts(selectedAttendanceDate)") < date_handler.index(
         "apiFetch('/attendance?work_date='+encodeURIComponent(selectedDate))"
     )
