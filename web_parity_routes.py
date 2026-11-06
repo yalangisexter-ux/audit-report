@@ -488,7 +488,7 @@ def _store_directory_rows(
     records = _rows(conn, sql, tuple(params))
     if normalized_kind == "pure product selling stores":
         product_evidence = re.compile(
-            r"\\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\\b",
+            r"\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\b",
             re.IGNORECASE,
         )
         pure_product_stores = []
@@ -502,7 +502,7 @@ def _store_directory_rows(
             )
             address_value = str(record.get("address") or "").strip()
             maps_value = str(record.get("maps") or "").strip().casefold()
-            full_address = len(address_value) >= 20 and bool(re.search(r"\\b\\d{6}\\b", address_value))
+            full_address = len(address_value) >= 20 and bool(re.search(r"\b\d{6}\b", address_value))
             has_maps_link = maps_value.startswith((
                 "https://www.google.com/maps/",
                 "https://maps.google.com/",
