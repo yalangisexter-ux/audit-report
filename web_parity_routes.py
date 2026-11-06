@@ -344,39 +344,126 @@ _STORE_CSV_FIELDS = (
 )
 
 
-def _store_directory_rows(conn, *, state="", query="", kind="", website="", verification=""):
+def _store_directory_rows(
+    conn, *, state="", query="", kind="", website="", verification="", contact="",
+    exclude="", exclude_kind="", exclude_state="", exclude_name="", exclude_district="",
+    exclude_keywords="",
+):
+    """Return Store Directory rows using the desktop positive and exclusion filters."""
     sql = "SELECT * FROM customer_prospects WHERE 1=1"
     params = []
+
+    def usable_value(column):
+        return (
+            "trim(IFNULL(" + column + ",''))<>'' "
+            "AND lower(trim(IFNULL(" + column + ",''))) NOT IN ('n/a','na','none','null','-')"
+        )
+
+    has_contact = "(" + usable_value("phone") + " OR " + usable_value("email") + ")"
+    has_website = usable_value("website")
+    verified_expr = "lower(trim(IFNULL(verified,''))) IN ('1','true','yes','verified','y')"
+    fields = (
+        "business_name", "business_category", "kind", "area", "city", "state",
+        "contact_person", "phone", "email", "address", "website", "maps",
+        "followup_date", "call_time", "connection", "verified", "response", "notes",
+        "source_name", "source_url", "source_type", "source_checked_at", "source_sheet",
+        "source_status",
+    )
+
     if state:
-        sql += " AND lower(trim(IFNULL(state,'')))=lower(trim(?))"
-        params.append(state)
+        state_key = state.strip().casefold().replace(" ", "")
+        sql += (
+            " AND (lower(trim(IFNULL(state,'')))=lower(trim(?)) "
+            "OR (',' || replace(lower(IFNULL(state,'')),' ','') || ',') LIKE ?)"
+        )
+        params.extend([state, "%," + state_key + ",%"])
     if kind:
         sql += " AND lower(trim(IFNULL(kind,'Store')))=lower(trim(?))"
         params.append(kind)
+    if contact == "has":
+        sql += " AND " + has_contact
+    elif contact == "missing":
+        sql += " AND NOT (" + has_contact + ")"
     if website == "has":
-        sql += " AND trim(IFNULL(website,''))<>''"
+        sql += " AND " + has_website
     elif website == "missing":
-        sql += " AND trim(IFNULL(website,''))=''"
-    verified_expr = (
-        "lower(trim(IFNULL(verified,''))) IN ('yes','y','true','verified') "
-        "OR lower(IFNULL(source_status,'')) LIKE '%verified%'"
-    )
+        sql += " AND NOT (" + has_website + ")"
     if verification == "verified":
         sql += " AND (" + verified_expr + ")"
     elif verification == "pending":
         sql += " AND NOT (" + verified_expr + ")"
-    if query:
-        term = "%" + query.strip() + "%"
-        fields = (
-            "business_name", "business_category", "kind", "area", "city", "state",
-            "contact_person", "phone", "email", "address", "website", "maps",
-            "followup_date", "call_time", "connection", "verified", "response",
-            "source_status", "notes",
-        )
-        sql += " AND (" + " OR ".join("IFNULL(" + field + ",'') LIKE ?" for field in fields) + ")"
-        params.extend([term] * len(fields))
+
+    if exclude == "missing_contact":
+        sql += " AND " + has_contact
+    elif exclude == "missing_website":
+        sql += " AND " + has_website
+    elif exclude == "unverified":
+        sql += " AND (" + verified_expr + ")"
+    elif exclude == "gym_wellness_herbal_healthkart":
+        combined_text = "lower(" + " || ' ' || ".join("IFNULL(" + field + ",'')" for field in fields) + ")"
+        negative_terms = ("%gym%", "%fitness cent%", "%wellness%", "%herbal%", "%herbalife%", "%ayurved%", "%homeopath%", "%healthkart%")
+        sql += " AND NOT (" + " OR ".join(combined_text + " LIKE ?" for _ in negative_terms) + ")"
+        params.extend(negative_terms)
+
+    if exclude_kind:
+        excluded_kind = exclude_kind.strip().casefold()
+        if excluded_kind == "pure product selling stores":
+            sql += (
+                " AND NOT (lower(trim(IFNULL(kind,'Store'))) "
+                "IN ('store','supplement store','pure product selling store') "
+                "AND lower(trim(IFNULL(kind,'')))<>'gym + store')"
+            )
+        elif excluded_kind in {"gym", "gyms"}:
+            sql += " AND NOT (lower(trim(IFNULL(kind,''))) IN ('gym','gyms'))"
+        elif excluded_kind == "gyms which sell products also":
+            sql += (
+                " AND NOT (lower(trim(IFNULL(kind,''))) IN "
+                "('gym + store','gym which sells products','gym + store (hybrid)') "
+                "OR lower(IFNULL(business_category,'')) LIKE '%product%' "
+                "OR (lower(IFNULL(business_category,'')) LIKE '%gym%' AND ("
+                "lower(IFNULL(business_category,'')) LIKE '%supplement%' "
+                "OR lower(IFNULL(business_category,'')) LIKE '%nutrition%' "
+                "OR lower(IFNULL(business_category,'')) LIKE '%counter%' "
+                "OR lower(IFNULL(business_category,'')) LIKE '%pro-shop%' "
+                "OR lower(IFNULL(business_category,'')) LIKE '%protein%' "
+                "OR lower(IFNULL(business_category,'')) LIKE '%shake%')))"
+            )
+        else:
+            sql += (
+                " AND NOT (lower(trim(IFNULL(kind,'')))=lower(trim(?)) "
+                "OR lower(IFNULL(business_category,'')) LIKE ?)"
+            )
+            params.extend([exclude_kind, "%" + excluded_kind + "%"])
+
+    if exclude_state:
+        excluded_states = [value.strip() for value in exclude_state.split(",") if value.strip()]
+        conditions = []
+        for value in excluded_states:
+            state_key = value.casefold().replace(" ", "")
+            conditions.append(
+                "(lower(trim(IFNULL(state,'')))=lower(?) "
+                "OR (',' || replace(lower(IFNULL(state,'')),' ','') || ',') LIKE ?)"
+            )
+            params.extend([value, "%," + state_key + ",%"])
+        if conditions:
+            sql += " AND NOT (" + " OR ".join(conditions) + ")"
+    if exclude_name:
+        sql += " AND lower(IFNULL(business_name,'')) NOT LIKE ?"
+        params.append("%" + exclude_name.strip().casefold() + "%")
+    if exclude_district:
+        sql += " AND NOT (lower(IFNULL(city,'')) LIKE ? OR lower(IFNULL(area,'')) LIKE ?)"
+        params.extend(["%" + exclude_district.strip().casefold() + "%"] * 2)
+
+    for term in (value.strip().casefold() for value in exclude_keywords.split(",") if value.strip()):
+        sql += " AND NOT (" + " OR ".join("lower(IFNULL(" + field + ",'')) LIKE ?" for field in fields) + ")"
+        params.extend(["%" + term + "%"] * len(fields))
+    for term in query.strip().casefold().split():
+        sql += " AND (" + " OR ".join("lower(IFNULL(" + field + ",'')) LIKE ?" for field in fields) + ")"
+        params.extend(["%" + term + "%"] * len(fields))
+
     sql += " ORDER BY id DESC"
     return _rows(conn, sql, tuple(params))
+
 
 
 def _regional_dashboard_rows(conn):
@@ -655,13 +742,22 @@ def export_customer_directory(
     kind: str = "",
     website: str = "",
     verification: str = "",
+    contact: str = "",
+    exclude: str = "",
+    exclude_kind: str = "",
+    exclude_state: str = "",
+    exclude_name: str = "",
+    exclude_district: str = "",
+    exclude_keywords: str = "",
     conn=Depends(api.get_db),
     user=Depends(api.get_current_user),
 ):
     if export_format not in {"csv", "xlsx", "pdf", "docx"}:
         raise HTTPException(status_code=400, detail="Supported Store Directory formats are CSV, XLSX, PDF and DOCX.")
     records = _store_directory_rows(
-        conn, state=state, query=q, kind=kind, website=website, verification=verification
+        conn, state=state, query=q, kind=kind, website=website, verification=verification,
+        contact=contact, exclude=exclude, exclude_kind=exclude_kind, exclude_state=exclude_state,
+        exclude_name=exclude_name, exclude_district=exclude_district, exclude_keywords=exclude_keywords,
     )
     if not records:
         raise HTTPException(status_code=404, detail="No Store Directory records match the selected filters.")
