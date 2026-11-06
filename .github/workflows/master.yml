@@ -33,6 +33,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require main branch
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -ne "refs/heads/main") {
+            throw "Master build is main-only; refusing ref $env:GITHUB_REF."
+          }
+
       - name: Detect Windows installer-impacting changes
         id: installer_changes
         shell: pwsh
