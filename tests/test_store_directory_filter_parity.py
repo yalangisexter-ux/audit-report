@@ -134,5 +134,9 @@ def test_store_directory_web_defaults_to_desktop_pure_product_view_and_clear_exc
         encoding="utf-8"
     )
     assert "const [prospectKindFilter,setProspectKindFilter]=useState('pure product selling stores')" in app_source
+    assert "if(prospectKindFilter==='pure product selling stores')" in app_source
+    assert "productEvidence=" in app_source
+    assert "fullAddress=" in app_source
+    assert "mapsValue.startsWith('https://maps.app.goo.gl/')" in app_source
     assert "clearStoreExclusions" in app_source
     assert "Clear exclusions" in app_source
