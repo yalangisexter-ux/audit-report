@@ -33,7 +33,7 @@ def test_date_navigation_saves_pending_rows_before_loading_the_next_date():
     assert date_handler.index("setAttendanceDrafts({})") > date_handler.index(
         "apiFetch('/attendance?work_date='+encodeURIComponent(selectedDate))"
     )
-    assert "finally{setAttendanceBusy(false)}" in date_handler
+    assert "finally{setAttendanceBusy(false);}" in date_handler
 
 
 def test_saving_one_attendance_row_preserves_other_pending_rows():
