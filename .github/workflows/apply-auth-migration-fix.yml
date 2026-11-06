@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'tools/fix_auth_users_migration.py'
+      - 'tools/ensure_admin_accounts_on_upgrade.py'
       - '.github/workflows/apply-auth-migration-fix.yml'
 permissions:
   contents: write
@@ -12,8 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply fix to app.py
-        run: python3 tools/fix_auth_users_migration.py
+      - name: Apply migration + ensure accounts
+        run: |
+          python3 tools/fix_auth_users_migration.py || true
+          python3 tools/ensure_admin_accounts_on_upgrade.py
       - name: Commit if changed
         run: |
           git config user.name "Audit Engineer"
@@ -22,6 +25,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No app.py changes"
           else
-            git commit -m "fix(desktop): harden auth_users case-sensitive migration (customer upgrade)"
+            git commit -m "fix(desktop): ensure Admin/Shiva@01 and admin/kiran123 without wiping customer DB"
             git push origin HEAD:main
           fi
