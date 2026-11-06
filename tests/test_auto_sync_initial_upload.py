@@ -103,3 +103,57 @@ def test_failed_customer_pull_does_not_upload_stale_local_snapshot(monkeypatch):
         "prefer_latest": False,
     })]
     assert fake_window._auto_sync_running is False
+
+def test_first_run_setup_is_allowed_only_when_remote_snapshot_is_confirmed_missing():
+    class MissingSnapshotSync:
+        is_configured = True
+
+        def download_latest_snapshot(self, **kwargs):
+            raise RuntimeError("No remote snapshot exists for this installation yet.")
+
+    allowed, reason = app.restore_first_run_cloud_snapshot(
+        SimpleNamespace(github_sync=MissingSnapshotSync())
+    )
+
+    assert allowed is True
+    assert "No remote customer snapshot exists" in reason
+
+
+def test_first_run_setup_is_blocked_when_remote_snapshot_pull_fails():
+    class UnreachableSync:
+        is_configured = True
+
+        def download_latest_snapshot(self, **kwargs):
+            raise RuntimeError("Could not reach the secure database-sync service: timeout")
+
+    allowed, reason = app.restore_first_run_cloud_snapshot(
+        SimpleNamespace(github_sync=UnreachableSync())
+    )
+
+    assert allowed is False
+    assert "could not be downloaded" in reason
+
+
+def test_first_run_setup_is_blocked_when_restored_snapshot_has_no_active_account(monkeypatch):
+    class ExistingSnapshotSync:
+        is_configured = True
+
+        def download_latest_snapshot(self, **kwargs):
+            return b"verified snapshot bytes"
+
+    class Cursor:
+        def fetchone(self):
+            return (0,)
+
+    class Connection:
+        def execute(self, statement):
+            assert "auth_users" in statement
+            return Cursor()
+
+    monkeypatch.setattr(app, "merge_remote_database_snapshot", lambda conn, path: {})
+    allowed, reason = app.restore_first_run_cloud_snapshot(
+        SimpleNamespace(github_sync=ExistingSnapshotSync(), conn=Connection())
+    )
+
+    assert allowed is False
+    assert "no active login account" in reason
