@@ -1661,7 +1661,7 @@ class Database:
                 # statements (for example, CREATE TABLE "auth_users"). Replace the
                 # actual table identifier, not only the unquoted spelling.
                 create_sql, replacement_count = re.subn(
-                    r"(\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)(?:(?:main|"main"|\x60main\x60|\[main\])\s*\.\s*)?(?:"auth_users"|\x60auth_users\x60|\[auth_users\]|auth_users)(?=\s|\()",
+                    r'(\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)(?:(?:main|"main"|\'main\'|\x60main\x60|\[main\])\s*\.\s*)?(?:"auth_users"|\'auth_users\'|\x60auth_users\x60|\[auth_users\]|auth_users)(?=\s|\()',
                     lambda match: match.group(1) + staging_table,
                     auth_sql,
                     count=1,

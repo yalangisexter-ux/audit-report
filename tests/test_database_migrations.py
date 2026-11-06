@@ -240,6 +240,7 @@ def test_auth_case_sensitive_migration_supports_quoted_table_identifiers(tmp_pat
     """Legacy SQLite schemas may preserve quoted auth_users identifiers in sqlite_master."""
     for suffix, table_identifier in (
         ("double_quote", '"auth_users"'),
+        ("single_quote", "'auth_users'"),
         ("backtick", "\x60auth_users\x60"),
         ("bracket", "[auth_users]"),
     ):
