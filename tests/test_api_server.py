@@ -2435,3 +2435,48 @@ def test_store_directory_workbook_import_regional_dashboard_and_exports_are_safe
         connection.close()
         api_server.ACTIVE_SESSIONS.pop(admin_token, None)
         api_server.ACTIVE_SESSIONS.pop(staff_token, None)
+
+
+def test_api_attendance_roster_matches_desktop_order_and_remark_presets():
+    import secrets
+
+    suffix = secrets.token_hex(4).upper()
+    work_date = "2999-12-30"
+    department = f"Attendance Sort {suffix}"
+    employee_ids = []
+    connection = None
+    try:
+        for code, name in (("ZEBRA", "Zebra Attendance Sort"), ("ALPHA", "Alpha Attendance Sort")):
+            created = client.post("/api/employees", json={
+                "name": name,
+                "employee_code": f"ATT-ORDER-{suffix}-{code}",
+                "department": department,
+            })
+            assert created.status_code == 200, created.text
+            employee_ids.append(created.json()["id"])
+
+        connection = sqlite3.connect(str(_isolated_db))
+        connection.execute("UPDATE employees SET display_order=10 WHERE id=?", (employee_ids[0],))
+        connection.execute("UPDATE employees SET display_order=20 WHERE id=?", (employee_ids[1],))
+        connection.commit()
+        connection.close()
+        connection = None
+
+        response = client.get("/api/attendance", params={"work_date": work_date})
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        selected_rows = [row for row in payload["roster"] if row["employee_id"] in employee_ids]
+        assert [row["employee_id"] for row in selected_rows] == employee_ids
+        assert payload["remarks_options"] == list(desktop_app.ATTENDANCE_REMARK_OPTIONS)
+    finally:
+        if connection is not None:
+            connection.close()
+        if employee_ids:
+            cleanup = sqlite3.connect(str(_isolated_db))
+            try:
+                cleanup.executemany("DELETE FROM attendance WHERE employee_id=?", [(value,) for value in employee_ids])
+                cleanup.executemany("DELETE FROM employees WHERE id=?", [(value,) for value in employee_ids])
+                cleanup.execute("DELETE FROM employee_groups WHERE name=?", (department,))
+                cleanup.commit()
+            finally:
+                cleanup.close()

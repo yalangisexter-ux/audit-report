@@ -1561,13 +1561,14 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
            FROM employees e
            LEFT JOIN attendance a ON e.id = a.employee_id AND a.work_date=?
            WHERE e.active=1
-           ORDER BY e.name ASC""",
+           ORDER BY e.display_order ASC, e.name COLLATE NOCASE""",
         (selected_date,)
     ).fetchall()
     
     return {
         "date": selected_date,
-        "roster": [dict(r) for r in rows]
+        "roster": [dict(r) for r in rows],
+        "remarks_options": list(desktop_app.ATTENDANCE_REMARK_OPTIONS),
     }
 
 @app.post("/api/attendance/mark")

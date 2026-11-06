@@ -61,3 +61,14 @@ def test_toolbar_actions_are_disabled_for_holidays_and_during_saves():
     assert toolbar.count("disabled={attendanceIsHoliday||attendanceBusy}") == 7
     assert "runAttendanceTimeAction('remarks')" in toolbar
     assert "runAttendanceStatusAction('Absent')" in toolbar
+
+def test_web_attendance_matches_desktop_employee_order_and_editable_remark_presets():
+    frontend = _source("frontend/src/App.jsx")
+    api = _source("api_server.py")
+
+    assert "ORDER BY e.display_order ASC, e.name COLLATE NOCASE" in api
+    assert '"remarks_options": list(desktop_app.ATTENDANCE_REMARK_OPTIONS)' in api
+    assert 'list="attendance-remark-presets"' in frontend
+    assert "data.attendance.remarks_options" in frontend
+    assert "setAttendanceRemarksTarget(row)" in frontend
+    assert "Attendance remarks:" not in frontend
