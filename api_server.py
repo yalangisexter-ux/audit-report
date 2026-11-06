@@ -1840,7 +1840,7 @@ _REPORT_OPTION_DEFAULTS = {
     "actual_qty": True, "completion_pct": True, "priority": True,
     "details": True, "due_time": True, "proof": True, "proof_notes": False,
     "custom_values": True, "next_action": True, "remarks": True,
-    "expose_link": False, "pending": True, "attendance": True,
+    "expose_link": False, "pending": True, "attendance": False,
     "attendance_identity": True, "attendance_status": True,
     "attendance_times": True, "attendance_remarks": True,
     "attendance_summary": True, "details_identity": True,
