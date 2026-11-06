@@ -104,17 +104,26 @@ def test_failed_customer_pull_does_not_upload_stale_local_snapshot(monkeypatch):
     })]
     assert fake_window._auto_sync_running is False
 
-def test_first_run_setup_is_allowed_only_when_remote_snapshot_is_confirmed_missing():
+def test_first_run_setup_is_allowed_only_when_exact_installation_snapshot_is_confirmed_missing():
+    calls = {}
+    installation_id = "c4cf201d3c68e2fcaf60aa05fd423d9a"
+
     class MissingSnapshotSync:
         is_configured = True
+        installation_id = installation_id
 
         def download_latest_snapshot(self, **kwargs):
+            calls["pull"] = kwargs
             raise RuntimeError("No remote snapshot exists for this installation yet.")
 
     allowed, reason = app.restore_first_run_cloud_snapshot(
         SimpleNamespace(github_sync=MissingSnapshotSync())
     )
 
+    assert calls["pull"] == {
+        "target_installation_id": installation_id,
+        "prefer_latest": False,
+    }
     assert allowed is True
     assert "No remote customer snapshot exists" in reason
 
@@ -122,6 +131,7 @@ def test_first_run_setup_is_allowed_only_when_remote_snapshot_is_confirmed_missi
 def test_first_run_setup_is_blocked_when_remote_snapshot_pull_fails():
     class UnreachableSync:
         is_configured = True
+        installation_id = "c4cf201d3c68e2fcaf60aa05fd423d9a"
 
         def download_latest_snapshot(self, **kwargs):
             raise RuntimeError("Could not reach the secure database-sync service: timeout")
@@ -137,6 +147,7 @@ def test_first_run_setup_is_blocked_when_remote_snapshot_pull_fails():
 def test_first_run_setup_is_blocked_when_restored_snapshot_has_no_active_account(monkeypatch):
     class ExistingSnapshotSync:
         is_configured = True
+        installation_id = "c4cf201d3c68e2fcaf60aa05fd423d9a"
 
         def download_latest_snapshot(self, **kwargs):
             return b"verified snapshot bytes"
@@ -157,3 +168,19 @@ def test_first_run_setup_is_blocked_when_restored_snapshot_has_no_active_account
 
     assert allowed is False
     assert "no active login account" in reason
+
+
+
+def test_first_run_restore_refuses_global_snapshot_discovery_without_installation_id():
+    class UnidentifiedSync:
+        is_configured = True
+
+        def download_latest_snapshot(self, **kwargs):
+            raise AssertionError("Global snapshot discovery must never be attempted.")
+
+    allowed, reason = app.restore_first_run_cloud_snapshot(
+        SimpleNamespace(github_sync=UnidentifiedSync())
+    )
+
+    assert allowed is False
+    assert "installation ID is unavailable" in reason
