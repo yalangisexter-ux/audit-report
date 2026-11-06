@@ -401,7 +401,6 @@ export default function App() {
       const haystack=Object.values(p).map(value=>String(value??'')).join(' ').toLowerCase();
       if(term&&!term.split(/\s+/).every(word=>haystack.includes(word)))return false;
       if(prospectStateFilter!=='all'&&!String(p.state||'').split(',').some(value=>value.trim().toLowerCase()===prospectStateFilter.toLowerCase()))return false;
-      if(prospectKindFilter!=='all'&&String(p.kind||'Store').trim().toLowerCase()!==prospectKindFilter.toLowerCase())return false;
       const hasContact=usable(p.phone)||usable(p.email||p.email_address);
       if(prospectContactFilter==='has'&&!hasContact)return false;
       if(prospectContactFilter==='missing'&&hasContact)return false;
@@ -414,6 +413,24 @@ export default function App() {
       const recordKind=String(p.kind||'Store').trim().toLowerCase();
       const category=String(p.business_category||'').toLowerCase();
       const businessName=String(p.business_name||p.name||'').toLowerCase();
+      if(prospectKindFilter==='pure product selling stores'){
+        const evidenceBlob=[p.business_name||p.name,p.business_category,p.source_status,p.notes].map(value=>String(value||'')).join(' ');
+        const addressValue=String(p.address||'').trim();
+        const mapsValue=String(p.maps||'').trim().toLowerCase();
+        const productEvidence=/\b(supplement|sports nutrition|nutrition retailer|protein|creatine|whey|sports retailer)\b/i.test(evidenceBlob);
+        const fullAddress=addressValue.length>=20&&/\b\d{6}\b/.test(addressValue);
+        const hasMapsLink=mapsValue.startsWith('https://www.google.com/maps/')||mapsValue.startsWith('https://maps.google.com/')||mapsValue.startsWith('https://maps.app.goo.gl/');
+        const negativeEvidence=/\b(pharmacy|chemist|medical|druggist|drug|ayurved|ayurvedic|herbal|herbalife|homeopath|homeopathic|health\s*kart)\b/i.test(evidenceBlob+' '+addressValue);
+        if(!['store','supplement store','pure product selling store'].includes(recordKind)||!productEvidence||!fullAddress||!hasMapsLink||negativeEvidence)return false;
+      }else if(prospectKindFilter==='store'){
+        if(!['store','supplement store','pure product selling store'].includes(recordKind))return false;
+      }else if(['gym','gyms'].includes(prospectKindFilter)){
+        if(!['gym','gyms'].includes(recordKind))return false;
+      }else if(['gyms which sell products also','gym + store','gyms which sell products'].includes(prospectKindFilter)){
+        const hybridKind=['gym + store','gym which sells products','gym + store (hybrid)'].includes(recordKind);
+        const categoryHasProducts=category.includes('product')||(category.includes('gym')&&['supplement','nutrition','counter','pro-shop','protein','shake'].some(word=>category.includes(word)));
+        if(!hybridKind&&!categoryHasProducts)return false;
+      }else if(prospectKindFilter!=='all'&&recordKind!==prospectKindFilter.toLowerCase())return false;
       if(prospectExcludeFilter==='missing_contact'&&!hasContact)return false;
       if(prospectExcludeFilter==='missing_website'&&!hasWebsite)return false;
       if(prospectExcludeFilter==='unverified'&&!verified)return false;
