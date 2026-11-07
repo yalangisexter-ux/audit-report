@@ -130,3 +130,52 @@ def test_standalone_setup_is_blocked_without_verified_empty_snapshot(tmp_path, m
             stored.close()
     finally:
         api.app.dependency_overrides.pop(api.get_db, None)
+
+
+
+def test_standalone_requires_a_session_even_when_login_flag_is_disabled(tmp_path, monkeypatch):
+    """Standalone deployments must never inherit the legacy first-user fallback."""
+    monkeypatch.setenv("WEB_STANDALONE", "1")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "0")
+    db_path = tmp_path / "standalone-fail-closed.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL,
+            display_name TEXT,
+            role TEXT,
+            active INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE web_auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        INSERT INTO auth_users(id, username, display_name, role, active)
+        VALUES (1, 'Admin', 'Customer Administrator', 'Admin', 1);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    def override_get_db():
+        db = sqlite3.connect(db_path, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api.app.dependency_overrides[api.get_db] = override_get_db
+    try:
+        client = TestClient(api.app)
+        assert client.get("/api/auth/me").status_code == 401
+        invalid = client.get(
+            "/api/auth/me",
+            headers={"Authorization": "Bearer invalid-standalone-token"},
+        )
+        assert invalid.status_code == 401
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
