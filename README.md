@@ -5,7 +5,7 @@
 A React web interface built with **React 18**, **Tailwind CSS**, and **Lucide icons**, powered by a **FastAPI REST API** backend and the shared SQLite data model. Existing PBKDF2 account hashes and installation-scoped sync behavior are preserved. Desktop-to-web feature parity is tracked screen by screen and is not yet complete.
 
 
-> **Release status (2026-11-06):** Source/build metadata is v1.3.82. GitHub Actions run #1186 verified the React build, 339 Python regression tests and the Windows EXE/installer upgrade/data-preservation pipeline. Its v1.3.82 installer is a private Actions artifact; the latest public GitHub Release is still v1.3.81 until a v1.3.82 release is published.
+> **Release status (2026-11-07):** Source/build metadata remains v1.3.82. GitHub Actions run [#1233](https://github.com/yalangisexter-ux/audit-report/actions/runs/42355322393) passed 369 Python regression tests and verified the React/Vite build, Cloudflare Worker checks, Windows EXE/installer build, legacy v1.1.74 upgrade, customer-database preservation through upgrade and uninstall/reinstall, and packaged launch smoke test. The v1.3.82 installer is a private Actions artifact ([artifact 13568270458](https://github.com/yalangisexter-ux/audit-report/actions/runs/42355322393/artifacts/13568270458)); the latest public GitHub Release remains v1.3.81. Render deployment of the latest application source is still blocked by `pipeline_minutes_exhausted`, so production is not certified.
 
 ### Quick Start
 To launch the modern web application and automatically open it in your browser:
