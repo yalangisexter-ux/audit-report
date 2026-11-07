@@ -292,11 +292,11 @@ def test_legacy_bulk_attendance_validates_inputs_holidays_and_rolls_back_atomica
             index for index, statement in enumerate(normalized)
             if statement.startswith("SELECT HOLIDAY_NAME FROM HOLIDAYS")
         )
-        roster_index = next(
-            index for index, statement in enumerate(normalized)
-            if statement.startswith("SELECT ID FROM EMPLOYEES")
+        assert begin_index < holiday_index
+        assert not any(
+            statement.startswith("SELECT ID FROM EMPLOYEES")
+            for statement in normalized
         )
-        assert begin_index < holiday_index < roster_index
         assert not connection.in_transaction
         assert connection.execute(
             "SELECT COUNT(*) FROM attendance WHERE work_date='2999-01-03'"
@@ -309,8 +309,20 @@ def test_legacy_bulk_attendance_validates_inputs_holidays_and_rolls_back_atomica
                BEGIN SELECT RAISE(ABORT, 'fixture failure'); END"""
         )
         connection.commit()
+        statements.clear()
         with pytest.raises(sqlite3.IntegrityError):
             apply("2999-01-02", "Leave")
+        normalized = [statement.strip().upper() for statement in statements]
+        begin_index = normalized.index("BEGIN IMMEDIATE")
+        holiday_index = next(
+            index for index, statement in enumerate(normalized)
+            if statement.startswith("SELECT HOLIDAY_NAME FROM HOLIDAYS")
+        )
+        roster_index = next(
+            index for index, statement in enumerate(normalized)
+            if statement.startswith("SELECT ID FROM EMPLOYEES")
+        )
+        assert begin_index < holiday_index < roster_index
 
         # The first employee update must roll back when the second one fails.
         rows = connection.execute(
