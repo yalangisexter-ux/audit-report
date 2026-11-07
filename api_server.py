@@ -1951,6 +1951,16 @@ def _build_report_preview(req, conn):
     scope_sql, scope_params = _report_scope_clause(req)
 
     if report_type == "Employee Attendance":
+        try:
+            holiday = conn.execute(
+                "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+                (req.date,),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            holiday = None
+        holiday_declared = holiday is not None
+        holiday_name = str(holiday["holiday_name"] or "").strip() if holiday_declared else ""
+
         rows = conn.execute(
             """SELECT e.name,e.employee_code,e.department,
                       COALESCE(a.attendance_status,'Unmarked') AS status,
@@ -1964,14 +1974,21 @@ def _build_report_preview(req, conn):
             [req.date, *scope_params],
         ).fetchall()
         lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", f"Date: {req.date}", ""]
-        totals = {}
-        for row in rows:
-            status = str(row["status"] or "Unmarked")
-            totals[status] = totals.get(status, 0) + 1
+        if holiday_name:
+            lines.extend([f"Declared holiday: {holiday_name}", ""])
+
+        def attendance_report_status(row):
+            # Match the desktop EXE: a declared holiday overrides any stale
+            # attendance mark that may exist from before the holiday was added.
+            return "Holiday" if holiday_declared else str(row["status"] or "Unmarked")
+
         if opts["attendance_summary"]:
-            present = sum(1 for row in rows if _report_is_present(row["status"], row["check_in"]))
-            absent = sum(count for status, count in totals.items() if status.lower() == "absent")
-            leave = sum(count for status, count in totals.items() if status.lower() == "leave")
+            present = sum(
+                1 for row in rows
+                if _report_is_present(attendance_report_status(row), row["check_in"])
+            )
+            absent = sum(1 for row in rows if attendance_report_status(row).casefold() == "absent")
+            leave = sum(1 for row in rows if attendance_report_status(row).casefold() == "leave")
             lines.append(f"SUMMARY: Present {present} | Absent {absent} | Leave {leave} | Employees {len(rows)}")
             lines.append("")
         for row in rows:
@@ -1979,7 +1996,7 @@ def _build_report_preview(req, conn):
             if opts["attendance_identity"]:
                 parts.extend([row["employee_code"] or "N/A", row["department"] or "General"])
             if opts["attendance_status"]:
-                parts.append(str(row["status"] or "Unmarked"))
+                parts.append(attendance_report_status(row))
             if opts["attendance_times"]:
                 net = _report_net_hours(row["check_in"], row["check_out"], row["break_minutes"])
                 parts.extend([

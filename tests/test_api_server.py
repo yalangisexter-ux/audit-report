@@ -2548,3 +2548,60 @@ def test_print_center_report_option_preferences_round_trip_for_authenticated_rol
         connection.close()
         api_server.ACTIVE_SESSIONS.pop(staff_token, None)
         api_server.ACTIVE_SESSIONS.pop(admin_token, None)
+
+def test_web_attendance_report_marks_declared_holiday_like_desktop():
+    import sqlite3
+    from datetime import date
+
+    import api_server
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.executescript(
+        """
+        CREATE TABLE employees (
+            id INTEGER PRIMARY KEY, name TEXT, employee_code TEXT,
+            department TEXT, active INTEGER
+        );
+        CREATE TABLE attendance (
+            employee_id INTEGER, work_date TEXT, attendance_status TEXT,
+            check_in TEXT, check_out TEXT, break_minutes INTEGER, attendance_note TEXT
+        );
+        CREATE TABLE holidays (
+            holiday_date TEXT PRIMARY KEY, holiday_name TEXT
+        );
+        """
+    )
+    report_date = date.today().isoformat()
+    connection.execute(
+        "INSERT INTO employees(id,name,employee_code,department,active) VALUES(1,?,?,?,1)",
+        ("Holiday Report Test", "HOL-REPORT", "QA"),
+    )
+    # A stale Present mark must not override a holiday declared afterwards.
+    connection.execute(
+        "INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note) "
+        "VALUES(1,?,'Present','09:00','17:00',30,'Old attendance mark')",
+        (report_date,),
+    )
+    connection.execute(
+        "INSERT INTO holidays(holiday_date,holiday_name) VALUES(?,?)",
+        (report_date, "Company Foundation Day"),
+    )
+    connection.commit()
+    try:
+        report = api_server._build_report_preview(
+            api_server.ReportOptionsModel(
+                date=report_date,
+                report_type="Employee Attendance",
+            ),
+            connection,
+        )
+        preview = report["preview_text"]
+        assert "Declared holiday: Company Foundation Day" in preview
+        assert "Holiday Report Test" in preview
+        assert " | Holiday | " in preview
+        assert "SUMMARY: Present 0 | Absent 0 | Leave 0 | Employees 1" in preview
+        assert "Old attendance mark" in preview
+    finally:
+        connection.close()
+
