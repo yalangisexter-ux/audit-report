@@ -262,6 +262,8 @@ def test_legacy_bulk_attendance_validates_inputs_holidays_and_rolls_back_atomica
         ("2999-01-03", "Fixture holiday"),
     )
     connection.commit()
+    statements = []
+    connection.set_trace_callback(statements.append)
 
     def apply(work_date, status):
         return api_server.bulk_attendance(
@@ -280,9 +282,22 @@ def test_legacy_bulk_attendance_validates_inputs_holidays_and_rolls_back_atomica
             apply("2999-01-02", "Holiday")
         assert invalid_status.value.status_code == 422
 
+        statements.clear()
         with pytest.raises(HTTPException) as declared_holiday:
             apply("2999-01-03", "Present")
         assert declared_holiday.value.status_code == 409
+        normalized = [statement.strip().upper() for statement in statements]
+        begin_index = normalized.index("BEGIN IMMEDIATE")
+        holiday_index = next(
+            index for index, statement in enumerate(normalized)
+            if statement.startswith("SELECT HOLIDAY_NAME FROM HOLIDAYS")
+        )
+        roster_index = next(
+            index for index, statement in enumerate(normalized)
+            if statement.startswith("SELECT ID FROM EMPLOYEES")
+        )
+        assert begin_index < holiday_index < roster_index
+        assert not connection.in_transaction
         assert connection.execute(
             "SELECT COUNT(*) FROM attendance WHERE work_date='2999-01-03'"
         ).fetchone()[0] == 0
@@ -326,6 +341,62 @@ def test_legacy_bulk_attendance_validates_inputs_holidays_and_rolls_back_atomica
             "SELECT DISTINCT attendance_status FROM attendance WHERE work_date='2999-01-04'"
         ).fetchall()[0][0] == "Late Check-in"
     finally:
+        connection.close()
+
+
+def test_single_attendance_mark_checks_holiday_inside_immediate_transaction():
+    from fastapi import HTTPException
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.executescript(
+        """
+        CREATE TABLE employees(id INTEGER PRIMARY KEY);
+        CREATE TABLE holidays(holiday_date TEXT PRIMARY KEY, holiday_name TEXT NOT NULL DEFAULT '');
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            attendance_status TEXT NOT NULL DEFAULT 'Unmarked',
+            check_in TEXT DEFAULT '',
+            check_out TEXT DEFAULT '',
+            break_minutes INTEGER DEFAULT 0,
+            attendance_note TEXT DEFAULT '',
+            updated_at TEXT NOT NULL,
+            UNIQUE(employee_id, work_date)
+        );
+        INSERT INTO employees(id) VALUES(1);
+        INSERT INTO holidays(holiday_date,holiday_name) VALUES('2999-01-03','Fixture holiday');
+        """
+    )
+    connection.commit()
+    statements = []
+    connection.set_trace_callback(statements.append)
+    item = api_server.AttendanceMarkModel(
+        employee_id=1,
+        work_date="2999-01-03",
+        status="Present",
+        check_in="09:00",
+    )
+    try:
+        with pytest.raises(HTTPException) as blocked:
+            api_server.mark_attendance(
+                item,
+                conn=connection,
+                user={"username": "attendance-mark-test", "role": "Staff"},
+            )
+        assert blocked.value.status_code == 409
+        normalized = [statement.strip().upper() for statement in statements]
+        begin_index = normalized.index("BEGIN IMMEDIATE")
+        holiday_index = next(
+            index for index, statement in enumerate(normalized)
+            if statement.startswith("SELECT HOLIDAY_NAME FROM HOLIDAYS")
+        )
+        assert begin_index < holiday_index
+        assert not connection.in_transaction
+        assert connection.execute("SELECT COUNT(*) FROM attendance").fetchone()[0] == 0
+    finally:
+        connection.set_trace_callback(None)
         connection.close()
 
 

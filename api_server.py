@@ -1577,7 +1577,7 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
 
 @app.post("/api/attendance/mark")
 def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depends(get_db), user: dict = Depends(get_current_user)):
-    """Persist one employee's attendance for the explicitly selected working date."""
+    """Persist one employee's attendance while serializing against holiday declarations."""
     now = desktop_app.now_text()
     work_date = str(item.work_date or date.today().isoformat()).strip()
     try:
@@ -1585,72 +1585,99 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
     except ValueError:
         raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
 
-    holiday = conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (work_date,)).fetchone()
-    if holiday:
-        raise HTTPException(status_code=409, detail="This date is declared as a holiday. Remove the holiday declaration before recording attendance.")
+    try:
+        # Acquire SQLite's write reservation before checking the holiday table.
+        # A concurrent holiday declaration can therefore happen either before
+        # this write (and be observed here) or after this attendance commit,
+        # but never between the check and the attendance upsert.
+        conn.execute("BEGIN IMMEDIATE")
+        holiday = conn.execute(
+            "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+            (work_date,),
+        ).fetchone()
+        if holiday:
+            raise HTTPException(
+                status_code=409,
+                detail="This date is declared as a holiday. Remove the holiday declaration before recording attendance.",
+            )
 
-    employee = conn.execute("SELECT id FROM employees WHERE id=?", (item.employee_id,)).fetchone()
-    if employee is None:
-        raise HTTPException(status_code=404, detail="Employee not found")
+        employee = conn.execute(
+            "SELECT id FROM employees WHERE id=?",
+            (item.employee_id,),
+        ).fetchone()
+        if employee is None:
+            raise HTTPException(status_code=404, detail="Employee not found")
 
-    fields_set = getattr(item, "model_fields_set", None)
-    if fields_set is None:
-        fields_set = getattr(item, "__fields_set__", set())
-    old = conn.execute(
-        "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
-        (item.employee_id, work_date),
-    ).fetchone()
+        fields_set = getattr(item, "model_fields_set", None)
+        if fields_set is None:
+            fields_set = getattr(item, "__fields_set__", set())
+        old = conn.execute(
+            "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+            (item.employee_id, work_date),
+        ).fetchone()
 
-    status = str(item.status or item.attendance_status or "Present").strip()
-    allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
-    if status.casefold() in allowed_statuses:
-        status = allowed_statuses[status.casefold()]
-    elif not desktop_app.is_present_attendance_status(status):
-        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave, Unmarked or a recognized worked-day detail status.")
-    note = (
-        item.notes if "notes" in fields_set else
-        item.attendance_note if "attendance_note" in fields_set else
-        (old["attendance_note"] if old else "")
-    ) or ""
-    check_in = (
-        str(item.check_in or "").strip() if "check_in" in fields_set
-        else str(old["check_in"] or "").strip() if old else ""
-    )
-    check_out = (
-        str(item.check_out or "").strip() if "check_out" in fields_set
-        else str(old["check_out"] or "").strip() if old else ""
-    )
-    break_minutes = (
-        max(0, int(item.break_minutes or 0)) if "break_minutes" in fields_set
-        else int(old["break_minutes"] or 0) if old else 0
-    )
+        status = str(item.status or item.attendance_status or "Present").strip()
+        allowed_statuses = {
+            "present": "Present",
+            "absent": "Absent",
+            "leave": "Leave",
+            "unmarked": "Unmarked",
+        }
+        if status.casefold() in allowed_statuses:
+            status = allowed_statuses[status.casefold()]
+        elif not desktop_app.is_present_attendance_status(status):
+            raise HTTPException(
+                status_code=422,
+                detail="Attendance status must be Present, Absent, Leave, Unmarked or a recognized worked-day detail status.",
+            )
+        note = (
+            item.notes if "notes" in fields_set else
+            item.attendance_note if "attendance_note" in fields_set else
+            (old["attendance_note"] if old else "")
+        ) or ""
+        check_in = (
+            str(item.check_in or "").strip() if "check_in" in fields_set
+            else str(old["check_in"] or "").strip() if old else ""
+        )
+        check_out = (
+            str(item.check_out or "").strip() if "check_out" in fields_set
+            else str(old["check_out"] or "").strip() if old else ""
+        )
+        break_minutes = (
+            max(0, int(item.break_minutes or 0)) if "break_minutes" in fields_set
+            else int(old["break_minutes"] or 0) if old else 0
+        )
 
-    if check_in and not desktop_app.valid_hhmm(check_in):
-        raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
-    if check_out and not desktop_app.valid_hhmm(check_out):
-        raise HTTPException(status_code=422, detail="Check-out must use 24-hour HH:MM format.")
-    if status.casefold() in {"absent", "leave", "unmarked"}:
-        check_in = check_out = ""
-    elif (check_in or check_out) and not desktop_app.is_present_attendance_status(status):
-        status = "Present"
-    if check_out and not check_in:
-        raise HTTPException(status_code=422, detail="Check-out requires a check-in")
+        if check_in and not desktop_app.valid_hhmm(check_in):
+            raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
+        if check_out and not desktop_app.valid_hhmm(check_out):
+            raise HTTPException(status_code=422, detail="Check-out must use 24-hour HH:MM format.")
+        if status.casefold() in {"absent", "leave", "unmarked"}:
+            check_in = check_out = ""
+        elif (check_in or check_out) and not desktop_app.is_present_attendance_status(status):
+            status = "Present"
+        if check_out and not check_in:
+            raise HTTPException(status_code=422, detail="Check-out requires a check-in")
 
-    conn.execute(
-        """INSERT INTO attendance(
-               employee_id, work_date, attendance_status, check_in, check_out,
-               break_minutes, attendance_note, updated_at
-           ) VALUES(?,?,?,?,?,?,?,?)
-           ON CONFLICT(employee_id, work_date) DO UPDATE SET
-               attendance_status=excluded.attendance_status,
-               check_in=excluded.check_in,
-               check_out=excluded.check_out,
-               break_minutes=excluded.break_minutes,
-               attendance_note=excluded.attendance_note,
-               updated_at=excluded.updated_at""",
-        (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now)
-    )
-    conn.commit()
+        conn.execute(
+            """INSERT INTO attendance(
+                   employee_id, work_date, attendance_status, check_in, check_out,
+                   break_minutes, attendance_note, updated_at
+               ) VALUES(?,?,?,?,?,?,?,?)
+               ON CONFLICT(employee_id, work_date) DO UPDATE SET
+                   attendance_status=excluded.attendance_status,
+                   check_in=excluded.check_in,
+                   check_out=excluded.check_out,
+                   break_minutes=excluded.break_minutes,
+                   attendance_note=excluded.attendance_note,
+                   updated_at=excluded.updated_at""",
+            (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now)
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
     saved = conn.execute(
         "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
         (item.employee_id, work_date),
@@ -1664,7 +1691,7 @@ def bulk_attendance(
     conn: sqlite3.Connection = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    """Legacy all-active-employees action with the same guards as the desktop."""
+    """Legacy all-active-employees action with serialized holiday and roster checks."""
     try:
         work_date = date.fromisoformat(str(work_date or "").strip()).isoformat()
     except (TypeError, ValueError):
@@ -1684,20 +1711,24 @@ def bulk_attendance(
             detail="Attendance status must be Present, Absent, Leave, Unmarked or a recognized worked-day detail status.",
         )
 
-    holiday = conn.execute(
-        "SELECT holiday_name FROM holidays WHERE holiday_date=?",
-        (work_date,),
-    ).fetchone()
-    if holiday:
-        raise HTTPException(
-            status_code=409,
-            detail="This date is declared as a holiday. Remove the holiday declaration before recording attendance.",
-        )
-
-    employees = conn.execute("SELECT id FROM employees WHERE active=1").fetchall()
-    now = desktop_app.now_text()
     try:
+        # Lock before both the holiday check and active-roster read so those
+        # decisions remain consistent for the entire bulk update.
         conn.execute("BEGIN IMMEDIATE")
+        holiday = conn.execute(
+            "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+            (work_date,),
+        ).fetchone()
+        if holiday:
+            raise HTTPException(
+                status_code=409,
+                detail="This date is declared as a holiday. Remove the holiday declaration before recording attendance.",
+            )
+
+        employees = conn.execute(
+            "SELECT id FROM employees WHERE active=1"
+        ).fetchall()
+        now = desktop_app.now_text()
         for emp in employees:
             conn.execute(
                 """INSERT INTO attendance(employee_id, work_date, attendance_status, updated_at)
