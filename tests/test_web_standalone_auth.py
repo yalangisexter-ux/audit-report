@@ -45,6 +45,8 @@ def test_standalone_login_token_authenticates_protected_api(tmp_path, monkeypatc
     )
     conn.commit()
     conn.close()
+    monkeypatch.setattr(desktop_app, "DB_PATH", db_path)
+    monkeypatch.setattr(web_auth_shim, "_ensure_bootstrap_admin", lambda _path: None)
 
     def override_get_db():
         db = sqlite3.connect(db_path, check_same_thread=False)
@@ -76,6 +78,8 @@ def test_standalone_login_token_authenticates_protected_api(tmp_path, monkeypatc
         finally:
             stored.close()
     finally:
+        api.ACTIVE_SESSIONS.clear()
+        api.ACTIVE_SESSIONS.update(previous_sessions)
         api.app.dependency_overrides.pop(api.get_db, None)
 
 
@@ -234,6 +238,7 @@ def test_standalone_login_keeps_customer_and_developer_admin_accounts_distinct(t
         finally:
             db.close()
 
+    previous_sessions = dict(api.ACTIVE_SESSIONS)
     api.app.dependency_overrides[api.get_db] = override_get_db
     try:
         client = TestClient(api.app)
@@ -304,4 +309,6 @@ def test_standalone_login_keeps_customer_and_developer_admin_accounts_distinct(t
         finally:
             stored.close()
     finally:
+        api.ACTIVE_SESSIONS.clear()
+        api.ACTIVE_SESSIONS.update(previous_sessions)
         api.app.dependency_overrides.pop(api.get_db, None)
