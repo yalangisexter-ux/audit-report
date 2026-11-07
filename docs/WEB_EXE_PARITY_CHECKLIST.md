@@ -1,6 +1,18 @@
 # Web / Windows EXE feature-parity tracker
 
-Last inspected: 2026-11-07 09:04 IST. Repository target: `main` (`7459f712c53631ce26ed84443e68447f5609dadc`). This is an evidence ledger, not a completion claim.
+## Latest verification — 2026-11-07
+
+- Latest inspected `main` head: `3ea5752be38b676163874b5682171ca3d2e9896e`, an automated encrypted customer-database snapshot update marked `[skip render]`. The latest application-source change covered by the full validation pipeline is `b8d7739e3f295f58d5e9a62cd1443e2be7622482` (`fix(auth): revoke web sessions on logout`). The generated React bundle was published to `main` by `b12b221fa0494eeda782ea0b73e0e962c3529871`; the later snapshot commit does not change application source.
+- [Master Build and Test run #1233](https://github.com/yalangisexter-ux/audit-report/actions/runs/42355322393) completed successfully for source commit `b8d7739e3f295f58d5e9a62cd1443e2be7622482`. The regression step reported **369 passed in 860.15 seconds**. React/Vite build and frontend publication, Cloudflare Worker/browser-chat checks, isolated database-sync Worker tests, Python compilation, PyInstaller packaging, and Inno Setup compilation all passed.
+- Run #1233 also verified the legacy v1.1.74 in-place upgrade to v1.3.82 while preserving the fixture customer database SHA-256 and records; uninstall/reinstall preserved the same database hash, SQLite integrity and sentinel record. The packaged EXE remained running during the 8-second launch smoke test. These are CI fixture checks, not verification of a specific customer's laptop or credentials.
+- Run #1233 produced private Actions artifact `RawStrengthEmployeeAuditManager-Setup-v1.3.82`, artifact ID `13568270458`, size `75,043,598` bytes, uploaded artifact SHA-256 `14d10fe1b9f2d7041ac800cf77d1e2c31fffc04d6c7c0ae9b3d0a4c80221de4d`. Download: [run #1233 artifact](https://github.com/yalangisexter-ux/audit-report/actions/runs/42355322393/artifacts/13568270458). It is a private, time-limited Actions artifact, not a public release.
+- Application version remains **v1.3.82**; no version bump was warranted for the logout/session-security maintenance change. Run #1233 skipped public-release publication. The latest public GitHub Release remains **v1.3.81**: [v1.3.81 release](https://github.com/yalangisexter-ux/audit-report/releases/tag/v1.3.81).
+- Render service `audit-report-web` remains on `main`, Free plan, with checks-passing auto-deploy and health path `/api/health`. The deployment triggered for `b8d7739` failed at 2026-11-07 08:44:23 UTC; the associated Render event is `pipeline_minutes_exhausted` (build pipeline capacity exhausted). It failed before a new application build could be completed. There is no verified Render deployment of this source, and production health is not certified. No paid plan or billing change was made.
+- The logout change adds `POST /api/auth/logout`, revokes the matching persisted standalone session by token hash, revokes the matching in-memory session in non-standalone mode, and sends the browser logout request with `keepalive` before clearing local credentials. Its regression coverage passed in run #1233. This does not establish end-to-end browser or production verification of the exact-case customer `Admin` and developer `admin` accounts.
+- The web migration remains **incomplete**. Browser-by-browser feature verification, production deployment, secure device enrollment, private snapshot storage, and live two-way customer sync remain open as described in the security gate and screen-by-screen ledger below.
+
+
+Last inspected: 2026-11-07 (IST). Repository target: `main` (`3ea5752be38b676163874b5682171ca3d2e9896e`). This is an evidence ledger, not a completion claim.
 
 ## Previous verification baseline — 2026-11-06
 
