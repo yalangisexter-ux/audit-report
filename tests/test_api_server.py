@@ -223,6 +223,112 @@ def test_legacy_bulk_attendance_requires_authenticated_session(monkeypatch):
             connection.close()
 
 
+def test_legacy_bulk_attendance_validates_inputs_holidays_and_rolls_back_atomically():
+    from fastapi import HTTPException
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.executescript(
+        """
+        CREATE TABLE employees(id INTEGER PRIMARY KEY, active INTEGER NOT NULL);
+        CREATE TABLE holidays(holiday_date TEXT PRIMARY KEY, holiday_name TEXT NOT NULL DEFAULT '');
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            attendance_status TEXT NOT NULL DEFAULT 'Unmarked',
+            check_in TEXT DEFAULT '',
+            check_out TEXT DEFAULT '',
+            updated_at TEXT NOT NULL,
+            UNIQUE(employee_id, work_date)
+        );
+        """
+    )
+    connection.executemany(
+        "INSERT INTO employees(id,active) VALUES(?,1)",
+        [(1,), (2,)],
+    )
+    connection.executemany(
+        """INSERT INTO attendance(
+               employee_id,work_date,attendance_status,check_in,check_out,updated_at
+           ) VALUES(?,?,?,?,?,?)""",
+        [
+            (1, "2999-01-02", "Present", "09:00", "17:00", "before"),
+            (2, "2999-01-02", "Absent", "", "", "before"),
+        ],
+    )
+    connection.execute(
+        "INSERT INTO holidays(holiday_date,holiday_name) VALUES(?,?)",
+        ("2999-01-03", "Fixture holiday"),
+    )
+    connection.commit()
+
+    def apply(work_date, status):
+        return api_server.bulk_attendance(
+            work_date=work_date,
+            status=status,
+            conn=connection,
+            user={"username": "legacy-bulk-test", "role": "Staff"},
+        )
+
+    try:
+        with pytest.raises(HTTPException) as invalid_date:
+            apply("02-01-2999", "Present")
+        assert invalid_date.value.status_code == 422
+
+        with pytest.raises(HTTPException) as invalid_status:
+            apply("2999-01-02", "Holiday")
+        assert invalid_status.value.status_code == 422
+
+        with pytest.raises(HTTPException) as declared_holiday:
+            apply("2999-01-03", "Present")
+        assert declared_holiday.value.status_code == 409
+        assert connection.execute(
+            "SELECT COUNT(*) FROM attendance WHERE work_date='2999-01-03'"
+        ).fetchone()[0] == 0
+
+        connection.execute(
+            """CREATE TRIGGER fail_second_bulk_attendance
+               BEFORE INSERT ON attendance
+               WHEN NEW.employee_id=2
+               BEGIN SELECT RAISE(ABORT, 'fixture failure'); END"""
+        )
+        connection.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            apply("2999-01-02", "Leave")
+
+        # The first employee update must roll back when the second one fails.
+        rows = connection.execute(
+            "SELECT employee_id,attendance_status,check_in,check_out FROM attendance ORDER BY employee_id"
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            (1, "Present", "09:00", "17:00"),
+            (2, "Absent", "", ""),
+        ]
+
+        connection.execute("DROP TRIGGER fail_second_bulk_attendance")
+        connection.commit()
+        result = apply("2999-01-02", "lEaVe")
+        assert result == {"success": True, "count": 2}
+
+        rows = connection.execute(
+            "SELECT attendance_status,check_in,check_out FROM attendance ORDER BY employee_id"
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            ("Leave", "", ""),
+            ("Leave", "", ""),
+        ]
+
+        # Preserve the legacy endpoint's support for recognized worked-day details.
+        detail = apply("2999-01-04", "late check-in")
+        assert detail == {"success": True, "count": 2}
+        assert connection.execute(
+            "SELECT DISTINCT attendance_status FROM attendance WHERE work_date='2999-01-04'"
+        ).fetchall()[0][0] == "Late Check-in"
+    finally:
+        connection.close()
+
+
 def test_holiday_management_matches_desktop_admin_developer_permissions_and_validates_dates():
     import sqlite3
 
