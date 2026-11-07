@@ -184,7 +184,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
         throw new Error('The archive service did not return a PDF file.');
       }
       const disposition = response.headers.get('Content-Disposition') || '';
-      const name = disposition.match(/filename="?( [^";]+ )"?/ix);
+      const name = disposition.match(/filename="?([^";]+)"?/i);
       const filename = name
         ? name[1].trim()
         : (archivedSelected
