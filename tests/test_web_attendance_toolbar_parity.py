@@ -72,3 +72,14 @@ def test_web_attendance_matches_desktop_employee_order_and_editable_remark_prese
     assert "data.attendance.remarks_options" in frontend
     assert "setAttendanceRemarksTarget(row)" in frontend
     assert "Attendance remarks:" not in frontend
+
+def test_declared_holiday_overrides_stale_attendance_status_in_web_roster():
+    frontend = _source("frontend/src/App.jsx")
+
+    # The desktop shows Holiday even when an older Present/Absent/Leave row
+    # remains stored. The web row must display the same status, not the stale
+    # stored value, while keeping the editor disabled.
+    assert "value={attendanceIsHoliday?'Holiday':(" in frontend
+    assert "(attendanceIsHoliday?['Holiday']:['Unmarked','Present','Absent','Leave']).map" in frontend
+    assert "disabled={attendanceIsHoliday}" in frontend
+
