@@ -2851,3 +2851,52 @@ def test_web_attendance_report_marks_declared_holiday_like_desktop():
     finally:
         connection.close()
 
+
+
+def test_standalone_login_persists_hashed_session_and_authenticates_after_restart(monkeypatch):
+    import hashlib
+    import api_server
+
+    monkeypatch.setenv("WEB_STANDALONE", "1")
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        """CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, role TEXT,
+            password_salt TEXT, password_hash TEXT, active INTEGER
+        )"""
+    )
+    connection.execute(
+        """CREATE TABLE web_auth_sessions (
+            token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL, expires_at TEXT NOT NULL
+        )"""
+    )
+    salt, password_hash = desktop_app.hash_pin("correct horse battery staple")
+    connection.execute(
+        "INSERT INTO auth_users VALUES(1,?,?,?,?,?,1)",
+        ("Admin", "Customer Admin", "Admin", salt, password_hash),
+    )
+    connection.commit()
+    try:
+        response = api_server.login(
+            api_server.LoginRequest(username="Admin", password="correct horse battery staple"),
+            connection,
+        )
+        token = response["token"]
+        stored = connection.execute(
+            "SELECT token_hash,user_id,expires_at FROM web_auth_sessions"
+        ).fetchone()
+        assert stored is not None
+        assert stored["token_hash"] == hashlib.sha256(token.encode("utf-8")).hexdigest()
+        assert stored["token_hash"] != token
+        assert stored["user_id"] == 1
+
+        # A fresh process has an empty ACTIVE_SESSIONS cache; standalone auth
+        # must still resolve the bearer token from the persisted hash.
+        api_server.ACTIVE_SESSIONS.clear()
+        authenticated = api_server.get_current_user("Bearer " + token, connection)
+        assert authenticated["username"] == "Admin"
+        assert authenticated["role"] == "Admin"
+    finally:
+        connection.close()
