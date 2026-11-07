@@ -1015,6 +1015,63 @@ def test_api_attendance_summary_counts_sunday_with_legacy_weekday_setting(monkey
         api_server.ACTIVE_SESSIONS.pop(token, None)
 
 
+def test_attendance_bulk_edit_checks_holiday_inside_immediate_transaction():
+    from fastapi import HTTPException
+    import web_ops_routes
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.executescript(
+        """
+        CREATE TABLE employees(id INTEGER PRIMARY KEY, active INTEGER NOT NULL);
+        CREATE TABLE holidays(holiday_date TEXT PRIMARY KEY, holiday_name TEXT NOT NULL DEFAULT '');
+        CREATE TABLE attendance(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            attendance_status TEXT NOT NULL DEFAULT 'Unmarked',
+            check_in TEXT DEFAULT '',
+            check_out TEXT DEFAULT '',
+            break_minutes INTEGER DEFAULT 0,
+            attendance_note TEXT DEFAULT '',
+            updated_at TEXT NOT NULL,
+            UNIQUE(employee_id, work_date)
+        );
+        INSERT INTO employees(id,active) VALUES(1,1);
+        INSERT INTO holidays(holiday_date,holiday_name) VALUES('2999-01-03','Fixture holiday');
+        """
+    )
+    connection.commit()
+    statements = []
+    connection.set_trace_callback(statements.append)
+    body = web_ops_routes.AttendanceBulkEditModel(
+        work_date="2999-01-03",
+        employee_ids=[1],
+        apply_status=True,
+        status="Present",
+    )
+    try:
+        with pytest.raises(HTTPException) as blocked:
+            web_ops_routes.bulk_edit_attendance(
+                body,
+                conn=connection,
+                user={"username": "attendance-bulk-edit-test", "role": "Staff"},
+            )
+        assert blocked.value.status_code == 409
+        normalized = [statement.strip().upper() for statement in statements]
+        begin_index = normalized.index("BEGIN IMMEDIATE")
+        holiday_index = next(
+            index for index, statement in enumerate(normalized)
+            if statement.startswith("SELECT HOLIDAY_NAME FROM HOLIDAYS")
+        )
+        assert begin_index < holiday_index
+        assert not connection.in_transaction
+        assert connection.execute("SELECT COUNT(*) FROM attendance").fetchone()[0] == 0
+    finally:
+        connection.set_trace_callback(None)
+        connection.close()
+
+
 def test_api_attendance_bulk_edit_is_atomic_and_validates_times():
     work_day = _api_test_workday()
     employee = client.post("/api/employees", json={

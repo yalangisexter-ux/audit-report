@@ -683,10 +683,6 @@ def bulk_edit_attendance(
     if not any((body.apply_status, body.apply_check_in, body.apply_check_out, body.apply_remarks)):
         raise HTTPException(status_code=422, detail="Select at least one field to apply.")
 
-    holiday = conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (work_date,)).fetchone()
-    if holiday:
-        raise HTTPException(status_code=409, detail="This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
-
     allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
     selected_status = str(body.status or "").strip()
     if body.apply_status and selected_status.casefold() not in allowed_statuses:
@@ -699,7 +695,19 @@ def bulk_edit_attendance(
     now = api.desktop_app.now_text()
     updated = 0
     try:
+        # Serialize the holiday check and all selected-employee writes. A
+        # concurrent holiday declaration can only commit before this check
+        # or after this bulk attendance transaction completes.
         conn.execute("BEGIN IMMEDIATE")
+        holiday = conn.execute(
+            "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+            (work_date,),
+        ).fetchone()
+        if holiday:
+            raise HTTPException(
+                status_code=409,
+                detail="This date is declared as a holiday. Remove the holiday declaration before editing attendance.",
+            )
         for employee_id in employee_ids:
             employee = conn.execute(
                 "SELECT id FROM employees WHERE id=? AND active=1", (employee_id,)
