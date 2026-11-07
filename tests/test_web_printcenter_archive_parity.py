@@ -105,3 +105,23 @@ def test_print_center_restores_desktop_report_preferences_and_uses_desktop_defau
     assert "preferencesLoaded" in source
     assert "output_format:'docx'" in source
     assert "preferenceWrites.current[key]" in source
+
+def test_print_center_print_action_respects_selected_desktop_output_format():
+    source = PRINT_CENTER.read_text(encoding="utf-8")
+    download = source.split("const download = async (quiet = false) => {", 1)[1].split(
+        "const print = async () => {", 1
+    )[0]
+    print_action = source.split("const print = async () => {", 1)[1].split(
+        "const toggleOption =", 1
+    )[0]
+
+    assert "report.output_format === 'csv'" in print_action
+    assert "Choose Word or PDF to print" in print_action
+    assert "report.output_format === 'docx'" in print_action
+    assert "await download(true)" in print_action
+    assert "Open it in Microsoft Word to print" in print_action
+    assert "output_format: 'pdf'" in print_action
+    assert "return true;" in download
+    assert "return false;" in download
+    assert "onClick={()=>download()}" in source
+    assert "CSV export only" in source

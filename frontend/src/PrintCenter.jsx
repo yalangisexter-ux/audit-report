@@ -157,7 +157,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
     report.employee_id, report.exclude_employee_id, report.options
   ]);
 
-  const download = async () => {
+  const download = async (quiet = false) => {
     setBusy(true);
     try {
       const activeToken = localStorage.getItem('rsc_auth_token') || '';
@@ -184,9 +184,9 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
         throw new Error('The archive service did not return a PDF file.');
       }
       const disposition = response.headers.get('Content-Disposition') || '';
-      const name = disposition.match(/filename="?([^";]+)"?/i);
+      const name = disposition.match(/filename="?( [^";]+ )"?/ix);
       const filename = name
-        ? name[1]
+        ? name[1].trim()
         : (archivedSelected
           ? (selectedArchivedReport.file_name || ('archive-' + selectedArchivedReport.id + '.pdf'))
           : 'raw-strength-report.'+report.output_format);
@@ -198,9 +198,11 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
       anchor.click();
       anchor.remove();
       window.setTimeout(()=>window.URL.revokeObjectURL(url),1500);
-      notify((archivedSelected ? 'Archived report copy downloaded: ' : 'Report downloaded: ')+filename);
+      if (!quiet) notify((archivedSelected ? 'Archived report copy downloaded: ' : 'Report downloaded: ')+filename);
+      return true;
     } catch (error) {
       notify(error.message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -208,6 +210,14 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
 
   const print = async () => {
     if (!archivedSelected && !reportText) return notify('Generate a report preview first.');
+    if (!archivedSelected && report.output_format === 'csv') {
+      return notify('CSV files are for data export and cannot be sent directly to the print handler. Choose Word or PDF to print, or use Generate / Save to export CSV.');
+    }
+    if (!archivedSelected && report.output_format === 'docx') {
+      const exported = await download(true);
+      if (exported) notify('Word report downloaded. Open it in Microsoft Word to print.');
+      return;
+    }
     const target = window.open('', '_blank');
     if (!target) return notify('Allow pop-ups to open the PDF preview.');
     target.document.write('<!doctype html><html><head><title>Preparing Raw Strength PDF…</title></head><body style="font:14px Arial,sans-serif;padding:32px;color:#102B42">Preparing your branded PDF…</body></html>');
@@ -297,8 +307,8 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" className={button} onClick={download} disabled={busy||previewBusy||!preferencesLoaded}><Download size={16}/>{busy?'Preparing…':archivedSelected?'Export archived PDF copy':'Generate / Download '+report.output_format.toUpperCase()}</button>
-        <button type="button" className={secondary} onClick={print} disabled={(!reportText&&!archivedSelected)||busy||previewBusy}><Printer size={16}/>{archivedSelected?'View / Print archived PDF':'Open PDF preview / Print'}</button>
+        <button type="button" className={button} onClick={()=>download()} disabled={busy||previewBusy||!preferencesLoaded}><Download size={16}/>{busy?'Preparing…':archivedSelected?'Export archived PDF copy':'Generate / Download '+report.output_format.toUpperCase()}</button>
+        <button type="button" className={secondary} onClick={print} disabled={(!reportText&&!archivedSelected)||busy||previewBusy}><Printer size={16}/>{archivedSelected?'View / Print archived PDF':report.output_format==='docx'?'Download Word to print':report.output_format==='csv'?'CSV export only':'Open PDF preview / Print'}</button>
         <button type="button" className={secondary} onClick={onOpenArchive} disabled={busy||previewBusy}><FolderOpen size={16}/>Browse saved reports</button>
       </div>
       <p className="mt-3 text-xs text-slate-500">Employee exclusion applies only to this report. It never deletes or changes employee records. Report exports use the same filters and content options as the preview. Historical PDFs are read from the shared archive and are never modified by viewing or exporting.</p>
