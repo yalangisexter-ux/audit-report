@@ -1664,20 +1664,55 @@ def bulk_attendance(
     conn: sqlite3.Connection = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    now = desktop_app.now_text()
-    employees = conn.execute("SELECT id FROM employees WHERE active=1").fetchall()
-    for emp in employees:
-        conn.execute(
-            """INSERT INTO attendance(employee_id, work_date, attendance_status, updated_at)
-               VALUES(?,?,?,?)
-               ON CONFLICT(employee_id, work_date) DO UPDATE SET
-                   attendance_status=excluded.attendance_status,
-                   check_in=CASE WHEN excluded.attendance_status IN ('Absent','Leave','Unmarked') THEN '' ELSE attendance.check_in END,
-                   check_out=CASE WHEN excluded.attendance_status IN ('Absent','Leave','Unmarked') THEN '' ELSE attendance.check_out END,
-                   updated_at=excluded.updated_at""",
-            (emp["id"], work_date, status, now)
+    """Legacy all-active-employees action with the same guards as the desktop."""
+    try:
+        work_date = date.fromisoformat(str(work_date or "").strip()).isoformat()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="work_date must use YYYY-MM-DD format")
+
+    allowed_statuses = {
+        value.casefold(): value
+        for value in (
+            "Present", "Absent", "Leave", "Unmarked",
+            *getattr(desktop_app, "ATTENDANCE_DETAIL_STATUSES", ()),
         )
-    conn.commit()
+    }
+    selected_status = allowed_statuses.get(str(status or "").strip().casefold())
+    if selected_status is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Attendance status must be Present, Absent, Leave, Unmarked or a recognized worked-day detail status.",
+        )
+
+    holiday = conn.execute(
+        "SELECT holiday_name FROM holidays WHERE holiday_date=?",
+        (work_date,),
+    ).fetchone()
+    if holiday:
+        raise HTTPException(
+            status_code=409,
+            detail="This date is declared as a holiday. Remove the holiday declaration before recording attendance.",
+        )
+
+    employees = conn.execute("SELECT id FROM employees WHERE active=1").fetchall()
+    now = desktop_app.now_text()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for emp in employees:
+            conn.execute(
+                """INSERT INTO attendance(employee_id, work_date, attendance_status, updated_at)
+                   VALUES(?,?,?,?)
+                   ON CONFLICT(employee_id, work_date) DO UPDATE SET
+                       attendance_status=excluded.attendance_status,
+                       check_in=CASE WHEN excluded.attendance_status IN ('Absent','Leave','Unmarked') THEN '' ELSE attendance.check_in END,
+                       check_out=CASE WHEN excluded.attendance_status IN ('Absent','Leave','Unmarked') THEN '' ELSE attendance.check_out END,
+                       updated_at=excluded.updated_at""",
+                (emp["id"], work_date, selected_status, now)
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return {"success": True, "count": len(employees)}
 
 @app.get("/api/holidays")
