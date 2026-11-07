@@ -190,7 +190,10 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
             return dict(session)
     elif token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
-    if os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes"):
+    # A standalone web deployment is always session-protected. Do not silently
+    # fall back to the first active account if the deployment flag is missing.
+    require_login = standalone or os.environ.get("WEB_REQUIRE_LOGIN", "0").strip().lower() in ("1", "true", "yes")
+    if require_login:
         raise HTTPException(status_code=401, detail="Login required")
     row = conn.execute("SELECT id, username, display_name, role FROM auth_users WHERE active=1 ORDER BY id ASC LIMIT 1").fetchone()
     if row:
