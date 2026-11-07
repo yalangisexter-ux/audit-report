@@ -6,6 +6,7 @@ import sys
 import json
 import sqlite3
 import secrets
+import hashlib
 import csv
 import io
 import re
@@ -414,6 +415,30 @@ def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
 @app.get("/api/auth/me")
 def get_me(user: Dict[str, Any] = Depends(get_current_user)):
     return {"user": user}
+
+@app.post("/api/auth/logout")
+def logout(
+    authorization: Optional[str] = Header(None),
+    _user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """Revoke only the bearer session presented by the signed-in browser."""
+    scheme, _, value = (authorization or "").partition(" ")
+    token = value.strip() if scheme.lower() == "bearer" else ""
+    if not token:
+        raise HTTPException(status_code=401, detail="Login required")
+
+    standalone = os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
+    if standalone:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        conn.execute("DELETE FROM web_auth_sessions WHERE token_hash=?", (token_hash,))
+        conn.commit()
+    else:
+        if token not in ACTIVE_SESSIONS:
+            raise HTTPException(status_code=401, detail="Login required")
+        ACTIVE_SESSIONS.pop(token, None)
+    return {"success": True}
+
 
 @app.post("/api/auth/setup")
 def initial_setup(req: SetupRequest, conn: sqlite3.Connection = Depends(get_db)):

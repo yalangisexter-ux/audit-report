@@ -1,6 +1,7 @@
 """Regression coverage for standalone web login and protected API sessions."""
 import hashlib
 import sqlite3
+from pathlib import Path
 from datetime import datetime
 
 from fastapi.testclient import TestClient
@@ -306,3 +307,170 @@ def test_standalone_login_keeps_customer_and_developer_admin_accounts_distinct(t
             stored.close()
     finally:
         api.app.dependency_overrides.pop(api.get_db, None)
+
+
+
+def test_standalone_logout_revokes_only_the_presented_persistent_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEB_STANDALONE", "1")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    db_path = tmp_path / "standalone-logout.db"
+    password = "Customer-Admin-Test-Password"
+    salt, password_hash = desktop_app.hash_pin(password)
+
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL COLLATE BINARY UNIQUE,
+            display_name TEXT,
+            role TEXT,
+            password_salt TEXT,
+            password_hash TEXT,
+            active INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE web_auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.execute(
+        """INSERT INTO auth_users
+           (id, username, display_name, role, password_salt, password_hash, active)
+           VALUES (1, 'Admin', 'Customer Administrator', 'Admin', ?, ?, 1)""",
+        (salt, password_hash),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(desktop_app, "DB_PATH", db_path)
+    monkeypatch.setattr(web_auth_shim, "_ensure_bootstrap_admin", lambda _path: None)
+    monkeypatch.setattr(api, "ACTIVE_SESSIONS", {})
+
+    def override_get_db():
+        db = sqlite3.connect(db_path, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api.app.dependency_overrides[api.get_db] = override_get_db
+    try:
+        client = TestClient(api.app)
+        tokens = []
+        for _ in range(2):
+            login = client.post(
+                "/api/auth/login",
+                json={"username": "Admin", "password": password},
+            )
+            assert login.status_code == 200, login.text
+            tokens.append(login.json()["token"])
+        assert tokens[0] != tokens[1]
+
+        revoked = client.post(
+            "/api/auth/logout",
+            headers={"Authorization": f"Bearer {tokens[0]}"},
+        )
+        assert revoked.status_code == 200, revoked.text
+        assert revoked.json()["success"] is True
+        assert client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {tokens[0]}"},
+        ).status_code == 401
+        assert client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {tokens[1]}"},
+        ).status_code == 200
+
+        stored = sqlite3.connect(db_path)
+        try:
+            sessions = stored.execute(
+                "SELECT token_hash,user_id FROM web_auth_sessions"
+            ).fetchall()
+            assert sessions == [
+                (hashlib.sha256(tokens[1].encode("utf-8")).hexdigest(), 1)
+            ]
+            assert tokens[0] not in {row[0] for row in sessions}
+            assert tokens[1] not in {row[0] for row in sessions}
+        finally:
+            stored.close()
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
+
+
+def test_memory_session_logout_revokes_the_presented_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEB_STANDALONE", "0")
+    monkeypatch.setenv("WEB_REQUIRE_LOGIN", "1")
+    db_path = tmp_path / "memory-logout.db"
+    password = "Customer-Admin-Test-Password"
+    salt, password_hash = desktop_app.hash_pin(password)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE auth_users (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL COLLATE BINARY UNIQUE,
+            display_name TEXT,
+            role TEXT,
+            password_salt TEXT,
+            password_hash TEXT,
+            active INTEGER NOT NULL DEFAULT 1
+        )"""
+    )
+    conn.execute(
+        """INSERT INTO auth_users
+           (id, username, display_name, role, password_salt, password_hash, active)
+           VALUES (1, 'Admin', 'Customer Administrator', 'Admin', ?, ?, 1)""",
+        (salt, password_hash),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(desktop_app, "DB_PATH", db_path)
+    monkeypatch.setattr(web_auth_shim, "_ensure_bootstrap_admin", lambda _path: None)
+    monkeypatch.setattr(api, "ACTIVE_SESSIONS", {})
+
+    def override_get_db():
+        db = sqlite3.connect(db_path, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+        finally:
+            db.close()
+
+    api.app.dependency_overrides[api.get_db] = override_get_db
+    try:
+        client = TestClient(api.app)
+        login = client.post(
+            "/api/auth/login",
+            json={"username": "Admin", "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["token"]
+        assert token in api.ACTIVE_SESSIONS
+
+        revoked = client.post(
+            "/api/auth/logout",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert revoked.status_code == 200, revoked.text
+        assert token not in api.ACTIVE_SESSIONS
+        assert client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        ).status_code == 401
+    finally:
+        api.app.dependency_overrides.pop(api.get_db, None)
+
+
+def test_react_logout_requests_server_revocation_before_clearing_local_token():
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text(encoding="utf-8")
+    start = source.index("const logout=")
+    end = source.index(";\n  const set=", start) + 1
+    logout_source = source[start:end]
+    assert "fetch(API+'/auth/logout'" in logout_source
+    assert "Authorization:'Bearer '+activeToken" in logout_source
+    assert "keepalive:true" in logout_source
+    assert logout_source.index("fetch(") < logout_source.index("localStorage.removeItem('rsc_auth_token')")
