@@ -10,7 +10,7 @@ import csv
 import io
 import re
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, UploadFile, File, Form
@@ -390,7 +390,22 @@ def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
         "display_name": row["display_name"] or row["username"],
         "role": row["role"],
     }
-    ACTIVE_SESSIONS[token] = user_info
+    if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
+        # Standalone requests authenticate against SQLite, not this process-local
+        # cache. Persist only a one-way token hash so sessions survive restarts
+        # without storing bearer credentials in the customer database.
+        token_hash = __import__("hashlib").sha256(token.encode("utf-8")).hexdigest()
+        now = datetime.now()
+        created_at = now.isoformat(timespec="seconds")
+        expires_at = (now + timedelta(days=30)).isoformat(timespec="seconds")
+        conn.execute("DELETE FROM web_auth_sessions WHERE expires_at<=?", (created_at,))
+        conn.execute(
+            "INSERT INTO web_auth_sessions(token_hash,user_id,created_at,expires_at) VALUES(?,?,?,?)",
+            (token_hash, row["id"], created_at, expires_at),
+        )
+        conn.commit()
+    else:
+        ACTIVE_SESSIONS[token] = user_info
     return {"token": token, "user": user_info}
 
 @app.get("/api/auth/me")
