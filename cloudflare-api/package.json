@@ -1,0 +1,9 @@
+{
+  "name": "raw-strength-employee-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.js",
+    "test": "node --test test/*.test.js"
+  }
+}

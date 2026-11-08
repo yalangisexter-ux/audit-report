@@ -1,0 +1,12 @@
+name = "raw-strength-employee-api"
+main = "src/index.js"
+compatibility_date = "2026-10-29"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "raw-strength-audit-manager"
+database_id = "028106c4-dc5e-41d6-a5d8-c94db99c231a"
+migrations_dir = "../cloudflare/d1/migrations"
+
+[vars]
+ALLOWED_ORIGINS = "https://raw-strength-employee-audit-manager-yalangis.pages.dev"
