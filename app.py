@@ -38,6 +38,7 @@ from database_sync import (
     unprotect_sync_token,
 )
 from cloudflare_chat import CloudflareChatTab, verify_developer_password, verify_customer_admin_password
+from database_recovery import recover_database_before_startup
 
 
 def resource_path(relative_path):
@@ -15037,6 +15038,10 @@ def main():
     splash.set_status("Loading, please wait...", 15)
 
     try:
+        splash.set_status("Searching for an existing customer database...", 24)
+        recovery_result = recover_database_before_startup(DB_PATH)
+        if recovery_result.get("status") == "recovered":
+            logging.getLogger("startup").warning("Customer database recovered from %s", recovery_result.get("source"))
         splash.set_status("Initializing secure local database...", 30)
         db=Database()
         seed_initial_audit(db)
