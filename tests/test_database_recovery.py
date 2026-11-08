@@ -78,3 +78,43 @@ def test_recovery_refuses_ambiguous_equal_candidates(tmp_path, monkeypatch):
     else:
         raise AssertionError("Ambiguous customer databases must not be selected silently")
     assert not target.exists()
+
+def test_recovery_restores_business_records_and_preserves_new_local_accounts(tmp_path, monkeypatch):
+    root = tmp_path / "external-drive"
+    source = root / "old" / "employee_audit.db"
+    source.parent.mkdir(parents=True)
+    make_customer_db(source, employees=5, tasks=12)
+
+    target = tmp_path / "current" / "employee_audit.db"
+    target.parent.mkdir(parents=True)
+    conn = sqlite3.connect(target)
+    conn.executescript("""
+        CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE auth_users(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE,
+            display_name TEXT DEFAULT '', role TEXT DEFAULT 'Admin',
+            password_salt TEXT DEFAULT '', password_hash TEXT DEFAULT '',
+            security_question TEXT DEFAULT '', answer_salt TEXT DEFAULT '',
+            answer_hash TEXT DEFAULT '', active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT '', updated_at TEXT DEFAULT ''
+        );
+        CREATE TABLE employees(id INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE tasks(id INTEGER PRIMARY KEY, title TEXT);
+        CREATE TABLE attendance(id INTEGER PRIMARY KEY, status TEXT);
+        INSERT INTO auth_users(username) VALUES('LocalOnly');
+    """)
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(database_recovery, "_drives", lambda: [root])
+
+    result = database_recovery.recover_database_before_startup(target)
+
+    assert result["status"] == "recovered"
+    conn = sqlite3.connect(target)
+    try:
+        usernames = {r[0] for r in conn.execute("SELECT username FROM auth_users")}
+        assert {"Admin", "admin", "LocalOnly"}.issubset(usernames)
+        assert conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0] == 5
+        assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 12
+    finally:
+        conn.close()
