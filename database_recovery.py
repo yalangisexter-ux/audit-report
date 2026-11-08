@@ -85,11 +85,36 @@ def _is_populated(path):
     info = _inspect(path)
     return bool(info)
 
+def _business_rows(info):
+    if not info:
+        return 0
+    return sum(value for key, value in info[1].items() if key != 'auth_users')
+
+def _preserve_local_accounts(backup_path, staged_path):
+    if not backup_path or not Path(backup_path).is_file():
+        return
+    conn = sqlite3.connect(str(staged_path), timeout=10)
+    try:
+        conn.execute('ATTACH DATABASE ? AS prior', (str(backup_path),))
+        main_tables = {r[0] for r in conn.execute("SELECT name FROM main.sqlite_master WHERE type='table'")}
+        prior_tables = {r[0] for r in conn.execute("SELECT name FROM prior.sqlite_master WHERE type='table'")}
+        if 'auth_users' not in main_tables or 'auth_users' not in prior_tables:
+            return
+        main_cols = {r[1] for r in conn.execute('PRAGMA main.table_info(auth_users)')}
+        prior_cols = [r[1] for r in conn.execute('PRAGMA prior.table_info(auth_users)')]
+        cols = [c for c in prior_cols if c in main_cols and c != 'id']
+        if 'username' not in cols:
+            return
+        quoted = ','.join('"' + c.replace('"', '""') + '"' for c in cols)
+        conn.execute('INSERT OR IGNORE INTO main.auth_users (' + quoted + ') SELECT ' + quoted + ' FROM prior.auth_users')
+        conn.commit()
+    finally:
+        conn.close()
 def recover_database_before_startup(target_path):
     """Import the strongest validated legacy DB before Database.setup() runs."""
     target = Path(target_path)
     current = _inspect(target) if target.exists() else None
-    if current:
+    if current and _business_rows(current) > 0:
         return {"status": "existing_database_kept", "path": str(target), "counts": current[1]}
     candidates = []
     for candidate in _candidate_paths():
@@ -102,6 +127,8 @@ def recover_database_before_startup(target_path):
         if info:
             candidates.append((info[0], candidate, info[1]))
     if not candidates:
+        if current:
+            return {"status": "existing_account_database_kept", "path": str(target), "counts": current[1]}
         return {"status": "no_valid_local_database_found"}
     candidates.sort(key=lambda item: (item[0], item[1].stat().st_mtime), reverse=True)
     best_score = candidates[0][0]
@@ -113,6 +140,7 @@ def recover_database_before_startup(target_path):
     _, source, counts = candidates[0]
     target.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup = None
     if target.exists():
         backup = target.with_name(target.name + f".pre-recovery-{stamp}.bak")
         shutil.copy2(target, backup)
@@ -130,6 +158,7 @@ def recover_database_before_startup(target_path):
         finally:
             dst.close()
             src.close()
+        _preserve_local_accounts(backup, staged)
         os.replace(staged, target)
     finally:
         staged.unlink(missing_ok=True)
