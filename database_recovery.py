@@ -65,7 +65,7 @@ def _inspect(path):
                 return None
             tables = {r[0] for r in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")}
-            if not (_REQUIRED_TABLES & tables):
+            if len(_REQUIRED_TABLES & tables) < 3:
                 return None
             counts = {}
             for table in _DATA_TABLES:
