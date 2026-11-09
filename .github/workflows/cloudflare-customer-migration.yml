@@ -1,0 +1,103 @@
+name: Validate and back up Cloudflare customer migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cloudflare-customer-migration.yml"
+      - "tools/cloudflare_migration_guard.py"
+      - "customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-customer-migration-backup-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: cloudflare-chat
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install snapshot validation dependency
+        run: python -m pip install --disable-pip-version-check cryptography
+
+      - name: Validate protected migration credentials
+        env:
+          DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DB_SYNC_ENCRYPTION_SECRET" || { echo "Missing DB_SYNC_ENCRYPTION_SECRET in cloudflare-chat environment."; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
+          test "$CLOUDFLARE_ACCOUNT_ID" = "0ab514563be3062f7c1644f3e89b7e60d" || { echo "CLOUDFLARE_ACCOUNT_ID does not match the configured account."; exit 1; }
+
+      - name: Export current D1 state before migration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 d1 export raw-strength-audit-manager --remote --output="$RUNNER_TEMP/d1-before-migration.sql" --config cloudflare-api/wrangler.toml
+          test -s "$RUNNER_TEMP/d1-before-migration.sql"
+
+      - name: Decrypt in memory, validate both accounts and compare schemas
+        env:
+          DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
+        run: |
+          python tools/cloudflare_migration_guard.py \
+            --source customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc \
+            --d1-export "$RUNNER_TEMP/d1-before-migration.sql" \
+            --encrypted-d1-backup "$RUNNER_TEMP/d1-before-migration.sql.enc"
+
+      - name: Back up encrypted source and encrypted D1 pre-migration export to R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="pre-migration/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          source_key="$prefix/source-c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
+          d1_key="$prefix/d1-before-migration.sql.enc"
+
+          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$source_key" \
+            --file="customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc" --remote
+          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$d1_key" \
+            --file="$RUNNER_TEMP/d1-before-migration.sql.enc" --remote
+
+          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$source_key" \
+            --file="$RUNNER_TEMP/source-verified.db.enc" --remote
+          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$d1_key" \
+            --file="$RUNNER_TEMP/d1-verified.sql.enc" --remote
+
+          cmp "customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc" "$RUNNER_TEMP/source-verified.db.enc"
+          cmp "$RUNNER_TEMP/d1-before-migration.sql.enc" "$RUNNER_TEMP/d1-verified.sql.enc"
+          echo "PASS: both encrypted backups were read back from R2 and byte-for-byte verified."
+          echo "Backup prefix: $prefix"
+
+      - name: Remove temporary plaintext export
+        if: always()
+        run: rm -f "$RUNNER_TEMP/d1-before-migration.sql" "$RUNNER_TEMP/d1-before-migration.sql.enc" "$RUNNER_TEMP/source-verified.db.enc" "$RUNNER_TEMP/d1-verified.sql.enc"
+
+      - name: Migration gate
+        run: |
+          echo "Validation and independent encrypted backups completed."
+          echo "Customer rows have NOT been imported or modified by this workflow."
+          echo "Production API remains on the current origin until full API parity and sync tests pass."
