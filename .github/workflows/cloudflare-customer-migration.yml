@@ -18,10 +18,21 @@ concurrency:
 
 jobs:
   validate-and-backup:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: cloudflare-chat
     steps:
+      - name: Require main branch
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            echo "main-only; refusing ref: $WORKFLOW_REF"
+            exit 1
+          fi
+
       - name: Checkout main
         uses: actions/checkout@v7
         with:
@@ -47,13 +58,22 @@ jobs:
           set -euo pipefail
           test -n "$DB_SYNC_ENCRYPTION_SECRET" || { echo "Missing DB_SYNC_ENCRYPTION_SECRET in cloudflare-chat environment."; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
-          test "$CLOUDFLARE_ACCOUNT_ID" = "0ab514563be3062f7c1644f3e89b7e60d" || { echo "CLOUDFLARE_ACCOUNT_ID does not match the configured account."; exit 1; }
+          actual_account_id="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"
+          if [ "$actual_account_id" != "0ab514563be3062f7c1644f3e89b7e60d" ]; then
+            echo "CLOUDFLARE_ACCOUNT_ID does not match the configured account (normalized length: ${#actual_account_id})."
+            exit 1
+          fi
+          echo "CLOUDFLARE_ACCOUNT_ID=$actual_account_id" >> "$GITHUB_ENV"
 
       - name: Export current D1 state before migration
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
         run: |
+          set -euo pipefail
+          CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"
+          export CLOUDFLARE_ACCOUNT_ID
           npx --yes wrangler@4 d1 export raw-strength-audit-manager --remote --output="$RUNNER_TEMP/d1-before-migration.sql" --config cloudflare-api/wrangler.toml
           test -s "$RUNNER_TEMP/d1-before-migration.sql"
 
@@ -73,6 +93,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '[:space:]')"
+          export CLOUDFLARE_ACCOUNT_ID
           prefix="pre-migration/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           source_key="$prefix/source-c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
           d1_key="$prefix/d1-before-migration.sql.enc"
