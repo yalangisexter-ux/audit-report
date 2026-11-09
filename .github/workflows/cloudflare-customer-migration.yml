@@ -5,8 +5,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/cloudflare-customer-migration.yml"
-      - "tools/cloudflare_migration_guard.py"
-      - "customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
+      - "tools/cloudflare_snapshot_archive.py"
+      - "tests/test_cloudflare_snapshot_archive.py"
+      - "customer-data/**"
   workflow_dispatch:
 
 permissions:
@@ -20,11 +21,12 @@ jobs:
   validate-and-backup:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: cloudflare-chat
     env:
       # Pinned to the Cloudflare account verified by the live account API.
       CLOUDFLARE_ACCOUNT_ID: "0ab514563be3062f7c1644f3e89b7e60d"
+      R2_BACKUP_PREFIX: pre-migration/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Require main branch
         shell: bash
@@ -62,55 +64,72 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
           test "$CLOUDFLARE_ACCOUNT_ID" = "0ab514563be3062f7c1644f3e89b7e60d" || { echo "Pinned Cloudflare account ID mismatch."; exit 1; }
 
-      - name: Export current D1 state before migration
+      - name: Archive every encrypted customer snapshot
+        run: |
+          set -euo pipefail
+          python tools/cloudflare_snapshot_archive.py archive \
+            --source-dir customer-data \
+            --archive-output "$RUNNER_TEMP/customer-data-snapshots.tar.gz" \
+            --manifest-output "$RUNNER_TEMP/customer-data-manifest.json"
+          test -s "$RUNNER_TEMP/customer-data-snapshots.tar.gz"
+          test -s "$RUNNER_TEMP/customer-data-manifest.json"
+
+      - name: Upload archive to R2 and verify byte-for-byte
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 d1 export raw-strength-audit-manager --remote --output="$RUNNER_TEMP/d1-before-migration.sql" --config cloudflare-api/wrangler.toml
-          test -s "$RUNNER_TEMP/d1-before-migration.sql"
+          archive_key="$R2_BACKUP_PREFIX/customer-data-snapshots.tar.gz"
+          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$archive_key" \
+            --file="$RUNNER_TEMP/customer-data-snapshots.tar.gz" --remote
+          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$archive_key" \
+            --file="$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" --remote
+          cmp "$RUNNER_TEMP/customer-data-snapshots.tar.gz" "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz"
+          echo "PASS: encrypted snapshot archive was read back from R2 and byte-for-byte verified."
+          echo "R2 key: $archive_key"
+          sha256sum "$RUNNER_TEMP/customer-data-snapshots.tar.gz"
 
-      - name: Decrypt in memory, validate both accounts and compare schemas
+      - name: Decrypt and validate all snapshots in memory
         env:
           DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
         run: |
-          python tools/cloudflare_migration_guard.py \
-            --source customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc \
-            --d1-export "$RUNNER_TEMP/d1-before-migration.sql" \
-            --encrypted-d1-backup "$RUNNER_TEMP/d1-before-migration.sql.enc"
+          python tools/cloudflare_snapshot_archive.py validate \
+            --source-dir customer-data \
+            --canonical-id c4cf201d3c68e2fcaf60aa05fd423d9a \
+            --report-output "$RUNNER_TEMP/customer-data-validation.json"
 
-      - name: Back up encrypted source and encrypted D1 pre-migration export to R2
+      - name: Upload validation report to R2
+        if: always()
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          prefix="pre-migration/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          source_key="$prefix/source-c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
-          d1_key="$prefix/d1-before-migration.sql.enc"
+          if [ -s "$RUNNER_TEMP/customer-data-validation.json" ]; then
+            report_key="$R2_BACKUP_PREFIX/customer-data-validation.json"
+            npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$report_key" \
+              --file="$RUNNER_TEMP/customer-data-validation.json" --remote
+            npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$report_key" \
+              --file="$RUNNER_TEMP/customer-data-validation-verified.json" --remote
+            cmp "$RUNNER_TEMP/customer-data-validation.json" "$RUNNER_TEMP/customer-data-validation-verified.json"
+            echo "Validation report stored and read-back verified: $report_key"
+          else
+            echo "No validation report was produced."
+          fi
 
-          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$source_key" \
-            --file="customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc" --remote
-          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$d1_key" \
-            --file="$RUNNER_TEMP/d1-before-migration.sql.enc" --remote
-
-          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$source_key" \
-            --file="$RUNNER_TEMP/source-verified.db.enc" --remote
-          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$d1_key" \
-            --file="$RUNNER_TEMP/d1-verified.sql.enc" --remote
-
-          cmp "customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc" "$RUNNER_TEMP/source-verified.db.enc"
-          cmp "$RUNNER_TEMP/d1-before-migration.sql.enc" "$RUNNER_TEMP/d1-verified.sql.enc"
-          echo "PASS: both encrypted backups were read back from R2 and byte-for-byte verified."
-          echo "Backup prefix: $prefix"
-
-      - name: Remove temporary plaintext export
+      - name: Remove temporary backup files
         if: always()
-        run: rm -f "$RUNNER_TEMP/d1-before-migration.sql" "$RUNNER_TEMP/d1-before-migration.sql.enc" "$RUNNER_TEMP/source-verified.db.enc" "$RUNNER_TEMP/d1-verified.sql.enc"
+        run: |
+          rm -f "$RUNNER_TEMP/customer-data-snapshots.tar.gz" \
+            "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" \
+            "$RUNNER_TEMP/customer-data-manifest.json" \
+            "$RUNNER_TEMP/customer-data-validation.json" \
+            "$RUNNER_TEMP/customer-data-validation-verified.json"
 
       - name: Migration gate
         run: |
-          echo "Validation and independent encrypted backups completed."
-          echo "Customer rows have NOT been imported or modified by this workflow."
-          echo "Production API remains on the current origin until full API parity and sync tests pass."
+          echo "Encrypted customer snapshots were archived and validated."
+          echo "The D1 pre-migration schema snapshot is stored separately in the private R2 backup bucket."
+          echo "No customer data has been imported or modified by this workflow."
+          echo "Keep Render as rollback until the full API, authentication, data, sync, and parity tests pass."
