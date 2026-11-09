@@ -26,6 +26,7 @@ jobs:
     env:
       # Pinned to the Cloudflare account verified by the live account API.
       CLOUDFLARE_ACCOUNT_ID: "0ab514563be3062f7c1644f3e89b7e60d"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
       R2_BACKUP_PREFIX: pre-migration/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Require main branch
@@ -56,15 +57,15 @@ jobs:
       - name: Validate protected migration credentials
         env:
           DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$DB_SYNC_ENCRYPTION_SECRET" || { echo "Missing DB_SYNC_ENCRYPTION_SECRET in cloudflare-chat environment."; exit 1; }
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_R2_API_TOKEN or CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
           test "$CLOUDFLARE_ACCOUNT_ID" = "0ab514563be3062f7c1644f3e89b7e60d" || { echo "Pinned Cloudflare account ID mismatch."; exit 1; }
 
       - name: Archive every encrypted customer snapshot
+        id: archive
         run: |
           set -euo pipefail
           python tools/cloudflare_snapshot_archive.py archive \
@@ -75,8 +76,8 @@ jobs:
           test -s "$RUNNER_TEMP/customer-data-manifest.json"
 
       - name: Upload archive to R2 and verify byte-for-byte
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        id: r2_archive
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -91,6 +92,8 @@ jobs:
           sha256sum "$RUNNER_TEMP/customer-data-snapshots.tar.gz"
 
       - name: Decrypt and validate all snapshots in memory
+        id: validate_snapshots
+        if: always() && steps.archive.outcome == 'success'
         env:
           DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
         run: |
@@ -100,9 +103,7 @@ jobs:
             --report-output "$RUNNER_TEMP/customer-data-validation.json"
 
       - name: Upload validation report to R2
-        if: always()
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        if: always() && steps.r2_archive.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,6 +119,18 @@ jobs:
             echo "No validation report was produced."
           fi
 
+      - name: Preserve encrypted archive and validation report as a private Actions artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-strength-cloudflare-pre-migration-backup-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/customer-data-snapshots.tar.gz
+            ${{ runner.temp }}/customer-data-manifest.json
+            ${{ runner.temp }}/customer-data-validation.json
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Remove temporary backup files
         if: always()
         run: |
@@ -128,8 +141,26 @@ jobs:
             "$RUNNER_TEMP/customer-data-validation-verified.json"
 
       - name: Migration gate
+        if: always()
+        env:
+          ARCHIVE_OUTCOME: ${{ steps.archive.outcome }}
+          R2_ARCHIVE_OUTCOME: ${{ steps.r2_archive.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validate_snapshots.outcome }}
         run: |
-          echo "Encrypted customer snapshots were archived and validated."
+          set -euo pipefail
+          if [ "$ARCHIVE_OUTCOME" != "success" ]; then
+            echo "Encrypted customer snapshot archive creation failed."
+            exit 1
+          fi
+          if [ "$R2_ARCHIVE_OUTCOME" != "success" ]; then
+            echo "R2 upload/read-back failed. Check CLOUDFLARE_R2_API_TOKEN has R2 Storage Read & Write permission."
+            exit 1
+          fi
+          if [ "$VALIDATION_OUTCOME" != "success" ]; then
+            echo "One or more encrypted snapshots failed compatibility/integrity validation."
+            exit 1
+          fi
+          echo "All encrypted customer snapshots were archived, read-back verified in R2, and validated."
           echo "The D1 pre-migration schema snapshot is stored separately in the private R2 backup bucket."
           echo "No customer data has been imported or modified by this workflow."
           echo "Keep Render as rollback until the full API, authentication, data, sync, and parity tests pass."
