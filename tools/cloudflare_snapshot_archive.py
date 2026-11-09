@@ -222,6 +222,7 @@ def validate_all(
 
     failures: list[dict[str, str]] = []
     canonical_summary: dict[str, Any] | None = None
+    canonical_failure: dict[str, str] | None = None
     validated = 0
     formats: dict[str, int] = {"sqlite": 0, "json": 0}
     canonical_encrypted_sha256 = ""
@@ -238,7 +239,14 @@ def validate_all(
                 canonical_summary = summary
                 canonical_encrypted_sha256 = hashlib.sha256(encrypted).hexdigest()
         except Exception as exc:
-            failures.append({"file": path.name, "error_type": type(exc).__name__})
+            failure = {
+                "file": path.name,
+                "error_type": type(exc).__name__,
+                "reason": str(exc).replace("\n", " ")[:240],
+            }
+            failures.append(failure)
+            if is_canonical:
+                canonical_failure = failure
 
     report = {
         "format": "raw-strength-snapshot-validation-v1",
@@ -250,6 +258,7 @@ def validate_all(
         "canonical_snapshot": f"{canonical_id}.db.enc",
         "canonical_encrypted_sha256": canonical_encrypted_sha256,
         "canonical": canonical_summary,
+        "canonical_failure": canonical_failure,
         "failures": failures,
     }
     if report_path is not None:
@@ -265,6 +274,8 @@ def validate_all(
                 "format_counts": formats,
                 "canonical_Admin": bool(canonical_summary and canonical_summary.get("has_Admin")),
                 "canonical_admin": bool(canonical_summary and canonical_summary.get("has_admin")),
+                "canonical_failure": canonical_failure,
+                "other_failures": [item for item in failures if item["file"] != canonical_path.name],
             },
             sort_keys=True,
         )
