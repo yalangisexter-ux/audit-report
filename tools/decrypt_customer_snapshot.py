@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import os
 import sqlite3
 import sys
 import tempfile
@@ -46,7 +47,11 @@ def main():
     except Exception as exc:
         parser.error(f"Could not download snapshot: {exc}")
 
-    token = getpass.getpass("GitHub sync token (input hidden): ")
+    token = (os.environ.get("DB_SYNC_ENCRYPTION_SECRET") or "").strip()
+    if not token:
+        token = getpass.getpass("Existing DB_SYNC_ENCRYPTION_SECRET (input hidden): ").strip()
+    if not token:
+        parser.error("DB_SYNC_ENCRYPTION_SECRET is required; do not use a GitHub personal access token.")
     try:
         database_bytes = decrypt_snapshot_bytes(encrypted, token)
     except Exception as exc:
@@ -73,8 +78,29 @@ def main():
             }
             if not {"employees", "tasks", "attendance"}.issubset(tables):
                 raise ValueError("The decrypted file is missing required business tables.")
-            if "auth_users" in tables:
-                raise ValueError("The snapshot unexpectedly contains login credentials; export stopped.")
+            if "auth_users" not in tables:
+                raise ValueError("The snapshot is missing auth_users; both required accounts cannot be verified.")
+            user_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
+            }
+            if "username" not in user_columns:
+                raise ValueError("auth_users is missing its username column.")
+            admin_customer = connection.execute(
+                "SELECT COUNT(*) FROM auth_users WHERE username = ? COLLATE BINARY", ("Admin",)
+            ).fetchone()[0]
+            admin_developer = connection.execute(
+                "SELECT COUNT(*) FROM auth_users WHERE username = ? COLLATE BINARY", ("admin",)
+            ).fetchone()[0]
+            if admin_customer != 1 or admin_developer != 1:
+                raise ValueError(
+                    "Snapshot must contain exactly one case-sensitive Admin and one case-sensitive admin account."
+                )
+            counts = {}
+            for table in ("employees", "tasks", "attendance", "holidays"):
+                if table in tables:
+                    counts[table] = connection.execute(
+                        f'SELECT COUNT(*) FROM "{table}"'
+                    ).fetchone()[0]
         finally:
             connection.close()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -86,7 +112,10 @@ def main():
             temp_path.unlink(missing_ok=True)
         except (NameError, OSError):
             pass
-    print(f"Decrypted business-data snapshot saved to: {output}")
+    print(f"Validated snapshot saved to: {output}")
+    print("Accounts verified (case-sensitive): Admin=1, admin=1")
+    for table, count in counts.items():
+        print(f"{table}: {count}")
 
 
 if __name__ == "__main__":
