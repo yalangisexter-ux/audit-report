@@ -22,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: cloudflare-chat
+    env:
+      # Pinned to the Cloudflare account verified by the live account API.
+      CLOUDFLARE_ACCOUNT_ID: "0ab514563be3062f7c1644f3e89b7e60d"
     steps:
       - name: Require main branch
         shell: bash
@@ -52,31 +55,19 @@ jobs:
         env:
           DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$DB_SYNC_ENCRYPTION_SECRET" || { echo "Missing DB_SYNC_ENCRYPTION_SECRET in cloudflare-chat environment."; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
-          expected_account_id="0ab514563be3062f7c1644f3e89b7e60d"
-          actual_account_id="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | LC_ALL=C tr -cd '0-9a-fA-F' | tr 'A-F' 'a-f')"
-          if [ "$actual_account_id" != "$expected_account_id" ]; then
-            actual_hash="$(printf '%s' "$actual_account_id" | sha256sum | cut -c1-12)"
-            expected_hash="$(printf '%s' "$expected_account_id" | sha256sum | cut -c1-12)"
-            echo "CLOUDFLARE_ACCOUNT_ID mismatch after hexadecimal normalization (length: ${#actual_account_id}; fingerprint: $actual_hash; expected fingerprint: $expected_hash)."
-            exit 1
-          fi
-          echo "CLOUDFLARE_ACCOUNT_ID=$actual_account_id" >> "$GITHUB_ENV"
+          test "$CLOUDFLARE_ACCOUNT_ID" = "0ab514563be3062f7c1644f3e89b7e60d" || { echo "Pinned Cloudflare account ID mismatch."; exit 1; }
 
       - name: Export current D1 state before migration
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | LC_ALL=C tr -cd '0-9a-fA-F' | tr 'A-F' 'a-f')"
-          export CLOUDFLARE_ACCOUNT_ID
           npx --yes wrangler@4 d1 export raw-strength-audit-manager --remote --output="$RUNNER_TEMP/d1-before-migration.sql" --config cloudflare-api/wrangler.toml
           test -s "$RUNNER_TEMP/d1-before-migration.sql"
 
@@ -92,12 +83,9 @@ jobs:
       - name: Back up encrypted source and encrypted D1 pre-migration export to R2
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          CLOUDFLARE_ACCOUNT_ID="$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | LC_ALL=C tr -cd '0-9a-fA-F' | tr 'A-F' 'a-f')"
-          export CLOUDFLARE_ACCOUNT_ID
           prefix="pre-migration/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           source_key="$prefix/source-c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
           d1_key="$prefix/d1-before-migration.sql.enc"
