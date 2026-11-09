@@ -14,10 +14,16 @@ import io
 import json
 import re
 import sqlite3
+import sys
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# Running this file directly puts tools/ rather than the repository root on sys.path.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from database_sync import decrypt_snapshot_bytes
 
@@ -38,19 +44,6 @@ CANONICAL_ACCOUNT_COLUMNS = {
     "updated_at",
 }
 VALID_ROLES = {"Admin", "Developer", "HR", "Staff", "Employee"}
-COUNT_TABLES = (
-    "auth_users",
-    "employees",
-    "tasks",
-    "attendance",
-    "holidays",
-    "bt_orders",
-    "bt_products",
-    "bt_services",
-    "customer_prospects",
-    "archived_documents",
-    "local_chat_messages",
-)
 
 
 def _snapshot_files(source_dir: Path) -> list[Path]:
@@ -149,9 +142,7 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
 
         tables = {
             row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if not row[0].startswith("sqlite_")
         }
         row_counts: dict[str, int] = {}
@@ -164,16 +155,12 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
         has_admin = False
         has_lower_admin = False
         if "auth_users" in tables:
-            auth_columns = {
-                row[1] for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
-            }
+            table_info = connection.execute("PRAGMA table_info(auth_users)").fetchall()
+            auth_columns = {row[1] for row in table_info}
             if "username" in auth_columns:
                 rows = connection.execute("SELECT * FROM auth_users").fetchall()
                 auth_user_count = len(rows)
-                username_index = next(
-                    index for index, column in enumerate(connection.execute("PRAGMA table_info(auth_users)").fetchall())
-                    if column[1] == "username"
-                )
+                username_index = next(index for index, column in enumerate(table_info) if column[1] == "username")
                 usernames = [str(row[username_index]) for row in rows]
                 if len(usernames) != len(set(usernames)):
                     raise ValueError("auth_users contains duplicate case-sensitive usernames.")
@@ -187,7 +174,7 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
                 rows = connection.execute(
                     "SELECT username, role, active, password_salt, password_hash, "
                     "security_question, answer_salt, answer_hash, created_at, updated_at "
-                    "FROM auth_users WHERE username IN (?, ?) COLLATE BINARY",
+                    "FROM auth_users WHERE username COLLATE BINARY IN (?, ?)",
                     ("Admin", "admin"),
                 ).fetchall()
                 by_username = {row[0]: row for row in rows}
