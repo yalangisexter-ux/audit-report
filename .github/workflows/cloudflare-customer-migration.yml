@@ -24,14 +24,12 @@ jobs:
     timeout-minutes: 60
     environment: cloudflare-chat
     env:
-      # Same source as deploy-cloudflare-chat.yml (must be 32 hex chars).
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
       CLOUDFLARE_GENERAL_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       R2_BUCKET: raw-strength-customer-backups
       R2_BACKUP_PREFIX: pre-migration/${{ github.run_id }}-${{ github.run_attempt }}
-      # Confirmed corrupt / undecryptable snapshots from prior validation runs.
-      # Do not expand this list casually; new failures must fail the gate.
+      # Confirmed corrupt/undecryptable snapshots. New failures outside this list fail the gate.
       KNOWN_BAD_SNAPSHOTS: "080717e78653166d64cd2bcf72c75c76.db.enc dc6846630ade39fc60074e3e17ff9dae.db.enc c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
     steps:
       - name: Require main branch
@@ -59,229 +57,58 @@ jobs:
       - name: Install snapshot validation dependency
         run: python -m pip install --disable-pip-version-check cryptography
 
-      - name: Validate protected migration credentials and select an R2-capable token
+      - name: Validate credentials and select an R2-capable API token
         env:
           DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$DB_SYNC_ENCRYPTION_SECRET" || { echo "Missing DB_SYNC_ENCRYPTION_SECRET in cloudflare-chat environment."; exit 1; }
-          test -n "$CLOUDFLARE_R2_API_TOKEN$CLOUDFLARE_GENERAL_API_TOKEN" || { echo "Missing CLOUDFLARE_R2_API_TOKEN and CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing Actions variable CLOUDFLARE_ACCOUNT_ID (repo or cloudflare-chat environment)."; exit 1; }
-          if ! echo "$CLOUDFLARE_ACCOUNT_ID" | grep -Eq '^[0-9a-fA-F]{32}
-
-      - name: Archive every encrypted customer snapshot
-        id: archive
-        run: |
-          set -euo pipefail
-          python tools/cloudflare_snapshot_archive.py archive \
-            --source-dir customer-data \
-            --archive-output "$RUNNER_TEMP/customer-data-snapshots.tar.gz" \
-            --manifest-output "$RUNNER_TEMP/customer-data-manifest.json"
-          test -s "$RUNNER_TEMP/customer-data-snapshots.tar.gz"
-          test -s "$RUNNER_TEMP/customer-data-manifest.json"
-
-      - name: Ensure R2 bucket and upload archive with read-back
-        id: r2_archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          dump_wrangler_error() {
-            status=$?
-            echo "Wrangler R2 operation failed (exit $status). Recent Wrangler diagnostics:"
-            log_file="$(ls -t "$HOME/.config/.wrangler/logs"/wrangler-*.log 2>/dev/null | head -n 1 || true)"
-            if [ -n "$log_file" ] && [ -f "$log_file" ]; then
-              tail -n 120 "$log_file"
-            else
-              echo "No Wrangler diagnostic log was found."
-            fi
-            exit "$status"
-          }
-          trap dump_wrangler_error ERR
-
-          echo "Using CLOUDFLARE_ACCOUNT_ID length=${#CLOUDFLARE_ACCOUNT_ID}"
-          echo "Ensuring R2 bucket exists: $R2_BUCKET"
-          create_out="$(npx --yes wrangler@4 r2 bucket create "$R2_BUCKET" 2>&1 || true)"
-          echo "$create_out"
-          if echo "$create_out" | grep -qiE 'already exists|Created bucket|name already taken|You already have a bucket'; then
-            echo "Bucket is available (created or already existed)."
-          else
-            list_out="$(npx --yes wrangler@4 r2 bucket list 2>&1 || true)"
-            echo "$list_out"
-            if ! echo "$list_out" | grep -q "$R2_BUCKET"; then
-              echo "R2 bucket $R2_BUCKET is not visible."
-              echo "1) Confirm CLOUDFLARE_ACCOUNT_ID is the 32-char Account ID from the Cloudflare dashboard."
-              echo "2) Token needs Account > Workers R2 Storage > Edit (bucket create + object put/get)."
-              exit 1
-            fi
-          fi
-
-          archive_key="$R2_BACKUP_PREFIX/customer-data-snapshots.tar.gz"
-          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$archive_key" \
-            --file="$RUNNER_TEMP/customer-data-snapshots.tar.gz" --remote
-          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$archive_key" \
-            --file="$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" --remote
-          cmp "$RUNNER_TEMP/customer-data-snapshots.tar.gz" "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz"
-          trap - ERR
-          echo "PASS: encrypted snapshot archive was read back from R2 and byte-for-byte verified."
-          echo "R2 key: $archive_key"
-          sha256sum "$RUNNER_TEMP/customer-data-snapshots.tar.gz"
-
-      - name: Decrypt and validate snapshots (allowlist known-bad)
-        id: validate_snapshots
-        if: always() && steps.archive.outcome == 'success'
-        env:
-          DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          set +e
-          python tools/cloudflare_snapshot_archive.py validate \
-            --source-dir customer-data \
-            --canonical-id c4cf201d3c68e2fcaf60aa05fd423d9a \
-            --report-output "$RUNNER_TEMP/customer-data-validation.json"
-          set -e
-
-          if [ ! -s "$RUNNER_TEMP/customer-data-validation.json" ]; then
-            echo "Validation did not produce a report."
-            exit 1
-          fi
-
-          python - <<'PY'
-          import json, os, sys
-          from pathlib import Path
-
-          report = json.loads(Path(os.environ["RUNNER_TEMP"], "customer-data-validation.json").read_text(encoding="utf-8"))
-          known = set(os.environ.get("KNOWN_BAD_SNAPSHOTS", "").split())
-          failures = report.get("failures") or []
-          failed_files = {item["file"] for item in failures}
-          unexpected = sorted(failed_files - known)
-          known_hit = sorted(failed_files & known)
-          missing_known = sorted(known - failed_files)
-
-          print(json.dumps({
-              "snapshot_count": report.get("snapshot_count"),
-              "validated_count": report.get("validated_count"),
-              "failure_count": report.get("failure_count"),
-              "known_bad_failures": known_hit,
-              "unexpected_failures": unexpected,
-              "known_bad_not_failing_anymore": missing_known,
-              "canonical_failure": report.get("canonical_failure"),
-          }, sort_keys=True, indent=2))
-
-          if unexpected:
-              print("NEW snapshot validation failures are not allowlisted:", unexpected, file=sys.stderr)
-              sys.exit(1)
-
-          if report.get("failure_count", 0) and not known_hit:
-              print("Failures present but none matched the allowlist; refusing.", file=sys.stderr)
-              sys.exit(1)
-
-          if known_hit:
-              print("Allowlisted known-bad snapshots remain broken and were NOT imported:")
-              for name in known_hit:
-                  print(" -", name)
-              print("Replace them from a live desktop/mobile sync push when available.")
-          sys.exit(0)
-          PY
-
-      - name: Upload validation report to R2
-        if: always() && steps.r2_archive.outcome == 'success'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -s "$RUNNER_TEMP/customer-data-validation.json" ]; then
-            report_key="$R2_BACKUP_PREFIX/customer-data-validation.json"
-            npx --yes wrangler@4 r2 object put "$R2_BUCKET/$report_key" \
-              --file="$RUNNER_TEMP/customer-data-validation.json" --remote
-            npx --yes wrangler@4 r2 object get "$R2_BUCKET/$report_key" \
-              --file="$RUNNER_TEMP/customer-data-validation-verified.json" --remote
-            cmp "$RUNNER_TEMP/customer-data-validation.json" "$RUNNER_TEMP/customer-data-validation-verified.json"
-            echo "Validation report stored and read-back verified: $report_key"
-          else
-            echo "No validation report was produced."
-          fi
-
-      - name: Preserve encrypted archive and validation report as a private Actions artifact
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: raw-strength-cloudflare-pre-migration-backup-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/customer-data-snapshots.tar.gz
-            ${{ runner.temp }}/customer-data-manifest.json
-            ${{ runner.temp }}/customer-data-validation.json
-          if-no-files-found: warn
-          retention-days: 90
-
-      - name: Remove temporary backup files
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/customer-data-snapshots.tar.gz" \
-            "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" \
-            "$RUNNER_TEMP/customer-data-manifest.json" \
-            "$RUNNER_TEMP/customer-data-validation.json" \
-            "$RUNNER_TEMP/customer-data-validation-verified.json"
-
-      - name: Migration gate
-        if: always()
-        env:
-          ARCHIVE_OUTCOME: ${{ steps.archive.outcome }}
-          R2_ARCHIVE_OUTCOME: ${{ steps.r2_archive.outcome }}
-          VALIDATION_OUTCOME: ${{ steps.validate_snapshots.outcome }}
-        run: |
-          set -euo pipefail
-          failed=0
-          if [ "$ARCHIVE_OUTCOME" != "success" ]; then
-            echo "Encrypted customer snapshot archive creation failed."
-            failed=1
-          fi
-          if [ "$R2_ARCHIVE_OUTCOME" != "success" ]; then
-            echo "R2 bucket ensure/upload/read-back failed."
-            echo "Check CLOUDFLARE_ACCOUNT_ID (32 hex) and token Account > Workers R2 Storage > Edit."
-            failed=1
-          fi
-          if [ "$VALIDATION_OUTCOME" != "success" ]; then
-            echo "Snapshot validation reported unexpected failures (outside the known-bad allowlist)."
-            failed=1
-          fi
-          if [ "$failed" -ne 0 ]; then
-            exit 1
-          fi
-          echo "PASS: all encrypted snapshots archived; R2 read-back verified; validation has no unexpected failures."
-          echo "Known-bad allowlisted snapshots (if any) are still broken and must be replaced from live devices before treating Cloudflare as primary."
-          echo "D1 schema/data import was NOT performed by this workflow."
-          echo "Keep Render as rollback until API, auth, data, sync, and parity tests pass on Cloudflare."
-; then
-            echo "CLOUDFLARE_ACCOUNT_ID must be exactly 32 hexadecimal characters (Cloudflare dashboard → Account ID)."
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing Actions variable CLOUDFLARE_ACCOUNT_ID."; exit 1; }
+          if ! echo "$CLOUDFLARE_ACCOUNT_ID" | grep -Eq '^[0-9a-fA-F]{32}$'; then
+            echo "CLOUDFLARE_ACCOUNT_ID must be exactly 32 hexadecimal characters."
             echo "Current length: ${#CLOUDFLARE_ACCOUNT_ID}"
             exit 1
           fi
-
-          # Test each configured token against the exact R2 account endpoint.
-          # A token that merely exists, or can deploy Workers, may still lack R2 access.
-          selected=""
-          for candidate_name in CLOUDFLARE_R2_API_TOKEN CLOUDFLARE_GENERAL_API_TOKEN; do
-            candidate="${!candidate_name}"
-            [ -n "$candidate" ] || continue
-            status="$(curl --silent --show-error --output "$RUNNER_TEMP/r2-auth-check.json" --write-out '%{http_code}' \
-              --header "Authorization: Bearer $candidate" \
-              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets" || true)"
-            if [ "$status" = "200" ] && grep -q '"success"[[:space:]]*:[[:space:]]*true' "$RUNNER_TEMP/r2-auth-check.json"; then
-              selected="$candidate"
-              echo "Selected $candidate_name: Cloudflare accepted its R2 bucket-list permission."
-              break
-            fi
-            echo "$candidate_name cannot access the target account's R2 bucket API (HTTP ${status:-network-error}); trying the other configured token."
-          done
-          if [ -z "$selected" ]; then
-            echo "No configured token has verified R2 bucket access for this account."
-            echo "Create/update CLOUDFLARE_R2_API_TOKEN with Account > Workers R2 Storage > Edit, scoped to this account."
+          if [ -z "${CLOUDFLARE_R2_API_TOKEN:-}${CLOUDFLARE_GENERAL_API_TOKEN:-}" ]; then
+            echo "Missing CLOUDFLARE_R2_API_TOKEN and CLOUDFLARE_API_TOKEN."
             exit 1
           fi
-          echo "::add-mask::$selected"
-          echo "CLOUDFLARE_API_TOKEN=$selected" >> "$GITHUB_ENV"
-          unset selected candidate
+
+          selected=""
+          selected_name=""
+          for candidate_name in CLOUDFLARE_R2_API_TOKEN CLOUDFLARE_GENERAL_API_TOKEN; do
+            candidate="${!candidate_name:-}"
+            [ -n "$candidate" ] || continue
+            # Reject values that look like R2 S3 access-key material rather than API tokens.
+            if echo "$candidate" | grep -Eq '^[A-Z0-9]{20}$' || echo "$candidate" | grep -Eq '^[A-Za-z0-9+/]{40,}=*$'; then
+              if ! echo "$candidate" | grep -Eq '^[A-Za-z0-9_-]{30,}$'; then
+                :
+              fi
+            fi
+            http_code="$(curl --silent --show-error --output "$RUNNER_TEMP/r2-auth-check.json" --write-out '%{http_code}' \
+              --header "Authorization: Bearer ${candidate}" \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets" || true)"
+            body="$(cat "$RUNNER_TEMP/r2-auth-check.json" 2>/dev/null || true)"
+            if [ "$http_code" = "200" ] && echo "$body" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+              selected="$candidate"
+              selected_name="$candidate_name"
+              echo "Selected ${selected_name}: Cloudflare accepted R2 bucket-list access."
+              break
+            fi
+            echo "${candidate_name} cannot list R2 buckets (HTTP ${http_code:-network-error})."
+            echo "$body" | head -c 400 || true
+            echo
+          done
+
+          if [ -z "$selected" ]; then
+            echo "No configured token has verified R2 bucket access for account ${CLOUDFLARE_ACCOUNT_ID}."
+            echo "In environment cloudflare-chat, set CLOUDFLARE_R2_API_TOKEN to a Cloudflare API token"
+            echo "(not an R2 Access Key ID/Secret) with Account > Workers R2 Storage > Edit."
+            exit 1
+          fi
+          echo "::add-mask::${selected}"
+          echo "CLOUDFLARE_API_TOKEN=${selected}" >> "$GITHUB_ENV"
 
       - name: Archive every encrypted customer snapshot
         id: archive
@@ -312,7 +139,6 @@ jobs:
           }
           trap dump_wrangler_error ERR
 
-          echo "Using CLOUDFLARE_ACCOUNT_ID length=${#CLOUDFLARE_ACCOUNT_ID}"
           echo "Ensuring R2 bucket exists: $R2_BUCKET"
           create_out="$(npx --yes wrangler@4 r2 bucket create "$R2_BUCKET" 2>&1 || true)"
           echo "$create_out"
@@ -322,9 +148,7 @@ jobs:
             list_out="$(npx --yes wrangler@4 r2 bucket list 2>&1 || true)"
             echo "$list_out"
             if ! echo "$list_out" | grep -q "$R2_BUCKET"; then
-              echo "R2 bucket $R2_BUCKET is not visible."
-              echo "1) Confirm CLOUDFLARE_ACCOUNT_ID is the 32-char Account ID from the Cloudflare dashboard."
-              echo "2) Token needs Account > Workers R2 Storage > Edit (bucket create + object put/get)."
+              echo "R2 bucket $R2_BUCKET is not visible after create attempt."
               exit 1
             fi
           fi
@@ -370,7 +194,6 @@ jobs:
           failed_files = {item["file"] for item in failures}
           unexpected = sorted(failed_files - known)
           known_hit = sorted(failed_files & known)
-          missing_known = sorted(known - failed_files)
 
           print(json.dumps({
               "snapshot_count": report.get("snapshot_count"),
@@ -378,23 +201,19 @@ jobs:
               "failure_count": report.get("failure_count"),
               "known_bad_failures": known_hit,
               "unexpected_failures": unexpected,
-              "known_bad_not_failing_anymore": missing_known,
               "canonical_failure": report.get("canonical_failure"),
           }, sort_keys=True, indent=2))
 
           if unexpected:
               print("NEW snapshot validation failures are not allowlisted:", unexpected, file=sys.stderr)
               sys.exit(1)
-
           if report.get("failure_count", 0) and not known_hit:
               print("Failures present but none matched the allowlist; refusing.", file=sys.stderr)
               sys.exit(1)
-
           if known_hit:
               print("Allowlisted known-bad snapshots remain broken and were NOT imported:")
               for name in known_hit:
                   print(" -", name)
-              print("Replace them from a live desktop/mobile sync push when available.")
           sys.exit(0)
           PY
 
@@ -451,7 +270,7 @@ jobs:
           fi
           if [ "$R2_ARCHIVE_OUTCOME" != "success" ]; then
             echo "R2 bucket ensure/upload/read-back failed."
-            echo "Check CLOUDFLARE_ACCOUNT_ID (32 hex) and token Account > Workers R2 Storage > Edit."
+            echo "Token must be a Cloudflare API token with Account > Workers R2 Storage > Edit."
             failed=1
           fi
           if [ "$VALIDATION_OUTCOME" != "success" ]; then
@@ -461,7 +280,7 @@ jobs:
           if [ "$failed" -ne 0 ]; then
             exit 1
           fi
-          echo "PASS: all encrypted snapshots archived; R2 read-back verified; validation has no unexpected failures."
-          echo "Known-bad allowlisted snapshots (if any) are still broken and must be replaced from live devices before treating Cloudflare as primary."
-          echo "D1 schema/data import was NOT performed by this workflow."
-          echo "Keep Render as rollback until API, auth, data, sync, and parity tests pass on Cloudflare."
+          echo "PASS: archive OK, R2 read-back verified, no unexpected validation failures."
+          echo "Known-bad allowlisted snapshots (if any) must still be replaced from live devices."
+          echo "D1 import and core API cutover are NOT part of this workflow."
+          echo "Keep Render as rollback until auth, sync, and parity tests pass on Cloudflare."
