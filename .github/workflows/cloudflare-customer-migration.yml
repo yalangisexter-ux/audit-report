@@ -27,6 +27,7 @@ jobs:
       # Pinned to the Cloudflare account verified by the live account API.
       CLOUDFLARE_ACCOUNT_ID: "0ab514563be3062f7c1644f3e89b7e60d"
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      R2_BUCKET: raw-strength-customer-backups
       R2_BACKUP_PREFIX: pre-migration/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Require main branch
@@ -64,6 +65,34 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_R2_API_TOKEN or CLOUDFLARE_API_TOKEN in cloudflare-chat environment."; exit 1; }
           test "$CLOUDFLARE_ACCOUNT_ID" = "0ab514563be3062f7c1644f3e89b7e60d" || { echo "Pinned Cloudflare account ID mismatch."; exit 1; }
 
+      - name: Ensure R2 backup bucket exists
+        id: ensure_bucket
+        shell: bash
+        run: |
+          set -euo pipefail
+          dump_wrangler_error() {
+            status=$?
+            echo "Wrangler R2 bucket ensure failed (exit $status). Recent Wrangler diagnostics:"
+            log_file="$(ls -t "$HOME/.config/.wrangler/logs"/wrangler-*.log 2>/dev/null | head -n 1 || true)"
+            if [ -n "$log_file" ] && [ -f "$log_file" ]; then
+              tail -n 80 "$log_file"
+            fi
+            exit "$status"
+          }
+          trap dump_wrangler_error ERR
+          # Create is idempotent enough: succeed if the bucket already exists.
+          if npx --yes wrangler@4 r2 bucket list --json 2>/dev/null | grep -q "\"name\":\"$R2_BUCKET\""; then
+            echo "R2 bucket already exists: $R2_BUCKET"
+          else
+            echo "Creating R2 bucket: $R2_BUCKET"
+            if ! npx --yes wrangler@4 r2 bucket create "$R2_BUCKET"; then
+              # Race or already-created: verify it is listable now.
+              npx --yes wrangler@4 r2 bucket list --json | grep -q "\"name\":\"$R2_BUCKET\""
+              echo "Bucket is available after create retry check: $R2_BUCKET"
+            fi
+          fi
+          trap - ERR
+
       - name: Archive every encrypted customer snapshot
         id: archive
         run: |
@@ -81,8 +110,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Preserve Wrangler's actionable API error in the Actions log; Wrangler
-          # otherwise writes the useful details only to its temporary log file.
           dump_wrangler_error() {
             status=$?
             echo "Wrangler R2 operation failed (exit $status). Recent Wrangler diagnostics:"
@@ -96,10 +123,9 @@ jobs:
           }
           trap dump_wrangler_error ERR
           archive_key="$R2_BACKUP_PREFIX/customer-data-snapshots.tar.gz"
-          # Do not pass --log-level: wrangler 4.159 rejects it as an unknown argument.
-          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$archive_key" \
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$archive_key" \
             --file="$RUNNER_TEMP/customer-data-snapshots.tar.gz" --remote
-          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$archive_key" \
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$archive_key" \
             --file="$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" --remote
           cmp "$RUNNER_TEMP/customer-data-snapshots.tar.gz" "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz"
           trap - ERR
@@ -125,9 +151,9 @@ jobs:
           set -euo pipefail
           if [ -s "$RUNNER_TEMP/customer-data-validation.json" ]; then
             report_key="$R2_BACKUP_PREFIX/customer-data-validation.json"
-            npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$report_key" \
+            npx --yes wrangler@4 r2 object put "$R2_BUCKET/$report_key" \
               --file="$RUNNER_TEMP/customer-data-validation.json" --remote
-            npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$report_key" \
+            npx --yes wrangler@4 r2 object get "$R2_BUCKET/$report_key" \
               --file="$RUNNER_TEMP/customer-data-validation-verified.json" --remote
             cmp "$RUNNER_TEMP/customer-data-validation.json" "$RUNNER_TEMP/customer-data-validation-verified.json"
             echo "Validation report stored and read-back verified: $report_key"
@@ -162,6 +188,7 @@ jobs:
           ARCHIVE_OUTCOME: ${{ steps.archive.outcome }}
           R2_ARCHIVE_OUTCOME: ${{ steps.r2_archive.outcome }}
           VALIDATION_OUTCOME: ${{ steps.validate_snapshots.outcome }}
+          ENSURE_BUCKET_OUTCOME: ${{ steps.ensure_bucket.outcome }}
         run: |
           set -euo pipefail
           if [ "$ARCHIVE_OUTCOME" != "success" ]; then
@@ -169,12 +196,19 @@ jobs:
             exit 1
           fi
           failed=0
+          if [ "$ENSURE_BUCKET_OUTCOME" != "success" ]; then
+            echo "Could not ensure R2 bucket exists. Token needs Account > Workers R2 Storage > Edit, and permission to create buckets."
+            failed=1
+          fi
           if [ "$R2_ARCHIVE_OUTCOME" != "success" ]; then
-            echo "R2 upload/read-back failed. Inspect the Wrangler diagnostics above; verify the token has Account > Workers R2 Storage > Edit (or the equivalent R2 object read/write permissions) for this account and bucket."
+            echo "R2 upload/read-back failed. Inspect Wrangler diagnostics above."
             failed=1
           fi
           if [ "$VALIDATION_OUTCOME" != "success" ]; then
-            echo "Encrypted snapshot validation failed. Do not skip or delete failed snapshots; restore or repair them from a trusted customer backup, then rerun validation."
+            echo "Encrypted snapshot validation failed (3 known-bad files remain)."
+            echo "Broken non-canonical: 080717e78653166d64cd2bcf72c75c76.db.enc, dc6846630ade39fc60074e3e17ff9dae.db.enc"
+            echo "Canonical also failed open after decrypt: c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
+            echo "Push a fresh encrypted snapshot from the live desktop app for the canonical installation, then re-run."
             failed=1
           fi
           if [ "$failed" -ne 0 ]; then
