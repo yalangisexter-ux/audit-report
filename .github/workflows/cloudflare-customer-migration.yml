@@ -138,7 +138,6 @@ jobs:
             --source-dir customer-data \
             --canonical-id c4cf201d3c68e2fcaf60aa05fd423d9a \
             --report-output "$RUNNER_TEMP/customer-data-validation.json"
-          validate_rc=$?
           set -e
 
           if [ ! -s "$RUNNER_TEMP/customer-data-validation.json" ]; then
@@ -172,7 +171,6 @@ jobs:
               print("NEW snapshot validation failures are not allowlisted:", unexpected, file=sys.stderr)
               sys.exit(1)
 
-          # All failures are in the known-bad allowlist (or zero failures).
           if report.get("failure_count", 0) and not known_hit:
               print("Failures present but none matched the allowlist; refusing.", file=sys.stderr)
               sys.exit(1)
@@ -186,7 +184,7 @@ jobs:
           PY
 
       - name: Upload validation report to R2
-        if: always() && steps.r2_archive.outcome == 'success' && hashFiles(format('{0}/customer-data-validation.json', runner.temp)) != ''
+        if: always() && steps.r2_archive.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
