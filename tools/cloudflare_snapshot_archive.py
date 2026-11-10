@@ -178,7 +178,7 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
         raise ValueError(
             f"SQLite payload could not be opened after decrypt ({type(exc).__name__}: {exc}). "
             "The encrypted file may be truncated or damaged."
-        ) from exp if False else exc  # noqa: keep original exception chain
+        ) from exc
 
     try:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
