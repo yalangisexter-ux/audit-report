@@ -81,12 +81,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Preserve Wrangler's actionable API error in the Actions log; Wrangler
+          # otherwise writes the useful details only to its temporary log file.
+          dump_wrangler_error() {
+            status=$?
+            echo "Wrangler R2 operation failed (exit $status). Recent Wrangler diagnostics:"
+            log_file="$(ls -t "$HOME/.config/.wrangler/logs"/wrangler-*.log 2>/dev/null | head -n 1 || true)"
+            if [ -n "$log_file" ] && [ -f "$log_file" ]; then
+              tail -n 100 "$log_file"
+            else
+              echo "No Wrangler diagnostic log was found."
+            fi
+            exit "$status"
+          }
+          trap dump_wrangler_error ERR
           archive_key="$R2_BACKUP_PREFIX/customer-data-snapshots.tar.gz"
-          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$archive_key" \
+          npx --yes wrangler@4 --log-level debug r2 object put "raw-strength-customer-backups/$archive_key" \
             --file="$RUNNER_TEMP/customer-data-snapshots.tar.gz" --remote
-          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$archive_key" \
+          npx --yes wrangler@4 --log-level debug r2 object get "raw-strength-customer-backups/$archive_key" \
             --file="$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" --remote
           cmp "$RUNNER_TEMP/customer-data-snapshots.tar.gz" "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz"
+          trap - ERR
           echo "PASS: encrypted snapshot archive was read back from R2 and byte-for-byte verified."
           echo "R2 key: $archive_key"
           sha256sum "$RUNNER_TEMP/customer-data-snapshots.tar.gz"
@@ -152,12 +167,16 @@ jobs:
             echo "Encrypted customer snapshot archive creation failed."
             exit 1
           fi
+          failed=0
           if [ "$R2_ARCHIVE_OUTCOME" != "success" ]; then
-            echo "R2 upload/read-back failed. Check CLOUDFLARE_R2_API_TOKEN has R2 Storage Read & Write permission."
-            exit 1
+            echo "R2 upload/read-back failed. Inspect the Wrangler diagnostics above; verify the token has Account > Workers R2 Storage > Edit (or the equivalent R2 object read/write permissions) for this account and bucket."
+            failed=1
           fi
           if [ "$VALIDATION_OUTCOME" != "success" ]; then
-            echo "One or more encrypted snapshots failed compatibility/integrity validation."
+            echo "Encrypted snapshot validation failed. Do not skip or delete failed snapshots; restore or repair them from a trusted customer backup, then rerun validation."
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
             exit 1
           fi
           echo "All encrypted customer snapshots were archived, read-back verified in R2, and validated."
