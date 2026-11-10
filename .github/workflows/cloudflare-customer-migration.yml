@@ -161,6 +161,6 @@ jobs:
             exit 1
           fi
           echo "All encrypted customer snapshots were archived, read-back verified in R2, and validated."
-          echo "The D1 pre-migration schema snapshot is stored separately in the private R2 backup bucket."
+          echo "D1 schema/data backup has NOT been created by this workflow; a separate verified D1 export is required before any import."
           echo "No customer data has been imported or modified by this workflow."
           echo "Keep Render as rollback until the full API, authentication, data, sync, and parity tests pass."
