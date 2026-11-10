@@ -96,9 +96,10 @@ jobs:
           }
           trap dump_wrangler_error ERR
           archive_key="$R2_BACKUP_PREFIX/customer-data-snapshots.tar.gz"
-          npx --yes wrangler@4 --log-level debug r2 object put "raw-strength-customer-backups/$archive_key" \
+          # Do not pass --log-level: wrangler 4.159 rejects it as an unknown argument.
+          npx --yes wrangler@4 r2 object put "raw-strength-customer-backups/$archive_key" \
             --file="$RUNNER_TEMP/customer-data-snapshots.tar.gz" --remote
-          npx --yes wrangler@4 --log-level debug r2 object get "raw-strength-customer-backups/$archive_key" \
+          npx --yes wrangler@4 r2 object get "raw-strength-customer-backups/$archive_key" \
             --file="$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz" --remote
           cmp "$RUNNER_TEMP/customer-data-snapshots.tar.gz" "$RUNNER_TEMP/customer-data-snapshots-verified.tar.gz"
           trap - ERR

@@ -3,7 +3,8 @@
 The archive contains only the already-encrypted snapshot files plus a SHA-256
 manifest. Validation decrypts one snapshot at a time in memory using the same
 compatibility decoder as the desktop sync implementation; no plaintext database
-is written to disk or included in the archive.
+is written to the archive. Temporary SQLite files used only for validation are
+deleted immediately.
 """
 
 from __future__ import annotations
@@ -12,10 +13,12 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import re
 import sqlite3
 import sys
 import tarfile
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -111,6 +114,45 @@ def _quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
+    """Open a SQLite image in memory, with a temp-file fallback for damaged images."""
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.deserialize(sqlite_bytes)
+        connection.execute("SELECT 1").fetchone()
+        return connection
+    except Exception:
+        connection.close()
+
+    handle, path = tempfile.mkstemp(prefix="rsc_validate_", suffix=".sqlite3")
+    os.close(handle)
+    try:
+        Path(path).write_bytes(sqlite_bytes)
+        connection = sqlite3.connect(path, timeout=20)
+        connection.execute("SELECT 1").fetchone()
+        # Keep the path on the connection so the caller can unlink it after close.
+        connection._rsc_temp_path = path  # type: ignore[attr-defined]
+        return connection
+    except Exception:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+
+
+def _close_sqlite_connection(connection: sqlite3.Connection) -> None:
+    path = getattr(connection, "_rsc_temp_path", None)
+    try:
+        connection.close()
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
 def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, Any]:
     sqlite_bytes, marker, json_bytes = payload.partition(JSON_MARKER)
     if not sqlite_bytes.startswith(SQLITE_MAGIC):
@@ -130,9 +172,15 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
         except Exception as exc:
             raise ValueError("Snapshot's appended JSON manifest is invalid.") from exc
 
-    connection = sqlite3.connect(":memory:")
     try:
-        connection.deserialize(sqlite_bytes)
+        connection = _open_sqlite_payload(sqlite_bytes)
+    except Exception as exc:
+        raise ValueError(
+            f"SQLite payload could not be opened after decrypt ({type(exc).__name__}: {exc}). "
+            "The encrypted file may be truncated or damaged."
+        ) from exp if False else exc  # noqa: keep original exception chain
+
+    try:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("SQLite integrity_check did not return ok.")
@@ -200,7 +248,7 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
             "has_admin": has_lower_admin,
         }
     finally:
-        connection.close()
+        _close_sqlite_connection(connection)
 
 
 def validate_all(
@@ -306,8 +354,6 @@ def main() -> None:
     if args.command == "archive":
         create_archive(args.source_dir, args.archive_output, args.manifest_output)
         return
-
-    import os
 
     secret = os.environ.get(args.secret_env, "")
     report = validate_all(args.source_dir, secret, args.canonical_id, args.report_output)
