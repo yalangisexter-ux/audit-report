@@ -297,8 +297,14 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
                 for username, row in by_username.items():
                     if row[1] not in VALID_ROLES or row[2] not in (0, 1):
                         raise ValueError(f"Canonical {username} account has invalid role or active flag.")
-                    if any(value is None or str(value) == "" for value in row[3:]):
-                        raise ValueError(f"Canonical {username} account is missing password/security metadata.")
+                    # Password credentials and timestamps are mandatory. Desktop upgrades
+                    # may leave recovery fields blank until the user configures recovery.
+                    if any(value is None or str(value) == "" for value in (*row[3:5], *row[8:10])):
+                        raise ValueError(f"Canonical {username} account is missing password or timestamp metadata.")
+                    recovery = row[5:8]
+                    recovery_present = [value is not None and str(value) != "" for value in recovery]
+                    if any(recovery_present) and not all(recovery_present):
+                        raise ValueError(f"Canonical {username} account has incomplete password-recovery metadata.")
         elif canonical:
             raise ValueError("Canonical snapshot has no auth_users table.")
 
