@@ -33,7 +33,6 @@ jobs:
       - name: Require main
         shell: bash
         run: |
-          # main-only; refusing ref is also asserted by the workflow policy regression test.
           test "$GITHUB_REF" = "refs/heads/main" || {
             echo "Production Worker deploys are main-only; refusing $GITHUB_REF" >&2
             exit 1
@@ -75,7 +74,7 @@ jobs:
           npx wrangler deploy --config wrangler.toml 2>&1 | tee "$RUNNER_TEMP/worker-deploy.log"
           worker_url="$(grep -Eo 'https://raw-strength-employee-api[.][A-Za-z0-9-]+[.]workers[.]dev' "$RUNNER_TEMP/worker-deploy.log" | tail -n 1 || true)"
           if [ -z "$worker_url" ]; then
-            worker_url="https://raw-strength-employee-api.workers.dev"
+            worker_url="https://raw-strength-employee-api.yalangisexter.workers.dev"
           fi
           echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
 
@@ -101,4 +100,22 @@ jobs:
           assert int(body.get("total_tasks", -1)) == 47, body
           print(json.dumps(body, indent=2))
           PY
-          echo "Cloudflare Employee API deployed and connected to the imported customer D1 database."
+
+      - name: Verify sign-in route through Worker and Pages proxy
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+          PAGES_URL: https://raw-strength-employee-audit-manager-yalangis.pages.dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='{"username":"__route_probe_invalid_user__","password":"invalid-probe-password"}'
+          for target in "$WORKER_URL/api/auth/login" "$PAGES_URL/api/auth/login"; do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/login-probe.json" --write-out '%{http_code}' \
+              -X POST -H 'Content-Type: application/json' --data "$payload" "$target" || true)"
+            if [ "$code" != "401" ]; then
+              echo "Sign-in route probe failed for $target: expected 401 for invalid credentials, received HTTP $code"
+              cat "$RUNNER_TEMP/login-probe.json"
+              exit 1
+            fi
+            echo "Sign-in route exists and rejects invalid credentials as expected: $target"
+          done
