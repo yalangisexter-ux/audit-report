@@ -104,8 +104,14 @@ def validate_source(connection: sqlite3.Connection) -> dict[str, int]:
             raise ValueError(f"{username} has an unsupported role value.")
         if row[2] not in (0, 1):
             raise ValueError(f"{username} has an invalid active flag.")
-        if any(value is None or str(value) == "" for value in row[3:]):
-            raise ValueError(f"{username} is missing password/security metadata.")
+        # Recovery metadata may be wholly unconfigured on desktop-upgrade accounts.
+        # Password credentials and timestamps remain mandatory; recovery is all-or-none.
+        if any(value is None or str(value) == "" for value in (*row[3:5], *row[8:10])):
+            raise ValueError(f"{username} is missing password or timestamp metadata.")
+        recovery = row[5:8]
+        recovery_present = [value is not None and str(value) != "" for value in recovery]
+        if any(recovery_present) and not all(recovery_present):
+            raise ValueError(f"{username} has incomplete password-recovery metadata.")
         account_rows[username] = {"role": row[1], "active": int(row[2])}
 
     fk_errors = connection.execute("PRAGMA foreign_key_check").fetchall()
