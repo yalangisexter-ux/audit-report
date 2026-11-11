@@ -114,6 +114,17 @@ def _quote_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
+def _configure_validation_connection(connection: sqlite3.Connection) -> None:
+    """Keep SQLite validation self-contained; never require runner temp files."""
+    # integrity_check and schema scans can use SQLite temporary storage. Force
+    # that storage into memory before making the connection read-only so a
+    # hosted runner's TEMP/TMPDIR permissions cannot invalidate a good snapshot.
+    connection.execute("PRAGMA temp_store=MEMORY")
+    connection.execute("PRAGMA mmap_size=0")
+    connection.execute("PRAGMA query_only=ON")
+    connection.execute("SELECT 1").fetchone()
+
+
 def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
     """Open a SQLite image using four isolated strategies, without touching source data."""
     errors: list[str] = []
@@ -125,9 +136,9 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
     for label, buffer in (("deserialize-bytes", sqlite_bytes), ("deserialize-memoryview", memoryview(sqlite_bytes))):
         connection = sqlite3.connect(":memory:", factory=_ValidationConnection)
         try:
+            _configure_validation_connection(connection)
             connection.deserialize(buffer)
-            connection.execute("PRAGMA query_only=ON")
-            connection.execute("SELECT 1").fetchone()
+            _configure_validation_connection(connection)
             return connection
         except Exception as exc:
             errors.append(f"{label}: {type(exc).__name__}: {exc}")
@@ -149,8 +160,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
         connection = None
         try:
             connection = sqlite3.connect(path, timeout=20, factory=_ValidationConnection)
-            connection.execute("PRAGMA query_only=ON")
-            connection.execute("SELECT 1").fetchone()
+            _configure_validation_connection(connection)
             connection._rsc_temp_path = path
             connection._rsc_temp_dir = directory
             return connection
@@ -168,8 +178,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
                 timeout=20,
                 factory=_ValidationConnection,
             )
-            connection.execute("PRAGMA query_only=ON")
-            connection.execute("SELECT 1").fetchone()
+            _configure_validation_connection(connection)
             connection._rsc_temp_path = path
             connection._rsc_temp_dir = directory
             return connection
