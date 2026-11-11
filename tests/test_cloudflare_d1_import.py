@@ -6,7 +6,7 @@ from tools.cloudflare_d1_import import build_import, ordered_tables, sql_value
 
 def test_sql_value_quotes_text_and_preserves_blobs():
     assert sql_value("O'Reilly") == "'O''Reilly'"
-    assert sql_value(b"\\x00\\xff") == "X'00ff'"
+    assert sql_value(bytes([0, 255])) == "X'00ff'"
     assert sql_value(None) == "NULL"
     assert sql_value(12) == "12"
 
@@ -30,7 +30,7 @@ def test_import_is_bounded_and_orders_parent_rows_first(tmp_path):
     manifest = build_import(source, schema, tmp_path)
     assert manifest["tables"]["employees"] == 1
     assert manifest["tables"]["tasks"] == 1
-    assert manifest["total_rows"] == 2
+    assert manifest["total_rows"] == 3  # employees + tasks + schema-seeded working-weekdays setting
     assert manifest["excluded_ephemeral_tables"] == ["web_auth_sessions"]
 
     chunks = sorted(tmp_path.glob("chunk-*.json"))
