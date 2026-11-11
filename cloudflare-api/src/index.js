@@ -33,6 +33,10 @@ export default {
         return json({ status: "healthy", service: "raw-strength-cloudflare-api", database_connected: true,
           total_employees: Number(employees?.n || 0), total_tasks: Number(tasks?.n || 0) }, 200, headers);
       }
+      if (url.pathname === "/api/auth/status" && request.method === "GET") {
+        const activeUser = await currentUser(request, env);
+        return json({ authenticated: !!activeUser, user: activeUser ? publicUser(activeUser) : null, app_version: "1.3.82" }, 200, headers);
+      }
       if (url.pathname === "/api/auth/login" && request.method === "POST") {
         const body = await readJson(request);
         if (!body || typeof body.username !== "string" || typeof body.password !== "string" ||
@@ -693,10 +697,6 @@ export default {
         return json({version:"1.3.82",products:Number(products?.n||0),low_stock:Number(low?.n||0),orders:Number(orders?.n||0),members:Number(members?.n||0),activities:Number(activities?.n||0),total_sales:Number(orders?.sales||0)},200,headers);
       }
 
-      if (path === "/api/auth/status" && request.method === "GET") {
-        return json({ authenticated: !!user, user: user ? publicUser(user) : null, app_version: "1.3.82" }, 200, headers);
-      }
-
       if (path === "/api/reports/options" && request.method === "GET") {
         const rows = await all(env.DB, "SELECT key, value FROM settings WHERE key LIKE 'report_opt_%'");
         const options = { ...REPORT_OPTION_DEFAULTS };
@@ -1072,7 +1072,7 @@ export default {
       console.error("Cloudflare API request failed", { path: url.pathname, message: String(error?.message || error) });
       const detail = String(error?.message || error);
       if (/UNIQUE constraint failed/i.test(detail)) return json({detail:"A record with the same unique value already exists."},409,headers);
-      return json({ error: "Internal API error" }, 500, headers);
+      return json({ error: "Internal API error", detail }, 500, headers);
     }
   },
 };
