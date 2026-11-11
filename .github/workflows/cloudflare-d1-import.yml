@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   import-canonical:
+    # main-only; refusing ref is enforced by this job-level condition.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
