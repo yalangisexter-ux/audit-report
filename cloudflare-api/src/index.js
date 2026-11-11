@@ -349,9 +349,9 @@ export default {
           let work=0,holidayCount=0,present=0,absent=0,leave=0,totalPresent=0;
           const monthly=[];
           if(effective<=end){
-            for(let d=effective;d<=end;d=addDays(d,1)){const dow=new Date(d+"T00:00:00Z").getUTCDay();if(weekdays.has(dow)&&!holidaySet.has(d)){work++;}}
-            for(const h of holidaySet){if(h>=effective&&h<=end&&weekdays.has(new Date(h+"T00:00:00Z").getUTCDay()))holidayCount++;}
-            for(const a of attBy.get(id)){const dow=new Date(a.work_date+"T00:00:00Z").getUTCDay();if(a.work_date<start||!weekdays.has(dow)||holidaySet.has(a.work_date))continue;const st=String(a.attendance_status||"").trim().toLowerCase(),isPresent=PRESENT_DETAIL.has(st)||(["","unmarked"].includes(st)&&!!String(a.check_in||"").trim());if(isPresent)totalPresent++;if(a.work_date>=effective){monthly.push(a);if(isPresent)present++;if(st==="absent")absent++;if(st==="leave")leave++;}}
+            for(let d=effective;d<=end;d=addDays(d,1)){const dow=((new Date(d+"T00:00:00Z").getUTCDay()+6)%7);if(weekdays.has(dow)&&!holidaySet.has(d)){work++;}}
+            for(const h of holidaySet){if(h>=effective&&h<=end&&weekdays.has(((new Date(h+"T00:00:00Z").getUTCDay()+6)%7)))holidayCount++;}
+            for(const a of attBy.get(id)){const dow=((new Date(a.work_date+"T00:00:00Z").getUTCDay()+6)%7);if(a.work_date<start||!weekdays.has(dow)||holidaySet.has(a.work_date))continue;const st=String(a.attendance_status||"").trim().toLowerCase(),isPresent=PRESENT_DETAIL.has(st)||(["","unmarked"].includes(st)&&!!String(a.check_in||"").trim());if(isPresent)totalPresent++;if(a.work_date>=effective){monthly.push(a);if(isPresent)present++;if(st==="absent")absent++;if(st==="leave")leave++;}}
           }
           rows.push({employee_id:id,employee_name:emp.name,start_date:start,work_days:work,present,absent,leave,holidays:holidayCount,total_present:totalPresent});
         }
