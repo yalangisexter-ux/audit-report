@@ -147,9 +147,15 @@ def validate_target(source: sqlite3.Connection, export_path: Path) -> None:
         for table in sorted(source_tables):
             source_columns = columns(source, table)
             target_columns = columns(target, table)
-            if source_columns != target_columns:
+            # Desktop SQLite upgrades append columns in migration order;
+            # D1's baseline may declare those same columns in a different
+            # order. Column order is irrelevant because imports name columns
+            # explicitly. Reject only source fields absent from D1.
+            missing_columns = sorted(set(source_columns) - set(target_columns))
+            if missing_columns:
                 raise ValueError(
-                    f"Schema mismatch for {table}: source columns {source_columns}; D1 columns {target_columns}"
+                    f"Schema mismatch for {table}: D1 is missing source columns "
+                    + ", ".join(missing_columns)
                 )
 
         unexpected_rows = []
