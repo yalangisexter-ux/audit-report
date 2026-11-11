@@ -500,6 +500,64 @@ export default {
       }
 
 
+
+      if(path==="/api/employee-groups"&&request.method==="POST"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),name=String(b.name||"").trim();if(!name||name.length>80)return json({detail:"Section name is required."},400,headers);
+        if(await first(env.DB,"SELECT id FROM employee_groups WHERE name=? COLLATE NOCASE",[name]))return json({detail:"A section with this name already exists."},409,headers);
+        const order=await first(env.DB,"SELECT COALESCE(MAX(display_order),0)+10 AS n FROM employee_groups");
+        const id=await insert(env.DB,"employee_groups",{name,display_order:Number(order?.n||10),created_at:new Date().toISOString()});
+        return json({success:true,group:{id,name,display_order:Number(order?.n||10),employee_count:0}},200,headers);
+      }
+      if(path==="/api/employee-groups"&&request.method==="PATCH"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),oldName=String(b.old_name||"").trim(),newName=String(b.new_name||"").trim();
+        if(!oldName||!newName||newName.length>80)return json({detail:"Both section names are required."},400,headers);
+        const current=await first(env.DB,"SELECT id,display_order FROM employee_groups WHERE name=? COLLATE NOCASE",[oldName]);
+        const used=await first(env.DB,"SELECT id FROM employee_groups WHERE name=? COLLATE NOCASE",[newName]);
+        if(!current&&!await first(env.DB,"SELECT id FROM employees WHERE department=? COLLATE NOCASE",[oldName]))return json({detail:"Section not found."},404,headers);
+        if(used&&Number(used.id)!==Number(current?.id))return json({detail:"A section with the new name already exists."},409,headers);
+        if(current)await env.DB.prepare("UPDATE employee_groups SET name=? WHERE id=?").bind(newName,current.id).run();
+        else await insert(env.DB,"employee_groups",{name:newName,display_order:9999,created_at:new Date().toISOString()});
+        await env.DB.prepare("UPDATE employees SET department=? WHERE department=? COLLATE NOCASE").bind(newName,oldName).run();
+        await env.DB.prepare("UPDATE tasks SET department=? WHERE department=? COLLATE NOCASE").bind(newName,oldName).run();
+        return json({success:true,name:newName},200,headers);
+      }
+      if(path==="/api/employee-groups"&&request.method==="DELETE"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),name=String(b.name||"").trim();
+        if(!await first(env.DB,"SELECT id FROM employee_groups WHERE name=? COLLATE NOCASE",[name])&&!await first(env.DB,"SELECT id FROM employees WHERE department=? COLLATE NOCASE",[name]))return json({detail:"Section not found."},404,headers);
+        await env.DB.prepare("DELETE FROM employee_groups WHERE name=? COLLATE NOCASE").bind(name).run();
+        await env.DB.prepare("UPDATE employees SET department='' WHERE department=? COLLATE NOCASE").bind(name).run();
+        return json({success:true},200,headers);
+      }
+      if(path==="/api/employee-groups/order"&&request.method==="PUT"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),names=(b.group_names||[]).map(v=>String(v||"").trim()),folded=names.map(v=>v.toLowerCase());
+        if(names.some(v=>!v)||new Set(folded).size!==folded.length)return json({detail:"Section names must be non-empty and unique."},400,headers);
+        const existing=await all(env.DB,"SELECT name FROM employee_groups");
+        const available=new Set(existing.map(v=>v.name.toLowerCase()));
+        if(names.some(v=>!available.has(v.toLowerCase())))return json({detail:"One or more sections no longer exist."},404,headers);
+        for(let i=0;i<names.length;i++)await env.DB.prepare("UPDATE employee_groups SET display_order=? WHERE name=? COLLATE NOCASE").bind((i+1)*10,names[i]).run();
+        return json({success:true,updated:names.length},200,headers);
+      }
+      const employeeStatus=/^\/api\/employees\/(\d+)\/status$/.exec(path);
+      if(employeeStatus&&request.method==="PATCH"){
+        if(!EMPLOYEE_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),id=Number(employeeStatus[1]),old=await first(env.DB,"SELECT id FROM employees WHERE id=?",[id]);
+        if(!old)return json({detail:"Employee not found."},404,headers);
+        const active=b.active?1:0;await env.DB.prepare("UPDATE employees SET active=? WHERE id=?").bind(active,id).run();
+        return json({success:true,id,active},200,headers);
+      }
+      if(path==="/api/employee-directory/reorder"&&request.method==="PUT"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),items=b.items||[],ids=items.map(x=>Number(x.id));
+        if(new Set(ids).size!==ids.length)return json({detail:"An employee can appear only once in a reorder request."},400,headers);
+        if(ids.length){const found=await all(env.DB,"SELECT id FROM employees WHERE id IN ("+ids.map(()=>"?").join(",")+")",ids);if(found.length!==ids.length)return json({detail:"One or more employees no longer exist."},404,headers);}
+        for(const item of items){if(item.department!==undefined&&item.department!==null){const department=String(item.department||"").trim();if(department.length>80)return json({detail:"Section name is too long."},400,headers);await env.DB.prepare("UPDATE employees SET display_order=?,department=? WHERE id=?").bind(Number(item.display_order||0),department,Number(item.id)).run();}else await env.DB.prepare("UPDATE employees SET display_order=? WHERE id=?").bind(Number(item.display_order||0),Number(item.id)).run();}
+        return json({success:true,updated:items.length},200,headers);
+      }
+
       if(path==="/api/employee-groups"&&request.method==="GET"){
         const groups=await all(env.DB,"SELECT id,name,display_order FROM employee_groups ORDER BY display_order ASC,name COLLATE NOCASE");
         const counts=await all(env.DB,"SELECT TRIM(department) AS group_name,COUNT(*) AS employee_count FROM employees WHERE department IS NOT NULL AND TRIM(department)<>'' GROUP BY TRIM(department)");
