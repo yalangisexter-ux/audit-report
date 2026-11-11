@@ -125,29 +125,17 @@ def _configure_validation_connection(connection: sqlite3.Connection) -> None:
 
 
 def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
-    """Open a SQLite image using four isolated strategies, without touching source data."""
-    errors: list[str] = []
+    """Open a private, disposable on-disk copy for complete SQLite validation.
 
-    class _ValidationConnection(sqlite3.Connection):
-        pass
-
-    # Strategy 1: deserialize the original bytes directly into SQLite memory.
-    for label, buffer in (("deserialize-bytes", sqlite_bytes), ("deserialize-memoryview", memoryview(sqlite_bytes))):
-        connection = sqlite3.connect(":memory:", factory=_ValidationConnection)
-        try:
-            _configure_validation_connection(connection)
-            connection.deserialize(buffer)
-            _configure_validation_connection(connection)
-            connection.execute("PRAGMA query_only=ON")
-            return connection
-        except Exception as exc:
-            errors.append(f"{label}: {type(exc).__name__}: {exc}")
-            connection.close()
-
-    # Strategies 3 and 4 use a private, disposable copy. The customer's encrypted
-    # snapshot is never opened for writing or modified.
+    Do not use Connection.deserialize here: it can successfully attach an image
+    to an in-memory connection yet fail later when integrity_check traverses
+    database structures that require SQLite's normal file-backed VFS. The
+    private copy is never the customer's source file and is deleted on close.
+    """
     directory = tempfile.mkdtemp(prefix="rsc_validate_")
     path = os.path.join(directory, "snapshot.sqlite3")
+    errors: list[str] = []
+
     try:
         with open(path, "xb") as handle:
             handle.write(sqlite_bytes)
@@ -155,31 +143,33 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
             os.fsync(handle.fileno())
         os.chmod(path, 0o600)
 
-        # Strategy 3: ordinary file open. SQLite can create transient journal
-        # metadata in this private directory; query_only prevents SQL writes.
+        # Primary: normal file-backed SQLite connection. This is the same
+        # execution model used by the desktop app and supports integrity/FK
+        # checks without relying on deserialize's in-memory VFS behavior.
         connection = None
         try:
-            connection = sqlite3.connect(path, timeout=20, factory=_ValidationConnection)
+            connection = sqlite3.connect(path, timeout=20)
             _configure_validation_connection(connection)
             connection.execute("PRAGMA query_only=ON")
             connection._rsc_temp_path = path
             connection._rsc_temp_dir = directory
             return connection
         except Exception as exc:
-            errors.append(f"temporary-file-readwrite-query-only: {type(exc).__name__}: {exc}")
+            errors.append(f"temporary-file-query-only: {type(exc).__name__}: {exc}")
             if connection is not None:
                 connection.close()
 
-        # Strategy 4: URI read-only + immutable, with a properly escaped file URI.
+        # Fallback: immutable read-only URI. The private file is complete and
+        # isolated, so SQLite can safely skip journal/WAL coordination.
         connection = None
         try:
             connection = sqlite3.connect(
                 Path(path).as_uri() + "?mode=ro&immutable=1",
                 uri=True,
                 timeout=20,
-                factory=_ValidationConnection,
             )
             _configure_validation_connection(connection)
+            connection.execute("PRAGMA query_only=ON")
             connection._rsc_temp_path = path
             connection._rsc_temp_dir = directory
             return connection
@@ -200,6 +190,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
     except OSError:
         pass
     raise RuntimeError("All SQLite validation open strategies failed: " + " | ".join(errors))
+
 def _close_sqlite_connection(connection: sqlite3.Connection) -> None:
     path = getattr(connection, "_rsc_temp_path", None)
     directory = getattr(connection, "_rsc_temp_dir", None)
@@ -246,25 +237,30 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
             "The encrypted file may be truncated or damaged."
         ) from exc
 
+    stage = "integrity_check"
     try:
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
             raise ValueError("SQLite integrity_check did not return ok.")
+        stage = "foreign_key_check"
         foreign_key_errors = connection.execute("PRAGMA foreign_key_check").fetchall()
         if foreign_key_errors:
             raise ValueError(f"SQLite foreign_key_check reported {len(foreign_key_errors)} violation(s).")
 
+        stage = "schema scan"
         tables = {
             row[0]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             if not row[0].startswith("sqlite_")
         }
         row_counts: dict[str, int] = {}
+        stage = "table row counts"
         for table in sorted(tables):
             row_counts[table] = int(
                 connection.execute(f"SELECT COUNT(*) FROM {_quote_identifier(table)}").fetchone()[0]
             )
 
+        stage = "auth_users inspection"
         auth_user_count = 0
         has_admin = False
         has_lower_admin = False
@@ -313,6 +309,8 @@ def _validate_sqlite_payload(payload: bytes, *, canonical: bool) -> dict[str, An
             "has_Admin": has_admin,
             "has_admin": has_lower_admin,
         }
+    except sqlite3.OperationalError as exc:
+        raise RuntimeError(f"SQLite validation failed during {stage}: {exc}") from exc
     finally:
         _close_sqlite_connection(connection)
 
