@@ -20,7 +20,6 @@ concurrency:
 
 jobs:
   import-canonical:
-    # main-only; refusing ref is enforced by this job-level condition.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -31,6 +30,16 @@ jobs:
       DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
       D1_DATABASE_ID: 028106c4-dc5e-41d6-a5d8-c94db99c231a
     steps:
+      - name: Require main branch
+        shell: bash
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            echo "main-only; refusing ref: $WORKFLOW_REF"
+            exit 1
+          fi
+
       - name: Checkout canonical source
         uses: actions/checkout@v7
         with:
@@ -62,7 +71,7 @@ jobs:
             --schema cloudflare/d1/migrations/0001_initial.sql \
             --output-dir "$RUNNER_TEMP/rsc-d1-import/sql"
 
-      - name: Verify D1 is empty, import in bounded batches, and verify every table
+      - name: Verify D1 state, import only when empty, and verify every table
         shell: bash
         run: |
           set -euo pipefail
@@ -102,6 +111,17 @@ jobs:
               result = query({"sql": sql})
               return (result[0].get("results") or []) if result else []
 
+          def verify_accounts():
+              final_users = rows(
+                  "SELECT username, role, active FROM auth_users "
+                  "WHERE username COLLATE BINARY IN ('Admin','admin') ORDER BY username"
+              )
+              if len(final_users) != 2 or {row["username"] for row in final_users} != {"Admin", "admin"}:
+                  raise RuntimeError("Exact-case Admin/admin verification failed.")
+              if any(int(row["active"]) != 1 for row in final_users):
+                  raise RuntimeError("One of the canonical Admin/admin accounts is inactive.")
+              return final_users
+
           manifest = json.loads((import_dir / "manifest.json").read_text(encoding="utf-8"))
           migration = sqlite3.connect(":memory:")
           migration.executescript(Path("cloudflare/d1/migrations/0001_initial.sql").read_text(encoding="utf-8"))
@@ -127,16 +147,40 @@ jobs:
           for table in sorted(live_tables):
               count_rows = rows(f'SELECT COUNT(*) AS n FROM "{table}"')
               counts[table] = int(count_rows[0]["n"])
+
+          expected_counts = {name: int(value) for name, value in (manifest.get("tables") or {}).items()}
+          customer_tables_with_rows = {
+              table: count for table, count in counts.items()
+              if table != "settings" and count
+          }
+
+          if customer_tables_with_rows:
+              # Idempotent path: a previous successful import already populated D1.
+              mismatches = []
+              for table, expected in expected_counts.items():
+                  actual = counts.get(table, 0)
+                  if actual != expected:
+                      mismatches.append(f"{table}: expected {expected}, live {actual}")
+              for table, actual in customer_tables_with_rows.items():
+                  if table not in expected_counts and actual:
+                      mismatches.append(f"{table}: unexpected live rows={actual}")
+              if mismatches:
+                  raise RuntimeError(
+                      "D1 already contains customer data that does not match the canonical manifest; "
+                      "refusing to overwrite. " + "; ".join(mismatches)
+                  )
+              accounts = verify_accounts()
+              print("D1 ALREADY IMPORTED AND VERIFIED (idempotent pass)")
+              print(json.dumps({"tables": expected_counts, "total_rows": manifest["total_rows"], "accounts": accounts}, indent=2))
+              raise SystemExit(0)
+
           allowed_settings = rows("SELECT key, value FROM settings")
-          for table, count in counts.items():
-              if table == "settings":
-                  if count > 1 or any(
-                      row != {"key": "working_weekdays", "value": "0,1,2,3,4,6"}
-                      for row in allowed_settings
-                  ):
-                      raise RuntimeError("D1 settings contain unexpected pre-existing customer data; import refused.")
-              elif count:
-                  raise RuntimeError(f"D1 table {table} already contains {count} rows; import refused.")
+          settings_count = counts.get("settings", 0)
+          if settings_count > 1 or any(
+              row != {"key": "working_weekdays", "value": "0,1,2,3,4,6"}
+              for row in allowed_settings
+          ):
+              raise RuntimeError("D1 settings contain unexpected pre-existing customer data; import refused.")
 
           # Probe D1 Write permission without changing a row.
           query({"sql": "UPDATE settings SET value=value WHERE key='__rsc_d1_write_permission_probe__'"})
@@ -156,22 +200,15 @@ jobs:
                   raise RuntimeError(f"{chunk.name}: D1 batch contained failed statements: {json.dumps(failures[:3])}")
               print(f"Imported {chunk.name}: {len(batch)} rows")
 
-          for table, expected in manifest["tables"].items():
+          for table, expected in expected_counts.items():
               actual_rows = rows(f'SELECT COUNT(*) AS n FROM "{table}"')
               actual = int(actual_rows[0]["n"])
               if actual != expected:
                   raise RuntimeError(f"Post-import count mismatch for {table}: expected {expected}, got {actual}")
 
-          final_users = rows(
-              "SELECT username, role, active FROM auth_users WHERE username COLLATE BINARY IN ('Admin','admin') ORDER BY username"
-          )
-          if len(final_users) != 2 or {row["username"] for row in final_users} != {"Admin", "admin"}:
-              raise RuntimeError("Post-import exact-case Admin/admin verification failed.")
-          if any(int(row["active"]) != 1 for row in final_users):
-              raise RuntimeError("One of the canonical Admin/admin accounts is inactive.")
-
+          accounts = verify_accounts()
           print("D1 IMPORT VERIFIED")
-          print(json.dumps({"tables": manifest["tables"], "total_rows": manifest["total_rows"], "accounts": final_users}, indent=2))
+          print(json.dumps({"tables": expected_counts, "total_rows": manifest["total_rows"], "accounts": accounts}, indent=2))
           PY
 
       - name: Remove plaintext database import material
