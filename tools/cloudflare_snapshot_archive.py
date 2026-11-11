@@ -115,54 +115,81 @@ def _quote_identifier(identifier: str) -> str:
 
 
 def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
-    """Open a SQLite image in memory, with a temp-file fallback for damaged images."""
-    connection = sqlite3.connect(":memory:")
-    try:
-        connection.deserialize(sqlite_bytes)
-        connection.execute("SELECT 1").fetchone()
-        return connection
-    except Exception:
-        connection.close()
+    """Open a SQLite image using four isolated strategies, without touching source data."""
+    errors: list[str] = []
 
-    # Use a dedicated temporary directory and a normal read-only SQLite
-    # connection. Some SQLite builds on hosted runners reject immutable file
-    # URIs for temp files even when the file exists; the URI failure is
-    # reported as "unable to open database file". A private directory also
-    # prevents collisions and keeps cleanup deterministic.
+    class _ValidationConnection(sqlite3.Connection):
+        pass
+
+    # Strategy 1: deserialize the original bytes directly into SQLite memory.
+    for label, buffer in (("deserialize-bytes", sqlite_bytes), ("deserialize-memoryview", memoryview(sqlite_bytes))):
+        connection = sqlite3.connect(":memory:", factory=_ValidationConnection)
+        try:
+            connection.deserialize(buffer)
+            connection.execute("PRAGMA query_only=ON")
+            connection.execute("SELECT 1").fetchone()
+            return connection
+        except Exception as exc:
+            errors.append(f"{label}: {type(exc).__name__}: {exc}")
+            connection.close()
+
+    # Strategies 3 and 4 use a private, disposable copy. The customer's encrypted
+    # snapshot is never opened for writing or modified.
     directory = tempfile.mkdtemp(prefix="rsc_validate_")
     path = os.path.join(directory, "snapshot.sqlite3")
     try:
-        Path(path).write_bytes(sqlite_bytes)
-        os.chmod(path, 0o400)
+        with open(path, "xb") as handle:
+            handle.write(sqlite_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(path, 0o600)
 
-        class _ValidationConnection(sqlite3.Connection):
-            pass
+        # Strategy 3: ordinary file open. SQLite can create transient journal
+        # metadata in this private directory; query_only prevents SQL writes.
+        connection = None
+        try:
+            connection = sqlite3.connect(path, timeout=20, factory=_ValidationConnection)
+            connection.execute("PRAGMA query_only=ON")
+            connection.execute("SELECT 1").fetchone()
+            connection._rsc_temp_path = path
+            connection._rsc_temp_dir = directory
+            return connection
+        except Exception as exc:
+            errors.append(f"temporary-file-readwrite-query-only: {type(exc).__name__}: {exc}")
+            if connection is not None:
+                connection.close()
 
-        connection = sqlite3.connect(
-            f"file:{path}?mode=ro",
-            uri=True,
-            timeout=20,
-            factory=_ValidationConnection,
-        )
-        connection.execute("SELECT 1").fetchone()
-        connection._rsc_temp_path = path
-        connection._rsc_temp_dir = directory
-        return connection
+        # Strategy 4: URI read-only + immutable, with a properly escaped file URI.
+        connection = None
+        try:
+            connection = sqlite3.connect(
+                Path(path).as_uri() + "?mode=ro&immutable=1",
+                uri=True,
+                timeout=20,
+                factory=_ValidationConnection,
+            )
+            connection.execute("PRAGMA query_only=ON")
+            connection.execute("SELECT 1").fetchone()
+            connection._rsc_temp_path = path
+            connection._rsc_temp_dir = directory
+            return connection
+        except Exception as exc:
+            errors.append(f"temporary-file-immutable-uri: {type(exc).__name__}: {exc}")
+            if connection is not None:
+                connection.close()
     except Exception as exc:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-        try:
-            os.rmdir(directory)
-        except OSError:
-            pass
-        raise RuntimeError(
-            f"SQLite temporary-file fallback failed ({type(exc).__name__}: {exc}); "
-            f"temp directory writable={os.access(os.path.dirname(directory), os.W_OK)}"
-        ) from exc
+        errors.append(f"temporary-file-creation: {type(exc).__name__}: {exc}")
 
-
+    try:
+        os.chmod(path, 0o600)
+        os.unlink(path)
+    except OSError:
+        pass
+    try:
+        os.rmdir(directory)
+    except OSError:
+        pass
+    raise RuntimeError("All SQLite validation open strategies failed: " + " | ".join(errors))
 def _close_sqlite_connection(connection: sqlite3.Connection) -> None:
     path = getattr(connection, "_rsc_temp_path", None)
     directory = getattr(connection, "_rsc_temp_dir", None)
