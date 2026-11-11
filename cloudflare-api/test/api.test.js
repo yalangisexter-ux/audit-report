@@ -174,3 +174,46 @@ test("attendance mark persists the selected date and blocks declared holidays", 
   assert.equal(blocked.status, 409);
   assert.equal(writes, 1);
 });
+
+test("D1 dashboard returns desktop-compatible KPI and productivity payloads", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "dashboard-session";
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions s JOIN auth_users")) {
+                return values[0] === tokenHash ? { id: user.id, username: user.username, display_name: user.username, role: user.role } : null;
+              }
+              if (sql.includes("FROM settings")) return { value: "0,1,2,3,4,6" };
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM employees WHERE active=1")) return { results: [{ id: 1, employee_code: "EMP001", name: "Test Employee", department: "Operations", designation: "Staff", joining_date: "2026-11-01", active: 1, display_order: 1 }] };
+              if (sql.includes("FROM attendance") && sql.includes("work_date=?")) return { results: [] };
+              if (sql.includes("FROM tasks t JOIN employees")) return { results: [] };
+              if (sql.includes("MIN(activity_date)")) return { results: [] };
+              if (sql.includes("SELECT employee_id,task_date,progress,status")) return { results: [] };
+              if (sql.includes("SELECT employee_id,work_date,attendance_status,check_in")) return { results: [] };
+              if (sql.includes("SELECT holiday_date")) return { results: [] };
+              return { results: [] };
+            },
+          };
+        },
+      };
+    },
+  };
+  const response = await worker.fetch(request("/api/dashboard", "GET", null, token), { DB });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.kpis.total_employees, 1);
+  assert.equal(body.kpis.not_checked_today, 1);
+  assert.equal(body.productivity.length, 1);
+  assert.equal(body.productivity[0].name, "Test Employee");
+  assert.equal(body.attendance_roster[0].status, "Not checked");
+});
