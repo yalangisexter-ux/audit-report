@@ -110,8 +110,13 @@ jobs:
           set -euo pipefail
           payload='{"username":"__route_probe_invalid_user__","password":"invalid-probe-password"}'
           for target in "$WORKER_URL/api/auth/login" "$PAGES_URL/api/auth/login"; do
-            code="$(curl --silent --show-error --output "$RUNNER_TEMP/login-probe.json" --write-out '%{http_code}' \
-              -X POST -H 'Content-Type: application/json' --data "$payload" "$target" || true)"
+            code=""
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              code="$(curl --silent --show-error --output "$RUNNER_TEMP/login-probe.json" --write-out '%{http_code}' \
+                -X POST -H 'Content-Type: application/json' --data "$payload" "$target" || true)"
+              if [ "$code" = "401" ]; then break; fi
+              sleep 3
+            done
             if [ "$code" != "401" ]; then
               echo "Sign-in route probe failed for $target: expected 401 for invalid credentials, received HTTP $code"
               cat "$RUNNER_TEMP/login-probe.json"
