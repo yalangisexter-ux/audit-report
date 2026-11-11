@@ -132,6 +132,9 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
     database structures that require SQLite's normal file-backed VFS. The
     private copy is never the customer's source file and is deleted on close.
     """
+    class _ValidationConnection(sqlite3.Connection):
+        pass
+
     directory = tempfile.mkdtemp(prefix="rsc_validate_")
     path = os.path.join(directory, "snapshot.sqlite3")
     errors: list[str] = []
@@ -148,7 +151,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
         # checks without relying on deserialize's in-memory VFS behavior.
         connection = None
         try:
-            connection = sqlite3.connect(path, timeout=20)
+            connection = sqlite3.connect(path, timeout=20, factory=_ValidationConnection)
             _configure_validation_connection(connection)
             connection.execute("PRAGMA query_only=ON")
             connection._rsc_temp_path = path
@@ -167,6 +170,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
                 Path(path).as_uri() + "?mode=ro&immutable=1",
                 uri=True,
                 timeout=20,
+                factory=_ValidationConnection,
             )
             _configure_validation_connection(connection)
             connection.execute("PRAGMA query_only=ON")
