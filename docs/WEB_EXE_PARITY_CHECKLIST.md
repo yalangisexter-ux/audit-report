@@ -1,3 +1,24 @@
+# Cloudflare migration update — 2026-11-11
+
+## Verified in this migration pass
+
+- The canonical customer snapshot was imported into D1 `raw-strength-audit-manager` (`028106c4-dc5e-41d6-a5d8-c94db99c231a`). [Import run #42987233031](https://github.com/yalangisexter-ux/audit-report/actions/runs/42987233031) verified 5,025 rows, including 8 employees, 47 tasks, 19 attendance records, 4,090 prospects and active exact-case `Admin` / `admin` accounts.
+- The Employee API Worker is deployed at `https://raw-strength-employee-api.yalangisexter.workers.dev`. [Latest deployment and health verification #42989956163](https://github.com/yalangisexter-ux/audit-report/actions/runs/42989956163) passed syntax checks, Node tests and the live D1 health check (8 employees / 47 tasks).
+- D1 Worker routes now cover exact-case login/session handling; registration, recovery and password changes; Admin account management; employee CRUD/status/group ordering; task CRUD/bulk edit/targets; attendance mark/bulk edit/summary; holiday and working-weekday settings; product/service reads and creation; business order/member/activity operations; stock ledger; business overview; customer prospect reads; print summary; and Home business snapshot.
+- Added regression coverage for protected API access, exact-case authentication, Sunday being mandatory in working weekdays, and attendance persistence / holiday-write protection. All 7 Worker tests passed in the latest deployment workflow.
+- Direct commits to `main`; no pull request. Existing EXE customer databases and Render fallback were not modified.
+
+## Not yet migrated / production cutover remains blocked
+
+- The Cloudflare Pages Function `frontend/functions/api/[[path]].js` still defaults to `https://audit-report-web.onrender.com`. It has **not** been switched to the Worker because several frontend API contracts remain unimplemented or unverified.
+- Outstanding API parity includes full dashboard/productivity calculation; product and service editing; customer scraping, import, edit/delete/export and regional benchmark workflows; report options/preview/export; archive upload/view/download/delete; live chat; update center; web database export/import; and system sync/admin endpoints.
+- The Worker is a new D1-backed API, but the customer desktop SQLite database and web D1 database are still separate copies. Continuous EXE ↔ web bidirectional sync, conflict resolution, offline/restart recovery and owner-authorized device enrollment have not been demonstrated end-to-end.
+- Private R2 snapshot migration and restore drills are not certified by this deployment. Preserve existing snapshots and the Render rollback until private storage, object integrity, encryption-key recovery and full restore are verified.
+- No production API proxy/DNS cutover was made. Do not disable Render, change the Pages API origin, or remove the existing EXE sync path until every route and security gate is tested against representative customer data.
+
+Last verified Cloudflare Worker source/deployment: `02b0ea228cf98e2eeddd4b81146d59b59413a8bb`, deployment run #42989956163. The migration is **in progress**, not complete.
+
+---
 ## Latest verification — 2026-11-07
 
 - Latest verified application-source head: `297d3c476813cdf1a312cfe928e496c4bc599e61`, the generated React bundle publication descended from source commit `90a670a4c2f003a70a873e26cf74a99c282ea474`. The source change adds a Cloudflare Pages API proxy and scoped Functions routes; no feature branch or pull request was used. This checklist update is a subsequent documentation-only commit.
