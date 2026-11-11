@@ -7,6 +7,11 @@ import json
 import math
 import sqlite3
 from pathlib import Path
+import sys
+
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
 
 from cloudflare_migration_guard import decrypt_snapshot, validate_source
 
@@ -101,8 +106,9 @@ def build_import(source: sqlite3.Connection, schema_path: Path, output_dir: Path
                 raise ValueError(f"Schema mismatch for {table}; refusing to generate import SQL.")
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        for old in output_dir.glob("chunk-*.sql"):
-            old.unlink()
+        for pattern in ("chunk-*.sql", "chunk-*.json"):
+            for old in output_dir.glob(pattern):
+                old.unlink()
 
         chunks: list[Path] = []
         statements: list[str] = []
