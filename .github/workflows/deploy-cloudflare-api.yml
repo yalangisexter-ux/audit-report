@@ -33,6 +33,7 @@ jobs:
       - name: Require main
         shell: bash
         run: |
+          # main-only; refusing ref is also asserted by the workflow policy regression test.
           test "$GITHUB_REF" = "refs/heads/main" || {
             echo "Production Worker deploys are main-only; refusing $GITHUB_REF" >&2
             exit 1
