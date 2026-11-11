@@ -51,7 +51,53 @@ export default {
         return json({ token, user: publicUser(user) }, 200, headers);
       }
       if (url.pathname === "/api/auth/me" && request.method === "GET") {
-        const user = await currentUser(request, env);
+  
+      if (path === "/api/auth/register" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
+        if(!username||username.length>64||!display||display.length>100)return json({detail:"Enter a valid username and display name"},422,headers);
+        if(!strongPassword(b.password))return json({detail:"Use at least 8 characters with a letter and a number"},422,headers);
+        if(answer.length<2||!String(b.security_question||"").trim())return json({detail:"Choose a recovery question and enter a recovery answer"},422,headers);
+        const admins=await first(env.DB,"SELECT id FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1");
+        if(!admins)return json({detail:"An active Admin must complete initial setup before new account registration"},403,headers);
+        if(await first(env.DB,"SELECT id FROM auth_users WHERE username=? COLLATE BINARY",[username]))return json({detail:"That username already exists"},409,headers);
+        const ps=randomHex(16),as=randomHex(16),ph=await deriveHash(b.password,ps),ah=await deriveHash(answer,as),now=new Date().toISOString();
+        await insert(env.DB,"auth_users",{username,display_name:display,role:"Staff",password_salt:ps,password_hash:ph,security_question:String(b.security_question).trim(),answer_salt:as,answer_hash:ah,active:0,created_at:now,updated_at:now});
+        return json({success:true,pending_approval:true,message:"Account request submitted. An Admin must activate the account before sign-in."},200,headers);
+      }
+      if (path === "/api/auth/recovery-question" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim();
+        let row=await first(env.DB,"SELECT security_question FROM auth_users WHERE username=? COLLATE BINARY AND active=1",[username]);
+        if(!row){const matches=await all(env.DB,"SELECT security_question FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",[username]);if(matches.length===1)row=matches[0];}
+        if(!row?.security_question)return json({detail:"No password-recovery question is configured for this active account. Contact an Admin."},404,headers);
+        return json({security_question:row.security_question},200,headers);
+      }
+      if (path === "/api/auth/password-reset" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim(),answer=normalizeAnswer(b.security_answer);
+        let row=await first(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1",[username]);
+        if(!row){const matches=await all(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",[username]);if(matches.length===1)row=matches[0];}
+        if(!row?.answer_salt||!row?.answer_hash)return json({detail:"Password recovery is unavailable for this account. Contact an Admin."},400,headers);
+        if(!constantTimeEqual(await deriveHash(answer,row.answer_salt),row.answer_hash))return json({detail:"Recovery answer is incorrect"},403,headers);
+        if(!strongPassword(b.new_password))return json({detail:"Use at least 8 characters with a letter and a number"},422,headers);
+        const salt=randomHex(16),digest=await deriveHash(b.new_password,salt),now=new Date().toISOString();
+        await env.DB.prepare("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?").bind(salt,digest,now,row.id).run();
+        await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(row.id).run();
+        return json({success:true,message:"Password reset successfully. Sign in with your new password."},200,headers);
+      }
+      if (path === "/api/auth/change-password" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim();
+        let row=await first(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1",[username]);
+        if(!row){const matches=await all(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",[username]);if(matches.length===1)row=matches[0];}
+        if(!row)return json({detail:"No active account found for that username."},400,headers);
+        if(!constantTimeEqual(await deriveHash(b.current_password||"",row.password_salt),row.password_hash))return json({detail:"Current password is incorrect."},403,headers);
+        if(!strongPassword(b.new_password))return json({detail:"Use at least 8 characters, including a letter and a number."},422,headers);
+        const salt=randomHex(16),digest=await deriveHash(b.new_password,salt),now=new Date().toISOString();
+        await env.DB.prepare("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?").bind(salt,digest,now,row.id).run();
+        await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(row.id).run();
+        await audit(env.DB,{username:row.username},"Password changed",row.username);
+        return json({success:true,message:"Password changed successfully. Sign in with your new password."},200,headers);
+      }
+
+      const user = await currentUser(request, env);
         if (!user) return json({ error: "Login required" }, 401, headers);
         return json({ user }, 200, headers);
       }
@@ -66,6 +112,59 @@ export default {
       const user = await currentUser(request, env);
       if (!user) return json({ error: "Login required" }, 401, headers);
       const path = url.pathname;
+
+
+      if(path==="/api/auth/users"&&request.method==="GET"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        return json(await all(env.DB,"SELECT id,username,display_name,role,active,created_at,updated_at FROM auth_users ORDER BY username COLLATE NOCASE"),200,headers);
+      }
+      if(path==="/api/auth/users"&&request.method==="POST"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
+        const allowed=["Staff","HR","Admin","Developer"];
+        if(!username||username.length>64||!display||display.length>100||!allowed.includes(b.role))return json({detail:"Enter a valid username, display name and role."},422,headers);
+        if(!strongPassword(b.password)||answer.length<2||!String(b.security_question||"").trim())return json({detail:"Use a strong password and configure a recovery question and answer."},422,headers);
+        if((b.role==="Developer"||b.role==="Admin")&&!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        if(b.role==="Developer"&&role(user)!=="developer")return forbidden(headers);
+        const ps=randomHex(16),as=randomHex(16),now=new Date().toISOString();
+        const id=await insert(env.DB,"auth_users",{username,display_name:display,role:b.role,password_salt:ps,password_hash:await deriveHash(b.password,ps),security_question:String(b.security_question).trim(),answer_salt:as,answer_hash:await deriveHash(answer,as),active:1,created_at:now,updated_at:now});
+        await audit(env.DB,user,"User created",username+" ("+b.role+")");
+        return json({success:true,id},200,headers);
+      }
+      const account=/^\\/api\\/auth\\/users\\/(\\d+)\\/(active|role|password-reset)$/.exec(path);
+      if(account){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const id=Number(account[1]),action=account[2],target=await first(env.DB,"SELECT id,username,role,active FROM auth_users WHERE id=?",[id]);
+        if(!target)return json({detail:"Account not found"},404,headers);
+        if(target.role==="Developer"&&role(user)!=="developer")return forbidden(headers);
+        const b=await readJson(request);
+        if(action==="active"&&request.method==="PATCH"){
+          const active=!!b.active;
+          if(Number(user.id)===id&&!active)return json({detail:"You cannot deactivate your own account"},400,headers);
+          if(!active&&target.role==="Admin"){const count=await first(env.DB,"SELECT COUNT(*) AS n FROM auth_users WHERE active=1 AND role='Admin' AND id<>?",[id]);if(Number(count?.n||0)<1)return json({detail:"The last active Admin account cannot be deactivated"},409,headers);}
+          await env.DB.prepare("UPDATE auth_users SET active=?,updated_at=? WHERE id=?").bind(active?1:0,new Date().toISOString(),id).run();
+          if(!active)await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(id).run();
+          await audit(env.DB,user,"User status changed",target.username+": "+(active?"Active":"Disabled"));
+          return json({success:true,user_id:id,active},200,headers);
+        }
+        if(action==="role"&&request.method==="PATCH"){
+          const next=String(b.role||"");if(!["Staff","HR","Admin","Developer"].includes(next))return json({detail:"Select a valid account role"},422,headers);
+          if((target.role==="Developer"||next==="Developer")&&role(user)!=="developer")return forbidden(headers);
+          if(target.role==="Admin"&&next!=="Admin"&&target.active){const count=await first(env.DB,"SELECT COUNT(*) AS n FROM auth_users WHERE active=1 AND role='Admin' AND id<>?",[id]);if(Number(count?.n||0)<1)return json({detail:"The last active Admin cannot be changed to a non-Admin role"},409,headers);}
+          await env.DB.prepare("UPDATE auth_users SET role=?,updated_at=? WHERE id=?").bind(next,new Date().toISOString(),id).run();
+          await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(id).run();
+          await audit(env.DB,user,"User role changed",target.username+" -> "+next);
+          return json({success:true,user_id:id,role:next},200,headers);
+        }
+        if(action==="password-reset"&&request.method==="POST"){
+          if(!strongPassword(b.new_password))return json({detail:"Use at least 8 characters with a letter and a number"},422,headers);
+          const salt=randomHex(16),digest=await deriveHash(b.new_password,salt);
+          await env.DB.prepare("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?").bind(salt,digest,new Date().toISOString(),id).run();
+          await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(id).run();
+          await audit(env.DB,user,"User password reset by admin",target.username);
+          return json({success:true,user_id:id,message:"Password reset successfully. The account must sign in again."},200,headers);
+        }
+      }
 
       if (path === "/api/employees" && request.method === "GET") {
         const where = ["1=1"], args = [];
@@ -293,6 +392,11 @@ async function currentUser(request, env) {
   return row ? publicUser(row) : null;
 }
 function bearer(request) {const value=request.headers.get("Authorization")||"";const match=/^Bearer\s+(.+)$/i.exec(value);return match?match[1].trim():"";}
+
+async function deriveHash(password,salt){const key=await crypto.subtle.importKey("raw",encoder.encode(String(password||"")),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:encoder.encode(salt),iterations:PBKDF2_ITERATIONS,hash:"SHA-256"},key,256);return [...new Uint8Array(bits)].map(v=>v.toString(16).padStart(2,"0")).join("");}
+function normalizeAnswer(value){return String(value||"").trim().toLocaleLowerCase().split(/\\s+/).filter(Boolean).join(" ");}
+function strongPassword(value){const s=String(value||"");return s.length>=8&&/[A-Za-z]/.test(s)&&/[0-9]/.test(s);}
+
 async function verifyPassword(password,salt,expected){if(typeof salt!=="string"||typeof expected!=="string"||!/^[a-f0-9]{64}$/i.test(expected))return false;const key=await crypto.subtle.importKey("raw",encoder.encode(password),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:encoder.encode(salt),iterations:PBKDF2_ITERATIONS,hash:"SHA-256"},key,256);const actual=[...new Uint8Array(bits)].map(v=>v.toString(16).padStart(2,"0")).join("");return constantTimeEqual(actual,expected.toLowerCase());}
 function constantTimeEqual(a,b){if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;}
 async function sha256(value){const digest=await crypto.subtle.digest("SHA-256",encoder.encode(value));return [...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,"0")).join("");}
