@@ -184,3 +184,46 @@ def test_first_run_restore_refuses_global_snapshot_discovery_without_installatio
 
     assert allowed is False
     assert "installation ID is unavailable" in reason
+
+def test_device_credentials_are_persisted_from_background_thread(monkeypatch, tmp_path):
+    import json
+    import sqlite3
+
+    database_path = tmp_path / "customer.db"
+    connection = sqlite3.connect(database_path)
+    connection.execute("CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    connection.commit()
+    connection.close()
+
+    monkeypatch.setattr(app, "DB_PATH", str(database_path))
+    monkeypatch.setattr(app, "protect_sync_token", lambda value: "protected:" + value)
+    database = object.__new__(app.Database)
+    errors = []
+
+    def persist():
+        try:
+            app.Database._store_sync_device_credentials(
+                database,
+                {"device_id": "a" * 32, "device_secret": "secret", "token": "token"},
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    worker = app.threading.Thread(target=persist)
+    worker.start()
+    worker.join(timeout=5)
+
+    assert not worker.is_alive()
+    assert errors == []
+    connection = sqlite3.connect(database_path)
+    try:
+        value = connection.execute(
+            "SELECT value FROM settings WHERE key='github_sync_device_credentials_dpapi'"
+        ).fetchone()[0]
+        assert json.loads(value.removeprefix("protected:")) == {
+            "device_id": "a" * 32,
+            "device_secret": "secret",
+            "token": "token",
+        }
+    finally:
+        connection.close()
