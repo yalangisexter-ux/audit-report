@@ -117,6 +117,9 @@ def build_import(source: sqlite3.Connection, schema_path: Path, output_dir: Path
             chunk_index += 1
             path = output_dir / f"chunk-{chunk_index:04d}.sql"
             path.write_text("\n".join(statements) + "\n", encoding="utf-8")
+            (output_dir / f"chunk-{chunk_index:04d}.json").write_text(
+                json.dumps(statements, ensure_ascii=False), encoding="utf-8"
+            )
             chunks.append(path)
             statements = []
             chunk_bytes = 0
