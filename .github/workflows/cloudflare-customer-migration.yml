@@ -32,7 +32,7 @@ jobs:
       R2_BUCKET: raw-strength-customer-backups
       R2_BACKUP_PREFIX: pre-migration/${{ github.run_id }}-${{ github.run_attempt }}
       # Confirmed corrupt/undecryptable snapshots. New failures outside this list fail the gate.
-      KNOWN_BAD_SNAPSHOTS: "080717e78653166d64cd2bcf72c75c76.db.enc dc6846630ade39fc60074e3e17ff9dae.db.enc c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
+      KNOWN_BAD_SNAPSHOTS: "080717e78653166d64cd2bcf72c75c76.db.enc dc6846630ade39fc60074e3e17ff9dae.db.enc"
     steps:
       - name: Require main branch
         shell: bash
@@ -206,6 +206,11 @@ jobs:
               "canonical_failure": report.get("canonical_failure"),
           }, sort_keys=True, indent=2))
 
+          # The canonical snapshot is the only approved source for customer import.
+          # Never let the known-bad allowlist turn a broken canonical source into a green gate.
+          if report.get("canonical_failure"):
+              print("CANONICAL customer snapshot is invalid; refusing migration:", report["canonical_failure"], file=sys.stderr)
+              sys.exit(1)
           if unexpected:
               print("NEW snapshot validation failures are not allowlisted:", unexpected, file=sys.stderr)
               sys.exit(1)
