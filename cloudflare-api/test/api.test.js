@@ -119,3 +119,58 @@ test("working-weekday settings always include Sunday for the Admin calendar", as
   assert.deepEqual(result.weekdays, [0, 1, 2, 3, 4, 6]);
   assert.equal(result.sunday_required, true);
 });
+
+test("attendance mark persists the selected date and blocks declared holidays", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "attendance-session";
+  let saved = null;
+  let holiday = null;
+  let writes = 0;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions s JOIN auth_users")) {
+                return values[0] === tokenHash ? { id: user.id, username: user.username, display_name: user.username, role: user.role } : null;
+              }
+              if (sql.includes("FROM holidays")) return holiday;
+              if (sql.includes("FROM employees WHERE id=?")) return { id: 1 };
+              if (sql.includes("FROM attendance WHERE employee_id=? AND work_date=?")) return saved;
+              return null;
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO attendance")) {
+                writes++;
+                saved = {
+                  id: 1, employee_id: values[0], work_date: values[1],
+                  attendance_status: values[2], check_in: values[3], check_out: values[4],
+                  break_minutes: values[5], attendance_note: values[6], updated_at: values[7],
+                };
+              }
+              return { success: true, meta: { changes: 1 } };
+            },
+          };
+        },
+      };
+    },
+  };
+  const env = { DB };
+  const payload = { employee_id: 1, work_date: "2026-11-11", attendance_status: "Present", check_in: "09:00", check_out: "17:00", break_minutes: 30, attendance_note: "Verified" };
+  const response = await worker.fetch(request("/api/attendance/mark", "POST", payload, token), env);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.attendance.work_date, payload.work_date);
+  assert.equal(body.attendance.attendance_status, "Present");
+  assert.equal(body.attendance.check_in, "09:00");
+  assert.equal(writes, 1);
+
+  holiday = { holiday_name: "Declared holiday" };
+  const blocked = await worker.fetch(request("/api/attendance/mark", "POST", { ...payload, work_date: "2026-11-12" }, token), env);
+  assert.equal(blocked.status, 409);
+  assert.equal(writes, 1);
+});
