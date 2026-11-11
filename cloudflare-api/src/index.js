@@ -612,6 +612,76 @@ export default {
       }
 
 
+
+      if(path==="/api/dashboard"&&request.method==="GET"){
+        const today=new Date().toISOString().slice(0,10);
+        const employees=await all(env.DB,"SELECT id,employee_code,name,department,designation,joining_date,active,display_order FROM employees WHERE active=1 ORDER BY display_order ASC,name COLLATE NOCASE");
+        const ids=employees.map(e=>Number(e.id)),marks=ids.map(()=>"?").join(",");
+        let attendance=[],todayTasks=[];
+        if(ids.length){
+          [attendance,todayTasks]=await Promise.all([
+            all(env.DB,"SELECT employee_id,attendance_status,check_in,check_out FROM attendance WHERE work_date=? AND employee_id IN ("+marks+")",[today,...ids]),
+            all(env.DB,"SELECT t.id,t.employee_id,t.title,t.status,t.progress,t.due_time,t.priority,t.task_date,e.name AS employee_name,e.employee_code,COALESCE(NULLIF(t.department,''),e.department,'') AS department FROM tasks t JOIN employees e ON e.id=t.employee_id WHERE t.task_date=? ORDER BY e.display_order ASC,e.name COLLATE NOCASE,t.id DESC",[today])
+          ]);
+        }
+        const attendanceById=new Map(attendance.map(r=>[Number(r.employee_id),r]));
+        let presentToday=0,absentToday=0,leaveToday=0,checkinsToday=0;
+        const attendanceRoster=employees.map(e=>{
+          const r=attendanceById.get(Number(e.id)),raw=String(r?.attendance_status||"Unmarked").trim(),normalized=raw.toLowerCase(),checkIn=String(r?.check_in||"").trim(),checkOut=String(r?.check_out||"").trim();
+          let status=raw;
+          if(PRESENT_DETAIL.has(normalized)||(["unmarked",""].includes(normalized)&&!!checkIn)){if(normalized==="unmarked")status="Present";presentToday++;if(checkIn)checkinsToday++;}
+          else if(normalized==="absent"){status="Absent";absentToday++;}
+          else if(normalized==="leave"){status="Leave";leaveToday++;}
+          else if(["unmarked","","not checked"].includes(normalized))status="Not checked";
+          return {employee_id:e.id,name:e.name,status,check_in:checkIn||"—",check_out:checkOut||"—"};
+        });
+        const completedStatus=s=>["completed","submitted"].includes(String(s||"").trim().toLowerCase());
+        const cancelledStatus=s=>String(s||"").trim().toLowerCase()==="cancelled";
+        const knownStatus=s=>["not started","in progress","partially completed","submitted","completed","blocked","pending review","pending","cancelled"].includes(String(s||"").trim().toLowerCase());
+        const openTasks=todayTasks.filter(t=>!completedStatus(t.status)&&!cancelledStatus(t.status)).length;
+        const completedTasks=todayTasks.filter(t=>completedStatus(t.status)).length;
+        const starts=new Map();
+        let productivity=[],avgProductivity=0;
+        if(ids.length){
+          const [activityRows,setting]=await Promise.all([
+            all(env.DB,"SELECT employee_id,MIN(activity_date) AS first_date FROM (SELECT employee_id,task_date AS activity_date FROM tasks WHERE employee_id IN ("+marks+") AND task_date<=? UNION ALL SELECT employee_id,work_date AS activity_date FROM attendance WHERE employee_id IN ("+marks+") AND work_date<=?) GROUP BY employee_id",[...ids,today,...ids,today]),
+            first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'")
+          ]);
+          const activityById=new Map(activityRows.map(r=>[Number(r.employee_id),r.first_date]));
+          for(const e of employees){const id=Number(e.id);starts.set(id,validDate(e.joining_date)?e.joining_date:(validDate(activityById.get(id))?activityById.get(id):today));}
+          const earliest=[...starts.values()].sort()[0];
+          const [taskHistory,attendanceHistory,holidayRows]=await Promise.all([
+            all(env.DB,"SELECT employee_id,task_date,progress,status FROM tasks WHERE employee_id IN ("+marks+") AND task_date BETWEEN ? AND ?",[...ids,earliest,today]),
+            all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date BETWEEN ? AND ?",[...ids,earliest,today]),
+            all(env.DB,"SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",[earliest,today])
+          ]);
+          const taskBy=new Map(ids.map(id=>[id,[]])),attendanceBy=new Map(ids.map(id=>[id,[]]));
+          for(const row of taskHistory)taskBy.get(Number(row.employee_id)).push(row);
+          for(const row of attendanceHistory)attendanceBy.get(Number(row.employee_id)).push(row);
+          const holidays=new Set(holidayRows.map(h=>h.holiday_date)),weekdays=new Set(normalizeWeekdays(setting?.value)),scores=[];
+          const scheduled=d=>validDate(d)&&weekdays.has((new Date(d+"T00:00:00Z").getUTCDay()+6)%7)&&!holidays.has(d);
+          for(const e of employees){
+            const id=Number(e.id),start=starts.get(id),employeeTasks=taskBy.get(id),employeeAttendance=attendanceBy.get(id);
+            let progressTotal=0;
+            for(const task of employeeTasks){if(!knownStatus(task.status))continue;const n=Number(task.progress||0);progressTotal+=Math.max(0,Math.min(100,Number.isFinite(n)?Math.trunc(n):0));}
+            const taskScore=employeeTasks.length?progressTotal/employeeTasks.length:null;
+            let workingDays=0;
+            for(let d=start;d<=today;d=addDays(d,1))if(scheduled(d))workingDays++;
+            const leaveDays=employeeAttendance.filter(r=>String(r.attendance_status||"").trim().toLowerCase()==="leave"&&scheduled(r.work_date)).length;
+            const eligible=Math.max(0,workingDays-leaveDays);
+            const presentCount=employeeAttendance.filter(r=>scheduled(r.work_date)&&(PRESENT_DETAIL.has(String(r.attendance_status||"").trim().toLowerCase())||(["unmarked",""].includes(String(r.attendance_status||"").trim().toLowerCase())&&!!String(r.check_in||"").trim()))).length;
+            const attendanceScore=eligible?presentCount/eligible*100:null;
+            const score=taskScore!==null&&attendanceScore!==null?Math.round(taskScore*.7+attendanceScore*.3):taskScore!==null?Math.round(taskScore):attendanceScore!==null?Math.round(attendanceScore):0;
+            const completed=employeeTasks.filter(t=>completedStatus(t.status)).length;
+            scores.push(score);
+            productivity.push({employee_id:id,name:e.name,active:!!e.active,score,working_days:workingDays,attendance_eligible_days:eligible,present_count:presentCount,task_count:employeeTasks.length,completed,tracking_start:start,task_score:taskScore!==null?Math.round(taskScore*10)/10:null,attendance_score:attendanceScore!==null?Math.round(attendanceScore*10)/10:null});
+          }
+          avgProductivity=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10:0;
+        }
+        const total=employees.length,notChecked=Math.max(0,total-presentToday-absentToday-leaveToday),rate=total?Math.round(presentToday/total*100):0;
+        return json({today,kpis:{total_employees:total,present_today:presentToday,absent_today:absentToday,leave_today:leaveToday,not_checked_today:notChecked,open_tasks:openTasks,completed_tasks:completedTasks,checkins_today:checkinsToday,attendance_rate:rate,avg_productivity:avgProductivity},recent_employees:employees.slice(-8).reverse(),today_tasks:todayTasks.slice(0,12),attendance_roster:attendanceRoster.slice(0,8),productivity,attendance_summary:rate+"% checked in\\n"+presentToday+" Present  ·  "+absentToday+" Absent  ·  "+leaveToday+" Leave  ·  "+notChecked+" Not checked"},200,headers);
+      }
+
       if(path==="/api/home/business-snapshot"&&request.method==="GET"){
         const [products,low,orders,members,activities]=await Promise.all([
           first(env.DB,"SELECT COUNT(*) AS n FROM bt_products"),
