@@ -124,42 +124,60 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
     except Exception:
         connection.close()
 
-    handle, path = tempfile.mkstemp(prefix="rsc_validate_", suffix=".sqlite3")
-    os.close(handle)
+    # Use a dedicated temporary directory and a normal read-only SQLite
+    # connection. Some SQLite builds on hosted runners reject immutable file
+    # URIs for temp files even when the file exists; the URI failure is
+    # reported as "unable to open database file". A private directory also
+    # prevents collisions and keeps cleanup deterministic.
+    directory = tempfile.mkdtemp(prefix="rsc_validate_")
+    path = os.path.join(directory, "snapshot.sqlite3")
     try:
         Path(path).write_bytes(sqlite_bytes)
+        os.chmod(path, 0o400)
 
-        # Open the fallback image read-only and immutable. Validation must not
-        # create a journal/WAL beside a snapshot, and immutable mode avoids
-        # SQLite lock-file attempts in restricted runner temp directories.
         class _ValidationConnection(sqlite3.Connection):
             pass
 
         connection = sqlite3.connect(
-            Path(path).as_uri() + "?mode=ro&immutable=1",
+            f"file:{path}?mode=ro",
             uri=True,
             timeout=20,
             factory=_ValidationConnection,
         )
         connection.execute("SELECT 1").fetchone()
         connection._rsc_temp_path = path
+        connection._rsc_temp_dir = directory
         return connection
-    except Exception:
+    except Exception as exc:
         try:
             os.unlink(path)
         except OSError:
             pass
-        raise
+        try:
+            os.rmdir(directory)
+        except OSError:
+            pass
+        raise RuntimeError(
+            f"SQLite temporary-file fallback failed ({type(exc).__name__}: {exc}); "
+            f"temp directory writable={os.access(os.path.dirname(directory), os.W_OK)}"
+        ) from exc
 
 
 def _close_sqlite_connection(connection: sqlite3.Connection) -> None:
     path = getattr(connection, "_rsc_temp_path", None)
+    directory = getattr(connection, "_rsc_temp_dir", None)
     try:
         connection.close()
     finally:
         if path:
             try:
+                os.chmod(path, 0o600)
                 os.unlink(path)
+            except OSError:
+                pass
+        if directory:
+            try:
+                os.rmdir(directory)
             except OSError:
                 pass
 
