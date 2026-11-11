@@ -28,6 +28,7 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+      CLOUDFLARE_R2_API_TOKEN_2: ${{ secrets.CLOUDFLARE_R2_API_TOKEN_2 }}
       CLOUDFLARE_GENERAL_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       R2_BUCKET: raw-strength-customer-backups
       R2_BACKUP_PREFIX: pre-migration/${{ github.run_id }}-${{ github.run_attempt }}
@@ -72,14 +73,14 @@ jobs:
             echo "Current length: ${#CLOUDFLARE_ACCOUNT_ID}"
             exit 1
           fi
-          if [ -z "${CLOUDFLARE_R2_API_TOKEN:-}${CLOUDFLARE_GENERAL_API_TOKEN:-}" ]; then
-            echo "Missing CLOUDFLARE_R2_API_TOKEN and CLOUDFLARE_API_TOKEN."
+          if [ -z "${CLOUDFLARE_R2_API_TOKEN:-}${CLOUDFLARE_R2_API_TOKEN_2:-}${CLOUDFLARE_GENERAL_API_TOKEN:-}" ]; then
+            echo "Missing CLOUDFLARE_R2_API_TOKEN, CLOUDFLARE_R2_API_TOKEN_2, and legacy CLOUDFLARE_API_TOKEN."
             exit 1
           fi
 
           selected=""
           selected_name=""
-          for candidate_name in CLOUDFLARE_R2_API_TOKEN CLOUDFLARE_GENERAL_API_TOKEN; do
+          for candidate_name in CLOUDFLARE_R2_API_TOKEN CLOUDFLARE_R2_API_TOKEN_2 CLOUDFLARE_GENERAL_API_TOKEN; do
             candidate="${!candidate_name:-}"
             [ -n "$candidate" ] || continue
             # Reject values that look like R2 S3 access-key material rather than API tokens.
@@ -105,8 +106,8 @@ jobs:
 
           if [ -z "$selected" ]; then
             echo "No configured token has verified R2 bucket access for account ${CLOUDFLARE_ACCOUNT_ID}."
-            echo "In environment cloudflare-chat, set CLOUDFLARE_R2_API_TOKEN to a Cloudflare API token"
-            echo "(not an R2 Access Key ID/Secret) with Account > Workers R2 Storage > Edit."
+            echo "Set CLOUDFLARE_R2_API_TOKEN or fallback CLOUDFLARE_R2_API_TOKEN_2 in environment cloudflare-chat."
+            echo "Use a Cloudflare API token (not an R2 S3 Access Key ID/Secret) with Account > Workers R2 Storage > Edit."
             exit 1
           fi
           echo "::add-mask::${selected}"
