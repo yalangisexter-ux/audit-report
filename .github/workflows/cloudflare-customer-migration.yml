@@ -58,7 +58,10 @@ jobs:
           cache: pip
 
       - name: Install snapshot validation dependency
-        run: python -m pip install --disable-pip-version-check cryptography
+        run: python -m pip install --disable-pip-version-check cryptography pytest
+
+      - name: Run snapshot validator regression tests
+        run: python -m pytest -q tests/test_cloudflare_snapshot_archive.py
 
       - name: Validate credentials and select an R2-capable API token
         env:
