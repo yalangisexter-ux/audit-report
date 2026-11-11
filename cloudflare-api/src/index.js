@@ -131,7 +131,7 @@ export default {
         await audit(env.DB,user,"User created",username+" ("+b.role+")");
         return json({success:true,id},200,headers);
       }
-      const account=/^\\/api\\/auth\\/users\\/(\\d+)\\/(active|role|password-reset)$/.exec(path);
+      const account=/^\/api\/auth\/users\/(\d+)\/(active|role|password-reset)$/.exec(path);
       if(account){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const id=Number(account[1]),action=account[2],target=await first(env.DB,"SELECT id,username,role,active FROM auth_users WHERE id=?",[id]);
