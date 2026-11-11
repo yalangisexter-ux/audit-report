@@ -1,4 +1,4 @@
-const DEFAULT_API_ORIGIN = "https://audit-report-web.onrender.com";
+const DEFAULT_API_ORIGIN = "https://raw-strength-employee-api.yalangisexter.workers.dev";
 
 const HOP_BY_HOP_HEADERS = [
   "connection",
