@@ -11,7 +11,7 @@ CANONICAL_ID = "a" * 32
 OTHER_ID = "b" * 32
 
 
-def _write_snapshot(path, usernames):
+def _write_snapshot(path, usernames, recovery_overrides=None):
     connection = sqlite3.connect(":memory:")
     connection.executescript(
         """
@@ -50,9 +50,7 @@ def _write_snapshot(path, usernames):
                 role,
                 f"salt-{index}",
                 f"hash-{index}",
-                "question",
-                f"answer-salt-{index}",
-                f"answer-hash-{index}",
+                *(recovery_overrides or {}).get(username, ("question", f"answer-salt-{index}", f"answer-hash-{index}")),
             ),
         )
     connection.commit()
@@ -115,3 +113,31 @@ def test_validation_reports_corrupted_snapshot_without_discarding_it(tmp_path):
     assert report["failure_count"] == 1
     assert report["failures"][0]["file"] == corrupted.name
     assert corrupted.exists()
+
+
+
+def test_canonical_snapshot_accepts_blank_recovery_fields_for_both_accounts(tmp_path):
+    _write_snapshot(
+        tmp_path / f"{CANONICAL_ID}.db.enc",
+        [("Admin", "Admin"), ("admin", "Developer")],
+        recovery_overrides={"Admin": ("", "", ""), "admin": ("", "", "")},
+    )
+
+    report = validate_all(tmp_path, TEST_SECRET, CANONICAL_ID)
+
+    assert report["failure_count"] == 0
+    assert report["canonical"]["has_Admin"] is True
+    assert report["canonical"]["has_admin"] is True
+
+
+def test_canonical_snapshot_rejects_partially_configured_recovery_fields(tmp_path):
+    _write_snapshot(
+        tmp_path / f"{CANONICAL_ID}.db.enc",
+        [("Admin", "Admin"), ("admin", "Developer")],
+        recovery_overrides={"Admin": ("recovery question", "", "")},
+    )
+
+    report = validate_all(tmp_path, TEST_SECRET, CANONICAL_ID)
+
+    assert report["failure_count"] == 1
+    assert "incomplete password-recovery metadata" in report["canonical_failure"]["reason"]
