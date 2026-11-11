@@ -395,6 +395,92 @@ export default {
         return json({success:true},200,headers);
       }
 
+
+      if(path==="/api/business/orders"&&request.method==="POST"){
+        const b=await readJson(request),code=String(b.order_code||"").trim()||"WEB-"+randomHex(3).toUpperCase(),date=b.order_date||new Date().toISOString().slice(0,10),status=String(b.status||"Pending");
+        const allowed=["Pending","Confirmed","Packed","Dispatched","Delivered","Completed","Cancelled","Returned"];
+        const value=Number(b.order_value||0),discount=Number(b.discount||0);
+        if(!validDate(date)||!allowed.includes(status)||!Number.isFinite(value)||value<0||!Number.isFinite(discount)||discount<0)return json({detail:"Invalid order date, status, value or discount."},422,headers);
+        if(b.assigned_employee_id!==undefined&&b.assigned_employee_id!==null&&!await first(env.DB,"SELECT id FROM employees WHERE id=? AND active=1",[Number(b.assigned_employee_id)]))return json({detail:"Assigned employee was not found or is inactive."},400,headers);
+        const now=new Date().toISOString();
+        const id=await insert(env.DB,"bt_orders",{external_order_id:code,order_date:date,sales_channel:String(b.channel||""),customer_name:String(b.customer_name||"").trim(),contact:String(b.contact||""),payment_mode:String(b.payment_mode||""),order_status:status,discount,order_value:value,invoice_number:String(b.invoice_number||""),shipment_id:String(b.shipment_id||""),assigned_employee_id:b.assigned_employee_id||null,updated_by:user.username,updated_at:now,remarks:String(b.notes||"")});
+        return json({success:true,id,order_code:code},200,headers);
+      }
+      const order=/^\/api\/business\/orders\/(\d+)$/.exec(path);
+      if(order&&request.method==="PATCH"){
+        const b=await readJson(request),status=String(b.status||"");
+        if(!["Pending","Confirmed","Packed","Dispatched","Delivered","Completed","Cancelled","Returned"].includes(status))return json({detail:"Invalid order status."},400,headers);
+        const r=await env.DB.prepare("UPDATE bt_orders SET order_status=?,updated_by=?,updated_at=? WHERE id=?").bind(status,user.username,new Date().toISOString(),Number(order[1])).run();
+        if(!r.meta?.changes)return json({detail:"Order not found."},404,headers);
+        return json({success:true},200,headers);
+      }
+      if(path==="/api/business/members"&&request.method==="POST"){
+        const b=await readJson(request),name=String(b.full_name||"").trim();
+        if(!name)return json({detail:"Member name is required."},422,headers);
+        const purchased=Number(b.sessions_purchased||0),completed=Number(b.sessions_completed||0);
+        if(purchased<0||completed<0||!Number.isInteger(purchased)||!Number.isInteger(completed))return json({detail:"Session counts cannot be negative."},422,headers);
+        let serviceId=b.service_id??null;
+        if(serviceId===null&&String(b.plan_name||"").trim()){const found=await first(env.DB,"SELECT id FROM bt_services WHERE name=? COLLATE NOCASE LIMIT 1",[String(b.plan_name).trim()]);serviceId=found?.id??null;}
+        if(serviceId!==null&&!await first(env.DB,"SELECT id FROM bt_services WHERE id=?",[serviceId]))return json({detail:"Selected service was not found."},400,headers);
+        if(b.assigned_trainer_id!==undefined&&b.assigned_trainer_id!==null&&!await first(env.DB,"SELECT id FROM employees WHERE id=? AND active=1",[b.assigned_trainer_id]))return json({detail:"Assigned trainer was not found or is inactive."},400,headers);
+        const registration=b.registration_date||b.start_date||new Date().toISOString().slice(0,10),start=b.start_date||registration,end=b.end_date||"";
+        if(!validDate(registration)||!validDate(start)||(end&&!validDate(end)))return json({detail:"Membership dates must use YYYY-MM-DD."},422,headers);
+        if(!["Active","Expired","Inactive","Cancelled","Suspended"].includes(b.status||"Active")||!["Pending","Paid","Partial","Overdue","Refunded"].includes(b.payment_status||"Pending"))return json({detail:"Invalid membership or payment status."},422,headers);
+        const id=await insert(env.DB,"bt_members",{name,contact:String(b.phone||""),service_id:serviceId,training_mode:String(b.training_mode||""),registration_date:registration,start_date:start,expiry_date:end,sessions_purchased:purchased,sessions_completed:completed,assigned_trainer_id:b.assigned_trainer_id||null,status:b.status||"Active",payment_status:b.payment_status||"Pending",invoice_ref:String(b.invoice_ref||""),remarks:String(b.notes||"")});
+        return json({success:true,id},200,headers);
+      }
+      const member=/^\/api\/business\/members\/(\d+)$/.exec(path);
+      if(member&&request.method==="PATCH"){
+        const b=await readJson(request),map={status:"status",payment_status:"payment_status",sessions_purchased:"sessions_purchased",sessions_completed:"sessions_completed",end_date:"expiry_date",invoice_ref:"invoice_ref",notes:"remarks"},v={};
+        for(const [key,col] of Object.entries(map))if(b[key]!==undefined)v[col]=b[key];
+        if(!Object.keys(v).length)return json({detail:"No membership changes were supplied."},422,headers);
+        if(v.status!==undefined&&!["Active","Expired","Inactive","Cancelled","Suspended"].includes(v.status))return json({detail:"Invalid membership status."},422,headers);
+        if(v.payment_status!==undefined&&!["Pending","Paid","Partial","Overdue","Refunded"].includes(v.payment_status))return json({detail:"Invalid payment status."},422,headers);
+        for(const k of ["sessions_purchased","sessions_completed"])if(v[k]!==undefined&&(!Number.isInteger(Number(v[k]))||Number(v[k])<0))return json({detail:"Session counts cannot be negative."},422,headers);
+        if(v.expiry_date&&!validDate(v.expiry_date))return json({detail:"End date must use YYYY-MM-DD."},422,headers);
+        const old=await first(env.DB,"SELECT id FROM bt_members WHERE id=?",[Number(member[1])]);if(!old)return json({detail:"Member not found."},404,headers);
+        await update(env.DB,"bt_members",v,Number(member[1]));return json({success:true},200,headers);
+      }
+      if(path==="/api/business/activities"&&request.method==="POST"){
+        const b=await readJson(request),employee=Number(b.employee_id),quantity=Number(b.quantity||0),status=b.task_status||"Pending";
+        if(!await first(env.DB,"SELECT id FROM employees WHERE id=? AND active=1",[employee]))return json({detail:"Select an active employee."},400,headers);
+        if(!Number.isFinite(quantity)||quantity<0||!["Pending","In Progress","Completed","Blocked","Cancelled"].includes(status))return json({detail:"Invalid activity quantity or status."},422,headers);
+        for(const [table,id,label] of [["bt_orders",b.related_order_id,"order"],["bt_services",b.related_service_id,"service"],["bt_products",b.product_id,"product"]])if(id!==undefined&&id!==null&&!await first(env.DB,"SELECT id FROM "+table+" WHERE id=?",[id]))return json({detail:"Selected "+label+" was not found."},400,headers);
+        const id=await insert(env.DB,"bt_activities",{employee_id:employee,related_order_id:b.related_order_id||null,related_service_id:b.related_service_id||null,task_type:String(b.task_type||""),product_id:b.product_id||null,quantity,unit:String(b.unit||""),assigned_by:user.username,start_time:String(b.start_time||""),completion_time:String(b.completion_time||""),task_status:status,verified_by:"",proof_ref:String(b.proof_ref||""),remarks:String(b.remarks||""),created_at:new Date().toISOString()});
+        return json({success:true,id},200,headers);
+      }
+      const activity=/^\/api\/business\/activities\/(\d+)$/.exec(path);
+      if(activity&&request.method==="PATCH"){
+        const b=await readJson(request),allowed=["task_status","start_time","completion_time","verified_by","proof_ref","remarks"],v={};
+        for(const key of allowed)if(b[key]!==undefined)v[key]=b[key];
+        if(!Object.keys(v).length)return json({detail:"No activity changes were supplied."},422,headers);
+        if(v.task_status!==undefined&&!["Pending","In Progress","Completed","Blocked","Cancelled"].includes(v.task_status))return json({detail:"Invalid activity status."},422,headers);
+        const old=await first(env.DB,"SELECT * FROM bt_activities WHERE id=?",[Number(activity[1])]);if(!old)return json({detail:"Activity not found."},404,headers);
+        if(v.task_status==="In Progress"&&!v.start_time&&!old.start_time)v.start_time=new Date().toISOString();
+        if(v.task_status==="Completed"&&!v.completion_time&&!old.completion_time)v.completion_time=new Date().toISOString();
+        await update(env.DB,"bt_activities",v,Number(activity[1]));return json({success:true},200,headers);
+      }
+      if(path==="/api/business/stock-ledger"&&request.method==="GET"){
+        const limit=Math.min(1000,Math.max(1,Number(url.searchParams.get("limit")||300))),product=url.searchParams.get("product_id");
+        const sql="SELECT l.*,p.name AS product_name,p.sku FROM bt_stock_ledger l LEFT JOIN bt_products p ON p.id=l.product_id"+(product?" WHERE l.product_id=?":"")+" ORDER BY l.id DESC LIMIT ?";
+        return json(await all(env.DB,sql,product?[Number(product),limit]:[limit]),200,headers);
+      }
+      if(path==="/api/business/stock-ledger"&&request.method==="POST"){
+        const b=await readJson(request),movement=String(b.txn_type||"").trim().toLowerCase(),quantity=Number(b.quantity);
+        const movements={receive:["received_qty",1,false],reserve:["reserved_qty",1,true],release:["reserved_qty",-1,false],dispatch:["dispatched_qty",1,true],free:["free_qty",1,true],return:["returned_qty",1,false],damage:["damaged_qty",1,true],expire:["expired_qty",1,true],quarantine:["quarantined_qty",1,true],unquarantine:["quarantined_qty",-1,false]};
+        if(!movements[movement]||!Number.isFinite(quantity)||quantity<=0)return json({detail:"Unsupported movement or invalid quantity."},422,headers);
+        const [field,direction,consumes]=movements[movement],product=await first(env.DB,"SELECT * FROM bt_products WHERE id=?",[Number(b.product_id)]);
+        if(!product)return json({detail:"Product not found."},404,headers);
+        const available=availableStock(product);
+        if(consumes&&quantity>Math.max(0,available))return json({detail:"Movement exceeds available stock."},409,headers);
+        if(direction<0&&quantity>Number(product[field]||0))return json({detail:"Movement exceeds the quantity currently held in that stock state."},409,headers);
+        const now=new Date().toISOString();
+        await env.DB.prepare("UPDATE bt_products SET "+field+"=COALESCE("+field+",0)+?,updated_by=?,updated_at=? WHERE id=?").bind(quantity*direction,user.username,now,Number(b.product_id)).run();
+        const id=await insert(env.DB,"bt_stock_ledger",{product_id:Number(b.product_id),txn_type:movement,quantity,unit:String(b.unit||""),reference:String(b.reference||""),notes:String(b.notes||""),created_by:user.username,created_at:now});
+        const updatedProduct=await first(env.DB,"SELECT * FROM bt_products WHERE id=?",[Number(b.product_id)]);
+        return json({success:true,id,available_stock:availableStock(updatedProduct)},200,headers);
+      }
+
       if(path==="/api/business/products"&&request.method==="GET"){
         const rows=await all(env.DB,"SELECT * FROM bt_products ORDER BY name COLLATE NOCASE");
         return json(rows.map(r=>({...r,available_stock:availableStock(r)})),200,headers);
@@ -427,7 +513,7 @@ export default {
       if(path==="/api/business/activities"&&request.method==="GET")return json(await all(env.DB,"SELECT a.*,e.name AS employee_name,o.external_order_id AS order_code,s.name AS service_name,p.name AS product_name FROM bt_activities a LEFT JOIN employees e ON e.id=a.employee_id LEFT JOIN bt_orders o ON o.id=a.related_order_id LEFT JOIN bt_services s ON s.id=a.related_service_id LEFT JOIN bt_products p ON p.id=a.product_id ORDER BY a.id DESC LIMIT 300"),200,headers);
       if(path==="/api/business/overview"&&request.method==="GET"){
         const queries=[
-          ["products","SELECT COUNT(*) AS n FROM bt_products"],["low_stock","SELECT COUNT(*) AS n FROM bt_products WHERE (COALESCE(opening_stock,0)+COALESCE(received_qty,0)+COALESCE(returned_qty,0)-COALESCE(reserved_qty,0)-COALESCE(dispatched_qty,0)-COALESCE(damaged_qty,0)-COALESCE(expired_qty,0)-COALESCE(quarantined_qty,0))<=COALESCE(reorder_level,0)"],
+          ["products","SELECT COUNT(*) AS n FROM bt_products"],["low_stock","SELECT COUNT(*) AS n FROM bt_products WHERE (COALESCE(opening_stock,0)+COALESCE(received_qty,0)+COALESCE(returned_qty,0)-COALESCE(reserved_qty,0)-COALESCE(dispatched_qty,0)-COALESCE(free_qty,0)-COALESCE(damaged_qty,0)-COALESCE(expired_qty,0)-COALESCE(quarantined_qty,0))<=COALESCE(reorder_level,0)"],
           ["orders","SELECT COUNT(*) AS n FROM bt_orders"],["services","SELECT COUNT(*) AS n FROM bt_services"],["members","SELECT COUNT(*) AS n FROM bt_members"],["activities","SELECT COUNT(*) AS n FROM bt_activities"],
           ["open_orders","SELECT COUNT(*) AS n FROM bt_orders WHERE lower(IFNULL(order_status,'')) NOT IN ('completed','cancelled','delivered','closed','returned')"],["active_members","SELECT COUNT(*) AS n FROM bt_members WHERE lower(IFNULL(status,'')) IN ('active','current','ongoing') OR IFNULL(status,'')=''"],["completed_activities","SELECT COUNT(*) AS n FROM bt_activities WHERE lower(IFNULL(task_status,''))='completed'"]
         ];
@@ -489,7 +575,7 @@ function normalizeWeekdays(value){const a=String(value||"0,1,2,3,4,6").split(","
 function validDate(s){if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+"T00:00:00Z");return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===s;}
 function addDays(value,n=1){const d=new Date(value+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
 function validTime(s){return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);}
-function availableStock(p){return Math.max(0,Number(p.opening_stock||0)+Number(p.received_qty||0)+Number(p.returned_qty||0)-Number(p.reserved_qty||0)-Number(p.dispatched_qty||0)-Number(p.damaged_qty||0)-Number(p.expired_qty||0)-Number(p.quarantined_qty||0));}
+function availableStock(p){return Math.max(0,Number(p.opening_stock||0)+Number(p.received_qty||0)+Number(p.returned_qty||0)-Number(p.reserved_qty||0)-Number(p.dispatched_qty||0)-Number(p.free_qty||0)-Number(p.damaged_qty||0)-Number(p.expired_qty||0)-Number(p.quarantined_qty||0));}
 function publicUser(u){return {id:u.id,username:u.username,display_name:u.display_name||u.username,role:u.role};}
 function role(user){return String(user?.role||"").trim().toLowerCase();}
 function forbidden(headers){return json({detail:"You do not have permission to perform this action."},403,headers);}
