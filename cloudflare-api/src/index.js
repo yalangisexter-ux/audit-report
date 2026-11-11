@@ -679,7 +679,7 @@ export default {
           avgProductivity=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10:0;
         }
         const total=employees.length,notChecked=Math.max(0,total-presentToday-absentToday-leaveToday),rate=total?Math.round(presentToday/total*100):0;
-        return json({today,kpis:{total_employees:total,present_today:presentToday,absent_today:absentToday,leave_today:leaveToday,not_checked_today:notChecked,open_tasks:openTasks,completed_tasks:completedTasks,checkins_today:checkinsToday,attendance_rate:rate,avg_productivity:avgProductivity},recent_employees:employees.slice(-8).reverse(),today_tasks:todayTasks.slice(0,12),attendance_roster:attendanceRoster.slice(0,8),productivity,attendance_summary:rate+"% checked in\\n"+presentToday+" Present  ·  "+absentToday+" Absent  ·  "+leaveToday+" Leave  ·  "+notChecked+" Not checked"},200,headers);
+        return json({today,kpis:{total_employees:total,present_today:presentToday,absent_today:absentToday,leave_today:leaveToday,not_checked_today:notChecked,open_tasks:openTasks,completed_tasks:completedTasks,checkins_today:checkinsToday,attendance_rate:rate,avg_productivity:avgProductivity},recent_employees:employees.slice(-8).reverse(),today_tasks:todayTasks.slice(0,12),attendance_roster:attendanceRoster.slice(0,8),productivity,attendance_summary:rate+"% checked in\n"+presentToday+" Present  ·  "+absentToday+" Absent  ·  "+leaveToday+" Leave  ·  "+notChecked+" Not checked"},200,headers);
       }
 
       if(path==="/api/home/business-snapshot"&&request.method==="GET"){
