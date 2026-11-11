@@ -1366,18 +1366,22 @@ class Database:
         self.conn.set_commit_callback(_safe_commit_callback)
 
     def _store_sync_device_credentials(self, credentials):
+        # Device registration can complete on the background sync thread.
+        # Never reuse the GUI thread's SQLite connection here: sqlite3 enforces
+        # thread affinity by default. Use a short-lived connection to the same
+        # database file; SQLite's busy timeout safely serializes concurrent writes.
         protected = protect_sync_token(json.dumps(credentials, separators=(",", ":")))
-        callback = getattr(self.conn, "_commit_callback", None)
+        connection = sqlite3.connect(DB_PATH, timeout=20)
         try:
-            self.conn.set_commit_callback(None)
-            self.conn.execute(
+            connection.execute("PRAGMA busy_timeout=20000")
+            connection.execute(
                 "INSERT INTO settings(key,value) VALUES(?,?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 ("github_sync_device_credentials_dpapi", protected),
             )
-            self.conn.commit()
+            connection.commit()
         finally:
-            self.conn.set_commit_callback(callback)
+            connection.close()
 
     def close_github_sync(self, timeout=3):
         sync = getattr(self, "github_sync", None)
