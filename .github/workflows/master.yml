@@ -73,7 +73,8 @@ jobs:
             "assets/raw_strength_icon.ico",
             "tests/test_resolve_customer_data_dir.py",
             "tests/test_update_recovery.py",
-            ".github/workflows/master.yml"
+            ".github/workflows/master.yml",
+            ".github/workflows/deploy-cloudflare-api.yml"
           )
           $mustBuild = $false
           foreach ($path in $installerPaths) {
