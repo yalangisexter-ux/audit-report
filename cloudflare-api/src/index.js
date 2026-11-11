@@ -7,7 +7,7 @@ const TASK_FIELDS = ["employee_id","task_date","title","department","details","d
 const ATTENDANCE_FIELDS = ["attendance_status","check_in","check_out","break_minutes","attendance_note"];
 const ADMIN_ROLES = new Set(["admin","developer"]);
 const EMPLOYEE_ROLES = new Set(["admin","developer","hr"]);
-const PRESENT_DETAIL = new Set(["present","worked","work from home","wfh","half day","late","early leave","on duty"]);
+const PRESENT_DETAIL = new Set(["present","worked","work from home","wfh","half day","late","early leave","on duty","late check-in","late check-out","on time","balanced hours","overtime","short hours","early departure"]);
 
 export default {
   async fetch(request, env) {
