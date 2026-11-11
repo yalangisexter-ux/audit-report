@@ -102,8 +102,17 @@ def build_import(source: sqlite3.Connection, schema_path: Path, output_dir: Path
             target_columns = [r[1] for r in target.execute(
                 f"PRAGMA table_info({quote_identifier(table)})"
             ).fetchall()]
-            if source_columns != target_columns:
-                raise ValueError(f"Schema mismatch for {table}; refusing to generate import SQL.")
+            # SQLite column order is not part of the data contract. Desktop
+            # upgrades append columns with ALTER TABLE, while the D1 baseline
+            # declares the same columns in canonical order. Import statements
+            # name every source column explicitly, so require source coverage
+            # but safely allow additional target columns with defaults.
+            missing_columns = sorted(set(source_columns) - set(target_columns))
+            if missing_columns:
+                raise ValueError(
+                    f"Schema mismatch for {table}; D1 is missing source columns: "
+                    + ", ".join(missing_columns)
+                )
 
         output_dir.mkdir(parents=True, exist_ok=True)
         for pattern in ("chunk-*.sql", "chunk-*.json"):
