@@ -217,3 +217,184 @@ test("D1 dashboard returns desktop-compatible KPI and productivity payloads", as
   assert.equal(body.productivity[0].name, "Test Employee");
   assert.equal(body.attendance_roster[0].status, "Not checked");
 });
+
+test("report options and preview return desktop-compatible structure", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "report-token";
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const settingsStore = new Map();
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions")) return values[0] === tokenHash ? user : null;
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM settings WHERE key LIKE 'report_opt_%'")) {
+                return { results: [...settingsStore.entries()].map(([key, value]) => ({ key, value })) };
+              }
+              if (sql.includes("FROM employees")) {
+                return { results: [{ id: 1, name: "Alice", employee_code: "EMP01", department: "Ops", active: 1 }] };
+              }
+              if (sql.includes("FROM tasks")) return { results: [] };
+              return { results: [] };
+            },
+            async run() {
+              if (sql.includes("INSERT INTO settings")) {
+                settingsStore.set(values[0], values[1]);
+                return { success: true, meta: { changes: 1 } };
+              }
+              return { success: true, meta: { changes: 0 } };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const getOpts = await worker.fetch(request("/api/reports/options", "GET", null, token), { DB });
+  assert.equal(getOpts.status, 200);
+  const optsBody = await getOpts.json();
+  assert.equal(optsBody.options.summary, true);
+
+  const putOpts = await worker.fetch(request("/api/reports/options", "PUT", { options: { summary: false } }, token), { DB });
+  assert.equal(putOpts.status, 200);
+  assert.equal(settingsStore.get("report_opt_summary"), "0");
+
+  const preview = await worker.fetch(request("/api/reports/preview", "POST", { report_type: "Audit / EOD", date: "2026-11-11" }, token), { DB });
+  assert.equal(preview.status, 200);
+  const prevBody = await preview.json();
+  assert.equal(prevBody.report_type, "Audit / EOD");
+  assert.match(prevBody.preview_text, /RAW STRENGTH CALISTHENICS/);
+});
+
+test("archive documents list and validate PDF upload", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "archive-token";
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const docs = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions")) return values[0] === tokenHash ? user : null;
+              if (sql.includes("FROM archived_documents WHERE id=?")) return docs.find(d => d.id === values[0]) || null;
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM archived_documents")) return { results: docs };
+              return { results: [] };
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO archived_documents")) {
+                const id = docs.length + 1;
+                docs.push({ id, file_name: values[2], mime_type: values[3], content: values[4], uploaded_at: values[6] });
+                return { success: true, meta: { changes: 1, last_row_id: id } };
+              }
+              if (sql.startsWith("DELETE FROM archived_documents")) {
+                const idx = docs.findIndex(d => d.id === values[0]);
+                if (idx !== -1) {
+                  docs.splice(idx, 1);
+                  return { success: true, meta: { changes: 1 } };
+                }
+                return { success: true, meta: { changes: 0 } };
+              }
+              return { success: true, meta: { changes: 0 } };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const listEmpty = await worker.fetch(request("/api/archive", "GET", null, token), { DB });
+  assert.equal(listEmpty.status, 200);
+  assert.deepEqual(await listEmpty.json(), []);
+
+  // Reject non-PDF
+  const badUpload = await worker.fetch(request("/api/archive", "POST", { file_name: "test.txt", content: Buffer.from("hello world").toString("base64") }, token), { DB });
+  assert.equal(badUpload.status, 400);
+
+  // Accept valid PDF (%PDF header)
+  const pdfBytes = Buffer.from("%PDF-1.4 sample content").toString("base64");
+  const goodUpload = await worker.fetch(request("/api/archive", "POST", { file_name: "report.pdf", content: pdfBytes }, token), { DB });
+  assert.equal(goodUpload.status, 200);
+  assert.equal((await goodUpload.json()).success, true);
+  assert.equal(docs.length, 1);
+
+  // View document
+  const viewDoc = await worker.fetch(request("/api/archive/1/view", "GET", null, token), { DB });
+  assert.equal(viewDoc.status, 200);
+  assert.equal(viewDoc.headers.get("Content-Type"), "application/pdf");
+
+  // Delete document
+  const delDoc = await worker.fetch(request("/api/archive/1", "DELETE", null, token), { DB });
+  assert.equal(delDoc.status, 200);
+  assert.equal(docs.length, 0);
+});
+
+test("customer prospects CRUD operates with validation and deduplication", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "prospect-token";
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const prospects = [];
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions")) return values[0] === tokenHash ? user : null;
+              if (sql.includes("FROM customer_prospects WHERE dedupe_key=?")) return prospects.find(p => p.dedupe_key === values[0]) || null;
+              if (sql.includes("FROM customer_prospects WHERE id=?")) return prospects.find(p => p.id === values[0]) || null;
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM customer_prospects")) return { results: prospects };
+              return { results: [] };
+            },
+            async run() {
+              if (sql.startsWith("INSERT INTO customer_prospects")) {
+                const id = prospects.length + 1;
+                prospects.push({ id, ...values[0], dedupe_key: values[values.length - 2] });
+                return { success: true, meta: { changes: 1, last_row_id: id } };
+              }
+              if (sql.startsWith("UPDATE customer_prospects")) {
+                return { success: true, meta: { changes: 1 } };
+              }
+              if (sql.startsWith("DELETE FROM customer_prospects")) {
+                const idx = prospects.findIndex(p => p.id === values[0]);
+                if (idx !== -1) {
+                  prospects.splice(idx, 1);
+                  return { success: true, meta: { changes: 1 } };
+                }
+                return { success: true, meta: { changes: 0 } };
+              }
+              return { success: true, meta: { changes: 0 } };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  // Missing fields fail validation
+  const bad = await worker.fetch(request("/api/customers/prospects", "POST", { business_name: "" }, token), { DB });
+  assert.equal(bad.status, 422);
+
+  // Valid insert
+  const create = await worker.fetch(request("/api/customers/prospects", "POST", { business_name: "Raw Fitness", city: "Mumbai", state: "Maharashtra" }, token), { DB });
+  assert.equal(create.status, 200);
+  assert.equal((await create.json()).success, true);
+});

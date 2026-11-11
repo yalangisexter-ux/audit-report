@@ -693,6 +693,295 @@ export default {
         return json({version:"1.3.82",products:Number(products?.n||0),low_stock:Number(low?.n||0),orders:Number(orders?.n||0),members:Number(members?.n||0),activities:Number(activities?.n||0),total_sales:Number(orders?.sales||0)},200,headers);
       }
 
+      if (path === "/api/auth/status" && request.method === "GET") {
+        return json({ authenticated: !!user, user: user ? publicUser(user) : null, app_version: "1.3.82" }, 200, headers);
+      }
+
+      if (path === "/api/reports/options" && request.method === "GET") {
+        const rows = await all(env.DB, "SELECT key, value FROM settings WHERE key LIKE 'report_opt_%'");
+        const options = { ...REPORT_OPTION_DEFAULTS };
+        for (const row of rows) {
+          const key = String(row.key || "").replace(/^report_opt_/, "");
+          if (key in REPORT_OPTION_DEFAULTS) options[key] = row.value === "1";
+        }
+        return json({ options }, 200, headers);
+      }
+      if (path === "/api/reports/options" && request.method === "PUT") {
+        const b = await readJson(request);
+        const incoming = b.options || {};
+        for (const [key, enabled] of Object.entries(incoming)) {
+          if (key in REPORT_OPTION_DEFAULTS) {
+            await env.DB.prepare("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+              .bind(`report_opt_${key}`, enabled ? "1" : "0").run();
+          }
+        }
+        return json({ success: true, options: incoming }, 200, headers);
+      }
+      if (path === "/api/reports/preview" && request.method === "POST") {
+        const b = await readJson(request);
+        const preview = await buildReportPreview(env, b);
+        return json(preview, 200, headers);
+      }
+      if (path === "/api/reports/export" && request.method === "POST") {
+        const b = await readJson(request);
+        const preview = await buildReportPreview(env, b);
+        const fmt = String(b.output_format || "csv").toLowerCase();
+        const slug = String(b.report_type || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
+        const filename = `raw-strength-${slug}-${b.date || "report"}.${fmt === "pdf" ? "txt" : fmt}`;
+        if (fmt === "csv") {
+          const csvLines = ["Section,Field,Value"];
+          let section = String(b.report_type || "Report");
+          for (const rawLine of preview.preview_text.split("\n")) {
+            const line = rawLine.trim();
+            if (!line) continue;
+            if (line === line.toUpperCase() || line.startsWith("EMPLOYEE:") || line.startsWith("DAILY SUMMARY")) {
+              section = line;
+              csvLines.push(`"${section.replace(/"/g, '""')}","",`);
+            } else if (line.includes(":")) {
+              const [field, val] = line.split(/:(.*)/s);
+              csvLines.push(`"${section.replace(/"/g, '""')}","${(field || "").trim().replace(/"/g, '""')}","${(val || "").trim().replace(/"/g, '""')}"`);
+            } else {
+              csvLines.push(`"${section.replace(/"/g, '""')}","Detail","${line.replace(/"/g, '""')}"`);
+            }
+          }
+          return new Response("\uFEFF" + csvLines.join("\n"), {
+            headers: {
+              ...headers,
+              "Content-Type": "text/csv; charset=utf-8",
+              "Content-Disposition": `attachment; filename="${filename}"`
+            }
+          });
+        }
+        return new Response(preview.preview_text, {
+          headers: {
+            ...headers,
+            "Content-Type": "text/plain; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${filename}"`
+          }
+        });
+      }
+
+      if (path === "/api/archive" && request.method === "GET") {
+        const rows = await all(env.DB, `SELECT d.id, d.employee_id, COALESCE(e.name, 'Unassigned / All') AS employee_name,
+          d.report_date, d.file_name, d.mime_type, d.notes, d.uploaded_at, length(d.content) AS size_bytes
+          FROM archived_documents d LEFT JOIN employees e ON e.id = d.employee_id
+          ORDER BY d.uploaded_at DESC, d.id DESC`);
+        return json(rows, 200, headers);
+      }
+      if (path === "/api/archive" && request.method === "POST") {
+        let employeeId = null, reportDate = "", notes = "", fileName = "report.pdf", mimeType = "application/pdf", contentBytes = null;
+        const ctype = request.headers.get("Content-Type") || "";
+        if (ctype.includes("multipart/form-data")) {
+          const form = await request.formData();
+          const file = form.get("file");
+          if (!file) return json({ detail: "A PDF file is required." }, 400, headers);
+          fileName = String(file.name || "archive.pdf").trim();
+          mimeType = file.type || "application/pdf";
+          contentBytes = new Uint8Array(await file.arrayBuffer());
+          const emp = form.get("employee_id");
+          employeeId = emp ? Number(emp) : null;
+          reportDate = String(form.get("report_date") || "").trim();
+          notes = String(form.get("notes") || "").trim();
+        } else {
+          const b = await readJson(request);
+          fileName = String(b.file_name || "archive.pdf").trim();
+          mimeType = b.mime_type || "application/pdf";
+          employeeId = b.employee_id ? Number(b.employee_id) : null;
+          reportDate = String(b.report_date || "").trim();
+          notes = String(b.notes || "").trim();
+          if (b.content) contentBytes = base64ToBytes(b.content);
+        }
+        if (!contentBytes || contentBytes.length === 0) return json({ detail: "File content is empty." }, 400, headers);
+        if (contentBytes.length > 25 * 1024 * 1024) return json({ detail: "PDF exceeds the 25 MB upload limit." }, 413, headers);
+        if (contentBytes[0] !== 0x25 || contentBytes[1] !== 0x50 || contentBytes[2] !== 0x44 || contentBytes[3] !== 0x46) {
+          return json({ detail: "The uploaded file is not a valid PDF." }, 400, headers);
+        }
+        if (employeeId !== null && !await first(env.DB, "SELECT id FROM employees WHERE id=?", [employeeId])) {
+          return json({ detail: "Selected employee does not exist." }, 404, headers);
+        }
+        const now = new Date().toISOString();
+        const id = await insert(env.DB, "archived_documents", {
+          employee_id: employeeId, report_date: reportDate, file_name: fileName,
+          mime_type: mimeType, content: contentBytes, notes, uploaded_at: now
+        });
+        return json({ success: true, id }, 200, headers);
+      }
+      const archiveMatch = /^\/api\/archive\/(\d+)\/(view|download)$/.exec(path);
+      if (archiveMatch && request.method === "GET") {
+        const docId = Number(archiveMatch[1]), mode = archiveMatch[2];
+        const doc = await first(env.DB, "SELECT file_name, mime_type, content FROM archived_documents WHERE id=?", [docId]);
+        if (!doc) return json({ detail: "Archived document not found." }, 404, headers);
+        const disposition = `${mode === "download" ? "attachment" : "inline"}; filename="${encodeURIComponent(doc.file_name || "document.pdf")}"`;
+        return new Response(doc.content, {
+          status: 200,
+          headers: {
+            "Content-Type": doc.mime_type || "application/pdf",
+            "Content-Disposition": disposition,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff"
+          }
+        });
+      }
+      const archiveDel = /^\/api\/archive\/(\d+)$/.exec(path);
+      if (archiveDel && request.method === "DELETE") {
+        if (!ADMIN_ROLES.has(role(user))) return forbidden(headers);
+        const r = await env.DB.prepare("DELETE FROM archived_documents WHERE id=?").bind(Number(archiveDel[1])).run();
+        if (!r.meta?.changes) return json({ detail: "Archived document not found." }, 404, headers);
+        return json({ success: true }, 200, headers);
+      }
+
+      if (path === "/api/customers/prospects" && request.method === "POST") {
+        const b = await readJson(request);
+        const name = String(b.business_name || "").trim();
+        const state = String(b.state || "").trim();
+        const city = String(b.city || "").trim();
+        if (!name) return json({ detail: "Business / store name is required." }, 422, headers);
+        if (!state || !city) return json({ detail: "City and state are required to identify a unique store branch." }, 422, headers);
+        const dedupe = (name + "|" + city + "|" + state).toLowerCase().replace(/\s+/g, " ");
+        const existing = await first(env.DB, "SELECT id FROM customer_prospects WHERE dedupe_key=?", [dedupe]);
+        if (existing) {
+          return json({ success: true, id: existing.id, inserted: 0, duplicates: 1, duplicate: true }, 200, headers);
+        }
+        const id = await insert(env.DB, "customer_prospects", {
+          business_name: name, business_category: String(b.business_category || ""), kind: String(b.kind || "Store"),
+          state, city, area: String(b.area || ""), contact_person: String(b.contact_person || ""), phone: String(b.phone || ""),
+          email: String(b.email || ""), address: String(b.address || ""), website: String(b.website || ""), maps: String(b.maps || ""),
+          followup_date: String(b.followup_date || ""), call_time: String(b.call_time || ""), connection: String(b.connection || ""),
+          verified: String(b.verified || ""), response: String(b.response || ""), notes: String(b.notes || ""),
+          source_name: "Web App", source_type: "Web", dedupe_key: dedupe, created_at: new Date().toISOString()
+        });
+        return json({ success: true, id, inserted: 1, duplicates: 0, duplicate: false }, 200, headers);
+      }
+      const prospectMatch = /^\/api\/customers\/prospects\/(\d+)$/.exec(path);
+      if (prospectMatch && request.method === "PATCH") {
+        if (!ADMIN_ROLES.has(role(user))) return forbidden(headers);
+        const id = Number(prospectMatch[1]);
+        const b = await readJson(request);
+        const allowed = ["business_name","business_category","kind","state","city","area","contact_person","phone","email","address","website","maps","followup_date","call_time","connection","verified","response","notes","source_status"];
+        const v = {};
+        for (const k of allowed) if (b[k] !== undefined) v[k] = String(b[k]);
+        if (!Object.keys(v).length) return json({ detail: "No editable prospect fields supplied." }, 400, headers);
+        const old = await first(env.DB, "SELECT id, business_name, city, state FROM customer_prospects WHERE id=?", [id]);
+        if (!old) return json({ detail: "Prospect not found." }, 404, headers);
+        if (v.business_name || v.city || v.state) {
+          const name = v.business_name || old.business_name, city = v.city || old.city, state = v.state || old.state;
+          v.dedupe_key = (name + "|" + city + "|" + state).toLowerCase().replace(/\s+/g, " ");
+        }
+        await update(env.DB, "customer_prospects", v, id);
+        return json({ success: true }, 200, headers);
+      }
+      if (prospectMatch && request.method === "DELETE") {
+        if (!ADMIN_ROLES.has(role(user))) return forbidden(headers);
+        const id = Number(prospectMatch[1]);
+        const r = await env.DB.prepare("DELETE FROM customer_prospects WHERE id=?").bind(id).run();
+        if (!r.meta?.changes) return json({ detail: "Prospect not found." }, 404, headers);
+        return json({ success: true }, 200, headers);
+      }
+      if (path === "/api/customers/export" && request.method === "GET") {
+        const rows = await all(env.DB, "SELECT * FROM customer_prospects ORDER BY id DESC LIMIT 5000");
+        const headersRow = ["ID","Store Name","Category","Kind","State","City","Area","Contact","Phone","Email","Address","Website","Notes"];
+        const csvLines = [headersRow.join(",")];
+        for (const r of rows) {
+          csvLines.push([r.id, r.business_name, r.business_category, r.kind, r.state, r.city, r.area, r.contact_person, r.phone, r.email, r.address, r.website, r.notes].map(x => '"' + String(x || "").replace(/"/g, '""') + '"').join(","));
+        }
+        return new Response("\uFEFF" + csvLines.join("\n"), {
+          headers: {
+            ...headers,
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": 'attachment; filename="customer-prospects.csv"'
+          }
+        });
+      }
+
+      if (path === "/api/update-center" && request.method === "GET") {
+        const currentVersion = "1.3.82";
+        try {
+          const res = await fetch("https://api.github.com/repos/yalangisexter-ux/audit-report/releases", {
+            headers: { "Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager" }
+          });
+          if (!res.ok) throw new Error("GitHub HTTP " + res.status);
+          const releases = await res.json();
+          const latest = releases[0];
+          const asset = (latest?.assets || []).find(a => /\.exe$/i.test(a.name) || /installer/i.test(a.name)) || latest?.assets?.[0];
+          const latestVer = String(latest?.tag_name || "").replace(/^v/, "");
+          return json({
+            status: "ok",
+            current_version: currentVersion,
+            latest_version: latestVer || currentVersion,
+            update_available: !!latestVer && latestVer !== currentVersion,
+            latest_release: latest ? {
+              title: latest.name || latest.tag_name,
+              published_at: latest.published_at,
+              asset_size: asset?.size || 0,
+              download_url: asset?.browser_download_url || latest.html_url,
+              release_url: latest.html_url,
+              body: latest.body || ""
+            } : null,
+            previous_release_count: Math.max(0, releases.length - 1),
+            checked_at: new Date().toISOString()
+          }, 200, headers);
+        } catch {
+          return json({
+            status: "offline",
+            current_version: currentVersion,
+            latest_version: null,
+            update_available: false,
+            latest_release: null,
+            previous_release_count: 0,
+            checked_at: new Date().toISOString(),
+            message: "GitHub releases could not be reached. Try checking again later."
+          }, 200, headers);
+        }
+      }
+      if (path === "/api/update-center/rollback-options" && request.method === "POST") {
+        if (!ADMIN_ROLES.has(role(user))) return forbidden(headers);
+        const b = await readJson(request);
+        const account = await first(env.DB, "SELECT password_salt, password_hash FROM auth_users WHERE id=?", [user.id]);
+        if (!account || !await verifyPassword(b.password || "", account.password_salt, account.password_hash)) {
+          return json({ detail: "The active Admin or Developer password could not be verified." }, 403, headers);
+        }
+        try {
+          const res = await fetch("https://api.github.com/repos/yalangisexter-ux/audit-report/releases", {
+            headers: { "Accept": "application/vnd.github+json", "User-Agent": "RawStrengthEmployeeAuditManager" }
+          });
+          if (!res.ok) throw new Error("GitHub HTTP " + res.status);
+          const releases = await res.json();
+          const versions = releases.slice(1).map(r => {
+            const asset = (r.assets || []).find(a => /\.exe$/i.test(a.name)) || r.assets?.[0];
+            return {
+              version: String(r.tag_name || "").replace(/^v/, ""),
+              title: r.name || r.tag_name,
+              published_at: r.published_at,
+              download_url: asset?.browser_download_url || r.html_url,
+              asset_size: asset?.size || 0
+            };
+          });
+          return json({ versions, message: "Previous installers loaded." }, 200, headers);
+        } catch {
+          return json({ versions: [], message: "Could not reach GitHub for rollback options." }, 200, headers);
+        }
+      }
+
+      if (path === "/api/settings/clock-mode" && request.method === "GET") {
+        const row = await first(env.DB, "SELECT value FROM settings WHERE key='clock_mode'");
+        return json({ clock_mode: row?.value || "digital" }, 200, headers);
+      }
+      if (path === "/api/settings/clock-mode" && request.method === "PUT") {
+        const b = await readJson(request);
+        const mode = String(b.clock_mode || "").toLowerCase() === "analog" ? "analog" : "digital";
+        await env.DB.prepare("INSERT INTO settings(key,value) VALUES('clock_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(mode).run();
+        return json({ success: true, clock_mode: mode }, 200, headers);
+      }
+      if (path === "/api/settings/expose-all-links" && request.method === "POST") {
+        if (!ADMIN_ROLES.has(role(user))) return forbidden(headers);
+        await env.DB.prepare("UPDATE tasks SET expose_link=1").run();
+        await env.DB.prepare("INSERT INTO settings(key,value) VALUES('global_expose_link','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+        return json({ success: true }, 200, headers);
+      }
+      if (path === "/api/system/check-updates" && request.method === "GET") {
+        return json({ app_version: "1.3.82", current_version: "1.3.82", status: "ok" }, 200, headers);
+      }
+
       return json({ error: "Not found", path }, 404, headers);
     } catch (error) {
       console.error("Cloudflare API request failed", { path: url.pathname, message: String(error?.message || error) });
@@ -740,3 +1029,166 @@ async function sha256(value){const digest=await crypto.subtle.digest("SHA-256",e
 function randomHex(bytes){const data=crypto.getRandomValues(new Uint8Array(bytes));return [...data].map(v=>v.toString(16).padStart(2,"0")).join("");}
 async function readJson(request){const length=Number(request.headers.get("Content-Length")||0);if(length>1048576)throw new Error("Request too large");return request.json();}
 function json(body,status,headers){return new Response(JSON.stringify(body),{status,headers});}
+
+const REPORT_OPTION_DEFAULTS = {
+  summary: true, identity: true, target: true, contact: false,
+  work_status: true, late_links: true, missing_proof: true,
+  target_status: true, tasks: true, target_qty: true,
+  actual_qty: true, completion_pct: true, priority: true,
+  details: true, due_time: true, proof: true, proof_notes: false,
+  custom_values: true, next_action: true, remarks: true,
+  expose_link: false, pending: true, attendance: false,
+  attendance_identity: true, attendance_status: true,
+  attendance_times: true, attendance_remarks: true,
+  attendance_summary: true, details_identity: true,
+  details_contact: true, details_joining: true, details_status: true,
+  details_notes: true, productivity_identity: true,
+  productivity_metrics: true, productivity_explanation: true,
+  productivity_tracking: true, productivity_tasks: true
+};
+
+function base64ToBytes(base64) {
+  const bin = atob(String(base64 || "").replace(/\s+/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function buildReportPreview(env, req) {
+  const reportType = String(req.report_type || "Audit / EOD").trim();
+  const dateStr = String(req.date || new Date().toISOString().slice(0, 10));
+  const opts = { ...REPORT_OPTION_DEFAULTS, ...(req.options || {}) };
+  const where = ["e.active = 1"];
+  const args = [];
+  if (req.employee_id) {
+    where.push("e.id = ?");
+    args.push(Number(req.employee_id));
+  } else if (req.exclude_employee_id) {
+    where.push("e.id <> ?");
+    args.push(Number(req.exclude_employee_id));
+  }
+  const scopeSql = " AND " + where.join(" AND ");
+
+  if (reportType === "Employee Attendance") {
+    const holiday = await first(env.DB, "SELECT holiday_name FROM holidays WHERE holiday_date = ?", [dateStr]);
+    const holidayDeclared = !!holiday;
+    const holidayName = holidayDeclared ? String(holiday.holiday_name || "").trim() : "";
+    const rows = await all(env.DB, `SELECT e.name, e.employee_code, e.department,
+      COALESCE(a.attendance_status, 'Unmarked') AS status,
+      COALESCE(a.check_in, '') AS check_in,
+      COALESCE(a.check_out, '') AS check_out,
+      COALESCE(a.break_minutes, 0) AS break_minutes,
+      COALESCE(a.attendance_note, '') AS notes
+      FROM employees e
+      LEFT JOIN attendance a ON a.employee_id = e.id AND a.work_date = ?
+      WHERE 1=1 ${scopeSql} ORDER BY e.name COLLATE NOCASE`, [dateStr, ...args]);
+    const lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", `Date: ${dateStr}`, ""];
+    if (holidayName) lines.push(`Declared holiday: ${holidayName}`, "");
+    const statusOf = r => holidayDeclared ? "Holiday" : (r.status || "Unmarked");
+    const isPresent = r => {
+      const s = statusOf(r).toLowerCase();
+      return PRESENT_DETAIL.has(s) || (["unmarked", ""].includes(s) && !!r.check_in);
+    };
+    if (opts.attendance_summary) {
+      const present = rows.filter(isPresent).length;
+      const absent = rows.filter(r => statusOf(r).toLowerCase() === "absent").length;
+      const leave = rows.filter(r => statusOf(r).toLowerCase() === "leave").length;
+      lines.push(`SUMMARY: Present ${present} | Absent ${absent} | Leave ${leave} | Employees ${rows.length}`, "");
+    }
+    for (const r of rows) {
+      const parts = [r.name || ""];
+      if (opts.attendance_identity) parts.push(r.employee_code || "N/A", r.department || "General");
+      if (opts.attendance_status) parts.push(statusOf(r));
+      if (opts.attendance_times) parts.push(`In: ${r.check_in || "—"}`, `Out: ${r.check_out || "—"}`, `Break: ${Number(r.break_minutes || 0)} min`);
+      if (opts.attendance_remarks) parts.push(`Remarks: ${r.notes || "—"}`);
+      lines.push(parts.join(" | "));
+    }
+    return { preview_text: lines.join("\n"), report_type: reportType, record_count: rows.length };
+  }
+
+  if (reportType === "Employee Details") {
+    const rows = await all(env.DB, `SELECT * FROM employees e WHERE 1=1 ${scopeSql} ORDER BY e.name COLLATE NOCASE`, args);
+    const lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE DETAILS", `Generated: ${new Date().toISOString().slice(0, 19).replace("T", " ")}`, ""];
+    for (const r of rows) {
+      const parts = [r.name || ""];
+      if (opts.details_identity) parts.push(`Employee ID: ${r.employee_code || "N/A"}`, `Department: ${r.department || "N/A"}`, `Role: ${r.designation || "N/A"}`);
+      if (opts.details_contact) parts.push(`Phone: ${r.phone || "N/A"}`, `Email: ${r.email || "N/A"}`);
+      if (opts.details_joining) parts.push(`Joining date: ${r.joining_date || "N/A"}`);
+      if (opts.details_status) parts.push(r.active ? "Status: Active" : "Status: Inactive");
+      if (opts.details_notes) parts.push(`Notes: ${r.notes || "N/A"}`);
+      lines.push(parts.join(" | "));
+    }
+    return { preview_text: lines.join("\n"), report_type: reportType, record_count: rows.length };
+  }
+
+  const employees = await all(env.DB, `SELECT * FROM employees e WHERE 1=1 ${scopeSql} ORDER BY e.name COLLATE NOCASE`, args);
+  const employeeRecords = [];
+  const allTasks = [];
+  for (const emp of employees) {
+    const [tasks, att, tgt] = await Promise.all([
+      all(env.DB, "SELECT * FROM tasks WHERE employee_id=? AND task_date=? ORDER BY id", [emp.id, dateStr]),
+      first(env.DB, "SELECT * FROM attendance WHERE employee_id=? AND work_date=?", [emp.id, dateStr]),
+      first(env.DB, "SELECT target, target_status FROM employee_targets WHERE employee_id=? AND target_date=?", [emp.id, dateStr])
+    ]);
+    employeeRecords.push({ employee: emp, tasks, attendance: att, target: tgt });
+    allTasks.push(...tasks);
+  }
+
+  const isCompleted = s => ["completed", "done", "closed", "submitted"].includes(String(s || "").trim().toLowerCase());
+  const completedCount = allTasks.filter(t => isCompleted(t.status)).length;
+  const pendingCount = allTasks.filter(t => !isCompleted(t.status) && String(t.status || "").toLowerCase() !== "cancelled").length;
+  const missingProofCount = employeeRecords.filter(rec => rec.tasks.some(t => isCompleted(t.status) && !String(t.proof_url || "").trim())).length;
+
+  const scopeDesc = req.employee_id ? "Individual employee" : (req.exclude_employee_id ? "Consolidated, excluding employee " + req.exclude_employee_id : "All employees");
+  const lines = [
+    "RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD",
+    `Report date: ${dateStr}`,
+    `Scope: ${scopeDesc}`,
+    ""
+  ];
+  if (opts.summary) {
+    lines.push(
+      "DAILY SUMMARY",
+      `Employees: ${employeeRecords.length}`,
+      `Tasks recorded: ${allTasks.length}`,
+      `Completed / submitted tasks: ${completedCount}`,
+      `Pending / other tasks: ${pendingCount}`,
+      `Employees flagged for missing proof: ${missingProofCount}`,
+      ""
+    );
+  }
+  for (const rec of employeeRecords) {
+    const { employee: emp, tasks, target } = rec;
+    lines.push(`EMPLOYEE: ${emp.name || ""}`);
+    if (opts.identity) lines.push(`Employee ID: ${emp.employee_code || "N/A"} | Department: ${emp.department || "N/A"} | Role: ${emp.designation || "N/A"}`);
+    if (opts.contact) lines.push(`Phone: ${emp.phone || "N/A"} | Email: ${emp.email || "N/A"}`);
+    if (opts.target) lines.push(`Target: ${target?.target || "N/A"}`);
+    if (opts.target_status) lines.push(`Target status: ${target?.target_status || "N/A"}`);
+    if (opts.work_status) {
+      const statuses = tasks.map(t => String(t.status || ""));
+      const ws = (statuses.length && statuses.every(isCompleted)) ? "Submitted" : (statuses.length ? "In progress / Partial" : "No tasks recorded");
+      lines.push(`WORK / EOD STATUS: ${ws}`);
+    }
+    if (opts.missing_proof) {
+      const missing = tasks.some(t => isCompleted(t.status) && !String(t.proof_url || "").trim());
+      lines.push(`MISSING PROOF: ${missing ? "Yes" : "No"}`);
+    }
+    if (opts.tasks) {
+      lines.push("TASKS:");
+      if (tasks.length) {
+        for (const t of tasks) {
+          const parts = [`• ${t.title || "Untitled"}: ${t.status || "Not started"} (${t.progress || 0}%)`];
+          if (opts.priority) parts.push(`Priority: ${t.priority || "Normal"}`);
+          if (opts.due_time && t.due_time) parts.push(`Due: ${t.due_time}`);
+          if (opts.details && t.details) parts.push(`Details: ${t.details}`);
+          if (opts.proof && t.proof_url) parts.push(`Proof: ${t.proof_url}`);
+          lines.push(parts.join(" | "));
+        }
+      } else {
+        lines.push("  No tasks recorded for this date.");
+      }
+    }
+    lines.push("");
+  }
+  return { preview_text: lines.join("\n"), report_type: reportType, record_count: employeeRecords.length };
+}
