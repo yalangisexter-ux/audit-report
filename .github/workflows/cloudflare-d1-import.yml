@@ -1,0 +1,179 @@
+name: Import canonical customer database into Cloudflare D1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cloudflare-d1-import.yml"
+      - "tools/cloudflare_d1_import.py"
+      - "tools/cloudflare_migration_guard.py"
+      - "cloudflare/d1/migrations/**"
+      - "customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: raw-strength-d1-canonical-import
+  cancel-in-progress: false
+
+jobs:
+  import-canonical:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: cloudflare-chat
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DB_SYNC_ENCRYPTION_SECRET: ${{ secrets.DB_SYNC_ENCRYPTION_SECRET }}
+      D1_DATABASE_ID: 028106c4-dc5e-41d6-a5d8-c94db99c231a
+    steps:
+      - name: Checkout canonical source
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install encryption dependency
+        run: python -m pip install --disable-pip-version-check cryptography
+
+      - name: Download and validate canonical encrypted snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$DB_SYNC_ENCRYPTION_SECRET"
+          mkdir -p "$RUNNER_TEMP/rsc-d1-import"
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/yalangisexter-ux/audit-report/main/customer-data/c4cf201d3c68e2fcaf60aa05fd423d9a.db.enc" \
+            --output "$RUNNER_TEMP/rsc-d1-import/canonical.db.enc"
+          test -s "$RUNNER_TEMP/rsc-d1-import/canonical.db.enc"
+          python tools/cloudflare_d1_import.py \
+            --source "$RUNNER_TEMP/rsc-d1-import/canonical.db.enc" \
+            --schema cloudflare/d1/migrations/0001_initial.sql \
+            --output-dir "$RUNNER_TEMP/rsc-d1-import/sql"
+
+      - name: Verify D1 is empty, import in bounded batches, and verify every table
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import sqlite3
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          database = os.environ["D1_DATABASE_ID"]
+          token = os.environ["CLOUDFLARE_API_TOKEN"]
+          root = Path(os.environ["RUNNER_TEMP"]) / "rsc-d1-import"
+          import_dir = root / "sql"
+          endpoint = f"https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{database}/query"
+
+          def query(body):
+              request = urllib.request.Request(
+                  endpoint,
+                  data=json.dumps(body).encode("utf-8"),
+                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=90) as response:
+                      payload = json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", "replace")[:1200]
+                  raise RuntimeError(f"D1 API returned HTTP {exc.code}: {detail}") from exc
+              if not payload.get("success"):
+                  raise RuntimeError("D1 API rejected query: " + json.dumps(payload.get("errors", [])))
+              return payload.get("result") or []
+
+          def rows(sql):
+              result = query({"sql": sql})
+              return (result[0].get("results") or []) if result else []
+
+          manifest = json.loads((import_dir / "manifest.json").read_text(encoding="utf-8"))
+          migration = sqlite3.connect(":memory:")
+          migration.executescript(Path("cloudflare/d1/migrations/0001_initial.sql").read_text(encoding="utf-8"))
+          expected_tables = {
+              row[0] for row in migration.execute(
+                  "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+              ).fetchall()
+          }
+          migration.close()
+
+          live_tables = {
+              row["name"] for row in rows(
+                  "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_cf_KV'"
+              )
+          }
+          if live_tables != expected_tables:
+              raise RuntimeError(
+                  "Live D1 schema table set differs from the checked-in migration. "
+                  f"Missing={sorted(expected_tables-live_tables)} extra={sorted(live_tables-expected_tables)}"
+              )
+
+          counts = {}
+          for table in sorted(live_tables):
+              count_rows = rows(f'SELECT COUNT(*) AS n FROM "{table}"')
+              counts[table] = int(count_rows[0]["n"])
+          allowed_settings = rows("SELECT key, value FROM settings")
+          for table, count in counts.items():
+              if table == "settings":
+                  if count > 1 or any(
+                      row != {"key": "working_weekdays", "value": "0,1,2,3,4,6"}
+                      for row in allowed_settings
+                  ):
+                      raise RuntimeError("D1 settings contain unexpected pre-existing customer data; import refused.")
+              elif count:
+                  raise RuntimeError(f"D1 table {table} already contains {count} rows; import refused.")
+
+          # Probe D1 Write permission without changing a row.
+          query({"sql": "UPDATE settings SET value=value WHERE key='__rsc_d1_write_permission_probe__'"})
+          print("D1 preflight passed: schema matches and no customer rows will be overwritten.")
+          print("Validated canonical snapshot rows:", manifest["total_rows"])
+
+          for chunk in sorted(import_dir.glob("chunk-*.json")):
+              statements = json.loads(chunk.read_text(encoding="utf-8"))
+              if not statements:
+                  continue
+              batch = [{"sql": statement} for statement in statements]
+              results = query({"batch": batch})
+              if len(results) != len(batch):
+                  raise RuntimeError(f"{chunk.name}: D1 returned {len(results)} results for {len(batch)} statements.")
+              failures = [item for item in results if not item.get("success", False)]
+              if failures:
+                  raise RuntimeError(f"{chunk.name}: D1 batch contained failed statements: {json.dumps(failures[:3])}")
+              print(f"Imported {chunk.name}: {len(batch)} rows")
+
+          for table, expected in manifest["tables"].items():
+              actual_rows = rows(f'SELECT COUNT(*) AS n FROM "{table}"')
+              actual = int(actual_rows[0]["n"])
+              if actual != expected:
+                  raise RuntimeError(f"Post-import count mismatch for {table}: expected {expected}, got {actual}")
+
+          final_users = rows(
+              "SELECT username, role, active FROM auth_users WHERE username COLLATE BINARY IN ('Admin','admin') ORDER BY username"
+          )
+          if len(final_users) != 2 or {row["username"] for row in final_users} != {"Admin", "admin"}:
+              raise RuntimeError("Post-import exact-case Admin/admin verification failed.")
+          if any(int(row["active"]) != 1 for row in final_users):
+              raise RuntimeError("One of the canonical Admin/admin accounts is inactive.")
+
+          print("D1 IMPORT VERIFIED")
+          print(json.dumps({"tables": manifest["tables"], "total_rows": manifest["total_rows"], "accounts": final_users}, indent=2))
+          PY
+
+      - name: Remove plaintext database import material
+        if: always()
+        run: |
+          rm -rf "$RUNNER_TEMP/rsc-d1-import"
