@@ -51,7 +51,18 @@ export default {
         return json({ token, user: publicUser(user) }, 200, headers);
       }
       if (url.pathname === "/api/auth/me" && request.method === "GET") {
-  
+        const user = await currentUser(request, env);
+        if (!user) return json({ error: "Login required" }, 401, headers);
+        return json({ user }, 200, headers);
+      }
+      if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+        const token = bearer(request);
+        if (!token) return json({ error: "Login required" }, 401, headers);
+        const result = await env.DB.prepare("DELETE FROM web_auth_sessions WHERE token_hash = ?").bind(await sha256(token)).run();
+        if (!result.success || !result.meta?.changes) return json({ error: "Login required" }, 401, headers);
+        return json({ success: true }, 200, headers);
+      }
+
       const path = url.pathname;
       if (path === "/api/auth/register" && request.method === "POST") {
         const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
@@ -99,24 +110,8 @@ export default {
       }
 
       const user = await currentUser(request, env);
-        if (!user) return json({ error: "Login required" }, 401, headers);
-        return json({ user }, 200, headers);
-      }
-      if (url.pathname === "/api/auth/logout" && request.method === "POST") {
-        const token = bearer(request);
-        if (!token) return json({ error: "Login required" }, 401, headers);
-        const result = await env.DB.prepare("DELETE FROM web_auth_sessions WHERE token_hash = ?").bind(await sha256(token)).run();
-        if (!result.success || !result.meta?.changes) return json({ error: "Login required" }, 401, headers);
-        return json({ success: true }, 200, headers);
-      }
-
-      const user = await currentUser(request, env);
       if (!user) return json({ error: "Login required" }, 401, headers);
-      const path = url.pathname;
-
-
-      if(path==="/api/auth/users"&&request.method==="GET"){
-        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+      if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         return json(await all(env.DB,"SELECT id,username,display_name,role,active,created_at,updated_at FROM auth_users ORDER BY username COLLATE NOCASE"),200,headers);
       }
       if(path==="/api/auth/users"&&request.method==="POST"){
