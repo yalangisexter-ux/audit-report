@@ -121,7 +121,6 @@ def _configure_validation_connection(connection: sqlite3.Connection) -> None:
     # hosted runner's TEMP/TMPDIR permissions cannot invalidate a good snapshot.
     connection.execute("PRAGMA temp_store=MEMORY")
     connection.execute("PRAGMA mmap_size=0")
-    connection.execute("PRAGMA query_only=ON")
     connection.execute("SELECT 1").fetchone()
 
 
@@ -139,6 +138,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
             _configure_validation_connection(connection)
             connection.deserialize(buffer)
             _configure_validation_connection(connection)
+            connection.execute("PRAGMA query_only=ON")
             return connection
         except Exception as exc:
             errors.append(f"{label}: {type(exc).__name__}: {exc}")
@@ -161,6 +161,7 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
         try:
             connection = sqlite3.connect(path, timeout=20, factory=_ValidationConnection)
             _configure_validation_connection(connection)
+            connection.execute("PRAGMA query_only=ON")
             connection._rsc_temp_path = path
             connection._rsc_temp_dir = directory
             return connection
