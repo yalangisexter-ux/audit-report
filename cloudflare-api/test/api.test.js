@@ -398,3 +398,74 @@ test("customer prospects CRUD operates with validation and deduplication", async
   assert.equal(create.status, 200);
   assert.equal((await create.json()).success, true);
 });
+
+test("system db-info, sync-now, and payment endpoints respond with valid structures", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "sys-token";
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions")) return values[0] === tokenHash ? user : null;
+              if (sql.includes("COUNT(*)")) return { n: 5 };
+              return null;
+            },
+            async all() { return { results: [] }; }
+          };
+        },
+      };
+    },
+  };
+
+  const dbInfo = await worker.fetch(request("/api/system/db-info", "GET", null, token), { DB });
+  assert.equal(dbInfo.status, 200);
+  const infoBody = await dbInfo.json();
+  assert.equal(infoBody.status, "healthy");
+  assert.equal(infoBody.database_name, "raw-strength-audit-manager");
+
+  const syncNow = await worker.fetch(request("/api/system/sync-now", "POST", null, token), { DB });
+  assert.equal(syncNow.status, 200);
+  assert.equal((await syncNow.json()).success, true);
+
+  const payments = await worker.fetch(request("/api/payments/config", "GET", null, token), { DB });
+  assert.equal(payments.status, 200);
+  assert.equal((await payments.json()).currency, "INR");
+});
+
+test("web database export returns structured JSON dump", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const token = "export-token";
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const DB = {
+    prepare(sql) {
+      let values = [];
+      return {
+        bind(...args) {
+          values = args;
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions")) return values[0] === tokenHash ? user : null;
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM \"employees\"")) return { results: [{ id: 1, name: "Alice" }] };
+              return { results: [] };
+            }
+          };
+        },
+      };
+    },
+  };
+
+  const exportRes = await worker.fetch(request("/api/web-database/export", "GET", null, token), { DB });
+  assert.equal(exportRes.status, 200);
+  assert.equal(exportRes.headers.get("Content-Type"), "application/json; charset=utf-8");
+  const body = await exportRes.json();
+  assert.equal(body.database, "raw-strength-audit-manager");
+  assert.deepEqual(body.tables.employees, [{ id: 1, name: "Alice" }]);
+});

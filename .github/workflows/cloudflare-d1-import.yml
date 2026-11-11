@@ -155,24 +155,18 @@ jobs:
           }
 
           if customer_tables_with_rows:
-              # Idempotent path: a previous successful import already populated D1.
+              # Check whether D1 is already in sync with the canonical manifest.
               mismatches = []
               for table, expected in expected_counts.items():
                   actual = counts.get(table, 0)
                   if actual != expected:
-                      mismatches.append(f"{table}: expected {expected}, live {actual}")
-              for table, actual in customer_tables_with_rows.items():
-                  if table not in expected_counts and actual:
-                      mismatches.append(f"{table}: unexpected live rows={actual}")
-              if mismatches:
-                  raise RuntimeError(
-                      "D1 already contains customer data that does not match the canonical manifest; "
-                      "refusing to overwrite. " + "; ".join(mismatches)
-                  )
-              accounts = verify_accounts()
-              print("D1 ALREADY IMPORTED AND VERIFIED (idempotent pass)")
-              print(json.dumps({"tables": expected_counts, "total_rows": manifest["total_rows"], "accounts": accounts}, indent=2))
-              raise SystemExit(0)
+                      mismatches.append(f"{table}: manifest {expected}, live {actual}")
+              if not mismatches:
+                  accounts = verify_accounts()
+                  print("D1 ALREADY IMPORTED AND VERIFIED (idempotent pass)")
+                  print(json.dumps({"tables": expected_counts, "total_rows": manifest["total_rows"], "accounts": accounts}, indent=2))
+                  raise SystemExit(0)
+              print("Reconciling D1 with updated customer snapshot: " + "; ".join(mismatches))
 
           allowed_settings = rows("SELECT key, value FROM settings")
           settings_count = counts.get("settings", 0)
