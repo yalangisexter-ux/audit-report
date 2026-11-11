@@ -451,7 +451,7 @@ async function currentUser(request, env) {
 function bearer(request) {const value=request.headers.get("Authorization")||"";const match=/^Bearer\s+(.+)$/i.exec(value);return match?match[1].trim():"";}
 
 async function deriveHash(password,salt){const key=await crypto.subtle.importKey("raw",encoder.encode(String(password||"")),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:encoder.encode(salt),iterations:PBKDF2_ITERATIONS,hash:"SHA-256"},key,256);return [...new Uint8Array(bits)].map(v=>v.toString(16).padStart(2,"0")).join("");}
-function normalizeAnswer(value){return String(value||"").trim().toLocaleLowerCase().split(/\\s+/).filter(Boolean).join(" ");}
+function normalizeAnswer(value){return String(value||"").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).join(" ");}
 function strongPassword(value){const s=String(value||"");return s.length>=8&&/[A-Za-z]/.test(s)&&/[0-9]/.test(s);}
 
 async function verifyPassword(password,salt,expected){if(typeof salt!=="string"||typeof expected!=="string"||!/^[a-f0-9]{64}$/i.test(expected))return false;const key=await crypto.subtle.importKey("raw",encoder.encode(password),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt:encoder.encode(salt),iterations:PBKDF2_ITERATIONS,hash:"SHA-256"},key,256);const actual=[...new Uint8Array(bits)].map(v=>v.toString(16).padStart(2,"0")).join("");return constantTimeEqual(actual,expected.toLowerCase());}
