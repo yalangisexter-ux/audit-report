@@ -51,7 +51,65 @@ export default {
         return json({ token, user: publicUser(user) }, 200, headers);
       }
       if (url.pathname === "/api/auth/me" && request.method === "GET") {
-        const user = await currentUser(request, env);
+        const activeUser = await currentUser(request, env);
+        if (!activeUser) return json({ error: "Login required" }, 401, headers);
+        return json({ user: activeUser }, 200, headers);
+      }
+      if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+        const token = bearer(request);
+        if (!token) return json({ error: "Login required" }, 401, headers);
+        const result = await env.DB.prepare("DELETE FROM web_auth_sessions WHERE token_hash = ?").bind(await sha256(token)).run();
+        if (!result.success || !result.meta?.changes) return json({ error: "Login required" }, 401, headers);
+        return json({ success: true }, 200, headers);
+      }
+
+      const path = url.pathname;
+      if (path === "/api/auth/register" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
+        if(!username||username.length>64||!display||display.length>100)return json({detail:"Enter a valid username and display name"},422,headers);
+        if(!strongPassword(b.password))return json({detail:"Use at least 8 characters with a letter and a number"},422,headers);
+        if(answer.length<2||!String(b.security_question||"").trim())return json({detail:"Choose a recovery question and enter a recovery answer"},422,headers);
+        const admins=await first(env.DB,"SELECT id FROM auth_users WHERE active=1 AND role IN ('Admin','Developer') LIMIT 1");
+        if(!admins)return json({detail:"An active Admin must complete initial setup before new account registration"},403,headers);
+        if(await first(env.DB,"SELECT id FROM auth_users WHERE username=? COLLATE BINARY",[username]))return json({detail:"That username already exists"},409,headers);
+        const ps=randomHex(16),as=randomHex(16),ph=await deriveHash(b.password,ps),ah=await deriveHash(answer,as),now=new Date().toISOString();
+        await insert(env.DB,"auth_users",{username,display_name:display,role:"Staff",password_salt:ps,password_hash:ph,security_question:String(b.security_question).trim(),answer_salt:as,answer_hash:ah,active:0,created_at:now,updated_at:now});
+        return json({success:true,pending_approval:true,message:"Account request submitted. An Admin must activate the account before sign-in."},200,headers);
+      }
+      if (path === "/api/auth/recovery-question" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim();
+        let row=await first(env.DB,"SELECT security_question FROM auth_users WHERE username=? COLLATE BINARY AND active=1",[username]);
+        if(!row){const matches=await all(env.DB,"SELECT security_question FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",[username]);if(matches.length===1)row=matches[0];}
+        if(!row?.security_question)return json({detail:"No password-recovery question is configured for this active account. Contact an Admin."},404,headers);
+        return json({security_question:row.security_question},200,headers);
+      }
+      if (path === "/api/auth/password-reset" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim(),answer=normalizeAnswer(b.security_answer);
+        let row=await first(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1",[username]);
+        if(!row){const matches=await all(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",[username]);if(matches.length===1)row=matches[0];}
+        if(!row?.answer_salt||!row?.answer_hash)return json({detail:"Password recovery is unavailable for this account. Contact an Admin."},400,headers);
+        if(!constantTimeEqual(await deriveHash(answer,row.answer_salt),row.answer_hash))return json({detail:"Recovery answer is incorrect"},403,headers);
+        if(!strongPassword(b.new_password))return json({detail:"Use at least 8 characters with a letter and a number"},422,headers);
+        const salt=randomHex(16),digest=await deriveHash(b.new_password,salt),now=new Date().toISOString();
+        await env.DB.prepare("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?").bind(salt,digest,now,row.id).run();
+        await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(row.id).run();
+        return json({success:true,message:"Password reset successfully. Sign in with your new password."},200,headers);
+      }
+      if (path === "/api/auth/change-password" && request.method === "POST") {
+        const b=await readJson(request),username=String(b.username||"").trim();
+        let row=await first(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE BINARY AND active=1",[username]);
+        if(!row){const matches=await all(env.DB,"SELECT * FROM auth_users WHERE username=? COLLATE NOCASE AND active=1",[username]);if(matches.length===1)row=matches[0];}
+        if(!row)return json({detail:"No active account found for that username."},400,headers);
+        if(!constantTimeEqual(await deriveHash(b.current_password||"",row.password_salt),row.password_hash))return json({detail:"Current password is incorrect."},403,headers);
+        if(!strongPassword(b.new_password))return json({detail:"Use at least 8 characters, including a letter and a number."},422,headers);
+        const salt=randomHex(16),digest=await deriveHash(b.new_password,salt),now=new Date().toISOString();
+        await env.DB.prepare("UPDATE auth_users SET password_salt=?,password_hash=?,updated_at=? WHERE id=?").bind(salt,digest,now,row.id).run();
+        await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(row.id).run();
+        await audit(env.DB,{username:row.username},"Password changed",row.username);
+        return json({success:true,message:"Password changed successfully. Sign in with your new password."},200,headers);
+      }
+
+      const user = await currentUser(request, env);
       if (!user) return json({ error: "Login required" }, 401, headers);
       if(path==="/api/auth/users"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
