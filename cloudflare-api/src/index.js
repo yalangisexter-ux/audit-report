@@ -611,6 +611,18 @@ export default {
         return json({total:rows.reduce((n,r)=>n+Number(r.stores||0),0),states,territories:rows},200,headers);
       }
 
+
+      if(path==="/api/home/business-snapshot"&&request.method==="GET"){
+        const [products,low,orders,members,activities]=await Promise.all([
+          first(env.DB,"SELECT COUNT(*) AS n FROM bt_products"),
+          first(env.DB,"SELECT COUNT(*) AS n FROM bt_products WHERE COALESCE(reorder_level,0)>0 AND (COALESCE(opening_stock,0)+COALESCE(received_qty,0)+COALESCE(returned_qty,0)-COALESCE(reserved_qty,0)-COALESCE(dispatched_qty,0)-COALESCE(free_qty,0)-COALESCE(damaged_qty,0)-COALESCE(expired_qty,0)-COALESCE(quarantined_qty,0))<=reorder_level"),
+          first(env.DB,"SELECT COUNT(*) AS n,COALESCE(SUM(order_value),0) AS sales FROM bt_orders"),
+          first(env.DB,"SELECT COUNT(*) AS n FROM bt_members WHERE status='Active'"),
+          first(env.DB,"SELECT COUNT(*) AS n FROM bt_activities")
+        ]);
+        return json({version:"1.3.82",products:Number(products?.n||0),low_stock:Number(low?.n||0),orders:Number(orders?.n||0),members:Number(members?.n||0),activities:Number(activities?.n||0),total_sales:Number(orders?.sales||0)},200,headers);
+      }
+
       return json({ error: "Not found", path }, 404, headers);
     } catch (error) {
       console.error("Cloudflare API request failed", { path: url.pathname, message: String(error?.message || error) });
