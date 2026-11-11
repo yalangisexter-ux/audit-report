@@ -52,6 +52,7 @@ export default {
       }
       if (url.pathname === "/api/auth/me" && request.method === "GET") {
   
+      const path = url.pathname;
       if (path === "/api/auth/register" && request.method === "POST") {
         const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
         if(!username||username.length>64||!display||display.length>100)return json({detail:"Enter a valid username and display name"},422,headers);
