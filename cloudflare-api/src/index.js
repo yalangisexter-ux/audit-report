@@ -413,6 +413,60 @@ export default {
         return json({success:true,id:await insert(env.DB,"bt_services",v)},200,headers);
       }
 
+
+      if(path==="/api/employee-groups"&&request.method==="GET"){
+        const groups=await all(env.DB,"SELECT id,name,display_order FROM employee_groups ORDER BY display_order ASC,name COLLATE NOCASE");
+        const counts=await all(env.DB,"SELECT TRIM(department) AS group_name,COUNT(*) AS employee_count FROM employees WHERE department IS NOT NULL AND TRIM(department)<>'' GROUP BY TRIM(department)");
+        const byName=new Map();
+        for(const g of groups){const k=String(g.name||"").trim().toLowerCase();if(k)byName.set(k,{id:g.id,name:g.name,display_order:Number(g.display_order||0),employee_count:0});}
+        for(const r of counts){const k=String(r.group_name||"").trim().toLowerCase();if(!k)continue;if(byName.has(k))byName.get(k).employee_count=Number(r.employee_count||0);else byName.set(k,{id:null,name:r.group_name,display_order:9999,employee_count:Number(r.employee_count||0)});}
+        return json([...byName.values()].sort((a,b)=>a.display_order-b.display_order||a.name.localeCompare(b.name)),200,headers);
+      }
+      if(path==="/api/business/orders"&&request.method==="GET")return json(await all(env.DB,"SELECT id,external_order_id AS order_code,order_date,sales_channel AS channel,customer_name,contact,payment_mode,order_status AS status,discount,order_value,invoice_number,shipment_id,assigned_employee_id,updated_by,updated_at,remarks FROM bt_orders ORDER BY id DESC LIMIT 300"),200,headers);
+      if(path==="/api/business/members"&&request.method==="GET")return json(await all(env.DB,"SELECT m.id,m.name AS full_name,m.contact AS phone,m.service_id,s.name AS plan_name,m.training_mode,m.registration_date,m.start_date,m.expiry_date AS end_date,m.sessions_purchased,m.sessions_completed,m.assigned_trainer_id,m.status,m.payment_status,m.invoice_ref,m.remarks FROM bt_members m LEFT JOIN bt_services s ON s.id=m.service_id ORDER BY m.id DESC LIMIT 300"),200,headers);
+      if(path==="/api/business/activities"&&request.method==="GET")return json(await all(env.DB,"SELECT a.*,e.name AS employee_name,o.external_order_id AS order_code,s.name AS service_name,p.name AS product_name FROM bt_activities a LEFT JOIN employees e ON e.id=a.employee_id LEFT JOIN bt_orders o ON o.id=a.related_order_id LEFT JOIN bt_services s ON s.id=a.related_service_id LEFT JOIN bt_products p ON p.id=a.product_id ORDER BY a.id DESC LIMIT 300"),200,headers);
+      if(path==="/api/business/overview"&&request.method==="GET"){
+        const queries=[
+          ["products","SELECT COUNT(*) AS n FROM bt_products"],["low_stock","SELECT COUNT(*) AS n FROM bt_products WHERE (COALESCE(opening_stock,0)+COALESCE(received_qty,0)+COALESCE(returned_qty,0)-COALESCE(reserved_qty,0)-COALESCE(dispatched_qty,0)-COALESCE(damaged_qty,0)-COALESCE(expired_qty,0)-COALESCE(quarantined_qty,0))<=COALESCE(reorder_level,0)"],
+          ["orders","SELECT COUNT(*) AS n FROM bt_orders"],["services","SELECT COUNT(*) AS n FROM bt_services"],["members","SELECT COUNT(*) AS n FROM bt_members"],["activities","SELECT COUNT(*) AS n FROM bt_activities"],
+          ["open_orders","SELECT COUNT(*) AS n FROM bt_orders WHERE lower(IFNULL(order_status,'')) NOT IN ('completed','cancelled','delivered','closed','returned')"],["active_members","SELECT COUNT(*) AS n FROM bt_members WHERE lower(IFNULL(status,'')) IN ('active','current','ongoing') OR IFNULL(status,'')=''"],["completed_activities","SELECT COUNT(*) AS n FROM bt_activities WHERE lower(IFNULL(task_status,''))='completed'"]
+        ];
+        const values=await Promise.all(queries.map(([,sql])=>first(env.DB,sql)));
+        return json(Object.fromEntries(queries.map(([k],i)=>[k,Number(values[i]?.n||0)])),200,headers);
+      }
+      if(path==="/api/print-center/summary"&&request.method==="GET"){
+        const day=url.searchParams.get("report_date")||new Date().toISOString().slice(0,10);
+        if(!validDate(day))return json({detail:"report_date must use YYYY-MM-DD format"},422,headers);
+        const [tasks,attendance,employees,open,marked,orders,members]=await Promise.all([
+          all(env.DB,"SELECT t.*,e.name AS employee_name FROM tasks t LEFT JOIN employees e ON e.id=t.employee_id WHERE t.task_date=? ORDER BY t.id DESC LIMIT 200",[day]),
+          all(env.DB,"SELECT e.name,e.department,COALESCE(a.attendance_status,'Unmarked') AS attendance_status,a.check_in,a.check_out FROM employees e LEFT JOIN attendance a ON a.employee_id=e.id AND a.work_date=? WHERE e.active=1 ORDER BY e.name",[day]),
+          first(env.DB,"SELECT COUNT(*) AS n FROM employees WHERE active=1"),
+          first(env.DB,"SELECT COUNT(*) AS n FROM tasks WHERE lower(IFNULL(status,'')) NOT IN ('done','completed','closed')"),
+          first(env.DB,"SELECT COUNT(*) AS n FROM attendance WHERE work_date=?",[day]),
+          first(env.DB,"SELECT COUNT(*) AS n FROM bt_orders"),
+          first(env.DB,"SELECT COUNT(*) AS n FROM bt_members")
+        ]);
+        return json({report_date:day,employee_count:Number(employees?.n||0),employees:Number(employees?.n||0),tasks_open:Number(open?.n||0),attendance_today:Number(marked?.n||0),orders:Number(orders?.n||0),members:Number(members?.n||0),tasks,attendance,note:"Live web summary from the shared D1 database."},200,headers);
+      }
+      if(path==="/api/customers/prospects"&&request.method==="GET"){
+        const where=["1=1"],args=[];
+        if(url.searchParams.has("state")){where.push("state=?");args.push(url.searchParams.get("state"));}
+        if(url.searchParams.has("q")){const term="%"+url.searchParams.get("q").trim()+"%";const fields=["business_name","business_category","kind","area","city","state","contact_person","phone","email","address","website","maps","followup_date","connection","verified","response","source_status"];where.push("("+fields.map(f=>"IFNULL("+f+",'') LIKE ?").join(" OR ")+")");args.push(...fields.map(()=>term));}
+        if(url.searchParams.has("before_id")){const id=Number(url.searchParams.get("before_id"));if(Number.isInteger(id)&&id>0){where.push("id<?");args.push(id);}}
+        const limit=Math.min(1000,Math.max(1,Number(url.searchParams.get("limit")||200)));
+        args.push(limit);
+        return json(await all(env.DB,"SELECT * FROM customer_prospects WHERE "+where.join(" AND ")+" ORDER BY id DESC LIMIT ?",args),200,headers);
+      }
+      if(path==="/api/customers/summary"&&request.method==="GET"){
+        const [total,states,cities]=await Promise.all([first(env.DB,"SELECT COUNT(*) AS n FROM customer_prospects"),all(env.DB,"SELECT state,COUNT(*) AS count FROM customer_prospects GROUP BY state ORDER BY count DESC LIMIT 30"),all(env.DB,"SELECT city,state,COUNT(*) AS count FROM customer_prospects GROUP BY city,state ORDER BY count DESC LIMIT 30")]);
+        return json({total:Number(total?.n||0),states,cities},200,headers);
+      }
+      if(path==="/api/customers/regional-summary"&&request.method==="GET"){
+        const rows=await all(env.DB,"SELECT state,city,COUNT(*) AS stores FROM customer_prospects GROUP BY state,city ORDER BY state COLLATE NOCASE,stores DESC");
+        const states=await all(env.DB,"SELECT state,COUNT(*) AS stores FROM customer_prospects GROUP BY state ORDER BY stores DESC");
+        return json({total:rows.reduce((n,r)=>n+Number(r.stores||0),0),states,territories:rows},200,headers);
+      }
+
       return json({ error: "Not found", path }, 404, headers);
     } catch (error) {
       console.error("Cloudflare API request failed", { path: url.pathname, message: String(error?.message || error) });
