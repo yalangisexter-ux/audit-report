@@ -128,10 +128,21 @@ def _open_sqlite_payload(sqlite_bytes: bytes) -> sqlite3.Connection:
     os.close(handle)
     try:
         Path(path).write_bytes(sqlite_bytes)
-        connection = sqlite3.connect(path, timeout=20)
+
+        # Open the fallback image read-only and immutable. Validation must not
+        # create a journal/WAL beside a snapshot, and immutable mode avoids
+        # SQLite lock-file attempts in restricted runner temp directories.
+        class _ValidationConnection(sqlite3.Connection):
+            pass
+
+        connection = sqlite3.connect(
+            Path(path).as_uri() + "?mode=ro&immutable=1",
+            uri=True,
+            timeout=20,
+            factory=_ValidationConnection,
+        )
         connection.execute("SELECT 1").fetchone()
-        # Keep the path on the connection so the caller can unlink it after close.
-        connection._rsc_temp_path = path  # type: ignore[attr-defined]
+        connection._rsc_temp_path = path
         return connection
     except Exception:
         try:
