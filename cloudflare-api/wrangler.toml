@@ -1,6 +1,6 @@
 name = "raw-strength-employee-api"
 main = "src/index.js"
-compatibility_date = "2026-10-29"
+compatibility_date = "2026-11-11"
 
 [[d1_databases]]
 binding = "DB"
