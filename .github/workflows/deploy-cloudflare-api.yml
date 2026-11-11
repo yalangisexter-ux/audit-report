@@ -1,0 +1,103 @@
+name: Deploy Cloudflare Employee API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare-api/**"
+      - "cloudflare/d1/migrations/**"
+      - ".github/workflows/deploy-cloudflare-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-employee-api-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: cloudflare-chat
+    defaults:
+      run:
+        working-directory: cloudflare-api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Require main
+        shell: bash
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "Production Worker deploys are main-only; refusing $GITHUB_REF" >&2
+            exit 1
+          }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Validate credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "Missing CLOUDFLARE_API_TOKEN in cloudflare-chat environment"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "Missing CLOUDFLARE_ACCOUNT_ID variable"; exit 1; }
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-fA-F]{32}$ ]] || { echo "Invalid Cloudflare account ID"; exit 1; }
+
+      - name: Install Wrangler
+        run: npm install --no-save --no-audit --no-fund wrangler@4
+
+      - name: Validate Worker
+        run: |
+          npm run check
+          npm test
+
+      - name: Deploy API Worker
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.toml 2>&1 | tee "$RUNNER_TEMP/worker-deploy.log"
+          worker_url="$(grep -Eo 'https://raw-strength-employee-api[.][A-Za-z0-9-]+[.]workers[.]dev' "$RUNNER_TEMP/worker-deploy.log" | tail -n 1 || true)"
+          if [ -z "$worker_url" ]; then
+            worker_url="https://raw-strength-employee-api.workers.dev"
+          fi
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed D1 health endpoint
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            code="$(curl --silent --show-error --output "$RUNNER_TEMP/health.json" --write-out '%{http_code}' "$WORKER_URL/api/health" || true)"
+            if [ "$code" = "200" ]; then break; fi
+            sleep 3
+          done
+          test "$code" = "200" || { echo "Health endpoint returned HTTP $code"; cat "$RUNNER_TEMP/health.json"; exit 1; }
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          body=json.loads(Path(os.environ["RUNNER_TEMP"], "health.json").read_text())
+          assert body.get("status") == "healthy", body
+          assert body.get("database_connected") is True, body
+          assert int(body.get("total_employees", -1)) == 8, body
+          assert int(body.get("total_tasks", -1)) == 47, body
+          print(json.dumps(body, indent=2))
+          PY
+          echo "Cloudflare Employee API deployed and connected to the imported customer D1 database."
