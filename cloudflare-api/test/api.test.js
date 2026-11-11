@@ -93,3 +93,29 @@ test("missing D1 binding fails closed", async () => {
   const response = await worker.fetch(request("/api/health"), {});
   assert.equal(response.status, 503);
 });
+
+test("protected employee API rejects requests without a valid session", async () => {
+  const DB = makeDb([makeUser("Admin", "correct horse")]);
+  const response = await worker.fetch(request("/api/employees"), { DB });
+  assert.equal(response.status, 401);
+});
+
+test("working-weekday settings always include Sunday for the Admin calendar", async () => {
+  const user = makeUser("Admin", "correct horse");
+  const DB = makeDb([user]);
+  const token = "test-admin-session";
+  DB.sessions.set(createHash("sha256").update(token).digest("hex"), {
+    user_id: user.id,
+    expires_at: new Date(Date.now() + 60000).toISOString(),
+  });
+  const env = { DB };
+  const get = await worker.fetch(request("/api/settings/working-weekdays", "GET", null, token), env);
+  assert.equal(get.status, 200);
+  assert.deepEqual((await get.json()).weekdays, [0, 1, 2, 3, 4, 6]);
+
+  const save = await worker.fetch(request("/api/settings/working-weekdays", "PUT", { weekdays: [0, 1, 2, 3, 4] }, token), env);
+  assert.equal(save.status, 200);
+  const result = await save.json();
+  assert.deepEqual(result.weekdays, [0, 1, 2, 3, 4, 6]);
+  assert.equal(result.sunday_required, true);
+});
