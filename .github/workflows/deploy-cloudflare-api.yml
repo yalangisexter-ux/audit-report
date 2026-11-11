@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           test "$GITHUB_REF" = "refs/heads/main" || {
-            echo "Production Worker deploys are main-only; refusing $GITHUB_REF" >&2
+            echo "Production Worker deploys are main-only; refusing ref $GITHUB_REF" >&2
             exit 1
           }
 
