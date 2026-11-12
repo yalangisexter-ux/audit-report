@@ -89,50 +89,281 @@ body[data-rsc-wallpaper="Custom Image"]::before {
 }
 @keyframes rsc-wallpaper-drift { from { transform:scale(1.015) translate3d(-.3%,0,0); } to { transform:scale(1.055) translate3d(.3%,-.4%,0); } }
 
-/* Theme Accent Variations matching desktop EXE benchmark */
+/* Theme Accent & Surface Variations matching desktop EXE benchmark */
 body[data-rsc-theme="night"] {
   --theme-accent: #22d3ee;
   --theme-accent-glow: rgba(34, 211, 238, 0.25);
   color-scheme: dark;
 }
-body[data-rsc-theme="ocean"] {
-  --theme-accent: #38bdf8;
-  --theme-accent-glow: rgba(56, 189, 248, 0.25);
-  color-scheme: dark;
+body[data-rsc-theme="night"]::after {
+  background: transparent;
 }
-body[data-rsc-theme="sunset"] {
-  --theme-accent: #f59e0b;
-  --theme-accent-glow: rgba(245, 158, 11, 0.25);
-  color-scheme: dark;
-}
-body[data-rsc-theme="day"] {
-  --theme-accent: #60a5fa;
-  --theme-accent-glow: rgba(96, 165, 250, 0.25);
-  color-scheme: dark;
-}
-
-/* Ensure persistent high-contrast readability across all themes */
-.webapp-root {
+body[data-rsc-theme="night"] .webapp-root {
   color: #f8fafc;
 }
+body[data-rsc-theme="night"] input,
+body[data-rsc-theme="night"] select,
+body[data-rsc-theme="night"] textarea {
+  color: #f8fafc !important;
+}
 
-/* Header Brand Banner always retains crisp luminous executive styling */
+/* Light content surfaces across Day, Ocean, and Sunset themes */
+html[data-rsc-theme="day"],
+html[data-rsc-theme="ocean"],
+html[data-rsc-theme="sunset"] {
+  color-scheme: light;
+}
+
+body[data-rsc-theme="day"] {
+  --theme-accent: #2563eb;
+  --theme-accent-glow: rgba(37, 99, 235, 0.25);
+  background-color: #f1f5f9;
+  color: #0f172a;
+  color-scheme: light;
+}
+body[data-rsc-theme="day"]::after {
+  background: rgba(241, 245, 249, 0.88);
+}
+
+body[data-rsc-theme="ocean"] {
+  --theme-accent: #0284c7;
+  --theme-accent-glow: rgba(2, 132, 199, 0.25);
+  background-color: #f0f9ff;
+  color: #0f172a;
+  color-scheme: light;
+}
+body[data-rsc-theme="ocean"]::after {
+  background: rgba(240, 249, 255, 0.88);
+}
+
+body[data-rsc-theme="sunset"] {
+  --theme-accent: #ea580c;
+  --theme-accent-glow: rgba(234, 88, 12, 0.25);
+  background-color: #fff7ed;
+  color: #0f172a;
+  color-scheme: light;
+}
+body[data-rsc-theme="sunset"]::after {
+  background: rgba(255, 247, 237, 0.88);
+}
+
+/* Workspace surfaces in light themes */
+body[data-rsc-theme="day"] .webapp-root,
+body[data-rsc-theme="ocean"] .webapp-root,
+body[data-rsc-theme="sunset"] .webapp-root {
+  color: #0f172a;
+}
+
+/* Card surfaces inside main content workspace */
+body[data-rsc-theme="day"] main section,
+body[data-rsc-theme="day"] main [class*="bg-slate-900"],
+body[data-rsc-theme="day"] main [class*="bg-slate-950"],
+body[data-rsc-theme="day"] main [class*="bg-slate-800"],
+body[data-rsc-theme="ocean"] main section,
+body[data-rsc-theme="ocean"] main [class*="bg-slate-900"],
+body[data-rsc-theme="ocean"] main [class*="bg-slate-950"],
+body[data-rsc-theme="ocean"] main [class*="bg-slate-800"],
+body[data-rsc-theme="sunset"] main section,
+body[data-rsc-theme="sunset"] main [class*="bg-slate-900"],
+body[data-rsc-theme="sunset"] main [class*="bg-slate-950"],
+body[data-rsc-theme="sunset"] main [class*="bg-slate-800"] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+
+body[data-rsc-theme="ocean"] main section,
+body[data-rsc-theme="ocean"] main [class*="bg-slate-900"],
+body[data-rsc-theme="ocean"] main [class*="bg-slate-950"] {
+  border-color: #bae6fd !important;
+}
+
+body[data-rsc-theme="sunset"] main section,
+body[data-rsc-theme="sunset"] main [class*="bg-slate-900"],
+body[data-rsc-theme="sunset"] main [class*="bg-slate-950"] {
+  border-color: #fed7aa !important;
+}
+
+/* Secondary well inside cards */
+body[data-rsc-theme="day"] main section [class*="bg-slate-950"],
+body[data-rsc-theme="ocean"] main section [class*="bg-slate-950"],
+body[data-rsc-theme="sunset"] main section [class*="bg-slate-950"] {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* High-contrast typography inside main cards */
+body[data-rsc-theme="day"] main h1:not(button *):not(a *),
+body[data-rsc-theme="day"] main h2:not(button *):not(a *),
+body[data-rsc-theme="day"] main h3:not(button *):not(a *),
+body[data-rsc-theme="day"] main h4:not(button *):not(a *),
+body[data-rsc-theme="day"] main b:not(button *):not(a *),
+body[data-rsc-theme="day"] main strong:not(button *):not(a *),
+body[data-rsc-theme="ocean"] main h1:not(button *):not(a *),
+body[data-rsc-theme="ocean"] main h2:not(button *):not(a *),
+body[data-rsc-theme="ocean"] main h3:not(button *):not(a *),
+body[data-rsc-theme="ocean"] main h4:not(button *):not(a *),
+body[data-rsc-theme="ocean"] main b:not(button *):not(a *),
+body[data-rsc-theme="ocean"] main strong:not(button *):not(a *),
+body[data-rsc-theme="sunset"] main h1:not(button *):not(a *),
+body[data-rsc-theme="sunset"] main h2:not(button *):not(a *),
+body[data-rsc-theme="sunset"] main h3:not(button *):not(a *),
+body[data-rsc-theme="sunset"] main h4:not(button *):not(a *),
+body[data-rsc-theme="sunset"] main b:not(button *):not(a *),
+body[data-rsc-theme="sunset"] main strong:not(button *):not(a *) {
+  color: #0f172a !important;
+}
+
+body[data-rsc-theme="day"] main [class~="text-white"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="day"] main [class~="text-slate-100"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="day"] main [class~="text-slate-200"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="ocean"] main [class~="text-white"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="ocean"] main [class~="text-slate-100"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="ocean"] main [class~="text-slate-200"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="sunset"] main [class~="text-white"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="sunset"] main [class~="text-slate-100"]:not(button):not(button *):not(a):not(a *),
+body[data-rsc-theme="sunset"] main [class~="text-slate-200"]:not(button):not(button *):not(a):not(a *) {
+  color: #0f172a !important;
+}
+
+body[data-rsc-theme="day"] main [class~="text-slate-300"],
+body[data-rsc-theme="day"] main [class~="text-slate-400"],
+body[data-rsc-theme="ocean"] main [class~="text-slate-300"],
+body[data-rsc-theme="ocean"] main [class~="text-slate-400"],
+body[data-rsc-theme="sunset"] main [class~="text-slate-300"],
+body[data-rsc-theme="sunset"] main [class~="text-slate-400"] {
+  color: #475569 !important;
+}
+
+body[data-rsc-theme="day"] main [class~="text-slate-500"],
+body[data-rsc-theme="ocean"] main [class~="text-slate-500"],
+body[data-rsc-theme="sunset"] main [class~="text-slate-500"] {
+  color: #64748b !important;
+}
+
+/* Light mode form controls */
+body[data-rsc-theme="day"] main input,
+body[data-rsc-theme="day"] main select,
+body[data-rsc-theme="day"] main textarea,
+body[data-rsc-theme="ocean"] main input,
+body[data-rsc-theme="ocean"] main select,
+body[data-rsc-theme="ocean"] main textarea,
+body[data-rsc-theme="sunset"] main input,
+body[data-rsc-theme="sunset"] main select,
+body[data-rsc-theme="sunset"] main textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+body[data-rsc-theme="day"] main input::placeholder,
+body[data-rsc-theme="day"] main textarea::placeholder,
+body[data-rsc-theme="ocean"] main input::placeholder,
+body[data-rsc-theme="ocean"] main textarea::placeholder,
+body[data-rsc-theme="sunset"] main input::placeholder,
+body[data-rsc-theme="sunset"] main textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Light mode borders */
+body[data-rsc-theme="day"] main [class*="border-white/"],
+body[data-rsc-theme="ocean"] main [class*="border-white/"],
+body[data-rsc-theme="sunset"] main [class*="border-white/"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Light mode tables */
+body[data-rsc-theme="day"] main thead,
+body[data-rsc-theme="ocean"] main thead,
+body[data-rsc-theme="sunset"] main thead {
+  background-color: #f8fafc !important;
+}
+body[data-rsc-theme="day"] main th,
+body[data-rsc-theme="ocean"] main th,
+body[data-rsc-theme="sunset"] main th {
+  color: #475569 !important;
+  border-color: #e2e8f0 !important;
+}
+body[data-rsc-theme="day"] main td,
+body[data-rsc-theme="ocean"] main td,
+body[data-rsc-theme="sunset"] main td {
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+body[data-rsc-theme="day"] main tr:hover,
+body[data-rsc-theme="ocean"] main tr:hover,
+body[data-rsc-theme="sunset"] main tr:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Light mode sidebar */
+body[data-rsc-theme="day"] aside,
+body[data-rsc-theme="ocean"] aside,
+body[data-rsc-theme="sunset"] aside {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+body[data-rsc-theme="day"] aside button,
+body[data-rsc-theme="ocean"] aside button,
+body[data-rsc-theme="sunset"] aside button {
+  color: #475569 !important;
+}
+body[data-rsc-theme="day"] aside button:hover,
+body[data-rsc-theme="ocean"] aside button:hover,
+body[data-rsc-theme="sunset"] aside button:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+body[data-rsc-theme="day"] aside button[class*="bg-cyan-"],
+body[data-rsc-theme="ocean"] aside button[class*="bg-cyan-"],
+body[data-rsc-theme="sunset"] aside button[class*="bg-cyan-"] {
+  background: rgba(14, 165, 233, 0.12) !important;
+  color: #0284c7 !important;
+  font-weight: 700 !important;
+}
+
+/* Preserved Rich Button Styling across light themes */
+body[data-rsc-theme="day"] main button[class*="bg-gradient-"],
+body[data-rsc-theme="day"] main a[class*="bg-gradient-"],
+body[data-rsc-theme="ocean"] main button[class*="bg-gradient-"],
+body[data-rsc-theme="ocean"] main a[class*="bg-gradient-"],
+body[data-rsc-theme="sunset"] main button[class*="bg-gradient-"],
+body[data-rsc-theme="sunset"] main a[class*="bg-gradient-"],
+body[data-rsc-theme="day"] main [class*="bg-purple-"],
+body[data-rsc-theme="ocean"] main [class*="bg-purple-"],
+body[data-rsc-theme="sunset"] main [class*="bg-purple-"],
+body[data-rsc-theme="day"] main [class*="bg-indigo-"],
+body[data-rsc-theme="ocean"] main [class*="bg-indigo-"],
+body[data-rsc-theme="sunset"] main [class*="bg-indigo-"] {
+  color: #ffffff !important;
+}
+body[data-rsc-theme="day"] main button[class*="bg-gradient-"] *,
+body[data-rsc-theme="day"] main a[class*="bg-gradient-"] *,
+body[data-rsc-theme="ocean"] main button[class*="bg-gradient-"] *,
+body[data-rsc-theme="ocean"] main a[class*="bg-gradient-"] *,
+body[data-rsc-theme="sunset"] main button[class*="bg-gradient-"] *,
+body[data-rsc-theme="sunset"] main a[class*="bg-gradient-"] * {
+  color: inherit !important;
+}
+
+/* Header Brand Banner ALWAYS retains crisp luminous executive styling */
+header {
+  background: linear-gradient(to right, #020617, #0f172a, #020617) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
 header h1 {
   color: #ffffff !important;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5) !important;
   white-space: nowrap !important;
 }
 header p {
   color: #38bdf8 !important;
   white-space: nowrap !important;
 }
-
-/* Form controls always maintain clear contrast and readable text */
-input, select, textarea {
+header input, header select, header textarea {
   color: #f8fafc !important;
-}
-input::placeholder, textarea::placeholder {
-  color: #64748b !important;
+  background-color: rgba(15, 23, 42, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
 @media (prefers-reduced-motion: reduce) { body::before { animation: none; transform: none; } }

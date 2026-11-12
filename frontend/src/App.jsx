@@ -332,6 +332,13 @@ export default function App() {
   useEffect(()=>{
     document.documentElement.dataset.rscTheme=theme;
     document.body.dataset.rscTheme=theme;
+    if (theme === 'night') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+    }
     document.body.dataset.rscWallpaper=wallpaper;
     const imageUrl=wallpaper==='Custom Image'?customWallpaperUrl:(PHOTO_WALLPAPER_URLS[wallpaper]||'');
     document.body.style.setProperty('--rsc-wallpaper-image',imageUrl?('url("'+imageUrl+'")'):'none');
@@ -946,7 +953,7 @@ export default function App() {
       </div>
     </aside>
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex min-h-[96px] sm:min-h-[104px] shrink-0 items-center justify-between gap-2.5 sm:gap-4 border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 px-3 sm:px-4 py-2.5 shadow-lg overflow-x-auto">
+      <header className="flex min-h-[88px] sm:min-h-[96px] shrink-0 items-center justify-between gap-2 sm:gap-3 border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 px-3 sm:px-4 py-2 shadow-lg overflow-hidden">
         <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
           <button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden text-slate-300 hover:text-white shrink-0">
             <Menu size={18}/>
@@ -966,23 +973,33 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 sm:gap-2.5 ml-auto">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5 ml-auto">
+          {/* Day / Night mode instant toggle matching desktop EXE benchmark */}
           <button
             type="button"
-            onClick={()=>load()}
-            title="Continuous Cloud Sync is Active. Data is continuously encrypted and synchronized automatically in the background. Click to check for updates now."
-            className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-gradient-to-b from-emerald-500/20 to-emerald-600/30 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:from-emerald-500/30 hover:to-emerald-600/40 transition shadow-sm"
+            onClick={()=>setTheme(theme==='night'?'day':'night')}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition shadow-sm ${theme==='night' ? 'border-amber-400/40 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25' : 'border-sky-400/40 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30'}`}
+            title={theme==='night' ? "Switch to Day mode" : "Switch to Night mode"}
           >
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> Auto-Synced
+            {theme==='night' ? '☀️ Day mode' : '🌙 Night mode'}
           </button>
 
           <button
             type="button"
             onClick={()=>{window.location.hash='#store';setStoreRoute(true);}}
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-3 py-1.5 text-xs font-bold text-cyan-200 hover:bg-cyan-400/25 transition"
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-2.5 py-1.5 text-xs font-bold text-cyan-200 hover:bg-cyan-400/25 transition"
             title="Open online customer storefront"
           >
             🛍️ Storefront ↗
+          </button>
+
+          <button
+            type="button"
+            onClick={()=>load()}
+            title="Continuous Cloud Sync is Active. Data is continuously encrypted and synchronized automatically in the background. Click to check for updates now."
+            className="hidden 2xl:inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-gradient-to-b from-emerald-500/20 to-emerald-600/30 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:from-emerald-500/30 hover:to-emerald-600/40 transition shadow-sm"
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> Auto-Synced
           </button>
 
           <a
@@ -990,12 +1007,12 @@ export default function App() {
             target="_blank"
             rel="noopener noreferrer"
             title="Download the official Windows Desktop Application (.exe installer)"
-            className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
+            className="hidden 2xl:inline-flex items-center gap-1.5 rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
           >
             <Download size={13} className="text-purple-300" /> Windows (.exe)
           </a>
 
-          <div className="hidden lg:flex items-center gap-2">
+          <div className="hidden xl:flex items-center gap-2">
             <select
               aria-label="Application theme"
               className="max-w-28 rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400"
@@ -1003,14 +1020,6 @@ export default function App() {
               onChange={e=>setTheme(e.target.value)}
             >
               {APPEARANCE_THEMES.map(value=><option key={value} value={value}>{value[0].toUpperCase()+value.slice(1)}</option>)}
-            </select>
-            <select
-              aria-label="Live wallpaper"
-              className="hidden xl:block max-w-40 rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400"
-              value={wallpaper}
-              onChange={e=>setWallpaper(e.target.value)}
-            >
-              {WALLPAPER_STYLES.map(value=><option key={value} value={value}>{value}</option>)}
             </select>
           </div>
 
