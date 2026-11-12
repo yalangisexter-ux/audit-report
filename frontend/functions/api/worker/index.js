@@ -876,7 +876,17 @@ export default {
         const preview = await buildReportPreview(env, b);
         const fmt = String(b.output_format || "csv").toLowerCase();
         const slug = String(b.report_type || "report").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
-        const filename = `raw-strength-${slug}-${b.date || "report"}.${fmt === "pdf" ? "txt" : fmt}`;
+        const filename = `raw-strength-${slug}-${b.date || "report"}.${fmt}`;
+        if (fmt === "pdf") {
+          const pdfBytes = generateWorkerPdf(preview.preview_text, b);
+          return new Response(pdfBytes, {
+            headers: {
+              ...headers,
+              "Content-Type": "application/pdf",
+              "Content-Disposition": `attachment; filename="${filename}"`
+            }
+          });
+        }
         if (fmt === "csv") {
           const csvLines = ["Section,Field,Value"];
           let section = String(b.report_type || "Report");
@@ -1336,6 +1346,64 @@ function validDate(s){if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))ret
 function addDays(value,n=1){const d=new Date(value+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
 function validTime(s){return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);}
 function availableStock(p){return Math.max(0,Number(p.opening_stock||0)+Number(p.received_qty||0)+Number(p.returned_qty||0)-Number(p.reserved_qty||0)-Number(p.dispatched_qty||0)-Number(p.free_qty||0)-Number(p.damaged_qty||0)-Number(p.expired_qty||0)-Number(p.quarantined_qty||0));}
+function escapePdfText(str) { return String(str || "").replace(/[()\\]/g, "\\$&"); }
+function generateWorkerPdf(text, meta) {
+  const lines = String(text || "").split("\n");
+  const pages = [];
+  let curLines = [];
+  for (const raw of lines) {
+    curLines.push(raw.slice(0, 105));
+    if (curLines.length >= 48) { pages.push(curLines); curLines = []; }
+  }
+  if (curLines.length || !pages.length) pages.push(curLines);
+  let objCount = 2;
+  const pageObjIds = [], contentObjIds = [];
+  for (let i = 0; i < pages.length; i++) {
+    pageObjIds.push(++objCount);
+    contentObjIds.push(++objCount);
+  }
+  const fontId = ++objCount;
+  const contents = [];
+  for (let p = 0; p < pages.length; p++) {
+    const stream = [];
+    stream.push("BT", "/F1 12 Tf", "40 800 Td");
+    stream.push("(" + escapePdfText("RAW STRENGTH CALISTHENICS - " + (meta.report_type || "OPERATIONS REPORT")) + ") Tj");
+    stream.push("/F1 8 Tf", "0 -15 Td");
+    stream.push("(" + escapePdfText("Report Date: " + (meta.date || "") + "  |  Generated: " + new Date().toISOString().slice(0,10)) + ") Tj");
+    stream.push("0 -18 Td", "/F1 8.5 Tf");
+    for (const line of pages[p]) {
+      const isHeader = line.startsWith("EMPLOYEE:") || line === "DAILY SUMMARY" || line.startsWith("PRODUCT");
+      if (isHeader) {
+        stream.push("/F1 9.5 Tf", "(" + escapePdfText(line) + ") Tj", "0 -14 Td", "/F1 8.5 Tf");
+      } else {
+        stream.push("(" + escapePdfText(line) + ") Tj", "0 -12 Td");
+      }
+    }
+    stream.push("ET");
+    contents.push(stream.join("\n"));
+  }
+  const chunks = ["%PDF-1.4\n"];
+  const offsets = [];
+  function addObj(id, content) {
+    offsets[id] = chunks.join("").length;
+    chunks.push(id + " 0 obj\n" + content + "\nendobj\n");
+  }
+  addObj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  addObj(2, "<< /Type /Pages /Kids [" + pageObjIds.map(id => id + " 0 R").join(" ") + "] /Count " + pages.length + " >>");
+  for (let p = 0; p < pages.length; p++) {
+    addObj(pageObjIds[p], "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents " + contentObjIds[p] + " 0 R /Resources << /Font << /F1 " + fontId + " 0 R >> >> >>");
+    addObj(contentObjIds[p], "<< /Length " + contents[p].length + " >>\nstream\n" + contents[p] + "\nendstream");
+  }
+  addObj(fontId, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const xrefOffset = chunks.join("").length;
+  chunks.push("xref\n0 " + (objCount + 1) + "\n0000000000 65535 f \n");
+  for (let i = 1; i <= objCount; i++) {
+    const off = String(offsets[i] || 0).padStart(10, "0");
+    chunks.push(off + " 00000 n \n");
+  }
+  chunks.push("trailer\n<< /Size " + (objCount + 1) + " /Root 1 0 R >>\nstartxref\n" + xrefOffset + "\n%%EOF\n");
+  return new TextEncoder().encode(chunks.join(""));
+}
 function publicUser(u){return {id:u.id,username:u.username,display_name:u.display_name||u.username,role:u.role};}
 function role(user){return String(user?.role||"").trim().toLowerCase();}
 function forbidden(headers){return json({detail:"You do not have permission to perform this action."},403,headers);}

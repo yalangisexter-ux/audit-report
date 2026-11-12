@@ -78,6 +78,15 @@ export default function HomeWorkspace({
             >
               📊 Executive Dashboard ➔
             </button>
+            <a
+              href="https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 px-4 py-2.5 text-sm font-extrabold text-white shadow-md transition hover:brightness-110"
+              title="Download official Windows Desktop Installer (.exe)"
+            >
+              💻 Download Desktop App (.exe)
+            </a>
             <button
               type="button"
               onClick={() => open('settings')}

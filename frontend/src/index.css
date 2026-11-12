@@ -34,8 +34,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* Desktop-matched appearance controls. Wallpaper is a local visual layer only;
    opaque workspace cards keep employee data readable over every background. */
-html[data-rsc-theme="day"], html[data-rsc-theme="ocean"], html[data-rsc-theme="sunset"] { color-scheme: light; }
-html[data-rsc-theme="night"] { color-scheme: dark; }
+html { color-scheme: dark; }
 #root { position: relative; z-index: 1; min-height: 100%; }
 body::before {
   z-index: 0;
@@ -90,75 +89,48 @@ body[data-rsc-wallpaper="Custom Image"]::before {
 }
 @keyframes rsc-wallpaper-drift { from { transform:scale(1.015) translate3d(-.3%,0,0); } to { transform:scale(1.055) translate3d(.3%,-.4%,0); } }
 
-/* The EXE's Day, Ocean and Sunset themes use light content surfaces. */
-body[data-rsc-theme="day"], body[data-rsc-theme="ocean"], body[data-rsc-theme="sunset"] {
-  background-color: #eef2f7;
-  color: #0f172a;
+/* Theme Accent Variations matching desktop EXE benchmark */
+body[data-rsc-theme="night"] {
+  --theme-accent: #22d3ee;
+  --theme-accent-glow: rgba(34, 211, 238, 0.25);
+  color-scheme: dark;
 }
-body[data-rsc-theme="day"]::after, body[data-rsc-theme="ocean"]::after, body[data-rsc-theme="sunset"]::after {
-  background: rgba(248,250,252,.76);
+body[data-rsc-theme="ocean"] {
+  --theme-accent: #38bdf8;
+  --theme-accent-glow: rgba(56, 189, 248, 0.25);
+  color-scheme: dark;
 }
-body[data-rsc-theme="day"] .webapp-root,
-body[data-rsc-theme="ocean"] .webapp-root,
-body[data-rsc-theme="sunset"] .webapp-root { color: #0f172a !important; }
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-900/65"],
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-900/90"],
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-900"],
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-950/60"],
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-950/50"],
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-950/95"],
-body[data-rsc-theme="day"] .webapp-root [class~="bg-slate-950"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-900/65"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-900/90"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-900"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-950/60"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-950/50"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-950/95"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="bg-slate-950"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-900/65"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-900/90"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-900"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-950/60"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-950/50"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-950/95"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-slate-950"] {
-  background-color: rgba(255,255,255,.92) !important;
+body[data-rsc-theme="sunset"] {
+  --theme-accent: #f59e0b;
+  --theme-accent-glow: rgba(245, 158, 11, 0.25);
+  color-scheme: dark;
 }
-body[data-rsc-theme="day"] .webapp-root [class~="text-white"],
-body[data-rsc-theme="day"] .webapp-root [class~="text-slate-100"],
-body[data-rsc-theme="day"] .webapp-root [class~="text-slate-200"],
-body[data-rsc-theme="day"] .webapp-root [class~="text-slate-300"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-white"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-slate-100"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-slate-200"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-slate-300"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-white"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-slate-100"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-slate-200"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-slate-300"] { color: #0f172a !important; }
-body[data-rsc-theme="day"] .webapp-root [class~="text-slate-400"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-slate-400"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-slate-400"] { color: #475569 !important; }
-body[data-rsc-theme="day"] .webapp-root [class~="border-white/10"],
-body[data-rsc-theme="day"] .webapp-root [class~="border-white/5"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="border-white/10"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="border-white/5"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="border-white/10"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="border-white/5"] { border-color: rgba(15,23,42,.14) !important; }
-body[data-rsc-theme="day"] .webapp-root [class~="text-cyan-200"],
-body[data-rsc-theme="day"] .webapp-root [class~="text-cyan-300"] { color: #0369a1 !important; }
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-cyan-200"],
-body[data-rsc-theme="ocean"] .webapp-root [class~="text-cyan-300"] { color: #0284c7 !important; }
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-cyan-200"],
-body[data-rsc-theme="sunset"] .webapp-root [class~="text-cyan-300"] { color: #c2410c !important; }
-body[data-rsc-theme="day"] .webapp-root input,
-body[data-rsc-theme="day"] .webapp-root select,
-body[data-rsc-theme="day"] .webapp-root textarea,
-body[data-rsc-theme="ocean"] .webapp-root input,
-body[data-rsc-theme="ocean"] .webapp-root select,
-body[data-rsc-theme="ocean"] .webapp-root textarea,
-body[data-rsc-theme="sunset"] .webapp-root input,
-body[data-rsc-theme="sunset"] .webapp-root select,
-body[data-rsc-theme="sunset"] .webapp-root textarea { color: #0f172a; }
-body[data-rsc-theme="sunset"] .webapp-root [class~="bg-cyan-400"] { background-color: #f97316 !important; }
+body[data-rsc-theme="day"] {
+  --theme-accent: #60a5fa;
+  --theme-accent-glow: rgba(96, 165, 250, 0.25);
+  color-scheme: dark;
+}
+
+/* Ensure persistent high-contrast readability across all themes */
+.webapp-root {
+  color: #f8fafc;
+}
+
+/* Header Brand Banner always retains crisp luminous executive styling */
+header h1 {
+  color: #ffffff !important;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+header p {
+  color: #38bdf8 !important;
+}
+
+/* Form controls always maintain clear contrast and readable text */
+input, select, textarea {
+  color: #f8fafc !important;
+}
+input::placeholder, textarea::placeholder {
+  color: #64748b !important;
+}
+
 @media (prefers-reduced-motion: reduce) { body::before { animation: none; transform: none; } }

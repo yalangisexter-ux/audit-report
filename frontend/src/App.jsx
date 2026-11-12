@@ -931,6 +931,15 @@ export default function App() {
             <p className="text-[11px] text-cyan-300 font-semibold">{user.role}</p>
           </div>
         )}
+        <a
+          href="https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2'} text-xs font-semibold text-purple-300 hover:text-purple-200`}
+          title="Download Windows Desktop App (.exe)"
+        >
+          <Download size={14} /> {!sidebarCollapsed && <span>Download Desktop (.exe)</span>}
+        </a>
         <button onClick={logout} className={`flex items-center ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2'} text-xs font-semibold text-rose-300 hover:text-rose-200`} title="Sign out">
           <LogOut size={14}/> {!sidebarCollapsed && <span>Sign out</span>}
         </button>
@@ -975,6 +984,16 @@ export default function App() {
           >
             🛍️ Storefront ↗
           </button>
+
+          <a
+            href="https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download the official Windows Desktop Application (.exe installer)"
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
+          >
+            <Download size={13} className="text-purple-300" /> Windows (.exe)
+          </a>
 
           <div className="hidden lg:flex items-center gap-2">
             <select

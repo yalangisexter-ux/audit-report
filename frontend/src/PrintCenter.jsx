@@ -1,5 +1,150 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Eye, FileText, FolderOpen, Printer } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+
+export function generateExecutivePdf(text, meta = {}) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 36;
+  const contentWidth = pageWidth - margin * 2;
+  let y = margin;
+
+  const checkPageBreak = (needed = 16) => {
+    if (y + needed > pageHeight - margin - 25) {
+      doc.addPage();
+      y = margin;
+      drawHeader();
+    }
+  };
+
+  const drawHeader = () => {
+    doc.setFillColor(16, 43, 66);
+    doc.rect(margin, y, contentWidth, 40, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(255, 255, 255);
+    doc.text('RAW STRENGTH CALISTHENICS', margin + 12, y + 17);
+    doc.setFontSize(8);
+    doc.setTextColor(0, 174, 234);
+    doc.text('EXECUTIVE AUDIT  •  OPERATIONS OS  •  v1.3.82', margin + 12, y + 30);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(224, 242, 254);
+    const dateStr = meta.date ? `Report Date: ${meta.date}` : `Date: ${new Date().toISOString().slice(0, 10)}`;
+    doc.text(dateStr, pageWidth - margin - 12, y + 17, { align: 'right' });
+    doc.text(meta.report_type || 'Operations Audit', pageWidth - margin - 12, y + 30, { align: 'right' });
+    y += 50;
+  };
+
+  drawHeader();
+
+  const lines = String(text || '').split('\n');
+  for (let rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      y += 5;
+      continue;
+    }
+
+    if (line.startsWith('RAW STRENGTH CALISTHENICS') || line.startsWith('Report date:') || line.startsWith('Scope:')) {
+      continue;
+    }
+
+    if (
+      line === 'DAILY SUMMARY' ||
+      line.startsWith('EMPLOYEE:') ||
+      line.startsWith('PRODUCT CATALOG') ||
+      line.startsWith('SERVICE CATALOG') ||
+      line.startsWith('ATTENDANCE SUMMARY') ||
+      line.startsWith('PRODUCTIVITY') ||
+      line.startsWith('STORE DIRECTORY')
+    ) {
+      checkPageBreak(38);
+      y += 6;
+      doc.setFillColor(240, 249, 255);
+      doc.roundedRect(margin, y - 2, contentWidth, 20, 2, 2, 'F');
+      doc.setDrawColor(0, 174, 234);
+      doc.setLineWidth(2);
+      doc.line(margin, y - 2, margin, y + 18);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(16, 43, 66);
+      doc.text(line, margin + 8, y + 12);
+      y += 24;
+      continue;
+    }
+
+    if (line.startsWith('•') || line.startsWith('-')) {
+      checkPageBreak(18);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(31, 41, 55);
+      const splitLines = doc.splitTextToSize(line, contentWidth - 14);
+      for (const sl of splitLines) {
+        checkPageBreak(14);
+        doc.text(sl, margin + 10, y + 7);
+        y += 12;
+      }
+      continue;
+    }
+
+    if (line.includes(':')) {
+      checkPageBreak(16);
+      const colonIdx = line.indexOf(':');
+      const label = line.slice(0, colonIdx + 1);
+      const val = line.slice(colonIdx + 1);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(16, 43, 66);
+      const labelWidth = doc.getTextWidth(label + ' ');
+      doc.text(label, margin + 6, y + 7);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(31, 41, 55);
+      const splitVal = doc.splitTextToSize(val.trim(), contentWidth - labelWidth - 12);
+      if (splitVal.length === 1) {
+        doc.text(splitVal[0], margin + 6 + labelWidth, y + 7);
+        y += 13;
+      } else {
+        doc.text(splitVal[0], margin + 6 + labelWidth, y + 7);
+        y += 13;
+        for (let i = 1; i < splitVal.length; i++) {
+          checkPageBreak(13);
+          doc.text(splitVal[i], margin + 6 + 14, y + 7);
+          y += 12;
+        }
+      }
+      continue;
+    }
+
+    checkPageBreak(15);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(55, 65, 81);
+    const bodyLines = doc.splitTextToSize(line, contentWidth - 8);
+    for (const bl of bodyLines) {
+      checkPageBreak(13);
+      doc.text(bl, margin + 6, y + 7);
+      y += 12;
+    }
+  }
+
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.5);
+    doc.line(margin, pageHeight - margin + 4, pageWidth - margin, pageHeight - margin + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Raw Strength Calisthenics  •  Confidential Operations Audit', margin, pageHeight - margin + 16);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - margin + 16, { align: 'right' });
+  }
+
+  return doc;
+}
 
 const field = 'w-full min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400';
 const button = 'inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 py-2.5 text-sm font-bold text-slate-950 disabled:opacity-50';
@@ -160,6 +305,23 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
   const download = async (quiet = false) => {
     setBusy(true);
     try {
+      if (!archivedSelected && report.output_format === 'pdf') {
+        let content = reportText;
+        if (!content) {
+          const result = await apiFetch('/reports/preview', { method: 'POST', body: JSON.stringify(payload()) });
+          content = result.preview_text || '';
+          setReportText(content);
+          setRecordCount(result.record_count ?? null);
+        }
+        if (!content) throw new Error('No report content available to generate PDF.');
+        const slug = String(report.report_type || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'report';
+        const filename = `raw-strength-${slug}-${report.date || 'report'}.pdf`;
+        const doc = generateExecutivePdf(content, payload());
+        doc.save(filename);
+        if (!quiet) notify('Executive PDF report downloaded: ' + filename);
+        return true;
+      }
+
       const activeToken = localStorage.getItem('rsc_auth_token') || '';
       const response = archivedSelected
         ? await fetch('/api/archive/' + selectedArchivedReport.id + '/download', {
@@ -218,6 +380,24 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
       if (exported) notify('Word report downloaded. Open it in Microsoft Word to print.');
       return;
     }
+
+    if (!archivedSelected && report.output_format === 'pdf') {
+      try {
+        const doc = generateExecutivePdf(reportText, payload());
+        const blobUrl = doc.output('bloburl');
+        const printWindow = window.open(blobUrl, '_blank');
+        if (!printWindow) {
+          doc.save(`raw-strength-${report.date || 'report'}.pdf`);
+          notify('Pop-up was blocked; your Executive PDF has been downloaded directly.');
+        } else {
+          notify('Executive PDF opened for preview and printing.');
+        }
+      } catch (err) {
+        notify('Failed to generate PDF: ' + err.message);
+      }
+      return;
+    }
+
     const target = window.open('', '_blank');
     if (!target) return notify('Allow pop-ups to open the PDF preview.');
     target.document.write('<!doctype html><html><head><title>Preparing Raw Strength PDF…</title></head><body style="font:14px Arial,sans-serif;padding:32px;color:#102B42">Preparing your branded PDF…</body></html>');
@@ -225,26 +405,15 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
     setBusy(true);
     try {
       const token = localStorage.getItem('rsc_auth_token') || '';
-      const response = archivedSelected
-        ? await fetch('/api/archive/' + selectedArchivedReport.id + '/view', {
-            headers: token ? { Authorization: 'Bearer ' + token } : {}
-          })
-        : await fetch('/api/reports/export', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: 'Bearer ' + token } : {})
-            },
-            body: JSON.stringify({ ...payload(), output_format: 'pdf' })
-          });
+      const response = await fetch('/api/archive/' + selectedArchivedReport.id + '/view', {
+        headers: token ? { Authorization: 'Bearer ' + token } : {}
+      });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        throw new Error(body.detail || (archivedSelected
-          ? 'Archived PDF could not be opened (' + response.status + ').'
-          : 'PDF generation failed (' + response.status + ').'));
+        throw new Error(body.detail || 'Archived PDF could not be opened (' + response.status + ').');
       }
       const blob = await response.blob();
-      if (blob.type !== 'application/pdf') throw new Error('The report service did not return a PDF file.');
+      if (blob.type !== 'application/pdf') throw new Error('The archive service did not return a PDF file.');
       const url = window.URL.createObjectURL(blob);
       target.opener = null;
       target.location.href = url;
