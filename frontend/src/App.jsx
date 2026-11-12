@@ -946,27 +946,27 @@ export default function App() {
       </div>
     </aside>
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex min-h-[104px] shrink-0 items-center justify-between border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 px-4 py-3 shadow-lg">
-        <div className="flex min-w-0 items-center gap-3">
-          <button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden text-slate-300 hover:text-white">
+      <header className="flex min-h-[96px] sm:min-h-[104px] shrink-0 items-center justify-between gap-2.5 sm:gap-4 border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 px-3 sm:px-4 py-2.5 shadow-lg overflow-x-auto">
+        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+          <button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden text-slate-300 hover:text-white shrink-0">
             <Menu size={18}/>
           </button>
           <div className="relative rounded-xl p-[2px] bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-500 shadow-lg shadow-cyan-500/10 shrink-0">
-            <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-[10px] bg-slate-950/90 flex items-center justify-center p-1.5">
+            <div className="h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 rounded-[10px] bg-slate-950/90 flex items-center justify-center p-1 sm:p-1.5">
               <img src={brandLogo} alt="Raw Strength Calisthenics" className="h-full w-full object-contain" />
             </div>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl md:text-2xl font-black tracking-tight text-white truncate">
+          <div className="shrink-0 flex flex-col justify-center">
+            <h1 className="text-sm sm:text-lg md:text-xl lg:text-2xl font-black tracking-tight text-white whitespace-nowrap select-none" style={{ whiteSpace: 'nowrap' }}>
               Raw Strength Calisthenics
             </h1>
-            <p className="mt-0.5 text-[10px] sm:text-xs font-extrabold tracking-[0.2em] uppercase text-cyan-300">
+            <p className="mt-0.5 text-[9px] sm:text-[11px] md:text-xs font-extrabold tracking-[0.14em] uppercase text-cyan-300 whitespace-nowrap select-none" style={{ whiteSpace: 'nowrap' }}>
               EXECUTIVE AUDIT &nbsp;•&nbsp; OPERATIONS OS &nbsp;•&nbsp; v1.3.82
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-2.5 ml-auto">
           <button
             type="button"
             onClick={()=>load()}
@@ -990,7 +990,7 @@ export default function App() {
             target="_blank"
             rel="noopener noreferrer"
             title="Download the official Windows Desktop Application (.exe installer)"
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
+            className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
           >
             <Download size={13} className="text-purple-300" /> Windows (.exe)
           </a>

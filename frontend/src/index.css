@@ -120,9 +120,11 @@ body[data-rsc-theme="day"] {
 header h1 {
   color: #ffffff !important;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  white-space: nowrap !important;
 }
 header p {
   color: #38bdf8 !important;
+  white-space: nowrap !important;
 }
 
 /* Form controls always maintain clear contrast and readable text */
