@@ -102,8 +102,8 @@ export async function handleSalesWebhook(request, env, path) {
   const rawText = await request.text();
   if (rawText.length > 1024*1024) return new Response(JSON.stringify({error:"Payload too large"}),{status:413});
   let payload; try { payload = JSON.parse(rawText); } catch { return new Response(JSON.stringify({error:"Invalid JSON"}),{status:400}); }
-  const eventId = String(request.headers.get("X-Event-Id") || payload.event_id || payload.id || await hash(rawText)).slice(0,180);
-  const eventType = String(request.headers.get("X-Event-Type") || payload.event_type || payload.type || "order.updated").slice(0,100);
+  const eventId = String(request.headers.get("X-Event-Id") || (payload && typeof payload==="object" ? payload.event_id || payload.id : "") || await hash(rawText)).slice(0,180);
+  const eventType = String(request.headers.get("X-Event-Type") || (payload && typeof payload==="object" ? payload.event_type || payload.type : "") || "order.updated").slice(0,100);
   try {
     await insert(env.DB,"marketplace_events",{channel_id:id,external_event_id:eventId,event_type:eventType,payload_json:safeJson(payload),processing_status:"received",received_at:now()});
   } catch (error) {
@@ -111,7 +111,7 @@ export async function handleSalesWebhook(request, env, path) {
     throw error;
   }
   let imported = false;
-  if (/order|shipment|receipt/i.test(eventType) || payload.order || payload.data?.order) {
+  if (/order|shipment|receipt/i.test(eventType) || (payload && typeof payload==="object" && (payload.order || payload.data?.order))) {
     const normalized = normalizeOrder(channel.platform,payload);
     const event = await first(env.DB,"SELECT id FROM marketplace_events WHERE channel_id=? AND external_event_id=?",[id,eventId]);
     await saveMarketplaceOrder(env.DB,channel,normalized,event?.id);
@@ -143,6 +143,28 @@ export async function handleSalesChannels(request, env, path, user) {
     const encrypted = await encryptCredentials(env,creds);
     const id = await insert(env.DB,"sales_channels",{platform,account_label:label,status:"pending_authorization",auth_type:PLATFORMS[platform].auth,credentials_ciphertext:encrypted,webhook_secret_hash:await hash(secret),created_at:now(),updated_at:now(),last_sync_at:null,last_error:null});
     return new Response(JSON.stringify({success:true,channel_id:id,webhook_secret:secret,webhook_url_path:`/api/sales-channels/${id}/webhook`,message:"Save the webhook secret now; it is shown only once. Add marketplace API credentials through the secure Admin connection form, never in chat."}),{status:201,headers});
+  }
+  const credentialsMatch = /^\/api\/sales-channels\/(\d+)\/credentials$/.exec(path);
+  if (credentialsMatch && request.method === "PUT") {
+    const id=Number(credentialsMatch[1]), channel=await first(env.DB,"SELECT id FROM sales_channels WHERE id=?",[id]);
+    if(!channel)return new Response(JSON.stringify({detail:"Channel not found"}),{status:404,headers});
+    const b=await request.json(), credentials=b.credentials && typeof b.credentials==="object" && !Array.isArray(b.credentials)?b.credentials:null;
+    if(!credentials)return new Response(JSON.stringify({detail:"Credentials must be a JSON object"}),{status:422,headers});
+    const encrypted=await encryptCredentials(env,credentials);
+    await env.DB.prepare("UPDATE sales_channels SET credentials_ciphertext=?,status='configured',last_error=NULL,updated_at=? WHERE id=?").bind(encrypted,now(),id).run();
+    return new Response(JSON.stringify({success:true,status:"configured",secrets_exposed:false}),{status:200,headers});
+  }
+  const mappingMatch = /^\/api\/sales-channels\/(\d+)\/product-mappings$/.exec(path);
+  if (mappingMatch && request.method === "GET") {
+    return new Response(JSON.stringify(await all(env.DB,"SELECT m.*,p.name AS product_name,p.sku AS product_sku FROM channel_product_mappings m JOIN bt_products p ON p.id=m.product_id WHERE m.channel_id=? ORDER BY m.external_sku",[Number(mappingMatch[1])])),{status:200,headers});
+  }
+  if (mappingMatch && request.method === "POST") {
+    const id=Number(mappingMatch[1]),b=await request.json(),sku=String(b.external_sku||"").trim(),productId=Number(b.product_id);
+    const product=await first(env.DB,"SELECT id FROM bt_products WHERE id=?",[productId]);
+    if(!sku||sku.length>160||!product)return new Response(JSON.stringify({detail:"A valid external SKU and existing Raw Strength product are required"}),{status:422,headers});
+    const stamp=now();
+    await env.DB.prepare("INSERT INTO channel_product_mappings(channel_id,external_listing_id,external_sku,product_id,mapping_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(channel_id,external_sku) DO UPDATE SET external_listing_id=excluded.external_listing_id,product_id=excluded.product_id,mapping_status='confirmed',updated_at=excluded.updated_at").bind(id,String(b.external_listing_id||""),sku,productId,"confirmed",stamp,stamp).run();
+    return new Response(JSON.stringify({success:true}),{status:200,headers});
   }
   const webhook = /^\/api\/sales-channels\/(\d+)\/webhook-secret\/rotate$/.exec(path);
   if (webhook && request.method==="POST") {
