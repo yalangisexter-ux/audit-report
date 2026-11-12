@@ -1721,7 +1721,7 @@ class WebScraperDialog(QDialog):
 
         row1.addWidget(QLabel("Region:"))
         self.state_combo = QComboBox()
-        self.state_combo.addItem("All States / UTs")
+        self.state_combo.addItem("All India")
         self.state_combo.addItems(INDIA_REGIONS)
         if default_state in INDIA_REGIONS:
             self.state_combo.setCurrentText(default_state)
