@@ -1,0 +1,8 @@
+name = "raw-strength-employee-audit-manager-yalangis"
+compatibility_date = "2026-10-15"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "raw-strength-audit-manager"
+database_id = "028106c4-dc5e-41d6-a5d8-c94db99c231a"
