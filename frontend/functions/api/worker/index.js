@@ -241,17 +241,55 @@ export default {
       }
       if(path==="/api/auth/users"&&request.method==="POST"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
-        const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
+        const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim();
         const allowed=["Staff","HR","Admin","Developer","Employee"];
         if(!username||username.length>64||!display||display.length>100||!allowed.includes(b.role))return json({detail:"Enter a valid username, display name and role."},422,headers);
-        if(!strongPassword(b.password)||answer.length<2||!String(b.security_question||"").trim())return json({detail:"Use a strong password and configure a recovery question and answer."},422,headers);
+        if(!strongPassword(b.password))return json({detail:"Use a strong password with at least 8 characters, letters and numbers."},422,headers);
         if(b.role==="Developer"&&role(user)!=="developer")return forbidden(headers);
         const empId = b.employee_id ? Number(b.employee_id) : null;
         const permsStr = b.permissions ? (typeof b.permissions === "string" ? b.permissions : JSON.stringify(b.permissions)) : null;
-        const ps=randomHex(16),as=randomHex(16),now=new Date().toISOString();
-        const id=await insert(env.DB,"auth_users",{username,display_name:display,role:b.role,employee_id:empId,permissions:permsStr,password_salt:ps,password_hash:await deriveHash(b.password,ps),security_question:String(b.security_question).trim(),answer_salt:as,answer_hash:await deriveHash(answer,as),active:1,created_at:now,updated_at:now});
+        const ps=randomHex(16),now=new Date().toISOString();
+        const pHash = await deriveHash(b.password,ps);
+        let secQ = String(b.security_question||"").trim();
+        let as = "", aHash = "";
+        const rawAns = String(b.security_answer||"").trim();
+        if(rawAns && rawAns.length >= 2){
+          const normAns = normalizeAnswer(rawAns);
+          as = randomHex(16);
+          aHash = await deriveHash(normAns, as);
+          secQ = secQ || "What was the name of your first school?";
+        } else {
+          secQ = "(Pending user setup)";
+        }
+        const id=await insert(env.DB,"auth_users",{
+          username,
+          display_name:display,
+          role:b.role,
+          employee_id:empId,
+          permissions:permsStr,
+          password_salt:ps,
+          password_hash:pHash,
+          security_question:secQ,
+          answer_salt:as,
+          answer_hash:aHash,
+          active:1,
+          created_at:now,
+          updated_at:now
+        });
         await audit(env.DB,user,"User created",username+" ("+b.role+(empId ? ", mapped to employee #"+empId : "")+")");
         return json({success:true,id},200,headers);
+      }
+      if(path==="/api/auth/set-recovery"&&request.method==="POST"){
+        if(!user)return unauthorized(headers);
+        const b=await readJson(request);
+        const question=String(b.security_question||"").trim();
+        const answer=normalizeAnswer(b.security_answer);
+        if(!question||answer.length<2)return json({detail:"Please choose a valid recovery question and enter an answer with at least 2 characters."},422,headers);
+        const as=randomHex(16),now=new Date().toISOString();
+        const aHash=await deriveHash(answer,as);
+        await env.DB.prepare("UPDATE auth_users SET security_question=?,answer_salt=?,answer_hash=?,updated_at=? WHERE id=?").bind(question,as,aHash,now,user.id).run();
+        await audit(env.DB,user,"Recovery question updated",user.username);
+        return json({success:true,message:"Password recovery question and answer set successfully."},200,headers);
       }
       const account=/^\/api\/auth\/users\/(\d+)\/(active|role|password-reset|mapping|permissions)$/.exec(path);
       if(account){
@@ -684,15 +722,22 @@ export default {
       if(path==="/api/settings/working-weekdays"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const row=await first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'");
-        return json({weekdays:normalizeWeekdays(row?.value),sunday_required:true},200,headers);
+        const sundayRow=await first(env.DB,"SELECT value FROM settings WHERE key='sunday_workday'");
+        let normDays = normalizeWeekdays(row?.value);
+        if(sundayRow && String(sundayRow.value).trim() === "0"){
+          normDays = normDays.filter(d => d !== 6);
+        }
+        return json({weekdays:normDays,sunday_configurable:true},200,headers);
       }
       if(path==="/api/settings/working-weekdays"&&request.method==="PUT"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
-        const b=await readJson(request),days=[...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6).concat([6]))].sort();
+        const b=await readJson(request),days=[...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6))].sort();
         if(!days.length)return json({detail:"Choose valid weekdays."},422,headers);
+        const sundayActive = days.includes(6);
         await env.DB.prepare("INSERT INTO settings(key,value) VALUES('working_weekdays',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(days.join(",")).run();
-        await audit(env.DB,user,"Working week changed",days.join(","));
-        return json({success:true,weekdays:days,sunday_required:true},200,headers);
+        await env.DB.prepare("INSERT INTO settings(key,value) VALUES('sunday_workday',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(sundayActive ? "1" : "0").run();
+        await audit(env.DB,user,"Working week changed",days.join(",") + (sundayActive ? " (Sunday: Enabled)" : " (Sunday: Disabled)"));
+        return json({success:true,weekdays:days,sunday_configurable:true},200,headers);
       }
       if(path==="/api/settings"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);

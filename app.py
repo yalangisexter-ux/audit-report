@@ -487,7 +487,7 @@ def now_text():
 
 
 def working_weekdays_from_connection(conn):
-    """Return configured working days, always including Sunday like the desktop."""
+    """Return configured working days, supporting configurable Sundays while preserving legacy Sunday default."""
     try:
         row = conn.execute(
             "SELECT value FROM settings WHERE key=?", ("working_weekdays",)
@@ -500,12 +500,25 @@ def working_weekdays_from_connection(conn):
             except (TypeError, IndexError):
                 raw = row[0]
         weekdays = {
-            int(value.strip()) for value in str(raw).split(",") if value.strip()
+            int(value.strip()) for value in str(raw).split(",") if value.strip() and value.strip().isdigit()
         }
         weekdays = {value for value in weekdays if 0 <= value <= 6}
+        sunday_setting = conn.execute("SELECT value FROM settings WHERE key='sunday_workday'").fetchone()
+        if sunday_setting is not None:
+            try:
+                s_val = str(sunday_setting["value"] if hasattr(sunday_setting, "keys") else sunday_setting[0]).strip().lower()
+            except Exception:
+                s_val = "1"
+            if s_val in ("0", "false", "no", "disabled"):
+                weekdays.discard(6)
+            elif s_val in ("1", "true", "yes", "enabled"):
+                weekdays.add(6)
+        else:
+            weekdays.add(6)
+        if not weekdays:
+            weekdays = {0, 1, 2, 3, 4, 6}
     except (sqlite3.OperationalError, TypeError, ValueError, IndexError):
-        weekdays = {0, 1, 2, 3, 4}
-    weekdays.add(6)
+        weekdays = {0, 1, 2, 3, 4, 6}
     return weekdays
 
 
@@ -4501,9 +4514,6 @@ class TaskDialog(QDialog):
                 custom_pairs.append(("created_by", "admin"))
                 custom_pairs.append(("test_mode", "true"))
         custom_vals_str = serialize_custom_values(custom_pairs)
-        appr_status_val = self.approval_status.currentText().strip() if hasattr(self, "approval_status") else "Pending"
-        if hasattr(self, "parent") and self.parent() and str(getattr(self.parent(), "user_role", "")).casefold() == "employee":
-            appr_status_val = "Pending"
 
         return (
             self.employee.currentData(),
@@ -4524,8 +4534,13 @@ class TaskDialog(QDialog):
             actual_q,
             next_act,
             custom_vals_str,
-            appr_status_val,
         )
+
+    def approval_status_val(self):
+        appr = self.approval_status.currentText().strip() if hasattr(self, "approval_status") else "Pending"
+        if hasattr(self, "parent") and self.parent() and str(getattr(self.parent(), "user_role", "")).casefold() == "employee":
+            return "Pending"
+        return appr or "Pending"
 
 _ACCESSIBLE_TOOLTIP_CONTROLLER = None
 _COMBOBOX_WHEEL_FILTER = None
@@ -10392,10 +10407,9 @@ class MainWindow(QMainWindow):
         saved_days = self.db.working_weekdays()
         for idx, day_name in enumerate(day_names):
             checkbox = QCheckBox(day_name)
-            checkbox.setChecked(idx in saved_days or idx == 6)
-            if idx == 6:
-                checkbox.setEnabled(False)
-                checkbox.setToolTip("Sunday is always treated as a working day.")
+            checkbox.setChecked(idx in saved_days)
+            checkbox.setEnabled(True)
+            checkbox.setToolTip(f"Enable or disable {day_name} as an operational working day.")
             self.workday_checks.append(checkbox)
             days_layout.addWidget(checkbox, idx // 4, idx % 4)
         for col in range(4):
@@ -11454,9 +11468,10 @@ class MainWindow(QMainWindow):
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
+        appr_status = d.approval_status_val() if hasattr(d, "approval_status_val") else "Pending"
         try:
             self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,approval_status,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals[:18], appr_status, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
         except sqlite3.Error as ex:
             error(self, f"Could not save task: {ex}")
@@ -11692,9 +11707,10 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
+        appr_status = d.approval_status_val() if hasattr(d, "approval_status_val") else "Pending"
         try:
             self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,approval_status,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals[:18], appr_status, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
@@ -11715,8 +11731,9 @@ class MainWindow(QMainWindow):
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
+        appr_status = d.approval_status_val() if hasattr(d, "approval_status_val") else "Pending"
         try:
-            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,department=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,approval_status=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,department=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,approval_status=?,updated_at=? WHERE id=?""",(*vals[:18], appr_status, now_text(), tid))
             self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not update task: {ex}")
 
@@ -12210,7 +12227,8 @@ class MainWindow(QMainWindow):
         emp_layout.setContentsMargins(10, 5, 0, 0)
         emp_checks = {}
         for emp in all_emps:
-            chk = QCheckBox(f"{emp['name']} ({emp.get('department') or 'No dept'})")
+            emp_dept = emp["department"] if (hasattr(emp, "keys") and "department" in emp.keys()) else ""
+            chk = QCheckBox(f"{emp['name']} ({emp_dept or 'No dept'})")
             emp_checks[int(emp["id"])] = chk
             emp_layout.addWidget(chk)
         emp_widget.setVisible(False)
@@ -12565,7 +12583,9 @@ class MainWindow(QMainWindow):
         h_row = self.db.get_holiday_row(work_date)
         emp_obj = self.db.employee(employee_id)
         if h_row and emp_obj and is_holiday_for_employee(h_row, emp_obj):
-            error(self, f"{emp_obj.get('name', 'Employee')} is within the declared holiday scope ({h_row.get('holiday_name')}). Attendance editing is disabled.")
+            emp_name = emp_obj["name"] if (hasattr(emp_obj, "keys") and "name" in emp_obj.keys()) else "Employee"
+            h_name = h_row["holiday_name"] if (h_row and hasattr(h_row, "keys") and "holiday_name" in h_row.keys()) else "Holiday"
+            error(self, f"{emp_name} is within the declared holiday scope ({h_name}). Attendance editing is disabled.")
             self.refresh_attendance()
             return
         value = str(value or "").strip()
@@ -12647,6 +12667,7 @@ class MainWindow(QMainWindow):
         # Remember selected employee so check-in/out stay on the same row
         selected_eid = self.attendance_selected_employee()
         holiday_row = self.db.get_holiday_row(d)
+        holiday = holiday_row["holiday_name"] if holiday_row else None
         if holiday_row:
             dept_scope = str(holiday_row.get("department") or "All").strip()
             emp_scope = str(holiday_row.get("employee_ids") or "All").strip()
@@ -12812,7 +12833,7 @@ class MainWindow(QMainWindow):
             rem_combo.setMinimumWidth(150)
             rem_combo.setFixedHeight(32)
             rem_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            rem_combo.setEnabled(not bool(holiday))
+            rem_combo.setEnabled(not is_emp_holiday)
             rem_combo.setToolTip("Remarks: Choose preset (Late Check-in, Late Check-out, On Time, etc.) or type custom remarks")
             if is_dark_mode:
                 rem_combo.setStyleSheet(
@@ -12934,7 +12955,8 @@ class MainWindow(QMainWindow):
 
         for employee in employees:
             employee_id = int(employee["id"])
-            emp_dict = {"id": employee_id, "department": employee.get("department", "")}
+            emp_dept = employee["department"] if (hasattr(employee, "keys") and "department" in employee.keys()) else (dict(employee).get("department", "") if hasattr(employee, "__iter__") else "")
+            emp_dict = {"id": employee_id, "department": emp_dept}
             start_day = starts[employee_id]
             effective_start = max(start_day, month_start)
             if effective_start <= end:
@@ -14400,13 +14422,12 @@ class MainWindow(QMainWindow):
 
     def save_working_week(self):
         days = [str(i) for i, checkbox in enumerate(self.workday_checks) if checkbox.isChecked()]
-        # Sunday is mandatory even when saving settings from an older UI state.
-        if "6" not in days:
-            days.append("6")
         if not days:
             return error(self, "Select at least one working weekday.")
+        sunday_active = "6" in days
+        self.db.set_setting("sunday_workday", "1" if sunday_active else "0")
         self.db.set_setting("working_weekdays", ",".join(sorted(days, key=int)))
-        self.db.log("Working week changed",",".join(days))
+        self.db.log("Working week changed", ",".join(days) + f" (Sunday: {'Enabled' if sunday_active else 'Disabled'})")
         self.refresh_all(); info(self,"Working week saved. Working-day and productivity calculations have been refreshed.")
 
     def upload_eod_pdfs(self):
@@ -14776,30 +14797,42 @@ class MainWindow(QMainWindow):
                         break
         map_emp.currentIndexChanged.connect(on_map_emp_changed)
         password=QLineEdit(); password.setEchoMode(QLineEdit.Password)
-        question=QComboBox(); question.addItems(SECURITY_QUESTIONS)
+        question=QComboBox()
+        question.addItem("(User sets on own sign-in)", "")
+        for q in SECURITY_QUESTIONS:
+            question.addItem(q, q)
         answer=QLineEdit(); answer.setEchoMode(QLineEdit.Password)
+        answer.setPlaceholderText("Optional - account owner sets their own secret answer")
         form.addRow("Username / User ID",username); form.addRow("Display name",display); form.addRow("Role / Access level",role)
         form.addRow("Map to Employee",map_emp)
-        form.addRow("Initial password",password); form.addRow("Recovery question",question); form.addRow("Recovery answer",answer)
+        form.addRow("Initial password",password); form.addRow("Recovery question",question); form.addRow("Recovery answer (optional)",answer)
         layout.addWidget(formbox)
         buttons=QHBoxLayout(); create=QPushButton("Create account"); close=QPushButton("Close")
         buttons.addWidget(create); buttons.addWidget(close); layout.addLayout(buttons)
         close.clicked.connect(dialog.reject)
         def create_account():
-            u=username.text().strip(); d=display.text().strip(); pw=password.text(); ans=normalized_answer(answer.text())
+            u=username.text().strip(); d=display.text().strip(); pw=password.text()
+            ans_raw = answer.text().strip()
             r_val = role.currentText()
             mapped_eid = map_emp.currentData()
             if not u or not d: return error(dialog,"Enter username and display name.")
             if not password_is_strong(pw): return error(dialog,"Password must be 8+ characters with letters and numbers.")
-            if len(ans)<2: return error(dialog,"Enter a recovery answer.")
             # Enforce case-insensitive unique username
             existing = self.db.conn.execute("SELECT id FROM auth_users WHERE username=? COLLATE NOCASE", (u,)).fetchone()
             if existing:
                 return error(dialog, f"User ID / Username '{u}' already exists.\nUsernames must be unique across all devices.")
-            ps,ph=hash_pin(pw); aus,ah=hash_pin(ans)
+            ps,ph=hash_pin(pw)
+            if ans_raw:
+                ans = normalized_answer(ans_raw)
+                if len(ans) < 2: return error(dialog, "Recovery answer must be at least 2 characters if provided.")
+                aus, ah = hash_pin(ans)
+                sec_q = question.currentText() if question.currentText() != "(User sets on own sign-in)" else SECURITY_QUESTIONS[0]
+            else:
+                aus, ah = "", ""
+                sec_q = "(Pending user setup)"
             try:
                 self.db.conn.execute("INSERT INTO auth_users(username,display_name,role,employee_id,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)",
-                    (u,d,r_val,mapped_eid,ps,ph,question.currentText(),aus,ah,now_text(),now_text()))
+                    (u,d,r_val,mapped_eid,ps,ph,sec_q,aus,ah,now_text(),now_text()))
                 self.db.conn.commit(); self.db.log("User account created",f"{u} ({r_val})")
                 self.schedule_auto_sync(immediate=True)
             except sqlite3.IntegrityError:

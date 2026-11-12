@@ -383,7 +383,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
 
     if (!archivedSelected && report.output_format === 'pdf') {
       try {
-        const doc = generateExecutivePdf(reportText, payload());
+        const doc = generateExecutivePdf(reportText, { ...payload(), output_format: 'pdf' });
         const blobUrl = doc.output('bloburl');
         const printWindow = window.open(blobUrl, '_blank');
         if (!printWindow) {
