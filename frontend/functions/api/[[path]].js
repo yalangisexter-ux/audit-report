@@ -80,11 +80,13 @@ export async function onRequest({ request, env }) {
 
   let primaryOrigin = PRIMARY_WORKER_ORIGIN;
   try {
-    if (env?.API_ORIGIN) {
-      primaryOrigin = resolveApiOrigin(env.API_ORIGIN);
-    }
-  } catch {
-    primaryOrigin = PRIMARY_WORKER_ORIGIN;
+    if (env?.API_ORIGIN) primaryOrigin = resolveApiOrigin(env.API_ORIGIN);
+  } catch (error) {
+    console.error("Invalid Pages API_ORIGIN configuration:", String(error));
+    return Response.json(
+      { detail: "The application API proxy is not configured correctly." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   async function forwardTo(origin) {
@@ -106,7 +108,7 @@ export async function onRequest({ request, env }) {
     if (bodyBytes) {
       init.body = bodyBytes;
     }
-    return fetch(target.toString(), init);
+    return fetch(new Request(target.toString(), init));
   }
 
   // Try primary origin
