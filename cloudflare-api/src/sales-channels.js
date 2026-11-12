@@ -54,7 +54,7 @@ function normalizeOrder(platform, raw) {
   const order = raw.order || raw.data?.order || raw;
   const id = String(order.id ?? order.order_id ?? order.orderId ?? order.receipt_id ?? order.name ?? "").trim();
   if (!id) throw new Error("Marketplace order is missing its external order ID");
-  const itemsRaw = order.line_items || order.items || order.order_items || order.products || [];
+  const itemsRaw = order.line_items || order.items || order.order_items || order.orderItems || order.products || [];
   const items = (Array.isArray(itemsRaw) ? itemsRaw : []).slice(0,100).map(item => ({
     external_item_id: String(item.id ?? item.order_item_id ?? item.line_item_id ?? ""),
     sku: String(item.sku ?? item.seller_sku ?? item.product_sku ?? ""),
@@ -63,18 +63,47 @@ function normalizeOrder(platform, raw) {
     unit_price: Number(item.price ?? item.unit_price ?? item.item_price ?? 0) || 0,
     currency: String(item.currency ?? order.currency ?? "INR").slice(0,8)
   }));
-  const customer = order.customer || order.shipping_address || order.shippingAddress || {};
-  const created = order.created_at || order.createdAt || order.order_date || order.purchase_date || now();
+  const customer = order.customer || order.billing || order.billing_address || order.billingAddress ||
+    order.shipping_address || order.shippingAddress || {};
+  const created = order.created_at || order.createdAt || order.date_created || order.date_created_gmt ||
+    order.order_date || order.purchase_date || now();
   return {
     external_order_id: id, external_status: String(order.status ?? order.order_status ?? order.fulfillment_status ?? "new").slice(0,80),
     currency: String(order.currency || items[0]?.currency || "INR").slice(0,8),
-    total_amount: Number(order.total_price ?? order.total_amount ?? order.grand_total ?? order.amount ?? 0) || 0,
+    total_amount: Number(order.total_price ?? order.total_amount ?? order.grand_total ?? order.amount ?? order.total ?? 0) || 0,
     customer_name: String(customer.name || [customer.first_name,customer.last_name].filter(Boolean).join(" ") || order.buyer_name || "").slice(0,160),
-    customer_email: String(customer.email || order.email || "").slice(0,254),
-    customer_phone: String(customer.phone || order.phone || "").slice(0,40),
-    shipping_address: safeJson(order.shipping_address || order.shippingAddress || {}),
+    customer_email: String(customer.email || order.email || order.billing?.email || "").slice(0,254),
+    customer_phone: String(customer.phone || order.phone || order.billing?.phone || "").slice(0,40),
+    shipping_address: safeJson(order.shipping_address || order.shippingAddress || order.shipping || {}),
     ordered_at: String(created).slice(0,64), items
   };
+}
+async function hmacBase64(secret, rawText) {
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), {name:"HMAC",hash:"SHA-256"}, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, enc.encode(rawText));
+  return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+async function verifyProviderWebhook(request, channel, rawText, env) {
+  if (channel.platform === "other" || channel.platform === "meesho" || channel.platform === "flipkart" ||
+      channel.platform === "amazon_india" || channel.platform === "etsy" || channel.platform === "ebay") {
+    const supplied = request.headers.get("X-RS-Channel-Secret") || "";
+    return !!supplied && constantEqual(await hash(supplied), channel.webhook_secret_hash || "");
+  }
+  let credentials;
+  try { credentials = await decryptCredentials(env, channel.credentials_ciphertext); } catch { return false; }
+  if (channel.platform === "shopify") {
+    const secret = String(credentials.webhook_secret || credentials.api_secret || "");
+    const supplied = request.headers.get("X-Shopify-Hmac-Sha256") || "";
+    if (!secret || !supplied) return false;
+    return constantEqual(await hmacBase64(secret, rawText), supplied);
+  }
+  if (channel.platform === "woocommerce") {
+    const secret = String(credentials.webhook_secret || "");
+    const supplied = request.headers.get("X-WC-Webhook-Signature") || "";
+    if (!secret || !supplied) return false;
+    return constantEqual(await hmacBase64(secret, rawText), supplied);
+  }
+  return false;
 }
 async function saveMarketplaceOrder(db, channel, normalized, eventId) {
   const existing = await first(db,"SELECT id FROM marketplace_orders WHERE channel_id=? AND external_order_id=?",[channel.id,normalized.external_order_id]);
@@ -97,13 +126,14 @@ export async function handleSalesWebhook(request, env, path) {
   if (!match || request.method !== "POST") return null;
   const id = Number(match[1]), channel = await first(env.DB,"SELECT * FROM sales_channels WHERE id=? AND status<>'disabled'",[id]);
   if (!channel) return new Response(JSON.stringify({error:"Unknown or disabled sales channel"}),{status:404,headers:{"Content-Type":"application/json"}});
-  const supplied = request.headers.get("X-RS-Channel-Secret") || "";
-  if (!supplied || !constantEqual(await hash(supplied),channel.webhook_secret_hash || "")) return new Response(JSON.stringify({error:"Invalid webhook signature"}),{status:401,headers:{"Content-Type":"application/json"}});
   const rawText = await request.text();
   if (rawText.length > 1024*1024) return new Response(JSON.stringify({error:"Payload too large"}),{status:413});
+  if (!await verifyProviderWebhook(request,channel,rawText,env)) return new Response(JSON.stringify({error:"Invalid webhook signature"}),{status:401,headers:{"Content-Type":"application/json"}});
   let payload; try { payload = JSON.parse(rawText); } catch { return new Response(JSON.stringify({error:"Invalid JSON"}),{status:400}); }
-  const eventId = String(request.headers.get("X-Event-Id") || (payload && typeof payload==="object" ? payload.event_id || payload.id : "") || await hash(rawText)).slice(0,180);
-  const eventType = String(request.headers.get("X-Event-Type") || (payload && typeof payload==="object" ? payload.event_type || payload.type : "") || "order.updated").slice(0,100);
+  const eventId = String(request.headers.get("X-Shopify-Webhook-Id") || request.headers.get("X-WC-Webhook-Delivery-ID") ||
+    request.headers.get("X-Event-Id") || (payload && typeof payload==="object" ? payload.event_id || payload.id : "") || await hash(rawText)).slice(0,180);
+  const eventType = String(request.headers.get("X-Shopify-Topic") || request.headers.get("X-WC-Webhook-Topic") ||
+    request.headers.get("X-Event-Type") || (payload && typeof payload==="object" ? payload.event_type || payload.type : "") || "order.updated").slice(0,100);
   let duplicate = false;
   try {
     await insert(env.DB,"marketplace_events",{channel_id:id,external_event_id:eventId,event_type:eventType,payload_json:safeJson(payload),processing_status:"received",received_at:now()});
