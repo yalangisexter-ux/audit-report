@@ -12,12 +12,67 @@ const ATTENDANCE_FIELDS = ["attendance_status","check_in","check_out","break_min
 const ADMIN_ROLES = new Set(["admin","developer"]);
 const EMPLOYEE_ROLES = new Set(["admin","developer","hr"]);
 const PRESENT_DETAIL = new Set(["present","worked","work from home","wfh","half day","late","early leave","on duty","late check-in","late check-out","on time","balanced hours","overtime","short hours","early departure"]);
+const ALL_MODULES = ["home","dashboard","employees","tasks","tracker","attendance","reports","archive","business","customers","chat","settings"];
+const VALID_ACCESS_LEVELS = new Set(["full","write","approval","read","none"]);
+
+function isHolidayForEmployee(holiday, emp) {
+  if (!holiday) return false;
+  const deptScope = String(holiday.department || "All").trim();
+  const empScope = String(holiday.employee_ids || "All").trim();
+  if ((deptScope === "All" || !deptScope) && (empScope === "All" || !empScope)) {
+    return true;
+  }
+  if (deptScope !== "All" && deptScope) {
+    const depts = deptScope.split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
+    const empDept = String(emp?.department || "").trim().toLowerCase();
+    if (empDept && depts.includes(empDept)) return true;
+  }
+  if (empScope !== "All" && empScope) {
+    const ids = empScope.split(",").map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0);
+    if (ids.includes(Number(emp?.id || emp?.employee_id))) return true;
+  }
+  return false;
+}
+
+function getModuleAccess(user, moduleKey) {
+  if (!user) return 'none';
+  const userRole = String(user.role || '').toLowerCase();
+  let perms = user.permissions;
+  if (typeof perms === 'string') {
+    try { perms = JSON.parse(perms); } catch { perms = null; }
+  }
+  if (perms && typeof perms === 'object' && perms[moduleKey] && VALID_ACCESS_LEVELS.has(perms[moduleKey])) {
+    return perms[moduleKey];
+  }
+  if (userRole === 'admin' || userRole === 'developer') return 'full';
+  if (userRole === 'hr') {
+    if (['home','dashboard','employees','attendance','tracker','reports','archive','chat'].includes(moduleKey)) return 'full';
+    if (['tasks','business','customers'].includes(moduleKey)) return 'write';
+    if (moduleKey === 'settings') return 'read';
+    return 'read';
+  }
+  if (userRole === 'staff') {
+    if (['tasks','tracker','chat'].includes(moduleKey)) return 'write';
+    if (moduleKey === 'settings') return 'none';
+    return 'read';
+  }
+  if (userRole === 'employee') {
+    if (moduleKey === 'tasks') return 'approval';
+    if (moduleKey === 'attendance') return 'write';
+    if (['home','chat'].includes(moduleKey)) return 'read';
+    return 'none';
+  }
+  return 'read';
+}
 
 let _dbMigrated = false;
 async function ensureDbMigrations(db) {
   if (_dbMigrated) return;
   try { await db.prepare("ALTER TABLE auth_users ADD COLUMN employee_id INTEGER DEFAULT NULL").run(); } catch {}
   try { await db.prepare("ALTER TABLE tasks ADD COLUMN approval_status TEXT DEFAULT 'Pending'").run(); } catch {}
+  try { await db.prepare("ALTER TABLE auth_users ADD COLUMN permissions TEXT DEFAULT NULL").run(); } catch {}
+  try { await db.prepare("ALTER TABLE holidays ADD COLUMN department TEXT DEFAULT 'All'").run(); } catch {}
+  try { await db.prepare("ALTER TABLE holidays ADD COLUMN employee_ids TEXT DEFAULT 'All'").run(); } catch {}
   _dbMigrated = true;
 }
 
@@ -58,7 +113,7 @@ export default {
         if (!body || typeof body.username !== "string" || typeof body.password !== "string" ||
             body.username.length > 128 || body.password.length > 1024) return json({ error: "Invalid username or password" }, 400, headers);
         const user = await env.DB.prepare(
-          "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, e.name AS employee_name, u.password_salt, u.password_hash FROM auth_users u LEFT JOIN employees e ON u.employee_id = e.id WHERE u.username = ? COLLATE BINARY AND u.active = 1"
+          "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.permissions, e.name AS employee_name, u.password_salt, u.password_hash FROM auth_users u LEFT JOIN employees e ON u.employee_id = e.id WHERE u.username = ? COLLATE BINARY AND u.active = 1"
         ).bind(body.username.trim()).first();
         if (!user || !await verifyPassword(body.password, user.password_salt, user.password_hash)) {
           return json({ error: "Invalid username or password" }, 401, headers);
@@ -178,7 +233,11 @@ export default {
       }
       if(path==="/api/auth/users"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
-        return json(await all(env.DB,"SELECT u.id,u.username,u.display_name,u.role,u.employee_id,e.name AS employee_name,e.employee_code,u.active,u.created_at,u.updated_at FROM auth_users u LEFT JOIN employees e ON u.employee_id=e.id ORDER BY u.username COLLATE NOCASE"),200,headers);
+        const rows = await all(env.DB,"SELECT u.id,u.username,u.display_name,u.role,u.employee_id,u.permissions,e.name AS employee_name,e.employee_code,u.active,u.created_at,u.updated_at FROM auth_users u LEFT JOIN employees e ON u.employee_id=e.id ORDER BY u.username COLLATE NOCASE");
+        return json(rows.map(u => ({
+          ...u,
+          permissions: u.permissions ? (typeof u.permissions === "string" ? JSON.parse(u.permissions) : u.permissions) : null
+        })),200,headers);
       }
       if(path==="/api/auth/users"&&request.method==="POST"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
@@ -188,15 +247,16 @@ export default {
         if(!strongPassword(b.password)||answer.length<2||!String(b.security_question||"").trim())return json({detail:"Use a strong password and configure a recovery question and answer."},422,headers);
         if(b.role==="Developer"&&role(user)!=="developer")return forbidden(headers);
         const empId = b.employee_id ? Number(b.employee_id) : null;
+        const permsStr = b.permissions ? (typeof b.permissions === "string" ? b.permissions : JSON.stringify(b.permissions)) : null;
         const ps=randomHex(16),as=randomHex(16),now=new Date().toISOString();
-        const id=await insert(env.DB,"auth_users",{username,display_name:display,role:b.role,employee_id:empId,password_salt:ps,password_hash:await deriveHash(b.password,ps),security_question:String(b.security_question).trim(),answer_salt:as,answer_hash:await deriveHash(answer,as),active:1,created_at:now,updated_at:now});
+        const id=await insert(env.DB,"auth_users",{username,display_name:display,role:b.role,employee_id:empId,permissions:permsStr,password_salt:ps,password_hash:await deriveHash(b.password,ps),security_question:String(b.security_question).trim(),answer_salt:as,answer_hash:await deriveHash(answer,as),active:1,created_at:now,updated_at:now});
         await audit(env.DB,user,"User created",username+" ("+b.role+(empId ? ", mapped to employee #"+empId : "")+")");
         return json({success:true,id},200,headers);
       }
-      const account=/^\/api\/auth\/users\/(\d+)\/(active|role|password-reset|mapping)$/.exec(path);
+      const account=/^\/api\/auth\/users\/(\d+)\/(active|role|password-reset|mapping|permissions)$/.exec(path);
       if(account){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
-        const id=Number(account[1]),action=account[2],target=await first(env.DB,"SELECT id,username,role,employee_id,active FROM auth_users WHERE id=?",[id]);
+        const id=Number(account[1]),action=account[2],target=await first(env.DB,"SELECT id,username,role,employee_id,permissions,active FROM auth_users WHERE id=?",[id]);
         if(!target)return json({detail:"Account not found"},404,headers);
         if(target.role==="Developer"&&role(user)!=="developer")return forbidden(headers);
         const b=await readJson(request);
@@ -228,6 +288,13 @@ export default {
           await env.DB.prepare("UPDATE auth_users SET employee_id=?,updated_at=? WHERE id=?").bind(empId,new Date().toISOString(),id).run();
           await audit(env.DB,user,"User mapped to employee",target.username+" -> employee #"+empId);
           return json({success:true,user_id:id,employee_id:empId},200,headers);
+        }
+        if(action==="permissions"&&request.method==="PATCH"){
+          const perms = b.permissions;
+          const permString = perms ? (typeof perms === "string" ? perms : JSON.stringify(perms)) : null;
+          await env.DB.prepare("UPDATE auth_users SET permissions=?,updated_at=? WHERE id=?").bind(permString,new Date().toISOString(),id).run();
+          await audit(env.DB,user,"User permissions updated",target.username+": "+(permString||"Default role permissions"));
+          return json({success:true,user_id:id,permissions:perms?(typeof perms==="string"?JSON.parse(perms):perms):null},200,headers);
         }
         if(action==="password-reset"&&request.method==="POST"){
           if(!strongPassword(b.new_password))return json({detail:"Use at least 8 characters with a letter and a number"},422,headers);
@@ -449,8 +516,31 @@ export default {
           rosterArgs.push(user.employee_id || 0);
         }
         rosterSql += "ORDER BY e.display_order ASC,e.name COLLATE NOCASE";
-        const roster=await all(env.DB,rosterSql,rosterArgs);
-        return json({date,roster,remarks_options:[]},200,headers);
+        const [roster, holidayRow] = await Promise.all([
+          all(env.DB,rosterSql,rosterArgs),
+          first(env.DB,"SELECT holiday_date,holiday_name,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date=?",[date])
+        ]);
+        for (const row of roster) {
+          const empHoliday = holidayRow ? isHolidayForEmployee(holidayRow, { id: row.employee_id, department: row.department }) : false;
+          row.is_holiday = empHoliday;
+          if (empHoliday) {
+            row.holiday_name = holidayRow.holiday_name;
+            if (row.attendance_status === "Unmarked" && !row.check_in) {
+              row.attendance_status = "Holiday";
+            }
+          }
+        }
+        return json({
+          date,
+          holiday: holidayRow ? {
+            holiday_date: holidayRow.holiday_date,
+            holiday_name: holidayRow.holiday_name,
+            department: holidayRow.department || "All",
+            employee_ids: holidayRow.employee_ids || "All"
+          } : null,
+          roster,
+          remarks_options: []
+        },200,headers);
       }
       if(path==="/api/attendance/mark"&&request.method==="POST"){
         const b=await readJson(request),date=b.work_date||new Date().toISOString().slice(0,10),id=Number(b.employee_id);
@@ -460,7 +550,14 @@ export default {
             return forbidden(headers);
           }
         }
-        if(await first(env.DB,"SELECT holiday_name FROM holidays WHERE holiday_date=?",[date]))return json({detail:"This date is declared as a holiday. Remove the holiday declaration before recording attendance."},409,headers);
+        const holiday = await first(env.DB,"SELECT holiday_date,holiday_name,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date=?",[date]);
+        if(holiday){
+          const emp = await first(env.DB,"SELECT id,department FROM employees WHERE id=?",[id]);
+          if(isHolidayForEmployee(holiday, emp)){
+            const scopeDesc = holiday.department && holiday.department !== "All" ? `your department (${emp?.department || 'assigned'})` : "all employees";
+            return json({detail:`This date is declared as a holiday (${holiday.holiday_name}) for ${scopeDesc}. Attendance cannot be recorded.`},409,headers);
+          }
+        }
         const old=await first(env.DB,"SELECT * FROM attendance WHERE employee_id=? AND work_date=?",[id,date]);
         let status=String(b.status||b.attendance_status||"Present").trim();
         if(["present","absent","leave","unmarked"].includes(status.toLowerCase()))status=status[0].toUpperCase()+status.slice(1).toLowerCase();
@@ -487,11 +584,17 @@ export default {
         if(b.apply_status&&!statusMap[String(b.status||"").toLowerCase()])return json({detail:"Attendance status must be Present, Absent, Leave or Unmarked."},422,headers);
         if(b.apply_check_in&&b.check_in&&!validTime(b.check_in))return json({detail:"Check-in must use 24-hour HH:MM format."},422,headers);
         if(b.apply_check_out&&b.check_out&&!validTime(b.check_out))return json({detail:"Check-out must use 24-hour HH:MM format."},422,headers);
-        if(await first(env.DB,"SELECT holiday_name FROM holidays WHERE holiday_date=?",[date]))return json({detail:"This date is declared as a holiday. Remove the holiday declaration before editing attendance."},409,headers);
-        const employees=await all(env.DB,"SELECT id FROM employees WHERE active=1 AND id IN ("+ids.map(()=>"?").join(",")+")",ids);
+        const holiday = await first(env.DB,"SELECT holiday_date,holiday_name,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date=?",[date]);
+        if(holiday && (holiday.department === "All" || !holiday.department) && (holiday.employee_ids === "All" || !holiday.employee_ids)){
+          return json({detail:`This date is declared as a company-wide holiday (${holiday.holiday_name}). Remove the holiday declaration before editing attendance.`},409,headers);
+        }
+        const employees=await all(env.DB,"SELECT id, department FROM employees WHERE active=1 AND id IN ("+ids.map(()=>"?").join(",")+")",ids);
         if(employees.length!==ids.length)return json({detail:"One or more selected active employees were not found."},404,headers);
+        const empMap = new Map(employees.map(e => [e.id, e]));
         let updated=0;const now=new Date().toISOString();
         for(const id of ids){
+          const emp = empMap.get(id);
+          if (holiday && isHolidayForEmployee(holiday, emp)) continue;
           const old=await first(env.DB,"SELECT * FROM attendance WHERE employee_id=? AND work_date=?",[id,date]);
           let status=b.apply_status?statusMap[String(b.status).toLowerCase()]:(old?.attendance_status||"Unmarked");
           let checkIn=b.apply_check_in?String(b.check_in||"").trim():(old?.check_in||"");
@@ -509,18 +612,19 @@ export default {
         const selected=url.searchParams.get("work_date")||new Date().toISOString().slice(0,10);
         if(!validDate(selected))return json({detail:"work_date must use YYYY-MM-DD format"},422,headers);
         const monthStart=selected.slice(0,7)+"-01",today=new Date().toISOString().slice(0,10),end=selected<today?selected:today;
-        const employees=await all(env.DB,"SELECT id,name,joining_date FROM employees WHERE active=1 ORDER BY name COLLATE NOCASE");
+        const employees=await all(env.DB,"SELECT id,name,department,joining_date FROM employees WHERE active=1 ORDER BY name COLLATE NOCASE");
         if(!employees.length)return json({date:selected,month_start:monthStart,through_date:end,rows:[]},200,headers);
         const ids=employees.map(e=>Number(e.id)),marks=ids.map(()=>"?").join(",");
         const [tasks,attendance,holidays,setting]=await Promise.all([
           all(env.DB,"SELECT employee_id,MIN(task_date) AS first_day FROM tasks WHERE employee_id IN ("+marks+") AND task_date<>'' GROUP BY employee_id",ids),
           all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date<=? ORDER BY employee_id,work_date",[...ids,end]),
-          all(env.DB,"SELECT holiday_date FROM holidays WHERE holiday_date<=?",[end]),
+          all(env.DB,"SELECT holiday_date,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date<=?",[end]),
           first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'")
         ]);
         const firstTask=new Map(tasks.map(r=>[Number(r.employee_id),r.first_day]));
         const attBy=new Map(ids.map(id=>[id,[]]));for(const r of attendance)attBy.get(Number(r.employee_id)).push(r);
-        const holidaySet=new Set(holidays.map(h=>h.holiday_date)),weekdays=new Set(normalizeWeekdays(setting?.value));
+        const holidayMap=new Map(holidays.map(h=>[h.holiday_date, h]));
+        const weekdays=new Set(normalizeWeekdays(setting?.value));
         const rows=[];
         for(const emp of employees){
           const id=Number(emp.id);let start=validDate(emp.joining_date)?emp.joining_date:firstTask.get(id);
@@ -529,23 +633,45 @@ export default {
           let work=0,holidayCount=0,present=0,absent=0,leave=0,totalPresent=0;
           const monthly=[];
           if(effective<=end){
-            for(let d=effective;d<=end;d=addDays(d,1)){const dow=((new Date(d+"T00:00:00Z").getUTCDay()+6)%7);if(weekdays.has(dow)&&!holidaySet.has(d)){work++;}}
-            for(const h of holidaySet){if(h>=effective&&h<=end&&weekdays.has(((new Date(h+"T00:00:00Z").getUTCDay()+6)%7)))holidayCount++;}
-            for(const a of attBy.get(id)){const dow=((new Date(a.work_date+"T00:00:00Z").getUTCDay()+6)%7);if(a.work_date<start||!weekdays.has(dow)||holidaySet.has(a.work_date))continue;const st=String(a.attendance_status||"").trim().toLowerCase(),isPresent=PRESENT_DETAIL.has(st)||(["","unmarked"].includes(st)&&!!String(a.check_in||"").trim());if(isPresent)totalPresent++;if(a.work_date>=effective){monthly.push(a);if(isPresent)present++;if(st==="absent")absent++;if(st==="leave")leave++;}}
+            for(let d=effective;d<=end;d=addDays(d,1)){
+              const dow=((new Date(d+"T00:00:00Z").getUTCDay()+6)%7);
+              if(!weekdays.has(dow)) continue;
+              const h = holidayMap.get(d);
+              if(h && isHolidayForEmployee(h, emp)){
+                holidayCount++;
+              } else {
+                work++;
+              }
+            }
+            for(const a of attBy.get(id)){
+              const dow=((new Date(a.work_date+"T00:00:00Z").getUTCDay()+6)%7);
+              const h = holidayMap.get(a.work_date);
+              if(a.work_date<start||!weekdays.has(dow)||(h && isHolidayForEmployee(h, emp)))continue;
+              const st=String(a.attendance_status||"").trim().toLowerCase(),isPresent=PRESENT_DETAIL.has(st)||(["","unmarked"].includes(st)&&!!String(a.check_in||"").trim());
+              if(isPresent)totalPresent++;
+              if(a.work_date>=effective){
+                monthly.push(a);
+                if(isPresent)present++;
+                if(st==="absent")absent++;
+                if(st==="leave")leave++;
+              }
+            }
           }
           rows.push({employee_id:id,employee_name:emp.name,start_date:start,work_days:work,present,absent,leave,holidays:holidayCount,total_present:totalPresent});
         }
         return json({date:selected,month_start:monthStart,through_date:end,rows},200,headers);
       }
 
-      if(path==="/api/holidays"&&request.method==="GET")return json(await all(env.DB,"SELECT holiday_date,holiday_name,created_at FROM holidays ORDER BY holiday_date ASC"),200,headers);
+      if(path==="/api/holidays"&&request.method==="GET")return json(await all(env.DB,"SELECT holiday_date,holiday_name,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids,created_at FROM holidays ORDER BY holiday_date ASC"),200,headers);
       if(path==="/api/holidays"&&request.method==="POST"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const b=await readJson(request),date=b.holiday_date,name=String(b.holiday_name||"").trim();
+        const department = String(b.department || "All").trim() || "All";
+        const employeeIds = String(b.employee_ids || "All").trim() || "All";
         if(!validDate(date)||!name)return json({detail:"A valid holiday date and name are required."},422,headers);
-        if(await first(env.DB,"SELECT holiday_name FROM holidays WHERE holiday_date=?",[date]))return json({detail:"Holiday already declared."},409,headers);
-        await env.DB.prepare("INSERT INTO holidays(holiday_date,holiday_name,created_at) VALUES(?,?,?)").bind(date,name,new Date().toISOString()).run();
-        await audit(env.DB,user,"Holiday declared",date+": "+name);
+        if(await first(env.DB,"SELECT holiday_name FROM holidays WHERE holiday_date=?",[date]))return json({detail:"Holiday already declared for this date."},409,headers);
+        await env.DB.prepare("INSERT INTO holidays(holiday_date,holiday_name,department,employee_ids,created_at) VALUES(?,?,?,?,?)").bind(date,name,department,employeeIds,new Date().toISOString()).run();
+        await audit(env.DB,user,"Holiday declared",`${date}: ${name} (Dept: ${department}, Emp: ${employeeIds})`);
         return json({success:true},200,headers);
       }
       const holiday=/^\/api\/holidays\/(\d{4}-\d{2}-\d{2})$/.exec(path);
@@ -1475,7 +1601,25 @@ function generateWorkerPdf(text, meta) {
   chunks.push("trailer\n<< /Size " + (objCount + 1) + " /Root 1 0 R >>\nstartxref\n" + xrefOffset + "\n%%EOF\n");
   return new TextEncoder().encode(chunks.join(""));
 }
-function publicUser(u){return {id:u.id,username:u.username,display_name:u.display_name||u.username,role:u.role,employee_id:u.employee_id||null,employee_name:u.employee_name||null};}
+function publicUser(u){
+  let perms = null;
+  if (u.permissions) {
+    if (typeof u.permissions === "string") {
+      try { perms = JSON.parse(u.permissions); } catch { perms = null; }
+    } else if (typeof u.permissions === "object") {
+      perms = u.permissions;
+    }
+  }
+  return {
+    id: u.id,
+    username: u.username,
+    display_name: u.display_name||u.username,
+    role: u.role,
+    employee_id: u.employee_id||null,
+    employee_name: u.employee_name||null,
+    permissions: perms
+  };
+}
 function role(user){return String(user?.role||"").trim().toLowerCase();}
 function forbidden(headers){return json({detail:"You do not have permission to perform this action."},403,headers);}
 async function currentUser(request, env) {
@@ -1483,7 +1627,7 @@ async function currentUser(request, env) {
   if (!token || token.length > 256) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, e.name AS employee_name FROM web_auth_sessions s JOIN auth_users u ON u.id=s.user_id LEFT JOIN employees e ON u.employee_id=e.id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1"
+    "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.permissions, e.name AS employee_name FROM web_auth_sessions s JOIN auth_users u ON u.id=s.user_id LEFT JOIN employees e ON u.employee_id=e.id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1"
   ).bind(hash, new Date().toISOString()).first();
   return row ? publicUser(row) : null;
 }

@@ -1582,8 +1582,15 @@ class Database:
 
         auth_user_migrations = (
             ("employee_id", "INTEGER DEFAULT NULL"),
+            ("permissions", "TEXT DEFAULT NULL"),
         )
         apply_column_migrations("auth_users", auth_user_migrations)
+
+        holiday_migrations = (
+            ("department", "TEXT DEFAULT 'All'"),
+            ("employee_ids", "TEXT DEFAULT 'All'"),
+        )
+        apply_column_migrations("holidays", holiday_migrations)
 
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
 
@@ -2133,8 +2140,12 @@ class Database:
         """Return configured working days, with Sunday always included."""
         return working_weekdays_from_connection(self.conn)
 
+    def get_holiday_row(self, day_text):
+        row = self.conn.execute("SELECT holiday_date, holiday_name, COALESCE(department, 'All') AS department, COALESCE(employee_ids, 'All') AS employee_ids, created_at FROM holidays WHERE holiday_date=?", (day_text,)).fetchone()
+        return dict(row) if row else None
+
     def get_holiday(self, day_text):
-        row = self.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?", (day_text,)).fetchone()
+        row = self.get_holiday_row(day_text)
         return row["holiday_name"] if row else None
 
     def is_holiday(self, day_text):
@@ -2147,6 +2158,78 @@ class Database:
         return self.conn.execute("""SELECT d.id,d.employee_id,d.report_date,d.file_name,d.mime_type,d.notes,d.uploaded_at,e.name AS employee_name
                                   FROM archived_documents d LEFT JOIN employees e ON e.id=d.employee_id
                                   ORDER BY d.uploaded_at DESC""").fetchall()
+
+def is_holiday_for_employee(holiday, emp) -> bool:
+    """Check if a holiday applies to a specific employee based on scope."""
+    if not holiday:
+        return False
+    if isinstance(holiday, sqlite3.Row):
+        holiday = dict(holiday)
+    if isinstance(emp, sqlite3.Row):
+        emp = dict(emp)
+    dept_scope = str(holiday.get("department") or "All").strip()
+    emp_scope = str(holiday.get("employee_ids") or "All").strip()
+    if (dept_scope == "All" or not dept_scope) and (emp_scope == "All" or not emp_scope):
+        return True
+    if dept_scope != "All" and dept_scope:
+        depts = [d.strip().lower() for d in dept_scope.split(",") if d.strip()]
+        emp_dept = str(emp.get("department") or "").strip().lower()
+        if emp_dept and emp_dept in depts:
+            return True
+    if emp_scope != "All" and emp_scope:
+        try:
+            ids = [int(s.strip()) for s in emp_scope.split(",") if s.strip().isdigit()]
+            emp_id = int(emp.get("id") or emp.get("employee_id") or 0)
+            if emp_id and emp_id in ids:
+                return True
+        except Exception:
+            pass
+    return False
+
+ALL_APP_MODULES = [
+    ("home", "Home", "Overview & Workspace Guide"),
+    ("dashboard", "Dashboard", "Executive Telemetry & Metrics"),
+    ("employees", "Employees", "Workforce Directory & Management"),
+    ("tasks", "Task Manager", "Daily Tasks & Assignments"),
+    ("tracker", "Employee Tracker", "Activity & Progress Logs"),
+    ("attendance", "Attendance", "Daily Register & Clock-in/Clock-out"),
+    ("reports", "Print Center", "Audit & Executive Reports"),
+    ("archive", "EOD Archive", "Archived Documents & Records"),
+    ("business", "Business Tracking", "Revenue, Memberships & Orders"),
+    ("customers", "Store Directory", "Customer & Prospect Directory"),
+    ("chat", "Live Chat", "Operations Team Chat"),
+    ("settings", "Settings & Backup", "User Accounts & Cloud Sync"),
+]
+
+ACCESS_LEVEL_PRESETS = {
+    "admin": {m[0]: "full" for m in ALL_APP_MODULES},
+    "developer": {m[0]: "full" for m in ALL_APP_MODULES},
+    "hr": {"home": "full", "dashboard": "full", "employees": "full", "tasks": "write", "tracker": "full", "attendance": "full", "reports": "full", "archive": "full", "business": "write", "customers": "write", "chat": "full", "settings": "read"},
+    "staff": {"home": "read", "dashboard": "read", "employees": "read", "tasks": "write", "tracker": "write", "attendance": "read", "reports": "read", "archive": "read", "business": "read", "customers": "read", "chat": "write", "settings": "none"},
+    "employee": {"home": "read", "dashboard": "none", "employees": "none", "tasks": "approval", "tracker": "read", "attendance": "write", "reports": "none", "archive": "none", "business": "none", "customers": "none", "chat": "read", "settings": "none"},
+}
+
+def get_module_access(user, module_key: str) -> str:
+    """Return access level ('full', 'write', 'approval', 'read', 'none') for user and module."""
+    if not user:
+        return "none"
+    if isinstance(user, sqlite3.Row):
+        user = dict(user)
+    role = str(user.get("role", "")).strip().lower()
+    perms = user.get("permissions")
+    if isinstance(perms, str) and perms.strip():
+        try:
+            perms = json.loads(perms)
+        except Exception:
+            perms = None
+    if isinstance(perms, dict) and module_key in perms:
+        return perms[module_key]
+    preset = ACCESS_LEVEL_PRESETS.get(role)
+    if preset and module_key in preset:
+        return preset[module_key]
+    if role in ("admin", "developer"):
+        return "full"
+    return "read"
 
 def is_privileged_user(user_or_role) -> bool:
     """Return True if user has unrestricted Admin or Developer privileges."""
@@ -6406,24 +6489,26 @@ class MainWindow(QMainWindow):
         self.business_tab = BusinessTrackingTab(self.db)
         self.chat_tab = CloudflareChatTab(self.db, self.current_user)
         self.customer_tab = CustomerProspectsTab(self.db)
-        if str(self.user_role).casefold() == "employee":
-            tab_items = [
-                (self.home_tab, "🏠  Home"),
-                (self.tasks_tab, "✅  Task Manager"),
-                (self.attendance_tab, "🟢  Attendance"),
-                (self.chat_tab, "💬  Live Chat"),
-            ]
-        else:
-            tab_items = [
-                (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
-                (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
-                (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
-                (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
-                (self.business_tab, "💼  Business Tracking"),
-                (self.customer_tab, "🏪  Store Directory"),
-                (self.chat_tab, "💬  Live Chat"),
-                (self.settings_tab, "⚙️  Settings & Backup"),
-            ]
+        all_module_tabs = [
+            ("home", self.home_tab, "🏠  Home"),
+            ("dashboard", self.dashboard, "📊  Dashboard"),
+            ("employees", self.employees_tab, "👥  Employees"),
+            ("tasks", self.tasks_tab, "✅  Task Manager"),
+            ("tracker", self.tracker_tab, "📝  Employee Tracker"),
+            ("attendance", self.attendance_tab, "🟢  Attendance"),
+            ("reports", self.reports_tab, "🖨️  Print Center"),
+            ("archive", self.archive_tab, "📁  EOD Archive"),
+            ("business", self.business_tab, "💼  Business Tracking"),
+            ("customers", self.customer_tab, "🏪  Store Directory"),
+            ("chat", self.chat_tab, "💬  Live Chat"),
+            ("settings", self.settings_tab, "⚙️  Settings & Backup"),
+        ]
+        tab_items = [
+            (widget, title) for mod_key, widget, title in all_module_tabs
+            if get_module_access(self.current_user, mod_key) != "none"
+        ]
+        if not tab_items:
+            tab_items = [(self.home_tab, "🏠  Home")]
         self.sidebar_scroll = QScrollArea()
         self.sidebar_scroll.setObjectName("sidebarScrollArea")
         self.sidebar_scroll.setWidgetResizable(True)
@@ -12078,15 +12163,100 @@ class MainWindow(QMainWindow):
         if not self.is_admin_or_dev:
             return error(self, "Only an Admin or Developer can declare holidays.")
         d=self.att_date.date().toString("yyyy-MM-dd")
-        old=self.db.conn.execute("SELECT holiday_name FROM holidays WHERE holiday_date=?",(d,)).fetchone()
-        if old: return info(self,f"Holiday already declared: {old['holiday_name'] or 'Holiday'}")
-        name,ok=QInputDialog.getText(self,"Declare holiday",f"Holiday name for {d}:")
-        if not ok: return
-        name=name.strip()
-        if not name: return error(self,"Enter a holiday name.")
-        if not ask(self,"Confirm holiday",f"Declare {d} as '{name}'? This date will be excluded from working-day counts for all employees."): return
-        self.db.conn.execute("INSERT INTO holidays(holiday_date,holiday_name,created_at) VALUES(?,?,?)",(d,name,now_text()))
-        self.db.conn.commit(); self.db.log("Holiday declared",f"{d}: {name}"); self.refresh_all()
+        old=self.db.get_holiday_row(d)
+        if old:
+            return info(self, f"Holiday already declared for {d}: {old.get('holiday_name') or 'Holiday'}")
+
+        h_dialog = QDialog(self)
+        h_dialog.setWindowTitle(f"Declare Company / Department Holiday · {d}")
+        h_dialog.setMinimumWidth(500)
+        h_layout = QVBoxLayout(h_dialog)
+        h_layout.setSpacing(10)
+
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("e.g. Diwali, Eid, Christmas, Founder Day")
+        name_row = QHBoxLayout()
+        name_row.addWidget(QLabel("Holiday Name *: "))
+        name_row.addWidget(name_edit)
+        h_layout.addLayout(name_row)
+
+        scope_box = QGroupBox("Holiday Coverage / Scope")
+        scope_layout = QVBoxLayout(scope_box)
+        rb_all = QRadioButton("🏢 All Departments (Company-wide)")
+        rb_dept = QRadioButton("🏷️ Specific Department(s) only")
+        rb_emp = QRadioButton("👤 Specific Employee(s) only")
+        rb_all.setChecked(True)
+        scope_layout.addWidget(rb_all)
+        scope_layout.addWidget(rb_dept)
+        scope_layout.addWidget(rb_emp)
+
+        # Department selection widgets
+        dept_widget = QWidget()
+        dept_layout = QVBoxLayout(dept_widget)
+        dept_layout.setContentsMargins(10, 5, 0, 0)
+        dept_checks = {}
+        all_emps = self.db.employees(False)
+        distinct_depts = sorted(list({str(e.get("department") or "").strip() for e in all_emps if str(e.get("department") or "").strip()}))
+        for dept in distinct_depts:
+            chk = QCheckBox(dept)
+            dept_checks[dept] = chk
+            dept_layout.addWidget(chk)
+        dept_widget.setVisible(False)
+        scope_layout.addWidget(dept_widget)
+
+        # Employee selection widgets
+        emp_widget = QWidget()
+        emp_layout = QVBoxLayout(emp_widget)
+        emp_layout.setContentsMargins(10, 5, 0, 0)
+        emp_checks = {}
+        for emp in all_emps:
+            chk = QCheckBox(f"{emp['name']} ({emp.get('department') or 'No dept'})")
+            emp_checks[int(emp["id"])] = chk
+            emp_layout.addWidget(chk)
+        emp_widget.setVisible(False)
+        scope_layout.addWidget(emp_widget)
+
+        def on_scope_changed():
+            dept_widget.setVisible(rb_dept.isChecked())
+            emp_widget.setVisible(rb_emp.isChecked())
+
+        rb_all.toggled.connect(on_scope_changed)
+        rb_dept.toggled.connect(on_scope_changed)
+        rb_emp.toggled.connect(on_scope_changed)
+
+        h_layout.addWidget(scope_box)
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(h_dialog.accept)
+        btn_box.rejected.connect(h_dialog.reject)
+        h_layout.addWidget(btn_box)
+
+        if h_dialog.exec() != QDialog.Accepted:
+            return
+        name = name_edit.text().strip()
+        if not name:
+            return error(self, "Enter a holiday name.")
+
+        dept_val = "All"
+        emp_val = "All"
+        if rb_dept.isChecked():
+            sel_depts = [dept for dept, chk in dept_checks.items() if chk.isChecked()]
+            if not sel_depts:
+                return error(self, "Select at least one department, or choose Company-wide.")
+            dept_val = ",".join(sel_depts)
+        elif rb_emp.isChecked():
+            sel_emps = [str(eid) for eid, chk in emp_checks.items() if chk.isChecked()]
+            if not sel_emps:
+                return error(self, "Select at least one employee, or choose Company-wide.")
+            emp_val = ",".join(sel_emps)
+
+        scope_msg = "Company-wide" if dept_val == "All" and emp_val == "All" else (f"Depts: {dept_val}" if dept_val != "All" else f"Employees: {emp_val}")
+        if not ask(self, "Confirm holiday", f"Declare {d} as '{name}'?\nScope: {scope_msg}\nEmployees within this scope will have holiday status; others will work normally."):
+            return
+        self.db.conn.execute("INSERT OR REPLACE INTO holidays(holiday_date,holiday_name,department,employee_ids,created_at) VALUES(?,?,?,?,?)", (d, name, dept_val, emp_val, now_text()))
+        self.db.conn.commit()
+        self.db.log("Holiday declared", f"{d}: {name} ({scope_msg})")
+        self.refresh_all()
         self.schedule_auto_sync()
 
     def remove_holiday(self):
@@ -12392,8 +12562,10 @@ class MainWindow(QMainWindow):
 
     def save_attendance_inline(self, employee_id, work_date, field, value):
         """Validate and persist inline attendance edits without losing unrelated fields."""
-        if self.db.is_holiday(work_date):
-            error(self, "This date is declared as a holiday. Remove the holiday declaration before editing attendance.")
+        h_row = self.db.get_holiday_row(work_date)
+        emp_obj = self.db.employee(employee_id)
+        if h_row and emp_obj and is_holiday_for_employee(h_row, emp_obj):
+            error(self, f"{emp_obj.get('name', 'Employee')} is within the declared holiday scope ({h_row.get('holiday_name')}). Attendance editing is disabled.")
             self.refresh_attendance()
             return
         value = str(value or "").strip()
@@ -12474,9 +12646,13 @@ class MainWindow(QMainWindow):
         self.refresh_employee_filter()
         # Remember selected employee so check-in/out stay on the same row
         selected_eid = self.attendance_selected_employee()
-        holiday=self.db.get_holiday(d)
-        if holiday:
-            self.holiday_banner.setText(f"🎉 HOLIDAY: {holiday} — excluded from all working-day counts")
+        holiday_row = self.db.get_holiday_row(d)
+        if holiday_row:
+            dept_scope = str(holiday_row.get("department") or "All").strip()
+            emp_scope = str(holiday_row.get("employee_ids") or "All").strip()
+            is_company_wide = (dept_scope in ("All", "") and emp_scope in ("All", ""))
+            scope_desc = "Company-wide" if is_company_wide else (f"Depts: {dept_scope}" if dept_scope != "All" else f"Employees: {emp_scope}")
+            self.holiday_banner.setText(f"🎉 HOLIDAY: {holiday_row['holiday_name']} · Scope: {scope_desc}")
             self.holiday_banner.setStyleSheet(
                 "QLabel { background: rgba(245, 158, 11, 0.18); color: #FBBF24; border: 1.5px solid rgba(245, 158, 11, 0.45); "
                 "border-radius: 8px; padding: 6px 14px; font-weight: 700; font-size: 9pt; }"
@@ -12505,14 +12681,16 @@ class MainWindow(QMainWindow):
         for e in emps:
             a=rows.get(e["id"]); r=self.att_table.rowCount(); self.att_table.insertRow(r)
             self.att_table.setRowHeight(r, 52)
-            name=QTableWidgetItem(e["name"]); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
+            is_emp_holiday = is_holiday_for_employee(holiday_row, e) if holiday_row else False
+            emp_title = e["name"] + (" (Holiday)" if is_emp_holiday else "")
+            name=QTableWidgetItem(emp_title); name.setData(Qt.UserRole,e["id"]); name.setToolTip(e["name"])
             name.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             name.setForeground(QColor("#FFFFFF" if is_dark_mode else "#0F172A"))
             self.att_table.setItem(r,0,name)
             if selected_eid is not None and e["id"] == selected_eid:
                 restore_row = r
             ci=a["check_in"] if a else ""; co=a["check_out"] if a else ""
-            status="Holiday" if holiday else (a["attendance_status"] if a else "Unmarked")
+            status="Holiday" if is_emp_holiday else (a["attendance_status"] if a else "Unmarked")
             if a and status=="Unmarked" and ci: status="Present"
             hours=calculate_net_working_hours(ci, co, a["break_minutes"] if a else 0)
             vals=[d,status,ci,co,hours,a["attendance_note"] if a else ""]
@@ -12544,7 +12722,7 @@ class MainWindow(QMainWindow):
             status_combo.setMinimumWidth(140)
             status_combo.setFixedHeight(32)
             status_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            status_combo.setEnabled(not bool(holiday))
+            status_combo.setEnabled(not is_emp_holiday)
             status_combo.setToolTip("Choose Present, Absent, Leave or Unmarked")
             arrow_icon = resource_path("assets/chevron_down_white.png" if self.current_theme().lower() in ("night", "dark") else "assets/chevron_down_slate.png").replace("\\", "/")
             if is_dark_mode:
@@ -12596,7 +12774,7 @@ class MainWindow(QMainWindow):
                 editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 editor.setPlaceholderText("HH:MM")
                 editor.setToolTip("Enter time as HH:MM (24-hour format)")
-                editor.setEnabled(not bool(holiday))
+                editor.setEnabled(not is_emp_holiday)
                 if is_dark_mode:
                     editor.setStyleSheet(
                         "QLineEdit { background-color: rgba(255, 255, 255, 0.03); color: #F8FAFC; border: 1px solid rgba(255, 255, 255, 0.08); "
@@ -12743,7 +12921,7 @@ class MainWindow(QMainWindow):
         earliest_start = min(starts.values())
         weekdays = self.db.working_weekdays()
         holiday_rows = self.db.holidays_between(earliest_start.isoformat(), end.isoformat())
-        holiday_dates = {row["holiday_date"] for row in holiday_rows}
+        holiday_map = {row["holiday_date"]: dict(row) for row in holiday_rows}
         attendance_rows = self.db.conn.execute(
             f"SELECT employee_id, work_date, attendance_status, check_in FROM attendance "
             f"WHERE employee_id IN ({placeholders}) AND work_date BETWEEN ? AND ? "
@@ -12756,6 +12934,7 @@ class MainWindow(QMainWindow):
 
         for employee in employees:
             employee_id = int(employee["id"])
+            emp_dict = {"id": employee_id, "department": employee.get("department", "")}
             start_day = starts[employee_id]
             effective_start = max(start_day, month_start)
             if effective_start <= end:
@@ -12763,21 +12942,25 @@ class MainWindow(QMainWindow):
                 current_day = effective_start
                 while current_day <= end:
                     day_text = current_day.isoformat()
-                    if current_day.weekday() in weekdays and day_text not in holiday_dates:
+                    h_row = holiday_map.get(day_text)
+                    is_h = is_holiday_for_employee(h_row, emp_dict) if h_row else False
+                    if current_day.weekday() in weekdays and not is_h:
                         working += 1
                     current_day += timedelta(days=1)
                 monthly_rows = [
                     row for row in attendance_by_employee[employee_id]
                     if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
-                    and row["work_date"] not in holiday_dates
+                    and not (holiday_map.get(row["work_date"]) and is_holiday_for_employee(holiday_map[row["work_date"]], emp_dict))
                     and is_attendance_scheduled_workday(row["work_date"], weekdays)
                 ]
                 holiday_count = 0
-                for holiday in holiday_dates:
-                    if not effective_start.isoformat() <= holiday <= end.isoformat():
+                for holiday_d, h_row in holiday_map.items():
+                    if not (effective_start.isoformat() <= holiday_d <= end.isoformat()):
+                        continue
+                    if not is_holiday_for_employee(h_row, emp_dict):
                         continue
                     try:
-                        if date.fromisoformat(holiday).weekday() in weekdays:
+                        if date.fromisoformat(holiday_d).weekday() in weekdays:
                             holiday_count += 1
                     except (TypeError, ValueError):
                         continue
@@ -14386,10 +14569,12 @@ class MainWindow(QMainWindow):
         toggle_active_btn = QPushButton("Toggle Active / Disabled")
         change_role_btn = QPushButton("Change Role")
         map_employee_btn = QPushButton("Map / Remap Employee")
+        permissions_btn = QPushButton("🛡️ Module Permissions")
         reset_pw_btn = QPushButton("Reset Password")
         manage_row.addWidget(toggle_active_btn)
         manage_row.addWidget(change_role_btn)
         manage_row.addWidget(map_employee_btn)
+        manage_row.addWidget(permissions_btn)
         manage_row.addWidget(reset_pw_btn)
         manage_row.addStretch(1)
         layout.addLayout(manage_row)
@@ -14486,6 +14671,96 @@ class MainWindow(QMainWindow):
             self.schedule_auto_sync(immediate=True)
             info(dialog, f"Password for '{uname}' reset successfully and synchronized.")
         reset_pw_btn.clicked.connect(reset_user_password)
+
+        def configure_permissions():
+            row_idx = table.currentRow()
+            if row_idx < 0: return error(dialog, "Select a user from the table first.")
+            uname = table.item(row_idx, 0).text()
+            u_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=?", (uname,)).fetchone()
+            if not u_row: return error(dialog, "User not found.")
+            u_dict = dict(u_row)
+            existing_perms = u_dict.get("permissions")
+            if isinstance(existing_perms, str) and existing_perms.strip():
+                try:
+                    existing_perms = json.loads(existing_perms)
+                except Exception:
+                    existing_perms = {}
+            else:
+                existing_perms = {}
+
+            perm_dialog = QDialog(dialog)
+            perm_dialog.setWindowTitle(f"Module Permissions · {uname} ({u_dict.get('role', 'User')})")
+            perm_dialog.setMinimumWidth(680)
+            p_layout = QVBoxLayout(perm_dialog)
+            p_layout.addWidget(QLabel(f"<b>Configure granular access for {uname}</b><br><span style='color:#94a3b8;font-size:9pt;'>Set permissions per module: Full Control, Read &amp; Write, Partial with Approval, Read Only, or No Access (hidden).</span>"))
+
+            preset_box = QGroupBox("Apply Permission Preset")
+            p_box_layout = QHBoxLayout(preset_box)
+            for preset_name, preset_key in (("🟢 Full Admin", "admin"), ("🟣 HR Specialist", "hr"), ("🔵 General Staff", "staff"), ("🟠 Employee Self-Service", "employee")):
+                p_btn = QPushButton(preset_name)
+                p_btn.clicked.connect(lambda chk=False, pk=preset_key: apply_preset(pk))
+                p_box_layout.addWidget(p_btn)
+            p_layout.addWidget(preset_box)
+
+            combo_by_module = {}
+            levels = [
+                ("🟢 Full Control", "full"),
+                ("🟡 Read & Write", "write"),
+                ("🟠 Partial with Approval", "approval"),
+                ("🔵 Read Only", "read"),
+                ("⚪ No Access", "none"),
+            ]
+            m_table = QTableWidget(len(ALL_APP_MODULES), 3)
+            m_table.setHorizontalHeaderLabels(["Module", "Description", "Access Level"])
+            m_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            m_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+            m_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            m_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+            def apply_preset(pk):
+                preset_map = ACCESS_LEVEL_PRESETS.get(pk, {})
+                for mod_k, cb in combo_by_module.items():
+                    target_lvl = preset_map.get(mod_k, "read")
+                    for i in range(cb.count()):
+                        if cb.itemData(i) == target_lvl:
+                            cb.setCurrentIndex(i)
+                            break
+
+            for r_i, (mod_id, mod_name, mod_desc) in enumerate(ALL_APP_MODULES):
+                name_item = QTableWidgetItem(mod_name)
+                name_item.setToolTip(mod_name)
+                m_table.setItem(r_i, 0, name_item)
+                desc_item = QTableWidgetItem(mod_desc)
+                desc_item.setToolTip(mod_desc)
+                m_table.setItem(r_i, 1, desc_item)
+
+                cur_level = existing_perms.get(mod_id) or get_module_access(u_dict, mod_id)
+                cb = QComboBox()
+                for label, val in levels:
+                    cb.addItem(label, val)
+                    if val == cur_level:
+                        cb.setCurrentIndex(cb.count() - 1)
+                combo_by_module[mod_id] = cb
+                m_table.setCellWidget(r_i, 2, cb)
+
+            p_layout.addWidget(m_table)
+
+            btn_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+            btn_box.accepted.connect(perm_dialog.accept)
+            btn_box.rejected.connect(perm_dialog.reject)
+            p_layout.addWidget(btn_box)
+
+            if perm_dialog.exec() == QDialog.Accepted:
+                new_perms = {mod_id: cb.currentData() for mod_id, cb in combo_by_module.items()}
+                perms_json = json.dumps(new_perms)
+                self.db.conn.execute("UPDATE auth_users SET permissions=?, updated_at=? WHERE id=?", (perms_json, now_text(), u_dict["id"]))
+                self.db.conn.commit()
+                if self.current_user and self.current_user.get("id") == u_dict["id"]:
+                    self.current_user["permissions"] = perms_json
+                self.db.log("User permissions updated", f"{uname}: {perms_json}")
+                self.schedule_auto_sync(immediate=True)
+                info(dialog, f"Granular permissions updated for {uname}.")
+        permissions_btn.clicked.connect(configure_permissions)
 
         formbox=QGroupBox("Create new account"); form=QFormLayout(formbox)
         username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["Employee", "Staff", "HR", "Admin", "Developer"])

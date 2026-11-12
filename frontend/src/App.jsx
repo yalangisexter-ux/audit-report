@@ -22,6 +22,71 @@ import Storefront from './Storefront.jsx';
 const API = '/api';
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-'); };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+export const ALL_APP_MODULES = [
+  { id: 'home', name: 'Home', icon: '🏠', desc: 'Overview & Workspace Guide' },
+  { id: 'dashboard', name: 'Dashboard', icon: '📊', desc: 'Executive Telemetry & Metrics' },
+  { id: 'employees', name: 'Employees', icon: '👥', desc: 'Workforce Directory & Management' },
+  { id: 'tasks', name: 'Task Manager', icon: '✅', desc: 'Daily Tasks & Assignments' },
+  { id: 'tracker', name: 'Employee Tracker', icon: '📝', desc: 'Activity & Progress Logs' },
+  { id: 'attendance', name: 'Attendance', icon: '🟢', desc: 'Daily Register & Clock-in/Clock-out' },
+  { id: 'reports', name: 'Print Center', icon: '🖨️', desc: 'Audit & Executive Reports' },
+  { id: 'archive', name: 'EOD Archive', icon: '📁', desc: 'Archived Documents & Records' },
+  { id: 'business', name: 'Business Tracking', icon: '💼', desc: 'Revenue, Memberships & Orders' },
+  { id: 'customers', name: 'Store Directory', icon: '🏪', desc: 'Customer & Prospect Directory' },
+  { id: 'chat', name: 'Live Chat', icon: '💬', desc: 'Operations Team Chat' },
+  { id: 'settings', name: 'Settings & Backup', icon: '⚙️', desc: 'User Accounts & Cloud Sync' },
+];
+
+export const ACCESS_LEVEL_PRESETS = {
+  admin: { home: 'full', dashboard: 'full', employees: 'full', tasks: 'full', tracker: 'full', attendance: 'full', reports: 'full', archive: 'full', business: 'full', customers: 'full', chat: 'full', settings: 'full' },
+  hr: { home: 'full', dashboard: 'full', employees: 'full', tasks: 'write', tracker: 'full', attendance: 'full', reports: 'full', archive: 'full', business: 'write', customers: 'write', chat: 'full', settings: 'read' },
+  staff: { home: 'read', dashboard: 'read', employees: 'read', tasks: 'write', tracker: 'write', attendance: 'read', reports: 'read', archive: 'read', business: 'read', customers: 'read', chat: 'write', settings: 'none' },
+  employee: { home: 'read', dashboard: 'none', employees: 'none', tasks: 'approval', tracker: 'read', attendance: 'write', reports: 'none', archive: 'none', business: 'none', customers: 'none', chat: 'read', settings: 'none' },
+};
+
+export const ACCESS_LEVEL_OPTIONS = [
+  { value: 'full', label: '🟢 Full Control', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', desc: 'View, edit, create, delete & approve' },
+  { value: 'write', label: '🟡 Read & Write', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/30', desc: 'View, create & edit records' },
+  { value: 'approval', label: '🟠 Partial with Approval', badge: 'bg-orange-500/20 text-orange-300 border-orange-500/30', desc: 'Self-service submitted for Admin approval, cannot delete' },
+  { value: 'read', label: '🔵 Read Only', badge: 'bg-sky-500/20 text-sky-300 border-sky-500/30', desc: 'View only, cannot edit or delete' },
+  { value: 'none', label: '⚪ No Access', badge: 'bg-slate-500/20 text-slate-400 border-slate-500/30', desc: 'Hidden from navigation & blocked' },
+];
+
+export function getModuleAccess(u, moduleKey) {
+  if (!u) return 'none';
+  const role = String(u.role || '').toLowerCase();
+  let perms = u.permissions;
+  if (typeof perms === 'string') {
+    try { perms = JSON.parse(perms); } catch { perms = null; }
+  }
+  if (perms && typeof perms === 'object' && perms[moduleKey]) {
+    return perms[moduleKey];
+  }
+  const preset = ACCESS_LEVEL_PRESETS[role];
+  if (preset && preset[moduleKey]) return preset[moduleKey];
+  if (role === 'admin' || role === 'developer') return 'full';
+  return 'read';
+}
+
+export function isHolidayForEmployee(holiday, emp) {
+  if (!holiday) return false;
+  const deptScope = String(holiday.department || "All").trim();
+  const empScope = String(holiday.employee_ids || "All").trim();
+  if ((deptScope === "All" || !deptScope) && (empScope === "All" || !empScope)) {
+    return true;
+  }
+  if (deptScope !== "All" && deptScope) {
+    const depts = deptScope.split(",").map(d => d.trim().toLowerCase()).filter(Boolean);
+    const empDept = String(emp?.department || "").trim().toLowerCase();
+    if (empDept && depts.includes(empDept)) return true;
+  }
+  if (empScope !== "All" && empScope) {
+    const ids = empScope.split(",").map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n > 0);
+    if (ids.includes(Number(emp?.id || emp?.employee_id))) return true;
+  }
+  return false;
+}
+
 const navItems = [
   ['home','🏠  Home',LayoutDashboard],['dashboard','📊  Dashboard',LayoutDashboard],
   ['employees','👥  Employees',Users],['tasks','✅  Task Manager',CheckSquare],
@@ -262,7 +327,19 @@ export default function App() {
   const [report,setReport]=useState({date:today(),report_type:'Audit / EOD',employee_id:''});
   const [reportText,setReportText]=useState('');
   const [editRecord,setEditRecord]=useState(null);
-  const [holidayForm,setHolidayForm]=useState({holiday_date:today(),holiday_name:''});
+  const [permissionsModalUser,setPermissionsModalUser]=useState(null);
+  const [permissionsDraft,setPermissionsDraft]=useState({});
+  const [permissionsBusy,setPermissionsBusy]=useState(false);
+  const [showCreatePerms,setShowCreatePerms]=useState(false);
+  const [createPermsDraft,setCreatePermsDraft]=useState(()=>{
+    const init={};
+    for(const m of ALL_APP_MODULES) init[m.id]='approval';
+    init.attendance='write';
+    init.home='read';
+    init.chat='read';
+    return init;
+  });
+  const [holidayForm,setHolidayForm]=useState({holiday_date:today(),holiday_name:'',scope_type:'all',department:'All',employee_ids:'All',selected_depts:[],selected_emps:[]});
   const [scrapeState,setScrapeState]=useState('');
   const [scrapeCategory,setScrapeCategory]=useState('Pure Product Selling Stores');
   const [scrapeQuery,setScrapeQuery]=useState('supplement store sports nutrition whey protein');
@@ -441,14 +518,65 @@ export default function App() {
     try{
       const payload={
         ...newAccount,
-        employee_id: newAccount.employee_id ? Number(newAccount.employee_id) : null
+        employee_id: newAccount.employee_id ? Number(newAccount.employee_id) : null,
+        permissions: showCreatePerms ? createPermsDraft : null
       };
       await apiFetch('/auth/users',{method:'POST',body:JSON.stringify(payload)});
       const rows=await apiFetch('/auth/users');
       setAuthUsers(rows);
       setNewAccount({username:'',display_name:'',role:'Employee',employee_id:'',password:'',security_question:'What was the name of your first school?',security_answer:''});
+      setShowCreatePerms(false);
       notify('Account created and activated');
     }catch(e){notify(e.message)}
+  };
+  const openPermissionsModal = (targetUser) => {
+    setPermissionsModalUser(targetUser);
+    const existing = targetUser.permissions && typeof targetUser.permissions === 'object' ? { ...targetUser.permissions } : null;
+    const initial = {};
+    for (const mod of ALL_APP_MODULES) {
+      initial[mod.id] = (existing && existing[mod.id]) || getModuleAccess(targetUser, mod.id);
+    }
+    setPermissionsDraft(initial);
+  };
+  const applyPermissionsPreset = (presetKey) => {
+    const preset = ACCESS_LEVEL_PRESETS[presetKey];
+    if (preset) {
+      const next = {};
+      for (const mod of ALL_APP_MODULES) {
+        next[mod.id] = preset[mod.id] || 'read';
+      }
+      setPermissionsDraft(next);
+    }
+  };
+  const resetPermissionsToDefault = () => {
+    if (!permissionsModalUser) return;
+    const roleKey = String(permissionsModalUser.role || '').toLowerCase();
+    const preset = ACCESS_LEVEL_PRESETS[roleKey] || ACCESS_LEVEL_PRESETS.staff;
+    const next = {};
+    for (const mod of ALL_APP_MODULES) {
+      next[mod.id] = preset[mod.id] || 'read';
+    }
+    setPermissionsDraft(next);
+  };
+  const savePermissions = async () => {
+    if (!permissionsModalUser) return;
+    setPermissionsBusy(true);
+    try {
+      const res = await apiFetch(`/auth/users/${permissionsModalUser.id}/permissions`, {
+        method: 'PATCH',
+        body: JSON.stringify({ permissions: permissionsDraft })
+      });
+      setAuthUsers(rows => rows.map(r => r.id === permissionsModalUser.id ? { ...r, permissions: res.permissions } : r));
+      if (Number(user?.id) === Number(permissionsModalUser.id)) {
+        setUser(u => ({ ...u, permissions: res.permissions }));
+      }
+      notify(`Module permissions updated for ${permissionsModalUser.username}`);
+      setPermissionsModalUser(null);
+    } catch (err) {
+      notify(err.message);
+    } finally {
+      setPermissionsBusy(false);
+    }
   };
   const changeAccountRole=async(account,role)=>{if(role===account.role)return;setAccountRoleDrafts(p=>({...p,[account.id]:role}));try{await apiFetch('/auth/users/'+account.id+'/role',{method:'PATCH',body:JSON.stringify({role})});setAuthUsers(rows=>rows.map(r=>r.id===account.id?{...r,role}:r));setAccountRoleDrafts(p=>({...p,[account.id]:role}));notify('Role updated for '+account.username);if(Number(account.id)===Number(user?.id))logout();}catch(e){setAccountRoleDrafts(p=>({...p,[account.id]:account.role}));notify(e.message)}};
   const saveManagedAccountPassword=async(account)=>{const {password,confirm}=accountPasswordDraft;if(password!==confirm){notify('Passwords do not match');return;}if(password.length<8||!/[A-Za-z]/.test(password)||!/[0-9]/.test(password)){notify('Use at least 8 characters with a letter and a number');return;}try{await apiFetch('/auth/users/'+account.id+'/password-reset',{method:'POST',body:JSON.stringify({new_password:password})});setAccountPasswordResetTarget(null);setAccountPasswordDraft({password:'',confirm:''});notify('Password reset for '+account.username);if(Number(account.id)===Number(user?.id))logout();}catch(e){notify(e.message)}};
@@ -570,8 +698,16 @@ export default function App() {
   };
   const filtered=(items,keys)=>items.filter(x=>keys.some(k=>String(x[k]??'').toLowerCase().includes(query.toLowerCase())));
   const isEmployee = String(user?.role || '').toLowerCase() === 'employee';
-  const canEditEmployees=['hr','admin','developer'].includes(String(user?.role||'').toLowerCase());
-  const canAdminEmployees=['admin','developer'].includes(String(user?.role||'').toLowerCase());
+  const userAccess = useMemo(() => {
+    const acc = {};
+    for (const mod of ALL_APP_MODULES) {
+      acc[mod.id] = getModuleAccess(user, mod.id);
+    }
+    return acc;
+  }, [user]);
+
+  const canEditEmployees = ['full', 'write'].includes(userAccess.employees) || ['hr','admin','developer'].includes(String(user?.role||'').toLowerCase());
+  const canAdminEmployees = userAccess.settings === 'full' || ['admin','developer'].includes(String(user?.role||'').toLowerCase());
   const isDeveloperSyncUser=String(user?.username||'').trim()!=='Admin'
     && !String(user?.username||'').toLowerCase().includes('taruna')
     && !String(user?.display_name||'').toLowerCase().includes('taruna')
@@ -725,7 +861,11 @@ export default function App() {
   };
   const selectedAttendanceDate=data.attendance.date||today();
   const selectedAttendanceHoliday=(data.holidays||[]).find(h=>h.holiday_date===selectedAttendanceDate);
-  const attendanceIsHoliday=Boolean(selectedAttendanceHoliday);
+  const isCompanyWideHoliday = selectedAttendanceHoliday && (selectedAttendanceHoliday.department === 'All' || !selectedAttendanceHoliday.department) && (selectedAttendanceHoliday.employee_ids === 'All' || !selectedAttendanceHoliday.employee_ids);
+  const isHolidayForThisRow = r => selectedAttendanceHoliday ? isHolidayForEmployee(selectedAttendanceHoliday, { id: r.employee_id, department: r.department }) : false;
+  const isCurrentEmployeeHoliday = isEmployee && selectedAttendanceHoliday ? isHolidayForEmployee(selectedAttendanceHoliday, { id: user?.employee_id, department: data.employees.find(e => Number(e.id) === Number(user?.employee_id))?.department }) : false;
+  const attendanceIsHoliday = isEmployee ? isCurrentEmployeeHoliday : isCompanyWideHoliday;
+  const distinctDepartments = Array.from(new Set((data.employees||[]).map(e=>String(e.department||'').trim()).filter(Boolean))).sort();
   const visibleAttendanceRows=(data.attendance.roster||[]).filter(r=>{
     if(isEmployee && user?.employee_id && Number(r.employee_id) !== Number(user.employee_id)) return false;
     return attendanceFilter==='all'||String(r.employee_id)===String(attendanceFilter);
@@ -886,17 +1026,16 @@ export default function App() {
   };
   const employeeOptions=data.employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>);
   const visibleNavItems = useMemo(() => {
-    if (isEmployee) {
-      return navItems.filter(([id]) => ['home', 'tasks', 'attendance', 'chat'].includes(id));
-    }
-    return navItems;
-  }, [isEmployee]);
+    return navItems.filter(([id]) => getModuleAccess(user, id) !== 'none');
+  }, [user]);
 
   useEffect(() => {
-    if (isEmployee && !['home', 'tasks', 'attendance', 'chat'].includes(tab)) {
-      setTab('home');
+    if (!user) return;
+    if (getModuleAccess(user, tab) === 'none') {
+      const firstAllowed = visibleNavItems[0]?.[0] || 'home';
+      setTab(firstAllowed);
     }
-  }, [isEmployee, tab]);
+  }, [user, tab, visibleNavItems]);
 
   const heading=visibleNavItems.find(x=>x[0]===tab)?.[1]||'Home';
 
@@ -1203,18 +1342,156 @@ export default function App() {
           <button type="button" className={btn+' mt-3'} disabled={workingWeekdaysBusy} onClick={saveWorkingWeekdays}>{workingWeekdaysBusy?'Saving…':'Save working days'}</button>
         </Panel>}
         {tab==='settings'&&canAdminEmployees&&<Panel title="User account management">
-          <p className="mb-3 text-sm text-slate-400">Create active accounts for employees or staff, map accounts to employee records, assign roles and reset passwords. Passwords are stored using PBKDF2 hashing.</p>
+          <p className="mb-3 text-sm text-slate-400">Create active accounts for employees or staff, map accounts to employee records, assign roles, configure granular module permissions, and reset passwords.</p>
           <form className="mb-4 grid gap-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={createManagedAccount}>
             <label className="text-xs text-slate-400">Username<input className={field+' mt-1'} value={newAccount.username} onChange={e=>setNewAccount(p=>({...p,username:e.target.value}))} maxLength={64} required/></label>
             <label className="text-xs text-slate-400">Display name<input className={field+' mt-1'} value={newAccount.display_name} onChange={e=>setNewAccount(p=>({...p,display_name:e.target.value}))} maxLength={100} required/></label>
-            <label className="text-xs text-slate-400">Role / access level<select className={field+' mt-1'} value={newAccount.role} onChange={e=>setNewAccount(p=>({...p,role:e.target.value}))}>{['Employee','Staff','HR','Admin','Developer'].map(role=><option key={role} value={role} disabled={role==='Developer'&&String(user?.role||'').toLowerCase()!=='developer'}>{role}</option>)}</select></label>
+            <label className="text-xs text-slate-400">Role / access level<select className={field+' mt-1'} value={newAccount.role} onChange={e=>{
+              const r=e.target.value;
+              setNewAccount(p=>({...p,role:r}));
+              const presetKey=r.toLowerCase();
+              if(ACCESS_LEVEL_PRESETS[presetKey]) setCreatePermsDraft({...ACCESS_LEVEL_PRESETS[presetKey]});
+            }}>{['Employee','Staff','HR','Admin','Developer'].map(role=><option key={role} value={role} disabled={role==='Developer'&&String(user?.role||'').toLowerCase()!=='developer'}>{role}</option>)}</select></label>
             <label className="text-xs text-slate-400">Map to Employee<select className={field+' mt-1'} value={newAccount.employee_id||''} onChange={e=>{const empId=e.target.value;const emp=data.employees.find(x=>String(x.id)===String(empId));setNewAccount(p=>({...p,employee_id:empId,display_name:p.display_name&&p.display_name!==p.username?p.display_name:(emp?emp.name:p.display_name)}));}}><option value="">None / Unmapped</option>{data.employees.map(emp=><option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code||'EMP'+emp.id})</option>)}</select></label>
             <label className="text-xs text-slate-400">Initial password<input className={field+' mt-1'} type="password" autoComplete="new-password" minLength={8} value={newAccount.password} onChange={e=>setNewAccount(p=>({...p,password:e.target.value}))} required/></label>
             <label className="text-xs text-slate-400">Recovery question<select className={field+' mt-1'} value={newAccount.security_question} onChange={e=>setNewAccount(p=>({...p,security_question:e.target.value}))}>{['What was the name of your first school?','What is the name of the city where you were born?','What was your childhood nickname?','What is the name of your first teacher?','What was the first concert or live event you attended?'].map(q=><option key={q}>{q}</option>)}</select></label>
             <label className="text-xs text-slate-400 sm:col-span-2 xl:col-span-3">Recovery answer<input className={field+' mt-1'} type="password" autoComplete="off" value={newAccount.security_answer} onChange={e=>setNewAccount(p=>({...p,security_answer:e.target.value}))} required/></label>
+            
+            <div className="sm:col-span-2 xl:col-span-3 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowCreatePerms(v => !v)}
+                className="text-xs text-cyan-300 font-semibold hover:underline flex items-center gap-1.5"
+              >
+                <span>🛡️</span> {showCreatePerms ? 'Hide custom permissions' : 'Customize module permissions for new account (Optional)'}
+              </button>
+            </div>
+
+            {showCreatePerms && (
+              <div className="sm:col-span-2 xl:col-span-3 rounded-xl border border-cyan-400/30 bg-slate-950/70 p-3 shadow-inner">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <span className="text-xs font-semibold text-slate-200">Granular Module Permissions:</span>
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    <button type="button" onClick={() => setCreatePermsDraft({ ...ACCESS_LEVEL_PRESETS.admin })} className="rounded bg-emerald-500/20 px-2 py-0.5 text-emerald-300 border border-emerald-500/30 font-semibold">Admin</button>
+                    <button type="button" onClick={() => setCreatePermsDraft({ ...ACCESS_LEVEL_PRESETS.hr })} className="rounded bg-cyan-500/20 px-2 py-0.5 text-cyan-300 border border-cyan-500/30 font-semibold">HR</button>
+                    <button type="button" onClick={() => setCreatePermsDraft({ ...ACCESS_LEVEL_PRESETS.staff })} className="rounded bg-amber-500/20 px-2 py-0.5 text-amber-300 border border-amber-500/30 font-semibold">Staff</button>
+                    <button type="button" onClick={() => setCreatePermsDraft({ ...ACCESS_LEVEL_PRESETS.employee })} className="rounded bg-purple-500/20 px-2 py-0.5 text-purple-300 border border-purple-500/30 font-semibold">Employee</button>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-56 overflow-y-auto p-1">
+                  {ALL_APP_MODULES.map(m => (
+                    <label key={m.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-900/90 border border-white/10 px-2.5 py-1.5 text-xs text-slate-300">
+                      <span className="truncate">{m.icon} {m.name}</span>
+                      <select
+                        className="rounded border border-white/15 bg-slate-950 px-2 py-1 text-xs text-white"
+                        value={createPermsDraft[m.id] || 'read'}
+                        onChange={e => setCreatePermsDraft(p => ({ ...p, [m.id]: e.target.value }))}
+                      >
+                        {ACCESS_LEVEL_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label.split(' ')[1]}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button className={btn+' sm:col-span-2 xl:col-span-3'}><Plus size={16}/> Create active account</button>
           </form>
-          <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-sm"><thead><tr className="text-left text-xs text-slate-500"><th className="p-2">Username</th><th className="p-2">Display name</th><th className="p-2">Role / access</th><th className="p-2">Mapped Employee</th><th className="p-2">Status</th><th className="p-2">Created</th><th className="p-2">Actions</th></tr></thead><tbody>{authUsers.map(a=>{const protectedDeveloper=String(a.role||'').toLowerCase()==='developer'&&String(user?.role||'').toLowerCase()!=='developer';return <tr key={a.id} className="border-t border-white/5 align-top"><td className="p-2 font-mono text-xs">{a.username}</td><td className="p-2">{a.display_name}</td><td className="p-2"><select className={field+' min-w-28'} value={accountRoleDrafts[a.id]??a.role} disabled={protectedDeveloper} onChange={e=>changeAccountRole(a,e.target.value)}>{['Employee','Staff','HR','Admin','Developer'].map(role=><option key={role} value={role} disabled={role==='Developer'&&String(user?.role||'').toLowerCase()!=='developer'}>{role}</option>)}</select></td><td className="p-2"><div className="font-semibold text-cyan-200">{a.employee_name?`${a.employee_name} (${a.employee_code||'EMP'+a.employee_id})`:'—'}</div><select className="mt-1 rounded border border-white/10 bg-slate-950 px-2 py-1 text-xs text-slate-300" value={a.employee_id||''} onChange={async e=>{const nextId=e.target.value?Number(e.target.value):null;try{await apiFetch('/auth/users/'+a.id+'/mapping',{method:'PATCH',body:JSON.stringify({employee_id:nextId})});const found=data.employees.find(x=>Number(x.id)===nextId);setAuthUsers(rows=>rows.map(r=>r.id===a.id?{...r,employee_id:nextId,employee_name:found?found.name:null,employee_code:found?found.employee_code:null}:r));notify('Employee mapping updated for '+a.username);}catch(err){notify(err.message);}}}><option value="">Unmapped</option>{data.employees.map(emp=><option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></td><td className="p-2">{a.active?'Active':'Pending / disabled'}</td><td className="p-2 text-xs text-slate-400">{String(a.created_at||'').slice(0,10)||'—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" className="rounded-md border border-white/10 px-3 py-1 text-xs text-cyan-200 disabled:opacity-40" disabled={protectedDeveloper||(Number(a.id)===Number(user?.id)&&Boolean(a.active))} onClick={()=>toggleAccountActive(a)}>{a.active?'Deactivate':'Activate'}</button><button type="button" className="rounded-md border border-white/10 px-3 py-1 text-xs text-amber-200 disabled:opacity-40" disabled={protectedDeveloper} onClick={()=>{setAccountPasswordResetTarget(accountPasswordResetTarget===a.id?null:a.id);setAccountPasswordDraft({password:'',confirm:''})}}>Reset password</button></div>{accountPasswordResetTarget===a.id&&<div className="mt-2 grid min-w-56 gap-2 rounded-lg border border-white/10 bg-slate-950 p-2"><input className={field} type="password" autoComplete="new-password" placeholder="New password (8+ chars)" value={accountPasswordDraft.password} onChange={e=>setAccountPasswordDraft(p=>({...p,password:e.target.value}))}/><input className={field} type="password" autoComplete="new-password" placeholder="Confirm new password" value={accountPasswordDraft.confirm} onChange={e=>setAccountPasswordDraft(p=>({...p,confirm:e.target.value}))}/><div className="flex gap-2"><button type="button" className={btn+' px-3 py-2'} onClick={()=>saveManagedAccountPassword(a)}>Save password</button><button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300" onClick={()=>{setAccountPasswordResetTarget(null);setAccountPasswordDraft({password:'',confirm:''})}}>Cancel</button></div></div>}</td></tr>})}</tbody></table>{!authUsers.length&&<p className="py-5 text-center text-sm text-slate-500">No account records available.</p>}</div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-sm"><thead><tr className="text-left text-xs text-slate-500"><th className="p-2">Username</th><th className="p-2">Display name</th><th className="p-2">Role / access</th><th className="p-2">Mapped Employee</th><th className="p-2">Status</th><th className="p-2">Created</th><th className="p-2">Actions</th></tr></thead><tbody>{authUsers.map(a=>{const protectedDeveloper=String(a.role||'').toLowerCase()==='developer'&&String(user?.role||'').toLowerCase()!=='developer';return <tr key={a.id} className="border-t border-white/5 align-top"><td className="p-2 font-mono text-xs">{a.username}</td><td className="p-2">{a.display_name}</td><td className="p-2"><select className={field+' min-w-28'} value={accountRoleDrafts[a.id]??a.role} disabled={protectedDeveloper} onChange={e=>changeAccountRole(a,e.target.value)}>{['Employee','Staff','HR','Admin','Developer'].map(role=><option key={role} value={role} disabled={role==='Developer'&&String(user?.role||'').toLowerCase()!=='developer'}>{role}</option>)}</select></td><td className="p-2"><div className="font-semibold text-cyan-200">{a.employee_name?`${a.employee_name} (${a.employee_code||'EMP'+a.employee_id})`:'—'}</div><select className="mt-1 rounded border border-white/10 bg-slate-950 px-2 py-1 text-xs text-slate-300" value={a.employee_id||''} onChange={async e=>{const nextId=e.target.value?Number(e.target.value):null;try{await apiFetch('/auth/users/'+a.id+'/mapping',{method:'PATCH',body:JSON.stringify({employee_id:nextId})});const found=data.employees.find(x=>Number(x.id)===nextId);setAuthUsers(rows=>rows.map(r=>r.id===a.id?{...r,employee_id:nextId,employee_name:found?found.name:null,employee_code:found?found.employee_code:null}:r));notify('Employee mapping updated for '+a.username);}catch(err){notify(err.message);}}}><option value="">Unmapped</option>{data.employees.map(emp=><option key={emp.id} value={emp.id}>{emp.name}</option>)}</select></td><td className="p-2">{a.active?'Active':'Pending / disabled'}</td><td className="p-2 text-xs text-slate-400">{String(a.created_at||'').slice(0,10)||'—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" className="rounded-md border border-white/10 px-3 py-1 text-xs text-cyan-200 disabled:opacity-40" disabled={protectedDeveloper||(Number(a.id)===Number(user?.id)&&Boolean(a.active))} onClick={()=>toggleAccountActive(a)}>{a.active?'Deactivate':'Activate'}</button><button type="button" className="rounded-md border border-purple-400/40 bg-purple-500/15 px-3 py-1 text-xs font-semibold text-purple-200 hover:bg-purple-500/25 transition disabled:opacity-40" disabled={protectedDeveloper} onClick={()=>openPermissionsModal(a)} title="Configure granular module permissions">🛡️ Permissions</button><button type="button" className="rounded-md border border-white/10 px-3 py-1 text-xs text-amber-200 disabled:opacity-40" disabled={protectedDeveloper} onClick={()=>{setAccountPasswordResetTarget(accountPasswordResetTarget===a.id?null:a.id);setAccountPasswordDraft({password:'',confirm:''})}}>Reset password</button></div>{accountPasswordResetTarget===a.id&&<div className="mt-2 grid min-w-56 gap-2 rounded-lg border border-white/10 bg-slate-950 p-2"><input className={field} type="password" autoComplete="new-password" placeholder="New password (8+ chars)" value={accountPasswordDraft.password} onChange={e=>setAccountPasswordDraft(p=>({...p,password:e.target.value}))}/><input className={field} type="password" autoComplete="new-password" placeholder="Confirm new password" value={accountPasswordDraft.confirm} onChange={e=>setAccountPasswordDraft(p=>({...p,confirm:e.target.value}))}/><div className="flex gap-2"><button type="button" className={btn+' px-3 py-2'} onClick={()=>saveManagedAccountPassword(a)}>Save password</button><button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300" onClick={()=>{setAccountPasswordResetTarget(null);setAccountPasswordDraft({password:'',confirm:''})}}>Cancel</button></div></div>}</td></tr>})}</tbody></table>{!authUsers.length&&<p className="py-5 text-center text-sm text-slate-500">No account records available.</p>}</div>
+          {permissionsModalUser && (
+            <div className="fixed inset-0 z-[120] grid place-items-center overflow-y-auto bg-black/80 p-4">
+              <section className="my-6 w-full max-w-4xl rounded-2xl border border-cyan-400/30 bg-slate-900 p-6 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>🛡️</span> Granular Module Permissions & Access Control
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Account: <strong className="text-cyan-200 font-mono">{permissionsModalUser.username}</strong> ({permissionsModalUser.display_name}) · Base Role: <span className="rounded bg-white/10 px-2 py-0.5 font-semibold text-white">{permissionsModalUser.role}</span>
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setPermissionsModalUser(null)} className="text-slate-400 hover:text-white">
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="mb-4 rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                  <span className="block text-xs font-semibold text-slate-400 mb-2">Quick Access Presets:</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => applyPermissionsPreset('admin')} className="rounded-lg border border-emerald-400/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 transition">
+                      👑 Full Admin
+                    </button>
+                    <button type="button" onClick={() => applyPermissionsPreset('hr')} className="rounded-lg border border-cyan-400/30 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25 transition">
+                      👥 HR Operations
+                    </button>
+                    <button type="button" onClick={() => applyPermissionsPreset('staff')} className="rounded-lg border border-amber-400/30 bg-amber-500/15 px-3 py-1.5 text-xs font-bold text-amber-200 hover:bg-amber-500/25 transition">
+                      📋 Staff Member
+                    </button>
+                    <button type="button" onClick={() => applyPermissionsPreset('employee')} className="rounded-lg border border-purple-400/30 bg-purple-500/15 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/25 transition">
+                      👤 Employee (Self-Service)
+                    </button>
+                    <button type="button" onClick={resetPermissionsToDefault} className="rounded-lg border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10 transition ml-auto">
+                      🔄 Reset to Role Default
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-white/10">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-950/80 text-xs uppercase text-slate-400 border-b border-white/10">
+                      <tr>
+                        <th className="p-3">Module</th>
+                        <th className="p-3">Description</th>
+                        <th className="p-3 min-w-56">Access Level</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {ALL_APP_MODULES.map(mod => {
+                        const currentLevel = permissionsDraft[mod.id] || 'read';
+                        return (
+                          <tr key={mod.id} className="hover:bg-white/[0.02]">
+                            <td className="p-3 font-semibold text-white whitespace-nowrap">
+                              <span className="mr-2 text-base">{mod.icon}</span> {mod.name}
+                            </td>
+                            <td className="p-3 text-xs text-slate-400">
+                              {mod.desc}
+                            </td>
+                            <td className="p-3">
+                              <select
+                                className="w-full rounded-lg border border-white/15 bg-slate-950 px-2.5 py-1.5 text-xs font-semibold text-slate-100 outline-none focus:border-cyan-400"
+                                value={currentLevel}
+                                onChange={e => setPermissionsDraft(p => ({ ...p, [mod.id]: e.target.value }))}
+                              >
+                                {ACCESS_LEVEL_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label} ({opt.desc})
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
+                  <span className="text-xs text-slate-400">
+                    Module permissions restrict both navigation and backend API operations.
+                  </span>
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-lg border border-white/10 px-4 py-2 text-sm text-slate-300" onClick={() => setPermissionsModalUser(null)}>
+                      Cancel
+                    </button>
+                    <button type="button" className={btn} disabled={permissionsBusy} onClick={savePermissions}>
+                      {permissionsBusy ? 'Saving…' : 'Save Permissions'}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
         </Panel>}
         {tab==='attendance'&&<><Panel title="Daily attendance"><div className="mb-3 flex flex-wrap items-end gap-3"><label className="text-xs text-slate-400">Work date<input className={field+' mt-1'} type="date" value={selectedAttendanceDate} disabled={attendanceBusy||Boolean(attendanceRemarksTarget)} onChange={async e=>{
             const selectedDate=e.target.value;
@@ -1249,7 +1526,7 @@ export default function App() {
 <button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-sm text-cyan-200 disabled:opacity-40" disabled={attendanceIsHoliday||attendanceBusy} onClick={()=>runAttendanceTimeAction('edit-times')}>Edit Times</button>
 <button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-sm text-cyan-200 disabled:opacity-40" disabled={attendanceIsHoliday||attendanceBusy} onClick={()=>runAttendanceTimeAction('remarks')}>Remarks</button>
 <span className="text-xs text-slate-500">Choose one employee by checkbox or filter for these actions.</span>
-</div>{attendanceRemarksTarget&&<div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget){setAttendanceRemarksTarget(null);setAttendanceRemarksDraft('');}}}><section className="w-full max-w-lg rounded-2xl border border-cyan-400/30 bg-slate-900 p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="attendance-remarks-title"><h3 id="attendance-remarks-title" className="text-lg font-bold text-white">Attendance Remarks</h3><p className="mt-1 text-sm text-slate-400">Select a preset or type remarks for {selectedAttendanceDate} · {attendanceRemarksTarget.name}</p><label className="mt-4 block space-y-1 text-xs font-semibold text-slate-400">Remarks<input autoFocus list="attendance-remark-presets" className={field} value={attendanceRemarksDraft} placeholder="Select preset or type remarks" onChange={event=>setAttendanceRemarksDraft(event.target.value)}/><datalist id="attendance-remark-presets">{(data.attendance.remarks_options||[]).map((option,index)=><option key={index} value={option}/>)}</datalist></label><div className="mt-5 flex justify-end gap-2"><button type="button" className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300" onClick={()=>{setAttendanceRemarksTarget(null);setAttendanceRemarksDraft('');}}>Cancel</button><button type="button" className={btn} disabled={attendanceBusy} onClick={async()=>{const target=attendanceRemarksTarget;if(!target)return;const saved=await saveAttendanceToolbarUpdate(target,{attendance_note:attendanceRemarksDraft.trim()},'Attendance remarks');if(saved){setAttendanceRemarksTarget(null);setAttendanceRemarksDraft('');}}}>Save remarks</button></div></section></div>}{attendanceIsHoliday&&<p className="mb-3 rounded-lg border border-amber-400/30 bg-amber-950/40 p-3 text-sm text-amber-200">Holiday: {selectedAttendanceHoliday.holiday_name||'Declared holiday'} — attendance editing is disabled for this date.</p>}<div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-2">Select</th><th className="p-2">Employee</th><th className="p-2">Date</th><th className="p-2">Attendance status</th><th className="p-2">Check-in</th><th className="p-2">Check-out</th><th className="p-2">Net hours</th><th className="p-2">Remarks</th><th className="p-2">Action</th></tr></thead><tbody>{visibleAttendanceRows.map(r=>{const draft=attendanceDraftFor(r);return <tr key={r.employee_id} className="border-t border-white/5 text-slate-300"><td className="p-2"><input aria-label={'Select '+r.name} type="checkbox" checked={selectedAttendanceIds.includes(Number(r.employee_id))} onChange={()=>toggleAttendanceSelection(r.employee_id)} disabled={attendanceIsHoliday}/></td><td className="p-2 font-semibold text-white">{r.name}<div className="text-xs text-slate-500">{r.department||'—'}</div></td><td className="p-2 text-xs text-slate-400">{selectedAttendanceDate}</td><td className="p-2"><select className={field+' min-w-32'} value={attendanceIsHoliday?'Holiday':(['Unmarked','Present','Absent','Leave'].includes(draft.attendance_status)?draft.attendance_status:'Unmarked')} disabled={attendanceIsHoliday} onChange={e=>{const status=e.target.value;setAttendanceDrafts(prev=>({...prev,[r.employee_id]:{...(prev[r.employee_id]||r),attendance_status:status,...(['Absent','Leave','Unmarked'].includes(status)?{check_in:'',check_out:''}:{})}}))}}>{(attendanceIsHoliday?['Holiday']:['Unmarked','Present','Absent','Leave']).map(s=><option key={s}>{s}</option>)}</select></td><td className="p-2"><input className={field+' w-28'} type="time" value={draft.check_in||''} disabled={attendanceIsHoliday||['Absent','Leave','Unmarked'].includes(draft.attendance_status)} onChange={e=>updateAttendanceDraft(r,'check_in',e.target.value)}/></td><td className="p-2"><input className={field+' w-28'} type="time" value={draft.check_out||''} disabled={attendanceIsHoliday||['Absent','Leave','Unmarked'].includes(draft.attendance_status)} onChange={e=>updateAttendanceDraft(r,'check_out',e.target.value)}/></td><td className="p-2 whitespace-nowrap text-cyan-200">{attendanceNetHours(draft.check_in,draft.check_out,draft.break_minutes)}</td><td className="p-2"><input className={field+' min-w-48'} value={draft.attendance_note||''} disabled={attendanceIsHoliday} placeholder="Attendance remarks" onChange={e=>updateAttendanceDraft(r,'attendance_note',e.target.value)}/></td><td className="p-2"><button className={btn+' px-3 py-2'} disabled={attendanceIsHoliday||attendanceBusy||!attendanceDrafts[r.employee_id]} onClick={()=>saveAttendanceDraft(r)}>{attendanceBusy?'Saving…':'Save'}</button></td></tr>})}</tbody></table>{!visibleAttendanceRows.length&&<p className="py-6 text-center text-sm text-slate-500">No employees found.</p>}</div></Panel>{!isEmployee&&<Panel title="Bulk edit selected employees"><p className="mb-3 text-sm text-slate-400">Only checked fields are changed. Unchecked values remain untouched.</p><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_status} onChange={e=>setBulkAttendance(p=>({...p,apply_status:e.target.checked}))}/> Apply status</span><select className={field} value={bulkAttendance.status} onChange={e=>setBulkAttendance(p=>({...p,status:e.target.value}))}>{['Present','Absent','Leave','Unmarked'].map(s=><option key={s}>{s}</option>)}</select></label><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_check_in} onChange={e=>setBulkAttendance(p=>({...p,apply_check_in:e.target.checked}))}/> Apply check-in</span><input className={field} type="time" value={bulkAttendance.check_in} onChange={e=>setBulkAttendance(p=>({...p,check_in:e.target.value}))}/></label><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_check_out} onChange={e=>setBulkAttendance(p=>({...p,apply_check_out:e.target.checked}))}/> Apply check-out</span><input className={field} type="time" value={bulkAttendance.check_out} onChange={e=>setBulkAttendance(p=>({...p,check_out:e.target.value}))}/></label><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_remarks} onChange={e=>setBulkAttendance(p=>({...p,apply_remarks:e.target.checked}))}/> Apply remarks</span><input className={field} value={bulkAttendance.remarks} onChange={e=>setBulkAttendance(p=>({...p,remarks:e.target.value}))} placeholder="Remarks (blank clears)"/></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button className={btn} disabled={!selectedAttendanceIds.length||attendanceIsHoliday||!Object.entries(bulkAttendance).some(([k,v])=>k.startsWith('apply_')&&v)} onClick={applyAttendanceBulk}>Apply to {selectedAttendanceIds.length} selected</button><button className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300" onClick={()=>setBulkAttendance({apply_status:false,status:'Present',apply_check_in:false,check_in:'',apply_check_out:false,check_out:'',apply_remarks:false,remarks:''})}>Reset bulk fields</button></div></Panel>}<Panel title="Attendance totals & period summary"><p className="mb-3 text-xs text-slate-500">Totals exclude declared holidays and non-working weekdays. Work days are counted through the selected date.</p><Rows items={data.attendanceSummary?.rows||[]} keys={['employee_name','start_date','work_days','present','absent','leave','holidays','total_present']}/></Panel><Panel title="Company holidays">{canAdminEmployees?<form className="grid gap-3 sm:grid-cols-3" onSubmit={async e=>{e.preventDefault();try{await post('/holidays',holidayForm);setHolidayForm({holiday_date:today(),holiday_name:''})}catch{}}}><label className="text-xs text-slate-400">Date<input className={field+' mt-1'} type="date" value={holidayForm.holiday_date} onChange={e=>setHolidayForm(p=>({...p,holiday_date:e.target.value}))} required/></label><label className="text-xs text-slate-400">Holiday name<input className={field+' mt-1'} value={holidayForm.holiday_name} onChange={e=>setHolidayForm(p=>({...p,holiday_name:e.target.value}))} required/></label><button className={btn+' self-end'}><Plus size={16}/> Declare holiday</button></form>:<p className="mb-3 text-xs text-slate-500">Holiday declarations are managed by Admin or Developer accounts.</p>}<Rows items={data.holidays||[]} keys={['holiday_date','holiday_name','created_at']} onDelete={canAdminEmployees ? (h=>del('/holidays/'+h.holiday_date)) : undefined}/></Panel></>}{tab==='business'&&<BusinessTracking apiFetch={apiFetch} employees={data.employees} notify={notify}/>}
+</div>{attendanceRemarksTarget&&<div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-4" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget){setAttendanceRemarksTarget(null);setAttendanceRemarksDraft('');}}}><section className="w-full max-w-lg rounded-2xl border border-cyan-400/30 bg-slate-900 p-5 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="attendance-remarks-title"><h3 id="attendance-remarks-title" className="text-lg font-bold text-white">Attendance Remarks</h3><p className="mt-1 text-sm text-slate-400">Select a preset or type remarks for {selectedAttendanceDate} · {attendanceRemarksTarget.name}</p><label className="mt-4 block space-y-1 text-xs font-semibold text-slate-400">Remarks<input autoFocus list="attendance-remark-presets" className={field} value={attendanceRemarksDraft} placeholder="Select preset or type remarks" onChange={event=>setAttendanceRemarksDraft(event.target.value)}/><datalist id="attendance-remark-presets">{(data.attendance.remarks_options||[]).map((option,index)=><option key={index} value={option}/>)}</datalist></label><div className="mt-5 flex justify-end gap-2"><button type="button" className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300" onClick={()=>{setAttendanceRemarksTarget(null);setAttendanceRemarksDraft('');}}>Cancel</button><button type="button" className={btn} disabled={attendanceBusy} onClick={async()=>{const target=attendanceRemarksTarget;if(!target)return;const saved=await saveAttendanceToolbarUpdate(target,{attendance_note:attendanceRemarksDraft.trim()},'Attendance remarks');if(saved){setAttendanceRemarksTarget(null);setAttendanceRemarksDraft('');}}}>Save remarks</button></div></section></div>}{selectedAttendanceHoliday&&<div className="mb-3 rounded-lg border border-amber-400/30 bg-amber-950/40 p-3 text-sm text-amber-200"><div className="flex flex-wrap items-center justify-between gap-2"><div><span className="font-bold">📅 Declared Holiday: {selectedAttendanceHoliday.holiday_name||'Declared holiday'}</span><span className="ml-2 text-xs text-amber-300/80">Scope: {(!selectedAttendanceHoliday.department||selectedAttendanceHoliday.department==='All')&&(!selectedAttendanceHoliday.employee_ids||selectedAttendanceHoliday.employee_ids==='All')?'🏢 Company-wide (All Departments)':[[selectedAttendanceHoliday.department&&selectedAttendanceHoliday.department!=='All'?('🏷️ Depts: '+selectedAttendanceHoliday.department):''],[selectedAttendanceHoliday.employee_ids&&selectedAttendanceHoliday.employee_ids!=='All'?('👤 Employees: '+selectedAttendanceHoliday.employee_ids):'']].filter(Boolean).join(' · ')}</span></div><span className="text-xs text-amber-400">{isCompanyWideHoliday?'All employee attendance is locked.':'Only employees in scope have holiday status; other departments work normally.'}</span></div></div>}<div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-left text-sm"><thead className="text-xs uppercase text-slate-500"><tr><th className="p-2">Select</th><th className="p-2">Employee</th><th className="p-2">Date</th><th className="p-2">Attendance status</th><th className="p-2">Check-in</th><th className="p-2">Check-out</th><th className="p-2">Net hours</th><th className="p-2">Remarks</th><th className="p-2">Action</th></tr></thead><tbody>{visibleAttendanceRows.map(r=>{const draft=attendanceDraftFor(r);const rowHoliday=isHolidayForThisRow(r);return <tr key={r.employee_id} className="border-t border-white/5 text-slate-300"><td className="p-2"><input aria-label={'Select '+r.name} type="checkbox" checked={selectedAttendanceIds.includes(Number(r.employee_id))} onChange={()=>toggleAttendanceSelection(r.employee_id)} disabled={rowHoliday}/></td><td className="p-2 font-semibold text-white">{r.name}<div className="text-xs text-slate-500">{r.department||'—'}{rowHoliday&&<span className="ml-2 inline-block rounded bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.5 border border-amber-500/30 font-bold">Holiday</span>}</div></td><td className="p-2 text-xs text-slate-400">{selectedAttendanceDate}</td><td className="p-2"><select className={field+' min-w-32'} value={rowHoliday?'Holiday':(['Unmarked','Present','Absent','Leave'].includes(draft.attendance_status)?draft.attendance_status:'Unmarked')} disabled={rowHoliday} onChange={e=>{const status=e.target.value;setAttendanceDrafts(prev=>({...prev,[r.employee_id]:{...(prev[r.employee_id]||r),attendance_status:status,...(['Absent','Leave','Unmarked'].includes(status)?{check_in:'',check_out:''}:{})}}))}}>{(rowHoliday?['Holiday']:['Unmarked','Present','Absent','Leave']).map(s=><option key={s}>{s}</option>)}</select></td><td className="p-2"><input className={field+' w-28'} type="time" value={draft.check_in||''} disabled={rowHoliday||['Absent','Leave','Unmarked'].includes(draft.attendance_status)} onChange={e=>updateAttendanceDraft(r,'check_in',e.target.value)}/></td><td className="p-2"><input className={field+' w-28'} type="time" value={draft.check_out||''} disabled={rowHoliday||['Absent','Leave','Unmarked'].includes(draft.attendance_status)} onChange={e=>updateAttendanceDraft(r,'check_out',e.target.value)}/></td><td className="p-2 whitespace-nowrap text-cyan-200">{attendanceNetHours(draft.check_in,draft.check_out,draft.break_minutes)}</td><td className="p-2"><input className={field+' min-w-48'} value={draft.attendance_note||''} disabled={rowHoliday} placeholder="Attendance remarks" onChange={e=>updateAttendanceDraft(r,'attendance_note',e.target.value)}/></td><td className="p-2"><button className={btn+' px-3 py-2'} disabled={rowHoliday||attendanceBusy||!attendanceDrafts[r.employee_id]} onClick={()=>saveAttendanceDraft(r)}>{attendanceBusy?'Saving…':'Save'}</button></td></tr>})}</tbody></table>{!visibleAttendanceRows.length&&<p className="py-6 text-center text-sm text-slate-500">No employees found.</p>}</div></Panel>{!isEmployee&&<Panel title="Bulk edit selected employees"><p className="mb-3 text-sm text-slate-400">Only checked fields are changed. Unchecked values remain untouched.</p><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_status} onChange={e=>setBulkAttendance(p=>({...p,apply_status:e.target.checked}))}/> Apply status</span><select className={field} value={bulkAttendance.status} onChange={e=>setBulkAttendance(p=>({...p,status:e.target.value}))}>{['Present','Absent','Leave','Unmarked'].map(s=><option key={s}>{s}</option>)}</select></label><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_check_in} onChange={e=>setBulkAttendance(p=>({...p,apply_check_in:e.target.checked}))}/> Apply check-in</span><input className={field} type="time" value={bulkAttendance.check_in} onChange={e=>setBulkAttendance(p=>({...p,check_in:e.target.value}))}/></label><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_check_out} onChange={e=>setBulkAttendance(p=>({...p,apply_check_out:e.target.checked}))}/> Apply check-out</span><input className={field} type="time" value={bulkAttendance.check_out} onChange={e=>setBulkAttendance(p=>({...p,check_out:e.target.value}))}/></label><label className="space-y-2 text-xs text-slate-400"><span className="flex items-center gap-2"><input type="checkbox" checked={bulkAttendance.apply_remarks} onChange={e=>setBulkAttendance(p=>({...p,apply_remarks:e.target.checked}))}/> Apply remarks</span><input className={field} value={bulkAttendance.remarks} onChange={e=>setBulkAttendance(p=>({...p,remarks:e.target.value}))} placeholder="Remarks (blank clears)"/></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><button className={btn} disabled={!selectedAttendanceIds.length||attendanceIsHoliday||!Object.entries(bulkAttendance).some(([k,v])=>k.startsWith('apply_')&&v)} onClick={applyAttendanceBulk}>Apply to {selectedAttendanceIds.length} selected</button><button className="rounded-lg border border-white/10 px-4 py-2.5 text-sm text-slate-300" onClick={()=>setBulkAttendance({apply_status:false,status:'Present',apply_check_in:false,check_in:'',apply_check_out:false,check_out:'',apply_remarks:false,remarks:''})}>Reset bulk fields</button></div></Panel>}<Panel title="Attendance totals & period summary"><p className="mb-3 text-xs text-slate-500">Totals exclude declared holidays and non-working weekdays. Work days are counted through the selected date.</p><Rows items={data.attendanceSummary?.rows||[]} keys={['employee_name','start_date','work_days','present','absent','leave','holidays','total_present']}/></Panel><Panel title="Company & Department Holidays">{canAdminEmployees?<form className="mb-4 space-y-3 rounded-xl border border-white/10 bg-slate-950/50 p-4" onSubmit={async e=>{e.preventDefault();try{const deptVal=holidayForm.scope_type==='dept'?(holidayForm.selected_depts.join(',')||'All'):'All';const empVal=holidayForm.scope_type==='emp'?(holidayForm.selected_emps.join(',')||'All'):'All';await post('/holidays',{holiday_date:holidayForm.holiday_date,holiday_name:holidayForm.holiday_name,department:deptVal,employee_ids:empVal});setHolidayForm({holiday_date:today(),holiday_name:'',scope_type:'all',department:'All',employee_ids:'All',selected_depts:[],selected_emps:[]});notify('Holiday declared successfully');}catch(err){notify(err.message);}}}><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs text-slate-400">Holiday date *<input className={field+' mt-1'} type="date" value={holidayForm.holiday_date} onChange={e=>setHolidayForm(p=>({...p,holiday_date:e.target.value}))} required/></label><label className="text-xs text-slate-400">Holiday name *<input className={field+' mt-1'} placeholder="e.g. Diwali, Eid, Christmas, Founder Day" value={holidayForm.holiday_name} onChange={e=>setHolidayForm(p=>({...p,holiday_name:e.target.value}))} required/></label></div><div className="space-y-2"><span className="text-xs font-semibold text-slate-300">Holiday scope</span><div className="flex flex-wrap gap-4 text-xs text-slate-300"><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="holiday_scope" checked={holidayForm.scope_type==='all'} onChange={()=>setHolidayForm(p=>({...p,scope_type:'all'}))}/><span>🏢 All Departments (Company-wide)</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="holiday_scope" checked={holidayForm.scope_type==='dept'} onChange={()=>setHolidayForm(p=>({...p,scope_type:'dept'}))}/><span>🏷️ Specific Department(s) only</span></label><label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="holiday_scope" checked={holidayForm.scope_type==='emp'} onChange={()=>setHolidayForm(p=>({...p,scope_type:'emp'}))}/><span>👤 Specific Employee(s) only</span></label></div></div>{holidayForm.scope_type==='dept'&&(distinctDepartments.length>0?<div className="rounded-lg border border-cyan-400/20 bg-slate-900/80 p-3"><p className="mb-2 text-xs font-bold text-cyan-300">Select departments with this holiday (unselected departments work normally):</p><div className="flex flex-wrap gap-3">{distinctDepartments.map(d=><label key={d} className="flex items-center gap-1.5 text-xs text-slate-200 cursor-pointer"><input type="checkbox" checked={holidayForm.selected_depts.includes(d)} onChange={e=>{const checked=e.target.checked;setHolidayForm(p=>({...p,selected_depts:checked?[...p.selected_depts,d]:p.selected_depts.filter(x=>x!==d)}));}}/><span>{d}</span></label>)}</div></div>:<div className="rounded-lg border border-amber-400/20 bg-slate-900/80 p-3 text-xs text-amber-300">No departments found on active employees.</div>)}{holidayForm.scope_type==='emp'&&<div className="rounded-lg border border-cyan-400/20 bg-slate-900/80 p-3"><p className="mb-2 text-xs font-bold text-cyan-300">Select individual employees with this holiday:</p><div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">{(data.employees||[]).map(emp=><label key={emp.id} className="flex items-center gap-1.5 text-xs text-slate-200 cursor-pointer"><input type="checkbox" checked={holidayForm.selected_emps.includes(String(emp.id))} onChange={e=>{const checked=e.target.checked;const idStr=String(emp.id);setHolidayForm(p=>({...p,selected_emps:checked?[...p.selected_emps,idStr]:p.selected_emps.filter(x=>x!==idStr)}));}}/><span className="truncate">{emp.name} <span className="text-[10px] text-slate-400">({emp.department||'No dept'})</span></span></label>)}</div></div>}<div className="flex justify-end pt-1"><button type="submit" className={btn}><Plus size={16}/> Declare holiday</button></div></form>:<p className="mb-3 text-xs text-slate-500">Holiday declarations are managed by Admin or Developer accounts.</p>}<div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="text-slate-400 border-b border-white/10"><tr><th className="p-2">Date</th><th className="p-2">Holiday Name</th><th className="p-2">Scope / Coverage</th><th className="p-2">Declared Date</th>{canAdminEmployees&&<th className="p-2 text-right">Action</th>}</tr></thead><tbody>{(data.holidays||[]).map(h=>{const isAll=(!h.department||h.department==='All')&&(!h.employee_ids||h.employee_ids==='All');return <tr key={h.holiday_date} className="border-b border-white/5 text-slate-300"><td className="p-2 font-mono font-bold text-white">{h.holiday_date}</td><td className="p-2 font-semibold text-cyan-300">{h.holiday_name}</td><td className="p-2">{isAll?<span className="inline-block rounded bg-emerald-500/20 text-emerald-300 text-[11px] px-2 py-0.5 border border-emerald-500/30">🏢 Company-wide</span>:<div className="flex flex-wrap gap-1">{h.department&&h.department!=='All'&&<span className="inline-block rounded bg-purple-500/20 text-purple-300 text-[11px] px-2 py-0.5 border border-purple-500/30">🏷️ Depts: {h.department}</span>}{h.employee_ids&&h.employee_ids!=='All'&&<span className="inline-block rounded bg-amber-500/20 text-amber-300 text-[11px] px-2 py-0.5 border border-amber-500/30">👤 Employees: {h.employee_ids}</span>}</div>}</td><td className="p-2 text-slate-500">{h.created_at?new Date(h.created_at).toLocaleDateString():'—'}</td>{canAdminEmployees&&<td className="p-2 text-right"><button type="button" className="rounded border border-rose-400/30 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/20" onClick={()=>del('/holidays/'+h.holiday_date)}>Delete</button></td>}</tr>})}{!(data.holidays||[]).length&&<tr><td colSpan={5} className="py-4 text-center text-slate-500">No holidays declared.</td></tr>}</tbody></table></div></Panel></>}{tab==='business'&&<BusinessTracking apiFetch={apiFetch} employees={data.employees} notify={notify}/>}
         {tab==='customers'&&<><Panel title="Store Directory · Workbook import, regional coverage & exports"><div className="grid gap-4 xl:grid-cols-2"><div className="rounded-xl border border-white/10 bg-slate-950/50 p-3"><h3 className="mb-2 text-sm font-bold text-white">Merge Store Directory workbook</h3><p className="mb-3 text-xs text-slate-400">Admin / Developer only · .xlsx up to 50 MB. Existing customer IDs, notes, follow-ups and records are merged, not deleted or replaced.</p><input className={field+' mb-3'} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={!canAdminEmployees||storeImportBusy} onChange={e=>setStoreWorkbook(e.target.files?.[0]||null)}/><button type="button" className={btn} disabled={!canAdminEmployees||!storeWorkbook||storeImportBusy} onClick={importStoreWorkbook}>{storeImportBusy?'Importing and merging…':'Import and merge workbook'}</button></div><div className="rounded-xl border border-white/10 bg-slate-950/50 p-3"><h3 className="mb-2 text-sm font-bold text-white">Import regional benchmark workbook</h3><p className="mb-3 text-xs text-slate-400">Admin / Developer only · Updates benchmark counts only. It does not alter Store Directory records.</p><input className={field+' mb-3'} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={!canAdminEmployees||dashboardImportBusy} onChange={e=>setDashboardWorkbook(e.target.files?.[0]||null)}/><button type="button" className={btn} disabled={!canAdminEmployees||!dashboardWorkbook||dashboardImportBusy} onClick={importDashboardWorkbook}>{dashboardImportBusy?'Importing benchmark…':'Import regional benchmark'}</button></div></div><div className="mt-4 flex flex-wrap items-center gap-2"><span className="mr-2 text-xs font-semibold text-slate-400">Export filtered Store Directory:</span>{['csv','xlsx','pdf','docx'].map(format=><button type="button" key={format} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-cyan-200" onClick={()=>downloadStoreExport(format)}>{format.toUpperCase()}</button>)}<button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-cyan-200" onClick={openStorePrintPreview}>Print Preview</button></div><div className="mt-4 flex flex-wrap items-center gap-2"><span className="mr-2 text-xs font-semibold text-slate-400">Regional dashboard export:</span>{['csv','xlsx','pdf'].map(format=><button type="button" key={format} className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-cyan-200" onClick={()=>downloadRegionalExport(format)}>{format.toUpperCase()}</button>)}<button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-cyan-200" onClick={openRegionalPrintPreview}>Print Preview</button></div><div className="mt-4"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-bold text-white">Regional coverage</h3><span className="text-xs text-slate-400">{regionalRows.length} territories · {regionalSummary.totals?.customer_records||0} customer records</span></div><div className="mb-3 flex flex-wrap items-center gap-2"><select className={field+' w-auto min-w-56'} value={regionalTerritoryFilter} onChange={e=>setRegionalTerritoryFilter(e.target.value)}><option value="all">All 36 regions</option><option value="State">28 States</option><option value="Union Territory">6 Union Territories</option><option value="Island Territory">2 Island Territories</option></select><span className="text-xs text-slate-500">Export and print actions use this territory filter.</span></div><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-xs"><thead className="text-slate-500"><tr>{['State / UT','Type','Web leads','Workbook leads','Stores','Gyms','Dashboard stores','Variance'].map(label=><th key={label} className="border-b border-white/10 px-2 py-2">{label}</th>)}</tr></thead><tbody>{regionalRows.map(row=><tr key={row.state} className="border-b border-white/5 text-slate-300"><td className="px-2 py-2 font-semibold text-white">{row.state}</td><td className="px-2 py-2">{row.territory_type}</td><td className="px-2 py-2">{row.web_leads}</td><td className="px-2 py-2">{row.workbook_leads}</td><td className="px-2 py-2">{row.stores}</td><td className="px-2 py-2">{row.gyms}</td><td className="px-2 py-2">{row.dashboard_stores??'—'}</td><td className="px-2 py-2">{row.variance==null?'—':(row.variance>0?'+':'')+row.variance}</td></tr>)}</tbody></table>{!(regionalSummary.rows||[]).length&&<p className="py-4 text-center text-xs text-slate-500">Regional coverage will appear when Store Directory records or a dashboard benchmark are available.</p>}</div></div></Panel><Panel title="Store Directory · Web scraping"><form className="grid gap-3 sm:grid-cols-4" onSubmit={async e=>{e.preventDefault();if(scrapeBusy)return;setScrapeBusy(true);setScrapeStatus('Starting evidence-based public merchant search…');try{const started=await apiFetch('/customers/scrape',{method:'POST',body:JSON.stringify({state:scrapeState,category:scrapeCategory,query:scrapeQuery,max_results:30,deep_scrape:true})});let status;for(let i=0;i<300;i++){await new Promise(r=>setTimeout(r,1200));status=await apiFetch('/customers/scrape/'+started.job_id);setScrapeStatus(status.status==='running'?'Searching public merchant pages and checking address evidence…':status.status==='completed'?'Completed. Found '+status.found+' evidence-backed leads.':'Scraping failed: '+(status.error||'Unknown error'));if(status.status!=='running')break;}if(status?.status==='completed'){await load();notify('Store Directory updated: '+status.found+' leads found');}else if(status?.status==='running')setScrapeStatus('Search is still running. Refresh the directory shortly.');}catch(err){setScrapeStatus(err.message);notify(err.message)}finally{setScrapeBusy(false)}}}><label className="text-xs text-slate-400">Scraping region<select className={field+' mt-1'} value={scrapeState} onChange={e=>setScrapeState(e.target.value)}><option value="">All India</option><optgroup label="28 States"><option>Andhra Pradesh</option><option>Arunachal Pradesh</option><option>Assam</option><option>Bihar</option><option>Chhattisgarh</option><option>Goa</option><option>Gujarat</option><option>Haryana</option><option>Himachal Pradesh</option><option>Jharkhand</option><option>Karnataka</option><option>Kerala</option><option>Madhya Pradesh</option><option>Maharashtra</option><option>Manipur</option><option>Meghalaya</option><option>Mizoram</option><option>Nagaland</option><option>Odisha</option><option>Punjab</option><option>Rajasthan</option><option>Sikkim</option><option>Tamil Nadu</option><option>Telangana</option><option>Tripura</option><option>Uttar Pradesh</option><option>Uttarakhand</option><option>West Bengal</option></optgroup><optgroup label="6 Union Territories"><option>Chandigarh</option><option>Dadra and Nagar Haveli and Daman and Diu</option><option>Delhi</option><option>Jammu and Kashmir</option><option>Ladakh</option><option>Puducherry</option></optgroup><optgroup label="2 Island Territories"><option>Andaman and Nicobar Islands</option><option>Lakshadweep</option></optgroup></select></label><label className="text-xs text-slate-400">Business type<select className={field+' mt-1'} value={scrapeCategory} onChange={e=>changeScrapeCategory(e.target.value)}><option>Pure Product Selling Stores</option><option>Gym</option><option>Gyms which sell products also</option><option>All Categories</option></select></label><label className="text-xs text-slate-400 sm:col-span-2">Search terms<input className={field+' mt-1'} value={scrapeQuery} onChange={e=>setScrapeQuery(e.target.value)}/></label><button className={btn+' sm:col-span-4'} disabled={scrapeBusy}><Globe size={16}/>{scrapeBusy?'Searching public websites…':'Start deep web scraping'}</button></form>{scrapeStatus&&<p className="mt-3 rounded-lg bg-slate-950 p-3 text-sm text-cyan-200">{scrapeStatus}</p>}<p className="mt-2 text-xs text-slate-500">Only public merchant pages are inspected. Leads are deduplicated and marked unverified until direct confirmation; no synthetic contact details are generated.</p></Panel><Panel title="Add store / prospect"><form className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" onSubmit={async e=>{e.preventDefault();const result=await post('/customers/prospects',form);if(result?.success)setForm(p=>({...p,business_name:'',business_category:'',kind:'Store',area:'',city:'',state:'',contact_person:'',phone:'',email:'',address:'',website:'',maps:'',followup_date:'',call_time:'',connection:'',verified:'No',response:'',notes:''}));}}><FormInput label="Business / store name" name="business_name" form={form} onChange={set} required/><FormInput label="Business category" name="business_category" form={form} onChange={set}/><FormInput label="Record type" name="kind" form={form} onChange={set} placeholder="Store / Gym / Hybrid"/><FormInput label="Area / locality" name="area" form={form} onChange={set}/><FormInput label="City" name="city" form={form} onChange={set} required/><FormInput label="State / UT" name="state" form={form} onChange={set} required/><FormInput label="Contact person" name="contact_person" form={form} onChange={set}/><FormInput label="Phone" name="phone" form={form} onChange={set}/><FormInput label="Email" name="email" form={form} onChange={set} type="email"/><FormInput label="Full postal address" name="address" form={form} onChange={set}/><FormInput label="Official website" name="website" form={form} onChange={set} type="url"/><FormInput label="Google Maps URL (optional)" name="maps" form={form} onChange={set} type="url"/><FormInput label="Follow-up date" name="followup_date" form={form} onChange={set} type="date"/><FormInput label="Call time" name="call_time" form={form} onChange={set} type="time"/><FormInput label="Connection / outcome" name="connection" form={form} onChange={set}/><FormInput label="Verification" name="verified" form={form} onChange={set} placeholder="Yes / No"/><FormInput label="Response" name="response" form={form} onChange={set}/><FormInput label="Notes" name="notes" form={form} onChange={set}/><button className={btn+' sm:col-span-2 xl:col-span-3'}><Plus size={16}/> Add prospect</button></form><p className="mt-2 text-xs text-slate-500">If a direct Maps URL is not supplied, the directory generates a Google Maps search link from the business name and postal address. City and state identify the store branch for duplicate checking.</p></Panel><Panel title={`Store directory · ${data.prospects.length} records`}><div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6"><input className={field} placeholder="Search business, address, contact, phone, email or website" value={query} onChange={e=>setQuery(e.target.value)}/><select className={field} value={prospectKindFilter} onChange={e=>setProspectKindFilter(e.target.value)}><option value="all">All record types</option>{Array.from(new Set(['Pure Product Selling Stores','Gym','Gyms which sell products also',...(data.prospects||[]).map(p=>String(p.kind||'Store').trim()).filter(Boolean)])).sort().map(k=><option key={k} value={k.toLowerCase()}>{k}</option>)}</select><select className={field} value={prospectStateFilter} onChange={e=>setProspectStateFilter(e.target.value)}><option value="all">All states / UTs</option>{Array.from(new Set((data.prospects||[]).flatMap(p=>String(p.state||'').split(',').map(value=>value.trim()).filter(Boolean)))).sort().map(s=><option key={s} value={s}>{s}</option>)}</select><select className={field} value={prospectContactFilter} onChange={e=>setProspectContactFilter(e.target.value)}><option value="all">All contacts</option><option value="has">Has phone / email</option><option value="missing">Missing contact</option></select><select className={field} value={prospectWebsiteFilter} onChange={e=>setProspectWebsiteFilter(e.target.value)}><option value="all">All website status</option><option value="has">Has website</option><option value="missing">Missing website</option></select><select className={field} value={prospectVerificationFilter} onChange={e=>setProspectVerificationFilter(e.target.value)}><option value="all">All verification states</option><option value="verified">Verified</option><option value="pending">Unverified</option></select></div><div className="mb-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-6"><select className={field} value={prospectExcludeFilter} onChange={e=>setProspectExcludeFilter(e.target.value)}><option value="none">Exclude: none</option><option value="gym_wellness_herbal_healthkart">Exclude gyms / wellness / herbal / HealthKart</option><option value="missing_contact">Exclude missing phone / email</option><option value="missing_website">Exclude missing website</option><option value="unverified">Exclude unverified leads</option></select><select className={field} value={prospectExcludeKind} onChange={e=>setProspectExcludeKind(e.target.value)}><option value="all">Exclude category: none</option>{Array.from(new Set(['Pure Product Selling Stores','Gym','Gyms which sell products also',...(data.prospects||[]).map(p=>String(p.kind||'Store').trim()).filter(Boolean)])).sort().map(k=><option key={k} value={k}>{'Exclude: '+k}</option>)}</select><select className={field} value={prospectExcludeState} onChange={e=>setProspectExcludeState(e.target.value)}><option value="all">Exclude state: none</option>{Array.from(new Set((data.prospects||[]).flatMap(p=>String(p.state||'').split(',').map(value=>value.trim()).filter(Boolean)))).sort().map(s=><option key={s} value={s}>{'Exclude: '+s}</option>)}</select><input className={field} placeholder="Exclude business name…" value={prospectExcludeName} onChange={e=>setProspectExcludeName(e.target.value)}/><input className={field} placeholder="Exclude city / district…" value={prospectExcludeDistrict} onChange={e=>setProspectExcludeDistrict(e.target.value)}/><input className={field} placeholder="Exclude keywords (comma-separated)…" value={prospectExcludeKeywords} onChange={e=>setProspectExcludeKeywords(e.target.value)}/><button type="button" className="rounded-lg border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 hover:bg-red-500/20" onClick={clearStoreExclusions}>Clear exclusions</button></div>{busy&&data.prospects.length===0&&<p className="mb-3 text-sm text-cyan-200">Loading the complete Store Directory…</p>}<Rows items={visibleProspectRows} keys={['business_name','business_category','kind','area','city','state','address','phone','email','website','maps','followup_date','call_time','connection','verified','response','source_status']} onEdit={canAdminEmployees?(p=>setEditRecord({...p,editType:'prospects'})):undefined} onDelete={canAdminEmployees?(p=>del('/customers/prospects/'+p.id)):undefined}/><div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400"><span>Showing {prospectRows.length?((prospectPage-1)*prospectPageSize+1):0}–{Math.min(prospectPage*prospectPageSize,prospectRows.length)} of {prospectRows.length} stores · Page {prospectPage} of {prospectPageCount}</span><div className="flex gap-2"><button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-slate-200 disabled:opacity-40" disabled={prospectPage<=1} onClick={()=>setProspectPage(page=>Math.max(1,page-1))}>Previous</button><button type="button" className="rounded-lg border border-white/10 px-3 py-2 text-slate-200 disabled:opacity-40" disabled={prospectPage>=prospectPageCount} onClick={()=>setProspectPage(page=>Math.min(prospectPageCount,page+1))}>Next</button></div></div></Panel><Panel title="Memberships"><form className="grid gap-3 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();post('/business/members',{full_name:form.full_name,plan_name:form.plan_name,status:'Active'})}}><FormInput label="Member name" name="full_name" form={form} onChange={set}/><FormInput label="Plan" name="plan_name" form={form} onChange={set}/><button className={btn+' self-end'}><Plus size={16}/> Add member</button></form><Rows items={data.members} keys={['full_name','status','plan_name','phone','start_date','end_date']}/></Panel></>}
         {tab==='reports'&&<PrintCenter employees={data.employees} archive={data.archive} apiFetch={apiFetch} notify={notify} onOpenArchive={()=>setTab('archive')}/>}
         {tab==='archive'&&<ArchiveManager items={data.archive} employees={data.employees} apiFetch={apiFetch} notify={notify} refresh={load} isAdmin={canAdminEmployees} token={token}/>}

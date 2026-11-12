@@ -81,8 +81,13 @@ function TaskFields({value,onChange,employees,customRows,setCustomRows,lockAssig
 export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReload,notify,mode='manager'}) {
   const trackerMode = mode === 'tracker';
   const isEmployee = String(user?.role||'').toLowerCase() === 'employee';
-  const isAdmin = ['admin','developer','hr'].includes(String(user?.role||'').toLowerCase());
-  const canDelete = ['admin','developer'].includes(String(user?.role||'').toLowerCase()) && !isEmployee;
+  let perms = user?.permissions;
+  if (typeof perms === 'string') { try { perms = JSON.parse(perms); } catch { perms = null; } }
+  const taskAccess = (perms && typeof perms === 'object' && perms.tasks)
+    ? perms.tasks
+    : (isEmployee ? 'approval' : (['admin','developer'].includes(String(user?.role||'').toLowerCase()) ? 'full' : 'write'));
+  const canDelete = taskAccess === 'full' && !isEmployee;
+  const isAdmin = (taskAccess === 'full' || ['admin','developer'].includes(String(user?.role||'').toLowerCase())) && !isEmployee;
 
   const [form,setForm] = useState(emptyTask);
   const [createOpen,setCreateOpen] = useState(!trackerMode);
