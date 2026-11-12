@@ -100,7 +100,7 @@ test("protected employee API rejects requests without a valid session", async ()
   assert.equal(response.status, 401);
 });
 
-test("working-weekday settings always include Sunday for the Admin calendar", async () => {
+test("working-weekday settings default to Sunday and allow the Admin to configure it", async () => {
   const user = makeUser("Admin", "correct horse");
   const DB = makeDb([user]);
   const token = "test-admin-session";
@@ -111,13 +111,15 @@ test("working-weekday settings always include Sunday for the Admin calendar", as
   const env = { DB };
   const get = await worker.fetch(request("/api/settings/working-weekdays", "GET", null, token), env);
   assert.equal(get.status, 200);
-  assert.deepEqual((await get.json()).weekdays, [0, 1, 2, 3, 4, 6]);
+  const defaults = await get.json();
+  assert.deepEqual(defaults.weekdays, [0, 1, 2, 3, 4, 6]);
+  assert.equal(defaults.sunday_configurable, true);
 
   const save = await worker.fetch(request("/api/settings/working-weekdays", "PUT", { weekdays: [0, 1, 2, 3, 4] }, token), env);
   assert.equal(save.status, 200);
   const result = await save.json();
-  assert.deepEqual(result.weekdays, [0, 1, 2, 3, 4, 6]);
-  assert.equal(result.sunday_required, true);
+  assert.deepEqual(result.weekdays, [0, 1, 2, 3, 4]);
+  assert.equal(result.sunday_configurable, true);
 });
 
 test("attendance mark persists the selected date and blocks declared holidays", async () => {
