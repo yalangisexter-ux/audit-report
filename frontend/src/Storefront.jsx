@@ -35,7 +35,7 @@ export default function Storefront({ onBack }) {
 
   useEffect(() => {
     api('/store/catalog')
-      .then(rows => setProducts(rows.filter(p => Number(p.price) > 0 && Number(p.available_stock) > 0)))
+      .then(rows => setProducts(rows.filter(p => Number(p.price) > 0)))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -249,8 +249,8 @@ export default function Storefront({ onBack }) {
                   <p className="mt-3 text-xl font-extrabold text-white">
                     {money(p.price)} <span className="text-xs font-normal text-slate-500">/ {p.unit || 'PCS'}</span>
                   </p>
-                  <p className="mt-1 text-xs text-emerald-400 font-medium">
-                    {p.available_stock} {p.unit || 'PCS'} in stock
+                  <p className={`mt-1 text-xs font-medium ${p.available_stock > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {p.available_stock > 0 ? `${p.available_stock} ${p.unit || 'PCS'} in stock` : 'Out of stock'}
                   </p>
                 </div>
                 <div className="mt-4 flex items-center gap-2">
@@ -259,7 +259,7 @@ export default function Storefront({ onBack }) {
                     disabled={p.available_stock < 1}
                     onClick={() => setQty(p.id, (cart[p.id] || 0) + 1)}
                   >
-                    Add to cart <ArrowRight size={15} />
+                    {p.available_stock < 1 ? 'Out of stock' : 'Add to cart'} {p.available_stock >= 1 && <ArrowRight size={15} />}
                   </button>
                   {cart[p.id] > 0 && (
                     <span className="min-w-7 text-center text-sm font-bold text-cyan-200">

@@ -182,8 +182,8 @@ def setup_business_tables(conn):
         subtotal REAL NOT NULL DEFAULT 0,
         total_amount REAL NOT NULL DEFAULT 0,
         customer_note TEXT DEFAULT '',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS store_order_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
