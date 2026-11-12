@@ -104,12 +104,18 @@ export async function handleSalesWebhook(request, env, path) {
   let payload; try { payload = JSON.parse(rawText); } catch { return new Response(JSON.stringify({error:"Invalid JSON"}),{status:400}); }
   const eventId = String(request.headers.get("X-Event-Id") || (payload && typeof payload==="object" ? payload.event_id || payload.id : "") || await hash(rawText)).slice(0,180);
   const eventType = String(request.headers.get("X-Event-Type") || (payload && typeof payload==="object" ? payload.event_type || payload.type : "") || "order.updated").slice(0,100);
+  let duplicate = false;
   try {
     await insert(env.DB,"marketplace_events",{channel_id:id,external_event_id:eventId,event_type:eventType,payload_json:safeJson(payload),processing_status:"received",received_at:now()});
   } catch (error) {
-    if (/UNIQUE constraint failed/i.test(String(error))) return new Response(JSON.stringify({success:true,deduplicated:true}),{status:200,headers:{"Content-Type":"application/json"}});
-    throw error;
+    if (!/UNIQUE constraint failed/i.test(String(error))) throw error;
+    duplicate = true;
   }
+  const priorEvent = duplicate ? await first(env.DB,"SELECT id,processing_status FROM marketplace_events WHERE channel_id=? AND external_event_id=?",[id,eventId]) : null;
+  if (duplicate && ["processed","accepted"].includes(String(priorEvent?.processing_status||""))) {
+    return new Response(JSON.stringify({success:true,deduplicated:true}),{status:200,headers:{"Content-Type":"application/json"}});
+  }
+  if (duplicate) await env.DB.prepare("UPDATE marketplace_events SET processing_status='received' WHERE channel_id=? AND external_event_id=?").bind(id,eventId).run();
   let imported = false;
   if (/order|shipment|receipt/i.test(eventType) || (payload && typeof payload==="object" && (payload.order || payload.data?.order))) {
     const normalized = normalizeOrder(channel.platform,payload);
