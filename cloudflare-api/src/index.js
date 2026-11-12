@@ -1,3 +1,5 @@
+import { pbkdf2Sync } from "node:crypto";
+
 const encoder = new TextEncoder();
 const TOKEN_BYTES = 32;
 const SESSION_DAYS = 30;
@@ -1104,29 +1106,17 @@ async function currentUser(request, env) {
 }
 function bearer(request) {const value=request.headers.get("Authorization")||"";const match=/^Bearer\s+(.+)$/i.exec(value);return match?match[1].trim():"";}
 
-async function derivePbkdf2(password,salt){
-  // Cloudflare Workers caps WebCrypto PBKDF2 deriveBits at 100,000 rounds.
-  // Compute the same PBKDF2-HMAC-SHA-256 block with WebCrypto HMAC operations
-  // so existing desktop 200,000-round hashes remain byte-for-byte compatible.
-  const key=await crypto.subtle.importKey("raw",encoder.encode(String(password||"")),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
-  const saltBytes=encoder.encode(String(salt||""));
-  const block=new Uint8Array(saltBytes.length+4);
-  block.set(saltBytes);
-  block.set([0,0,0,1],saltBytes.length);
-  let u=new Uint8Array(await crypto.subtle.sign("HMAC",key,block));
-  const derived=u.slice();
-  for(let iteration=1;iteration<PBKDF2_ITERATIONS;iteration++){
-    u=new Uint8Array(await crypto.subtle.sign("HMAC",key,u));
-    for(let i=0;i<derived.length;i++)derived[i]^=u[i];
-  }
-  return derived;
+function deriveHash(password, salt) {
+  return pbkdf2Sync(String(password || ""), String(salt || ""), PBKDF2_ITERATIONS, 32, "sha256").toString("hex");
 }
-function bytesToHex(bytes){return [...bytes].map(v=>v.toString(16).padStart(2,"0")).join("");}
-async function deriveHash(password,salt){return bytesToHex(await derivePbkdf2(password,salt));}
 function normalizeAnswer(value){return String(value||"").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).join(" ");}
 function strongPassword(value){const s=String(value||"");return s.length>=8&&/[A-Za-z]/.test(s)&&/[0-9]/.test(s);}
 
-async function verifyPassword(password,salt,expected){if(typeof salt!=="string"||typeof expected!=="string"||!/^[a-f0-9]{64}$/i.test(expected))return false;const actual=bytesToHex(await derivePbkdf2(password,salt));return constantTimeEqual(actual,expected.toLowerCase());}
+function verifyPassword(password, salt, expected) {
+  if (typeof salt !== "string" || typeof expected !== "string" || !/^[a-f0-9]{64}$/i.test(expected)) return false;
+  const actual = deriveHash(password, salt);
+  return constantTimeEqual(actual, expected.toLowerCase());
+}
 function constantTimeEqual(a,b){if(a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;}
 async function sha256(value){const digest=await crypto.subtle.digest("SHA-256",encoder.encode(value));return [...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,"0")).join("");}
 function randomHex(bytes){const data=crypto.getRandomValues(new Uint8Array(bytes));return [...data].map(v=>v.toString(16).padStart(2,"0")).join("");}
