@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check src/index.js",
+    "check": "node --check src/index.js && node --check src/sales-channels.js && node --check test/sales-channels.test.js",
     "test": "node --test test/*.test.js"
   }
 }
