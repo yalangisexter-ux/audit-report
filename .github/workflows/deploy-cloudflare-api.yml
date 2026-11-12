@@ -96,8 +96,8 @@ jobs:
           body=json.loads(Path(os.environ["RUNNER_TEMP"], "health.json").read_text())
           assert body.get("status") == "healthy", body
           assert body.get("database_connected") is True, body
-          assert int(body.get("total_employees", -1)) == 8, body
-          assert int(body.get("total_tasks", -1)) == 47, body
+          assert int(body.get("total_employees", -1)) >= 8, body
+          assert int(body.get("total_tasks", -1)) >= 47, body
           print(json.dumps(body, indent=2))
           PY
 

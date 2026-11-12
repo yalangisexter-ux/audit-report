@@ -469,3 +469,70 @@ test("web database export returns structured JSON dump", async () => {
   assert.equal(body.database, "raw-strength-audit-manager");
   assert.deepEqual(body.tables.employees, [{ id: 1, name: "Alice" }]);
 });
+
+test("employee status, targets, chat, and regional export endpoints respond successfully", async () => {
+  const token = "b".repeat(64);
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const adminUser = { id: 1, username: "Admin", display_name: "Admin User", role: "Admin", active: 1 };
+  const DB = {
+    prepare(sql) {
+      return {
+        async run() {
+          return { success: true, meta: { changes: 1, last_row_id: 1 } };
+        },
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM web_auth_sessions")) return values[0] === tokenHash ? adminUser : null;
+              if (sql.includes("FROM employees WHERE id=?")) return { id: 1, active: 1, name: "Test Staff" };
+              if (sql.includes("COUNT(*)")) return { n: 5 };
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM employees")) return { results: [{ id: 1, name: "Staff", active: 1 }] };
+              if (sql.includes("FROM customer_prospects")) return { results: [{ state: "Telangana", kind: "Store", count: 10 }] };
+              if (sql.includes("FROM local_chat_messages")) return { results: [{ id: 1, channel: "general", content: "hello" }] };
+              return { results: [] };
+            },
+            async run() {
+              return { success: true, meta: { changes: 1, last_row_id: 1 } };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  // 1. Employee status PATCH
+  const statusRes = await worker.fetch(request("/api/employees/1/status", "PATCH", { active: false }, token), { DB });
+  assert.equal(statusRes.status, 200);
+  const statusBody = await statusRes.json();
+  assert.equal(statusBody.success, true);
+  assert.equal(statusBody.active, 0);
+
+  // 2. Employee targets GET without params
+  const targetRes = await worker.fetch(request("/api/employee-targets", "GET", null, token), { DB });
+  assert.equal(targetRes.status, 200);
+
+  // 3. Employee CSV export
+  const csvRes = await worker.fetch(request("/api/employees/export.csv", "GET", null, token), { DB });
+  assert.equal(csvRes.status, 200);
+  assert.match(csvRes.headers.get("Content-Type"), /text\/csv/);
+
+  // 4. Chat messages GET & POST
+  const chatGetRes = await worker.fetch(request("/api/chat/messages?channel=general", "GET", null, token), { DB });
+  assert.equal(chatGetRes.status, 200);
+  const chatPostRes = await worker.fetch(request("/api/chat/messages", "POST", { content: "Test msg" }, token), { DB });
+  assert.equal(chatPostRes.status, 200);
+
+  // 5. Regional export
+  const regRes = await worker.fetch(request("/api/customers/regional-export?format=csv", "GET", null, token), { DB });
+  assert.equal(regRes.status, 200);
+  assert.match(regRes.headers.get("Content-Type"), /text\/csv/);
+
+  // 6. Dashboard KPIs
+  const kpiRes = await worker.fetch(request("/api/dashboard/kpis", "GET", null, token), { DB });
+  assert.equal(kpiRes.status, 200);
+  const kpiBody = await kpiRes.json();
+  assert.equal(kpiBody.kpis.total_employees, 5);
+});
