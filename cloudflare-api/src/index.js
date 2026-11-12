@@ -27,6 +27,9 @@ export default {
     if (!env.DB) return json({ error: "D1 binding is not configured" }, 503, headers);
     const url = new URL(request.url);
     try {
+      if ((url.pathname === "/" || url.pathname === "/api") && request.method === "GET") {
+        return json({ service: "raw-strength-cloudflare-api", status: "ready" }, 200, headers);
+      }
       if (url.pathname === "/api/health" && request.method === "GET") {
         const [employees, tasks] = await Promise.all([
           env.DB.prepare("SELECT COUNT(*) AS n FROM employees").first(),
