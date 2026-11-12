@@ -24,7 +24,7 @@ test("Shopify native webhook HMAC authenticates and imports the order",async()=>
   const order=env.DB.rows.orders.find(x=>x.external_order_id==="98765");
   assert.equal(order.total_amount,1499);
   assert.equal(order.customer_email,"buyer@example.test");
-  assert.equal(env.DB.rows.items.at(-1)[5],"RS-TSHIRT");
+  assert.equal(env.DB.rows.items.at(-1)[2],"RS-TSHIRT");
 });
 test("WooCommerce native webhook signature and order fields are supported",async()=>{
   const secret="woocommerce-webhook-secret";
