@@ -221,52 +221,74 @@ body[data-rsc-theme="sunset"] main button[class*="bg-slate-950"]:hover {
 }
 
 /* High-contrast typography inside main cards */
-body[data-rsc-theme="day"] main h1:not(button *):not(a *),
-body[data-rsc-theme="day"] main h2:not(button *):not(a *),
-body[data-rsc-theme="day"] main h3:not(button *):not(a *),
-body[data-rsc-theme="day"] main h4:not(button *):not(a *),
-body[data-rsc-theme="day"] main b:not(button *):not(a *),
-body[data-rsc-theme="day"] main strong:not(button *):not(a *),
-body[data-rsc-theme="ocean"] main h1:not(button *):not(a *),
-body[data-rsc-theme="ocean"] main h2:not(button *):not(a *),
-body[data-rsc-theme="ocean"] main h3:not(button *):not(a *),
-body[data-rsc-theme="ocean"] main h4:not(button *):not(a *),
-body[data-rsc-theme="ocean"] main b:not(button *):not(a *),
-body[data-rsc-theme="ocean"] main strong:not(button *):not(a *),
-body[data-rsc-theme="sunset"] main h1:not(button *):not(a *),
-body[data-rsc-theme="sunset"] main h2:not(button *):not(a *),
-body[data-rsc-theme="sunset"] main h3:not(button *):not(a *),
-body[data-rsc-theme="sunset"] main h4:not(button *):not(a *),
-body[data-rsc-theme="sunset"] main b:not(button *):not(a *),
-body[data-rsc-theme="sunset"] main strong:not(button *):not(a *) {
+body[data-rsc-theme="day"] main h1,
+body[data-rsc-theme="day"] main h2,
+body[data-rsc-theme="day"] main h3,
+body[data-rsc-theme="day"] main h4,
+body[data-rsc-theme="day"] main b,
+body[data-rsc-theme="day"] main strong,
+body[data-rsc-theme="day"] main .text-white,
+body[data-rsc-theme="day"] main .text-slate-100,
+body[data-rsc-theme="day"] main .text-slate-200,
+body[data-rsc-theme="ocean"] main h1,
+body[data-rsc-theme="ocean"] main h2,
+body[data-rsc-theme="ocean"] main h3,
+body[data-rsc-theme="ocean"] main h4,
+body[data-rsc-theme="ocean"] main b,
+body[data-rsc-theme="ocean"] main strong,
+body[data-rsc-theme="ocean"] main .text-white,
+body[data-rsc-theme="ocean"] main .text-slate-100,
+body[data-rsc-theme="ocean"] main .text-slate-200,
+body[data-rsc-theme="sunset"] main h1,
+body[data-rsc-theme="sunset"] main h2,
+body[data-rsc-theme="sunset"] main h3,
+body[data-rsc-theme="sunset"] main h4,
+body[data-rsc-theme="sunset"] main b,
+body[data-rsc-theme="sunset"] main strong,
+body[data-rsc-theme="sunset"] main .text-white,
+body[data-rsc-theme="sunset"] main .text-slate-100,
+body[data-rsc-theme="sunset"] main .text-slate-200 {
   color: #0f172a !important;
 }
 
-body[data-rsc-theme="day"] main [class~="text-white"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="day"] main [class~="text-slate-100"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="day"] main [class~="text-slate-200"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="ocean"] main [class~="text-white"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="ocean"] main [class~="text-slate-100"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="ocean"] main [class~="text-slate-200"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="sunset"] main [class~="text-white"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="sunset"] main [class~="text-slate-100"]:not(button):not(button *):not(a):not(a *),
-body[data-rsc-theme="sunset"] main [class~="text-slate-200"]:not(button):not(button *):not(a):not(a *) {
-  color: #0f172a !important;
-}
-
-body[data-rsc-theme="day"] main [class~="text-slate-300"],
-body[data-rsc-theme="day"] main [class~="text-slate-400"],
-body[data-rsc-theme="ocean"] main [class~="text-slate-300"],
-body[data-rsc-theme="ocean"] main [class~="text-slate-400"],
-body[data-rsc-theme="sunset"] main [class~="text-slate-300"],
-body[data-rsc-theme="sunset"] main [class~="text-slate-400"] {
+body[data-rsc-theme="day"] main .text-slate-300,
+body[data-rsc-theme="day"] main .text-slate-400,
+body[data-rsc-theme="ocean"] main .text-slate-300,
+body[data-rsc-theme="ocean"] main .text-slate-400,
+body[data-rsc-theme="sunset"] main .text-slate-300,
+body[data-rsc-theme="sunset"] main .text-slate-400 {
   color: #475569 !important;
 }
 
-body[data-rsc-theme="day"] main [class~="text-slate-500"],
-body[data-rsc-theme="ocean"] main [class~="text-slate-500"],
-body[data-rsc-theme="sunset"] main [class~="text-slate-500"] {
+body[data-rsc-theme="day"] main .text-slate-500,
+body[data-rsc-theme="ocean"] main .text-slate-500,
+body[data-rsc-theme="sunset"] main .text-slate-500 {
   color: #64748b !important;
+}
+
+body[data-rsc-theme="day"] main [class*="text-amber-"],
+body[data-rsc-theme="ocean"] main [class*="text-amber-"],
+body[data-rsc-theme="sunset"] main [class*="text-amber-"] {
+  color: #b45309 !important;
+}
+body[data-rsc-theme="day"] main [class*="bg-amber-950"],
+body[data-rsc-theme="ocean"] main [class*="bg-amber-950"],
+body[data-rsc-theme="sunset"] main [class*="bg-amber-950"] {
+  background-color: #fef3c7 !important;
+  border-color: #fcd34d !important;
+}
+
+/* Guide cards in light modes */
+body[data-rsc-theme="day"] main button.group,
+body[data-rsc-theme="ocean"] main button.group,
+body[data-rsc-theme="sunset"] main button.group {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+body[data-rsc-theme="day"] main button.group span,
+body[data-rsc-theme="ocean"] main button.group span,
+body[data-rsc-theme="sunset"] main button.group span {
+  color: #0f172a !important;
 }
 
 /* Light mode form controls */
