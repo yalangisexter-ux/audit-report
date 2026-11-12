@@ -19,7 +19,7 @@ export default function Storefront(){
   const cartItems=useMemo(()=>products.filter(p=>cart[p.id]>0).map(p=>({...p,quantity:cart[p.id]})),[products,cart]);
   const total=cartItems.reduce((sum,p)=>sum+p.price*p.quantity,0);
   const count=cartItems.reduce((sum,p)=>sum+p.quantity,0);
-  const setQty=(id,value)=>setCart(old=>({...old,[id]:Math.max(0,Math.min(100,Number(value)||0))}));
+  const setQty=(id,value)=>{const product=products.find(p=>Number(p.id)===Number(id));const limit=Math.min(100,Math.max(0,Math.floor(Number(product?.available_stock||0))));setCart(old=>({...old,[id]:Math.max(0,Math.min(limit,Number(value)||0))}));};
   const submit=async event=>{
     event.preventDefault();setBusy(true);setError('');
     try{const result=await api('/store/orders',{method:'POST',body:JSON.stringify({...customer,items:cartItems.map(p=>({product_id:p.id,quantity:p.quantity}))})});
