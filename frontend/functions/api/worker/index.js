@@ -1,3 +1,4 @@
+import { handleSalesChannels, handleSalesWebhook } from "./sales-channels.js";
 import { computePbkdf2Sha256 } from "./pbkdf2.js";
 
 const encoder = new TextEncoder();
@@ -73,6 +74,8 @@ export default {
       }
 
       const path = url.pathname;
+      const salesWebhook = await handleSalesWebhook(request, env, path);
+      if (salesWebhook) return salesWebhook;
       if (path === "/api/auth/register" && request.method === "POST") {
         const b=await readJson(request),username=String(b.username||"").trim(),display=String(b.display_name||"").trim(),answer=normalizeAnswer(b.security_answer);
         if(!username||username.length>64||!display||display.length>100)return json({detail:"Enter a valid username and display name"},422,headers);
@@ -160,6 +163,9 @@ export default {
 
       const user = await currentUser(request, env);
       if (!user) return json({ error: "Login required" }, 401, headers);
+      if (path.startsWith("/api/sales-channels") || path === "/api/sales-orders" || path === "/api/sales-notifications") {
+        return await handleSalesChannels(request, env, path, user);
+      }
       if(path==="/api/auth/users"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         return json(await all(env.DB,"SELECT id,username,display_name,role,active,created_at,updated_at FROM auth_users ORDER BY username COLLATE NOCASE"),200,headers);

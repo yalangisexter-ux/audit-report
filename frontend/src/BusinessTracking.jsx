@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ArrowDownUp, Dumbbell, Package, RefreshCw, ShoppingCart, Users, Plus } from 'lucide-react';
+import { Activity, ArrowDownUp, Dumbbell, Package, RefreshCw, ShoppingCart, Users, Plus, ShoppingBag } from 'lucide-react';
+import StoreOrders from './StoreOrders.jsx';
 
 const fieldClass = 'w-full min-w-0 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400';
 const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-400 px-4 py-2 text-sm font-bold text-slate-950 disabled:opacity-50';
@@ -269,6 +270,7 @@ export default function BusinessTracking({ apiFetch, employees = [], notify = ()
     ['overview', 'Dashboard', Activity],
     ['products', 'Products & Inventory', Package],
     ['orders', 'Orders', ShoppingCart],
+    ['store_orders', '🛍️ Online Store Orders', ShoppingBag],
     ['services', 'Services & Members', Dumbbell],
     ['activities', 'Employee Activities', Users]
   ];
@@ -278,18 +280,28 @@ export default function BusinessTracking({ apiFetch, employees = [], notify = ()
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-white">Business Tracking</h2>
-          <p className="mt-1 text-xs text-slate-400">Products, stock ledger, orders, services, memberships and employee activities.</p>
+          <p className="mt-1 text-xs text-slate-400">Products, stock ledger, orders, services, memberships, employee activities and customer storefront orders.</p>
         </div>
-        <button type="button" className={secondaryClass} onClick={() => load().catch(error => notify(error.message))} disabled={busy}>
-          <RefreshCw size={15}/> Refresh all
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="/#store"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-400/20"
+          >
+            <ShoppingBag size={14}/> Visit Customer Storefront ↗
+          </a>
+          <button type="button" className={secondaryClass} onClick={() => load().catch(error => notify(error.message))} disabled={busy}>
+            <RefreshCw size={15}/> Refresh all
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {tabs.map(([key, label, Icon]) => (
           <button key={key} type="button" onClick={() => { setTab(key); setSearch(''); }}
             className={'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ' +
-              (tab === key ? 'border-cyan-300 bg-cyan-400 text-slate-950' : 'border-white/10 bg-slate-900 text-slate-300')}>
+              (tab === key ? 'border-cyan-300 bg-cyan-400 text-slate-950 font-bold' : 'border-white/10 bg-slate-900 text-slate-300')}>
             <Icon size={15}/>{label}
           </button>
         ))}
@@ -410,6 +422,10 @@ export default function BusinessTracking({ apiFetch, employees = [], notify = ()
             ]}/>
           </Section>
         </div>
+      )}
+
+      {tab === 'store_orders' && (
+        <StoreOrders apiFetch={apiFetch} notify={notify} canManage={true} />
       )}
 
       {tab === 'services' && (

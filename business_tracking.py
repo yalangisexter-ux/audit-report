@@ -4,14 +4,34 @@ This module never modifies existing employee, task, or audit tables.
 """
 import sqlite3
 from datetime import datetime
-from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QTabWidget, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QFormLayout,
-    QDialog, QDialogButtonBox, QGroupBox, QHeaderView, QAbstractItemView,
-    QMessageBox, QInputDialog, QSpinBox,
-)
-from PySide6.QtCore import Qt
+
+try:
+    from PySide6.QtGui import QColor, QFont
+    from PySide6.QtWidgets import (
+        QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QTabWidget, QLabel, QPushButton,
+        QTableWidget, QTableWidgetItem, QLineEdit, QComboBox, QFormLayout,
+        QDialog, QDialogButtonBox, QGroupBox, QHeaderView, QAbstractItemView,
+        QMessageBox, QInputDialog, QSpinBox,
+    )
+    from PySide6.QtCore import Qt
+except ImportError:
+    class _DummyQt:
+        AlignmentFlag = type("AlignmentFlag", (), {
+            "AlignVCenter": 0, "AlignCenter": 0, "AlignLeft": 0, "AlignRight": 0
+        })()
+        CursorShape = type("CursorShape", (), {"PointingHandCursor": 0})()
+        WidgetAttribute = type("WidgetAttribute", (), {"WA_TranslucentBackground": 0})()
+        def __getattr__(self, name): return 0
+    class _DummyWidget:
+        NoEditTriggers = 0
+        Stretch = 0
+        def __init__(self, *a, **k): pass
+        def __getattr__(self, name): return lambda *a, **k: None
+    QColor = QFont = _DummyWidget
+    QWidget = QVBoxLayout = QHBoxLayout = QGridLayout = QTabWidget = QLabel = QPushButton = _DummyWidget
+    QTableWidget = QTableWidgetItem = QLineEdit = QComboBox = QFormLayout = QDialog = QDialogButtonBox = QGroupBox = _DummyWidget
+    QHeaderView = QAbstractItemView = QMessageBox = QInputDialog = QSpinBox = _DummyWidget
+    Qt = _DummyQt()
 
 
 def now_text():
@@ -149,6 +169,38 @@ def setup_business_tables(conn):
         remarks TEXT DEFAULT '',
         created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS store_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_code TEXT NOT NULL UNIQUE,
+        customer_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        email TEXT DEFAULT '',
+        shipping_address TEXT NOT NULL,
+        order_status TEXT NOT NULL DEFAULT 'Pending',
+        payment_method TEXT NOT NULL DEFAULT 'Cash on Delivery',
+        payment_status TEXT NOT NULL DEFAULT 'Unpaid',
+        subtotal REAL NOT NULL DEFAULT 0,
+        total_amount REAL NOT NULL DEFAULT 0,
+        customer_note TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS store_order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        product_id INTEGER,
+        product_name TEXT NOT NULL,
+        sku TEXT DEFAULT '',
+        quantity INTEGER NOT NULL CHECK(quantity > 0),
+        unit TEXT DEFAULT 'PCS',
+        unit_price REAL NOT NULL DEFAULT 0,
+        line_total REAL NOT NULL DEFAULT 0,
+        FOREIGN KEY(order_id) REFERENCES store_orders(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES bt_products(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_store_orders_created ON store_orders(created_at);
+    CREATE INDEX IF NOT EXISTS idx_store_orders_status ON store_orders(order_status);
+    CREATE INDEX IF NOT EXISTS idx_store_order_items_order ON store_order_items(order_id);
     """)
     conn.commit()
 
@@ -225,6 +277,7 @@ class BusinessTrackingTab(QWidget):
         self.sub_tabs.addTab(self._build_orders(), "🛒 Orders")
         self.sub_tabs.addTab(self._build_services(), "🏋️ Services & Members")
         self.sub_tabs.addTab(self._build_activities(), "⚡ Employee Activities")
+        self.sub_tabs.addTab(self._build_store_orders(), "🛍️ Store Orders")
         layout.addWidget(self.sub_tabs)
         self.apply_theme()
         self.refresh_all()
@@ -366,7 +419,7 @@ class BusinessTrackingTab(QWidget):
             self.lbl_svc.setStyleSheet(f"font-weight: 700; font-size: 10.5pt; color: {subhead_color}; margin-top: 4px;")
         if hasattr(self, "lbl_mem") and self.lbl_mem:
             self.lbl_mem.setStyleSheet(f"font-weight: 700; font-size: 10.5pt; color: {subhead_color}; margin-top: 8px;")
-        for search_edit in (getattr(self, "prod_search", None), getattr(self, "order_search", None)):
+        for search_edit in (getattr(self, "prod_search", None), getattr(self, "order_search", None), getattr(self, "store_order_search", None)):
             if search_edit is not None:
                 search_edit.setStyleSheet(f"QLineEdit {{ background: {search_bg}; color: {search_fg}; border: 1.5px solid {search_border}; border-radius: 8px; padding: 6px 10px; }}")
 
@@ -572,12 +625,47 @@ class BusinessTrackingTab(QWidget):
         l.addWidget(self.act_table)
         return w
 
+    def _build_store_orders(self):
+        w = QWidget()
+        l = QVBoxLayout(w)
+        row = QHBoxLayout()
+        self.store_order_search = QLineEdit()
+        self.store_order_search.setPlaceholderText("🔍 Search online store order code, customer, or phone")
+        self.store_order_search.setClearButtonEnabled(True)
+        self.store_order_search.setMinimumHeight(34)
+        self.store_order_search.textChanged.connect(self.refresh_store_orders)
+        row.addWidget(self.store_order_search)
+
+        self.store_order_filter = QComboBox()
+        self.store_order_filter.addItems(["All", "Pending", "Confirmed", "Packed", "Dispatched", "Delivered", "Cancelled"])
+        self.store_order_filter.setMinimumHeight(34)
+        self.store_order_filter.currentTextChanged.connect(self.refresh_store_orders)
+        row.addWidget(self.store_order_filter)
+
+        ref_btn = QPushButton("🔄 Refresh")
+        ref_btn.setMinimumHeight(34)
+        ref_btn.clicked.connect(self.refresh_store_orders)
+        row.addWidget(ref_btn)
+        l.addLayout(row)
+
+        self.store_order_table = QTableWidget(0, 8)
+        self.store_order_table.setHorizontalHeaderLabels([
+            "Order Code", "Date", "Customer", "Phone", "Items Summary", "Total (INR)", "Payment", "Status"
+        ])
+        self.store_order_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.store_order_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.store_order_table.setToolTip("Double-click a store order row to change status (Pending/Confirmed/Packed/Dispatched/Delivered/Cancelled).")
+        self.store_order_table.cellDoubleClicked.connect(self.edit_store_order_status)
+        l.addWidget(self.store_order_table)
+        return w
+
     def refresh_all(self):
         self.refresh_dashboard()
         self.refresh_products()
         self.refresh_orders()
         self.refresh_services()
         self.refresh_activities()
+        self.refresh_store_orders()
         parent_win = self.window()
         if parent_win is not None and hasattr(parent_win, "refresh_home_business_snapshot"):
             try:
@@ -686,6 +774,68 @@ class BusinessTrackingTab(QWidget):
             vals = [a["id"], a["employee_name"] or a["employee_id"], a["task_type"], a["task_status"], a["start_time"], a["remarks"]]
             for c, v in enumerate(vals):
                 self.act_table.setItem(r, c, _table_item(v, is_center=(c in (0, 3, 4)), status_pill=(c == 3)))
+
+    def refresh_store_orders(self):
+        if not hasattr(self, "store_order_table"):
+            return
+        text = self.store_order_search.text().lower() if hasattr(self, "store_order_search") else ""
+        status_filter = self.store_order_filter.currentText() if hasattr(self, "store_order_filter") else "All"
+        try:
+            orders = self.db.conn.execute("SELECT * FROM store_orders ORDER BY id DESC").fetchall()
+        except Exception:
+            return
+        self.store_order_table.setRowCount(0)
+        for o in orders:
+            o_status = o["order_status"] or "Pending"
+            if status_filter != "All" and o_status.lower() != status_filter.lower():
+                continue
+            searchable = f"{o['order_code'] or ''} {o['customer_name'] or ''} {o['phone'] or ''} {o['shipping_address'] or ''}".lower()
+            if text and text not in searchable:
+                continue
+            items_str = ""
+            try:
+                item_rows = self.db.conn.execute(
+                    "SELECT product_name, quantity FROM store_order_items WHERE order_id = ?", (o["id"],)
+                ).fetchall()
+                items_str = ", ".join(f"{r['product_name']} x{r['quantity']}" for r in item_rows)
+            except Exception:
+                pass
+
+            r = self.store_order_table.rowCount()
+            self.store_order_table.insertRow(r)
+            vals = [
+                o["order_code"],
+                (o["created_at"] or "").replace("T", " ")[:16],
+                o["customer_name"],
+                o["phone"],
+                items_str or "—",
+                f"₹{float(o['total_amount'] or 0):,.2f}",
+                f"{o['payment_method']} ({o['payment_status']})",
+                o_status
+            ]
+            for c, v in enumerate(vals):
+                self.store_order_table.setItem(r, c, _table_item(v, is_center=(c in (0, 1, 3, 5, 6, 7)), status_pill=(c == 7)))
+
+    def edit_store_order_status(self, row, column):
+        code_item = self.store_order_table.item(row, 0)
+        curr_status_item = self.store_order_table.item(row, 7)
+        if not code_item or not curr_status_item:
+            return
+        order_code = code_item.text()
+        current_status = curr_status_item.text()
+        statuses = ["Pending", "Confirmed", "Packed", "Dispatched", "Delivered", "Cancelled"]
+        curr_idx = statuses.index(current_status) if current_status in statuses else 0
+        new_status, ok = QInputDialog.getItem(
+            self, f"Update Order {order_code}", "Select Order Status:", statuses, curr_idx, False
+        )
+        if ok and new_status and new_status != current_status:
+            now = now_text()
+            self.db.conn.execute(
+                "UPDATE store_orders SET order_status = ?, updated_at = ? WHERE order_code = ?",
+                (new_status, now, order_code)
+            )
+            self.db.conn.commit()
+            self.refresh_store_orders()
 
     def edit_activity_status(self, row, column):
         item = self.act_table.item(row, 0)
