@@ -92,7 +92,7 @@ async function verifyProviderWebhook(request, channel, rawText, env) {
   let credentials;
   try { credentials = await decryptCredentials(env, channel.credentials_ciphertext); } catch { return false; }
   if (channel.platform === "shopify") {
-    const secret = String(credentials.webhook_secret || credentials.api_secret || "");
+    const secret = String(credentials.webhook_secret || credentials.api_secret || credentials.api_secret_key || "");
     const supplied = request.headers.get("X-Shopify-Hmac-Sha256") || "";
     if (!secret || !supplied) return false;
     return constantEqual(await hmacBase64(secret, rawText), supplied);
