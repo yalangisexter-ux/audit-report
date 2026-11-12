@@ -569,6 +569,7 @@ export default function App() {
     finally{setRestoreBusy(false)}
   };
   const filtered=(items,keys)=>items.filter(x=>keys.some(k=>String(x[k]??'').toLowerCase().includes(query.toLowerCase())));
+  const isEmployee = String(user?.role || '').toLowerCase() === 'employee';
   const canEditEmployees=['hr','admin','developer'].includes(String(user?.role||'').toLowerCase());
   const canAdminEmployees=['admin','developer'].includes(String(user?.role||'').toLowerCase());
   const isDeveloperSyncUser=String(user?.username||'').trim()!=='Admin'
@@ -884,7 +885,6 @@ export default function App() {
     }
   };
   const employeeOptions=data.employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>);
-  const isEmployee = String(user?.role || '').toLowerCase() === 'employee';
   const visibleNavItems = useMemo(() => {
     if (isEmployee) {
       return navItems.filter(([id]) => ['home', 'tasks', 'attendance', 'chat'].includes(id));
