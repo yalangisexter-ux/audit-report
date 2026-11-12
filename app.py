@@ -1397,6 +1397,7 @@ class Database:
           username TEXT NOT NULL COLLATE BINARY UNIQUE,
           display_name TEXT NOT NULL DEFAULT '',
           role TEXT NOT NULL CHECK(role IN ('Admin','Developer','HR','Staff','Employee')),
+          employee_id INTEGER DEFAULT NULL,
           password_salt TEXT NOT NULL,
           password_hash TEXT NOT NULL,
           security_question TEXT NOT NULL,
@@ -1418,7 +1419,8 @@ class Database:
           due_time TEXT DEFAULT '', priority TEXT DEFAULT 'Normal',
           status TEXT DEFAULT 'Not started', progress INTEGER DEFAULT 0,
           proof_url TEXT DEFAULT '', proof_note TEXT DEFAULT '', submitted_at TEXT DEFAULT '',
-          manager_note TEXT DEFAULT '', expose_link INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(employee_id) REFERENCES employees(id)
+          manager_note TEXT DEFAULT '', expose_link INTEGER NOT NULL DEFAULT 0,
+          approval_status TEXT DEFAULT 'Pending', FOREIGN KEY(employee_id) REFERENCES employees(id)
         );
         CREATE TABLE IF NOT EXISTS attendance(
           id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL,
@@ -1572,10 +1574,16 @@ class Database:
             ("actual_qty", "TEXT DEFAULT ''"),
             ("next_action", "TEXT DEFAULT ''"),
             ("custom_values", "TEXT DEFAULT ''"),
+            ("approval_status", "TEXT DEFAULT 'Pending'"),
             ("created_at", "TEXT NOT NULL DEFAULT ''"),
             ("updated_at", "TEXT NOT NULL DEFAULT ''"),
         )
         apply_column_migrations("tasks", task_migrations)
+
+        auth_user_migrations = (
+            ("employee_id", "INTEGER DEFAULT NULL"),
+        )
+        apply_column_migrations("auth_users", auth_user_migrations)
 
         attendance_columns = {r["name"] for r in c.execute("PRAGMA table_info(attendance)").fetchall()}
 
@@ -3830,6 +3838,8 @@ class TaskDialog(QDialog):
             if idx >= 0: self.employee.setCurrentIndex(idx)
 
         self.layout.addRow("Employee *", self.employee)
+        if parent and str(getattr(parent, "user_role", "")).casefold() == "employee":
+            self.employee.setEnabled(False)
 
         # Department (editable combobox with standard & custom departments)
         self.department = QComboBox()
@@ -4029,6 +4039,21 @@ class TaskDialog(QDialog):
         pri_stat_layout.addWidget(self.priority, 1)
         pri_stat_layout.addWidget(self.status, 1)
         f_metrics.addRow("Priority / Status", pri_stat_widget)
+
+        self.approval_status = QComboBox()
+        self.approval_status.addItems(["Pending", "Approved", "Rejected"])
+        current_appr = str(row["approval_status"] if row and "approval_status" in row.keys() and row["approval_status"] else "Pending")
+        idx_appr = self.approval_status.findText(current_appr)
+        if idx_appr >= 0:
+            self.approval_status.setCurrentIndex(idx_appr)
+        if parent and str(getattr(parent, "user_role", "")).casefold() == "employee":
+            self.approval_status.setEnabled(False)
+            self.approval_status.setCurrentText("Pending")
+            appr_lbl = QLabel("⏳ Pending Admin Approval (Submitted to Admin)")
+            appr_lbl.setStyleSheet("color: #FBBF24; font-size: 8.5pt; font-weight: 600;")
+            f_metrics.addRow("Admin Approval", appr_lbl)
+        else:
+            f_metrics.addRow("Admin Approval", self.approval_status)
 
         def _on_status_changed(idx):
             if self.status.currentData() == "Completed":
@@ -4393,6 +4418,9 @@ class TaskDialog(QDialog):
                 custom_pairs.append(("created_by", "admin"))
                 custom_pairs.append(("test_mode", "true"))
         custom_vals_str = serialize_custom_values(custom_pairs)
+        appr_status_val = self.approval_status.currentText().strip() if hasattr(self, "approval_status") else "Pending"
+        if hasattr(self, "parent") and self.parent() and str(getattr(self.parent(), "user_role", "")).casefold() == "employee":
+            appr_status_val = "Pending"
 
         return (
             self.employee.currentData(),
@@ -4413,6 +4441,7 @@ class TaskDialog(QDialog):
             actual_q,
             next_act,
             custom_vals_str,
+            appr_status_val,
         )
 
 _ACCESSIBLE_TOOLTIP_CONTROLLER = None
@@ -6377,16 +6406,24 @@ class MainWindow(QMainWindow):
         self.business_tab = BusinessTrackingTab(self.db)
         self.chat_tab = CloudflareChatTab(self.db, self.current_user)
         self.customer_tab = CustomerProspectsTab(self.db)
-        tab_items = [
-            (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
-            (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
-            (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
-            (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
-            (self.business_tab, "💼  Business Tracking"),
-            (self.customer_tab, "🏪  Store Directory"),
-            (self.chat_tab, "💬  Live Chat"),
-            (self.settings_tab, "⚙️  Settings & Backup"),
-        ]
+        if str(self.user_role).casefold() == "employee":
+            tab_items = [
+                (self.home_tab, "🏠  Home"),
+                (self.tasks_tab, "✅  Task Manager"),
+                (self.attendance_tab, "🟢  Attendance"),
+                (self.chat_tab, "💬  Live Chat"),
+            ]
+        else:
+            tab_items = [
+                (self.home_tab, "🏠  Home"), (self.dashboard, "📊  Dashboard"),
+                (self.employees_tab, "👥  Employees"), (self.tasks_tab, "✅  Task Manager"),
+                (self.tracker_tab, "📝  Employee Tracker"), (self.attendance_tab, "🟢  Attendance"),
+                (self.reports_tab, "🖨️  Print Center"), (self.archive_tab, "📁  EOD Archive"),
+                (self.business_tab, "💼  Business Tracking"),
+                (self.customer_tab, "🏪  Store Directory"),
+                (self.chat_tab, "💬  Live Chat"),
+                (self.settings_tab, "⚙️  Settings & Backup"),
+            ]
         self.sidebar_scroll = QScrollArea()
         self.sidebar_scroll.setObjectName("sidebarScrollArea")
         self.sidebar_scroll.setWidgetResizable(True)
@@ -9345,6 +9382,13 @@ class MainWindow(QMainWindow):
         self.task_filter.setMinimumWidth(170)
         self.task_filter.setMaximumWidth(260)
         self.task_filter.currentIndexChanged.connect(self.refresh_tasks)
+        if str(self.user_role).casefold() == "employee":
+            emp_id = self.current_user.get("employee_id")
+            self.task_filter.clear()
+            for e in self.db.employees(False):
+                if e["id"] == emp_id:
+                    self.task_filter.addItem(f"{e['name']} (You)", e["id"])
+            self.task_filter.setEnabled(False)
         filter_row.addWidget(self.task_filter)
 
         refresh_tasks_btn = QPushButton("🔄 Refresh")
@@ -9364,14 +9408,19 @@ class MainWindow(QMainWindow):
         actions_row = QHBoxLayout()
         actions_row.setSpacing(8)
 
+        is_emp_role = str(self.user_role).casefold() == "employee"
         task_actions = [
             ("➕ Add Task", self.add_task, "Create a new task for the selected date", True, "taskAddBtn"),
             ("✏️ Edit Selected", self.edit_task, "Edit one selected task", False, "taskEditBtn"),
-            ("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False, "taskBulkEditBtn"),
+        ]
+        if self.is_admin_or_dev or str(self.user_role).casefold() == "hr":
+            task_actions.append(("✓ Approve Selected", self.approve_selected_tasks, "Mark selected tasks as Approved by Admin", False, "taskApproveBtn"))
+            task_actions.append(("📝 Bulk Edit Selected", self.bulk_edit_tasks, "Apply chosen fields to multiple selected tasks", False, "taskBulkEditBtn"))
+        task_actions.extend([
             ("☑️ Select All", self.task_table_select_all, "Select every task shown for the selected date and employee filter", False, "taskSelectAllBtn"),
             ("🗑️ Delete Selected", self.delete_task, "Delete the selected task", False, "taskDeleteBtn"),
             ("🔗 Open Proof", self.open_proof, "Open proof/evidence link in browser", False, "taskProofBtn"),
-        ]
+        ])
         for label, slot, tip, is_primary, obj_name in task_actions:
             b = QPushButton(label)
             b.setObjectName(obj_name)
@@ -9385,8 +9434,13 @@ class MainWindow(QMainWindow):
                     "color: #FFFFFF; border: 1px solid rgba(165, 180, 252, 0.45); border-radius: 8px; font-weight: 700; padding: 6px 16px; } "
                     "QPushButton#taskAddBtn:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4338CA, stop:1 #4F46E5); border-color: #818CF8; }"
                 )
+            elif obj_name == "taskApproveBtn":
+                b.setStyleSheet(
+                    "QPushButton#taskApproveBtn { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; font-weight: 700; padding: 6px 14px; } "
+                    "QPushButton#taskApproveBtn:hover { background: rgba(16, 185, 129, 0.30); color: #FFFFFF; border-color: #10B981; }"
+                )
             elif obj_name == "taskDeleteBtn":
-                if not self.is_admin_or_dev:
+                if not self.is_admin_or_dev or is_emp_role:
                     b.setEnabled(False)
                     b.setToolTip("Only an Admin or Developer can delete tasks.")
                 b.setStyleSheet(
@@ -9467,25 +9521,28 @@ class MainWindow(QMainWindow):
         task_header_row.addWidget(task_hint)
         task_roster_layout.addLayout(task_header_row)
 
-        self.task_table = QTableWidget(0, 13)
+        self.task_table = QTableWidget(0, 14)
         self.task_table.setHorizontalHeaderLabels([
             "ID", "Date", "Employee", "Department", "Assigned Task",
             "Target Qty", "Actual Qty", "Completion %", "Priority",
-            "Status", "Proof / Link", "Custom Values", "Next Action"
+            "Status", "Approval", "Proof / Link", "Custom Values", "Next Action"
         ])
         self.task_table.setColumnHidden(0, True)
         task_hdr = self.task_table.horizontalHeader()
         task_hdr.setSectionResizeMode(QHeaderView.Interactive)
         task_hdr.setSectionResizeMode(4, QHeaderView.Stretch)   # Assigned Task
-        task_hdr.setSectionResizeMode(10, QHeaderView.Stretch)  # Proof / Link
-        task_hdr.setSectionResizeMode(11, QHeaderView.Stretch)  # Custom Values
-        task_hdr.setSectionResizeMode(12, QHeaderView.Stretch)  # Next Action
+        task_hdr.setSectionResizeMode(11, QHeaderView.Stretch)  # Proof / Link
+        task_hdr.setSectionResizeMode(12, QHeaderView.Stretch)  # Custom Values
+        task_hdr.setSectionResizeMode(13, QHeaderView.Stretch)  # Next Action
         task_hdr.resizeSection(1, 100)  # Date
         task_hdr.resizeSection(2, 140)  # Employee
         task_hdr.resizeSection(3, 110)  # Department
         task_hdr.resizeSection(5, 90)   # Target Qty
         task_hdr.resizeSection(6, 90)   # Actual Qty
         task_hdr.resizeSection(7, 100)  # Completion %
+        task_hdr.resizeSection(8, 90)   # Priority
+        task_hdr.resizeSection(9, 110)  # Status
+        task_hdr.resizeSection(10, 110) # Approval
         task_hdr.resizeSection(8, 90)   # Priority
         task_hdr.resizeSection(9, 110)  # Status
         self.task_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -9728,6 +9785,17 @@ class MainWindow(QMainWindow):
         self.holiday_btn.hide()
         row2.addStretch(1)
         att_toolbar_layout.addLayout(row2)
+
+        if str(self.user_role).casefold() == "employee":
+            emp_id = self.current_user.get("employee_id")
+            self.att_employee_filter.clear()
+            for e in self.db.employees(False):
+                if e["id"] == emp_id:
+                    self.att_employee_filter.addItem(f"{e['name']} (You)", e["id"])
+            self.att_employee_filter.setEnabled(False)
+            declare_holiday_btn.hide()
+            remove_holiday_btn.hide()
+            self.att_bulk_edit_button.hide()
 
         l.addWidget(att_toolbar_card)
 
@@ -11302,8 +11370,8 @@ class MainWindow(QMainWindow):
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,approval_status,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added from employee tracker",vals[2]); self.refresh_all()
         except sqlite3.Error as ex:
             error(self, f"Could not save task: {ex}")
@@ -11528,14 +11596,20 @@ class MainWindow(QMainWindow):
         self.schedule_auto_sync()
 
     def add_task(self):
-        d=TaskDialog(self.db,self,employee_id=self.task_filter.currentData(),task_date=self.task_date.date())
+        if str(self.user_role).casefold() == "employee":
+            emp_id = self.current_user.get("employee_id")
+            if not emp_id:
+                return error(self, "Your account is not mapped to an employee record. Contact an Admin.")
+            d = TaskDialog(self.db, self, employee_id=emp_id, task_date=self.task_date.date())
+        else:
+            d = TaskDialog(self.db, self, employee_id=self.task_filter.currentData(), task_date=self.task_date.date())
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals: return error(self,"Add an active employee before assigning tasks.")
         if not vals[2]: return error(self,"Task title is required.")
         try:
-            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,created_at,updated_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
+            self.db.conn.execute("""INSERT INTO tasks(employee_id,task_date,title,department,details,due_time,priority,status,progress,proof_url,proof_note,submitted_at,manager_note,expose_link,target_qty,actual_qty,next_action,custom_values,approval_status,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, now_text(), now_text()))
             self.db.conn.commit(); self.db.log("Task added",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not save task: {ex}")
 
@@ -11548,12 +11622,16 @@ class MainWindow(QMainWindow):
         if not tid: return error(self,"Select a task first.")
         row=self.db.conn.execute("SELECT * FROM tasks WHERE id=?",(tid,)).fetchone()
         if not row: return error(self, "Task not found.")
+        if str(self.user_role).casefold() == "employee":
+            emp_id = self.current_user.get("employee_id")
+            if row["employee_id"] != emp_id:
+                return error(self, "Employees can only edit their own tasks.")
         d=TaskDialog(self.db,self,row)
         if d.exec()!=QDialog.Accepted: return
         vals=d.values()
         if not vals or not vals[2]: return error(self,"Task title and active employee are required.")
         try:
-            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,department=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
+            self.db.conn.execute("""UPDATE tasks SET employee_id=?,task_date=?,title=?,department=?,details=?,due_time=?,priority=?,status=?,progress=?,proof_url=?,proof_note=?,submitted_at=?,manager_note=?,expose_link=?,target_qty=?,actual_qty=?,next_action=?,custom_values=?,approval_status=?,updated_at=? WHERE id=?""",(*vals, now_text(), tid))
             self.db.conn.commit(); self.db.log("Task edited",vals[2]); self.refresh_all()
         except sqlite3.Error as ex: error(self, f"Could not update task: {ex}")
 
@@ -12024,7 +12102,11 @@ class MainWindow(QMainWindow):
 
     def refresh_tasks(self):
         if not hasattr(self,"task_table"): return
-        d=self.task_date.date().toString("yyyy-MM-dd"); eid=self.task_filter.currentData()
+        d=self.task_date.date().toString("yyyy-MM-dd")
+        if str(self.user_role).casefold() == "employee":
+            eid = self.current_user.get("employee_id")
+        else:
+            eid = self.task_filter.currentData()
         rows=self.db.tasks(d,eid)
         self.task_table.setRowCount(0)
         for t in rows:
@@ -12035,6 +12117,8 @@ class MainWindow(QMainWindow):
             comp_pct = f'{t["progress"]}%' if t["progress"] is not None else "0%"
             custom_val = format_custom_values_display(t["custom_values"] if "custom_values" in t.keys() else "")
             next_act = str((t["next_action"] if "next_action" in t.keys() else "") or t["manager_note"] or "")
+            appr = str(t["approval_status"] if "approval_status" in t.keys() and t["approval_status"] else "Pending")
+            appr_label = "✓ Approved" if appr.lower() == "approved" else "⏳ Pending"
             vals=[
                 t["id"],
                 t["task_date"],
@@ -12046,11 +12130,12 @@ class MainWindow(QMainWindow):
                 comp_pct,
                 t["priority"],
                 task_status_label(t["status"]),
+                appr_label,
                 t["proof_url"],
                 custom_val,
                 next_act,
             ]
-            self.set_row_items(self.task_table, r, vals, status_cols={8, 9})
+            self.set_row_items(self.task_table, r, vals, status_cols={8, 9, 10})
         if hasattr(self, "task_count_badge"):
             self.task_count_badge.setText(f"Tasks: {len(rows)}")
 
@@ -12066,6 +12151,20 @@ class MainWindow(QMainWindow):
         if hasattr(self, "kpi_custom_tasks"): self.kpi_custom_tasks.setText(str(pend_cnt))
 
         self.refresh_dashboard()
+
+    def approve_selected_tasks(self):
+        if not (self.is_admin_or_dev or str(self.user_role).casefold() == "hr"):
+            return error(self, "Only Admin, Developer, or HR can approve tasks.")
+        ids = self._selected_task_ids()
+        if not ids:
+            return error(self, "Select one or more tasks to approve.")
+        q_marks = ",".join("?" for _ in ids)
+        self.db.conn.execute(f"UPDATE tasks SET approval_status='Approved', updated_at=? WHERE id IN ({q_marks})", (now_text(), *ids))
+        self.db.conn.commit()
+        self.db.log("Tasks approved by admin", f"{len(ids)} tasks approved")
+        self.schedule_auto_sync(immediate=True)
+        self.refresh_tasks()
+        info(self, f"Successfully approved {len(ids)} selected task(s).")
 
     def _on_task_table_selection_changed(self):
         pass
@@ -13790,7 +13889,11 @@ class MainWindow(QMainWindow):
         lines=[f"RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD: {d}",""]
         all_tasks=[t for _,tasks,_ in data for t in tasks]
         if opts.get("summary",True):
+            approved_count = sum(1 for t in all_tasks if str(t.get("approval_status", "") if "approval_status" in t.keys() else "").lower() == "approved")
+            pending_approval_count = sum(1 for t in all_tasks if str(t.get("approval_status", "") if "approval_status" in t.keys() else "").lower() != "approved" and is_explicitly_completed_task_status(t["status"]))
             lines.extend(["DAILY SUMMARY",f"• Employees: {len(data)}",f"• Tasks recorded: {len(all_tasks)}",
+                f"• Approved by Admin: {approved_count}",
+                f"• Pending Admin approval: {pending_approval_count}",
                 f'• Completed / submitted tasks: {sum(1 for t in all_tasks if is_explicitly_completed_task_status(t["status"]))}',
                 f'• Pending / other tasks: {sum(1 for t in all_tasks if not is_explicitly_completed_task_status(t["status"]) and not is_cancelled_task_status(t["status"]))}',
                 f'• Employees flagged for missing proof: {sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,d).startswith("Yes"))}',""])
@@ -13816,7 +13919,8 @@ class MainWindow(QMainWindow):
                 lines.append("TASKS / WORK ITEMS")
                 if tasks:
                     for i,t in enumerate(tasks,1):
-                        lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}')
+                        appr_badge = " [APPROVED]" if str(t.get("approval_status", "") if "approval_status" in t.keys() else "").lower() == "approved" else " [PENDING APPROVAL]"
+                        lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}{appr_badge}')
                         target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
                         actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
                         if is_target_qty_included(opts) and target_q:
@@ -14250,23 +14354,29 @@ class MainWindow(QMainWindow):
     def manage_accounts(self):
         if not self.is_admin_or_dev:
             return error(self, "Only an Admin or Developer can manage user accounts.")
-        dialog = QDialog(self); dialog.setWindowTitle("Manage User Accounts & Access Permissions"); dialog.setMinimumWidth(640)
+        dialog = QDialog(self); dialog.setWindowTitle("Manage User Accounts & Access Permissions"); dialog.setMinimumWidth(720)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Manage user accounts and assign limited access (Staff/HR) or full administration (Admin/Developer)."))
-        table = QTableWidget(0, 5); table.setHorizontalHeaderLabels(["Username", "Display name", "Role", "Status", "Created"])
+        layout.addWidget(QLabel("Manage user accounts and assign limited access (Employee/Staff/HR) or full administration (Admin/Developer)."))
+        table = QTableWidget(0, 6); table.setHorizontalHeaderLabels(["Username", "Display name", "Role", "Mapped Employee", "Status", "Created"])
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch); table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         def reload_table():
             table.setRowCount(0)
-            for row in self.db.conn.execute("SELECT username,display_name,role,active,created_at FROM auth_users ORDER BY username COLLATE NOCASE").fetchall():
+            q = """SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.active, u.created_at,
+                          e.name AS employee_name, e.employee_code
+                   FROM auth_users u
+                   LEFT JOIN employees e ON u.employee_id = e.id
+                   ORDER BY u.username COLLATE NOCASE"""
+            for row in self.db.conn.execute(q).fetchall():
                 idx=table.rowCount(); table.insertRow(idx)
-                for col,val in enumerate([row["username"],row["display_name"],row["role"],"Active" if row["active"] else "Disabled",row["created_at"]]):
-                    if col == 3:
+                mapped_str = f"{row['employee_name']} ({row['employee_code'] or row['employee_id']})" if row['employee_id'] and row['employee_name'] else "—"
+                for col,val in enumerate([row["username"],row["display_name"],row["role"],mapped_str,"Active" if row["active"] else "Disabled",row["created_at"]]):
+                    if col == 4:
                         item = self.status_item(val)
                     else:
                         item = QTableWidgetItem(str(val))
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if col in (2, 3, 4) else Qt.AlignmentFlag.AlignLeft))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter | (Qt.AlignmentFlag.AlignCenter if col in (2, 3, 4, 5) else Qt.AlignmentFlag.AlignLeft))
                     item.setToolTip(str(val))
                     table.setItem(idx, col, item)
         reload_table()
@@ -14275,9 +14385,11 @@ class MainWindow(QMainWindow):
         manage_row = QHBoxLayout()
         toggle_active_btn = QPushButton("Toggle Active / Disabled")
         change_role_btn = QPushButton("Change Role")
+        map_employee_btn = QPushButton("Map / Remap Employee")
         reset_pw_btn = QPushButton("Reset Password")
         manage_row.addWidget(toggle_active_btn)
         manage_row.addWidget(change_role_btn)
+        manage_row.addWidget(map_employee_btn)
         manage_row.addWidget(reset_pw_btn)
         manage_row.addStretch(1)
         layout.addLayout(manage_row)
@@ -14311,7 +14423,7 @@ class MainWindow(QMainWindow):
             uname = table.item(row_idx, 0).text()
             u_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=?", (uname,)).fetchone()
             if not u_row: return error(dialog, "User not found.")
-            roles = ["Staff", "HR", "Admin", "Developer"]
+            roles = ["Employee", "Staff", "HR", "Admin", "Developer"]
             current_role_idx = roles.index(u_row["role"]) if u_row["role"] in roles else 0
             new_role, ok = QInputDialog.getItem(dialog, "Change User Role", f"Select new role/access level for {uname}:", roles, current_role_idx, False)
             if not ok or not new_role: return
@@ -14328,6 +14440,34 @@ class MainWindow(QMainWindow):
             reload_table()
             info(dialog, f"Role for '{uname}' updated to '{new_role}'.")
         change_role_btn.clicked.connect(change_role)
+
+        def map_employee():
+            row_idx = table.currentRow()
+            if row_idx < 0: return error(dialog, "Select a user from the table first.")
+            uname = table.item(row_idx, 0).text()
+            u_row = self.db.conn.execute("SELECT * FROM auth_users WHERE username=?", (uname,)).fetchone()
+            if not u_row: return error(dialog, "User not found.")
+            emp_choices = ["(None - Unmapped)"]
+            emp_ids = [None]
+            for e in self.db.employees(False):
+                emp_choices.append(f"{e['name']} ({e['employee_code'] or e['id']})")
+                emp_ids.append(e["id"])
+            cur_idx = 0
+            if u_row["employee_id"]:
+                for i, eid in enumerate(emp_ids):
+                    if eid == u_row["employee_id"]:
+                        cur_idx = i
+                        break
+            choice, ok = QInputDialog.getItem(dialog, "Map Account to Employee", f"Select employee record to map to '{uname}':", emp_choices, cur_idx, False)
+            if not ok or choice is None: return
+            selected_eid = emp_ids[emp_choices.index(choice)]
+            self.db.conn.execute("UPDATE auth_users SET employee_id=?, updated_at=? WHERE id=?", (selected_eid, now_text(), u_row["id"]))
+            self.db.conn.commit()
+            self.db.log("User mapped to employee", f"{uname} -> {choice}")
+            self.schedule_auto_sync(immediate=True)
+            reload_table()
+            info(dialog, f"User '{uname}' mapping updated to {choice}.")
+        map_employee_btn.clicked.connect(map_employee)
 
         def reset_user_password():
             row_idx = table.currentRow()
@@ -14348,11 +14488,23 @@ class MainWindow(QMainWindow):
         reset_pw_btn.clicked.connect(reset_user_password)
 
         formbox=QGroupBox("Create new account"); form=QFormLayout(formbox)
-        username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["Staff", "HR", "Admin", "Developer"])
+        username=QLineEdit(); display=QLineEdit(); role=QComboBox(); role.addItems(["Employee", "Staff", "HR", "Admin", "Developer"])
+        map_emp=QComboBox(); map_emp.addItem("(None - No mapping)", None)
+        for e in self.db.employees(False):
+            map_emp.addItem(f"{e['name']} ({e['employee_code'] or e['id']})", e["id"])
+        def on_map_emp_changed():
+            eid = map_emp.currentData()
+            if eid and not display.text().strip():
+                for e in self.db.employees(False):
+                    if e["id"] == eid:
+                        display.setText(e["name"])
+                        break
+        map_emp.currentIndexChanged.connect(on_map_emp_changed)
         password=QLineEdit(); password.setEchoMode(QLineEdit.Password)
         question=QComboBox(); question.addItems(SECURITY_QUESTIONS)
         answer=QLineEdit(); answer.setEchoMode(QLineEdit.Password)
         form.addRow("Username / User ID",username); form.addRow("Display name",display); form.addRow("Role / Access level",role)
+        form.addRow("Map to Employee",map_emp)
         form.addRow("Initial password",password); form.addRow("Recovery question",question); form.addRow("Recovery answer",answer)
         layout.addWidget(formbox)
         buttons=QHBoxLayout(); create=QPushButton("Create account"); close=QPushButton("Close")
@@ -14361,6 +14513,7 @@ class MainWindow(QMainWindow):
         def create_account():
             u=username.text().strip(); d=display.text().strip(); pw=password.text(); ans=normalized_answer(answer.text())
             r_val = role.currentText()
+            mapped_eid = map_emp.currentData()
             if not u or not d: return error(dialog,"Enter username and display name.")
             if not password_is_strong(pw): return error(dialog,"Password must be 8+ characters with letters and numbers.")
             if len(ans)<2: return error(dialog,"Enter a recovery answer.")
@@ -14370,8 +14523,8 @@ class MainWindow(QMainWindow):
                 return error(dialog, f"User ID / Username '{u}' already exists.\nUsernames must be unique across all devices.")
             ps,ph=hash_pin(pw); aus,ah=hash_pin(ans)
             try:
-                self.db.conn.execute("INSERT INTO auth_users(username,display_name,role,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)",
-                    (u,d,r_val,ps,ph,question.currentText(),aus,ah,now_text(),now_text()))
+                self.db.conn.execute("INSERT INTO auth_users(username,display_name,role,employee_id,password_salt,password_hash,security_question,answer_salt,answer_hash,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)",
+                    (u,d,r_val,mapped_eid,ps,ph,question.currentText(),aus,ah,now_text(),now_text()))
                 self.db.conn.commit(); self.db.log("User account created",f"{u} ({r_val})")
                 self.schedule_auto_sync(immediate=True)
             except sqlite3.IntegrityError:
