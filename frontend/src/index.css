@@ -159,28 +159,34 @@ body[data-rsc-theme="day"] main section,
 body[data-rsc-theme="day"] main [class*="bg-slate-900"],
 body[data-rsc-theme="day"] main [class*="bg-slate-950"],
 body[data-rsc-theme="day"] main [class*="bg-slate-800"],
+body[data-rsc-theme="day"] main [class*="from-slate-950"],
 body[data-rsc-theme="ocean"] main section,
 body[data-rsc-theme="ocean"] main [class*="bg-slate-900"],
 body[data-rsc-theme="ocean"] main [class*="bg-slate-950"],
 body[data-rsc-theme="ocean"] main [class*="bg-slate-800"],
+body[data-rsc-theme="ocean"] main [class*="from-slate-950"],
 body[data-rsc-theme="sunset"] main section,
 body[data-rsc-theme="sunset"] main [class*="bg-slate-900"],
 body[data-rsc-theme="sunset"] main [class*="bg-slate-950"],
-body[data-rsc-theme="sunset"] main [class*="bg-slate-800"] {
+body[data-rsc-theme="sunset"] main [class*="bg-slate-800"],
+body[data-rsc-theme="sunset"] main [class*="from-slate-950"] {
   background-color: #ffffff !important;
+  background-image: none !important;
   border-color: #e2e8f0 !important;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
 }
 
 body[data-rsc-theme="ocean"] main section,
 body[data-rsc-theme="ocean"] main [class*="bg-slate-900"],
-body[data-rsc-theme="ocean"] main [class*="bg-slate-950"] {
+body[data-rsc-theme="ocean"] main [class*="bg-slate-950"],
+body[data-rsc-theme="ocean"] main [class*="from-slate-950"] {
   border-color: #bae6fd !important;
 }
 
 body[data-rsc-theme="sunset"] main section,
 body[data-rsc-theme="sunset"] main [class*="bg-slate-900"],
-body[data-rsc-theme="sunset"] main [class*="bg-slate-950"] {
+body[data-rsc-theme="sunset"] main [class*="bg-slate-950"],
+body[data-rsc-theme="sunset"] main [class*="from-slate-950"] {
   border-color: #fed7aa !important;
 }
 
@@ -189,7 +195,29 @@ body[data-rsc-theme="day"] main section [class*="bg-slate-950"],
 body[data-rsc-theme="ocean"] main section [class*="bg-slate-950"],
 body[data-rsc-theme="sunset"] main section [class*="bg-slate-950"] {
   background-color: #f8fafc !important;
+  background-image: none !important;
   border-color: #e2e8f0 !important;
+}
+
+/* Secondary buttons inside light mode workspace */
+body[data-rsc-theme="day"] main button[class*="bg-slate-900"],
+body[data-rsc-theme="day"] main button[class*="bg-slate-950"],
+body[data-rsc-theme="ocean"] main button[class*="bg-slate-900"],
+body[data-rsc-theme="ocean"] main button[class*="bg-slate-950"],
+body[data-rsc-theme="sunset"] main button[class*="bg-slate-900"],
+body[data-rsc-theme="sunset"] main button[class*="bg-slate-950"] {
+  background-color: #f1f5f9 !important;
+  background-image: none !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+body[data-rsc-theme="day"] main button[class*="bg-slate-900"]:hover,
+body[data-rsc-theme="day"] main button[class*="bg-slate-950"]:hover,
+body[data-rsc-theme="ocean"] main button[class*="bg-slate-900"]:hover,
+body[data-rsc-theme="ocean"] main button[class*="bg-slate-950"]:hover,
+body[data-rsc-theme="sunset"] main button[class*="bg-slate-900"]:hover,
+body[data-rsc-theme="sunset"] main button[class*="bg-slate-950"]:hover {
+  background-color: #e2e8f0 !important;
 }
 
 /* High-contrast typography inside main cards */
