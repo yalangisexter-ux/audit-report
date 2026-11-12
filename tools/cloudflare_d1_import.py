@@ -24,6 +24,56 @@ def quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+def expected_migration_schema(migrations_dir: Path) -> dict[str, set[str]]:
+    """Apply every checked-in D1 migration and return its table/column contract."""
+    migration_files = sorted(Path(migrations_dir).glob("*.sql"))
+    if not migration_files:
+        raise ValueError("No Cloudflare D1 migration files were found.")
+
+    connection = sqlite3.connect(":memory:")
+    try:
+        for migration in migration_files:
+            connection.executescript(migration.read_text(encoding="utf-8"))
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            if not row[0].startswith("sqlite_")
+        }
+        schema = {}
+        for table in sorted(tables):
+            columns = {
+                row[1]
+                for row in connection.execute(
+                    f"PRAGMA table_info({quote_identifier(table)})"
+                ).fetchall()
+            }
+            if not columns:
+                raise ValueError(f"Migration schema has no columns for {table}.")
+            schema[table] = columns
+        return schema
+    finally:
+        connection.close()
+
+
+def ensure_empty_target(counts: dict[str, int]) -> None:
+    """Refuse canonical import/reconciliation if any application table already has rows."""
+    populated = {
+        table: int(count)
+        for table, count in counts.items()
+        if table != "settings" and int(count) > 0
+    }
+    if populated:
+        detail = ", ".join(f"{table}={count}" for table, count in sorted(populated.items()))
+        raise ValueError(
+            "Cloudflare D1 already contains application rows; refusing to import or "
+            "reconcile the canonical snapshot into a non-empty database. "
+            f"Populated tables: {detail}. Export and verify a current D1 backup and "
+            "use an explicit reviewed merge path."
+        )
+
+
 def sql_value(value) -> str:
     if value is None:
         return "NULL"
