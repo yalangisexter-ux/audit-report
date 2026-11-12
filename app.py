@@ -2176,9 +2176,9 @@ def is_holiday_for_employee(holiday, emp) -> bool:
     """Check if a holiday applies to a specific employee based on scope."""
     if not holiday:
         return False
-    if isinstance(holiday, sqlite3.Row):
+    if hasattr(holiday, "keys"):
         holiday = dict(holiday)
-    if isinstance(emp, sqlite3.Row):
+    if hasattr(emp, "keys"):
         emp = dict(emp)
     dept_scope = str(holiday.get("department") or "All").strip()
     emp_scope = str(holiday.get("employee_ids") or "All").strip()
@@ -11365,7 +11365,7 @@ class MainWindow(QMainWindow):
         updates = []
         for idx, e in enumerate(new_list):
             order_val = (idx + 1) * 10
-            dept_val = e.get("department", "")
+            dept_val = e["department"] if (hasattr(e, "keys") and "department" in e.keys()) else (dict(e).get("department", "") if hasattr(e, "__iter__") else "")
             updates.append((e["id"], order_val, dept_val))
             
         self.db.update_employees_order(updates)
@@ -12182,7 +12182,8 @@ class MainWindow(QMainWindow):
         d=self.att_date.date().toString("yyyy-MM-dd")
         old=self.db.get_holiday_row(d)
         if old:
-            return info(self, f"Holiday already declared for {d}: {old.get('holiday_name') or 'Holiday'}")
+            hname = old["holiday_name"] if (hasattr(old, "keys") and "holiday_name" in old.keys()) else (dict(old).get("holiday_name") if hasattr(old, "__iter__") else "Holiday")
+            return info(self, f"Holiday already declared for {d}: {hname or 'Holiday'}")
 
         h_dialog = QDialog(self)
         h_dialog.setWindowTitle(f"Declare Company / Department Holiday · {d}")
@@ -12213,7 +12214,7 @@ class MainWindow(QMainWindow):
         dept_layout.setContentsMargins(10, 5, 0, 0)
         dept_checks = {}
         all_emps = self.db.employees(False)
-        distinct_depts = sorted(list({str(e.get("department") or "").strip() for e in all_emps if str(e.get("department") or "").strip()}))
+        distinct_depts = sorted(list({str(e["department"] if (hasattr(e, "keys") and "department" in e.keys()) else dict(e).get("department", "")).strip() for e in all_emps if str(e["department"] if (hasattr(e, "keys") and "department" in e.keys()) else dict(e).get("department", "")).strip()}))
         for dept in distinct_depts:
             chk = QCheckBox(dept)
             dept_checks[dept] = chk
@@ -12669,8 +12670,8 @@ class MainWindow(QMainWindow):
         holiday_row = self.db.get_holiday_row(d)
         holiday = holiday_row["holiday_name"] if holiday_row else None
         if holiday_row:
-            dept_scope = str(holiday_row.get("department") or "All").strip()
-            emp_scope = str(holiday_row.get("employee_ids") or "All").strip()
+            dept_scope = str((holiday_row["department"] if (hasattr(holiday_row, "keys") and "department" in holiday_row.keys()) else dict(holiday_row).get("department", "All")) or "All").strip()
+            emp_scope = str((holiday_row["employee_ids"] if (hasattr(holiday_row, "keys") and "employee_ids" in holiday_row.keys()) else dict(holiday_row).get("employee_ids", "All")) or "All").strip()
             is_company_wide = (dept_scope in ("All", "") and emp_scope in ("All", ""))
             scope_desc = "Company-wide" if is_company_wide else (f"Depts: {dept_scope}" if dept_scope != "All" else f"Employees: {emp_scope}")
             self.holiday_banner.setText(f"🎉 HOLIDAY: {holiday_row['holiday_name']} · Scope: {scope_desc}")
@@ -12957,6 +12958,7 @@ class MainWindow(QMainWindow):
             employee_id = int(employee["id"])
             emp_dept = employee["department"] if (hasattr(employee, "keys") and "department" in employee.keys()) else (dict(employee).get("department", "") if hasattr(employee, "__iter__") else "")
             emp_dict = {"id": employee_id, "department": emp_dept}
+            emp_holiday_dates = {holiday_d for holiday_d, h_row in holiday_map.items() if is_holiday_for_employee(h_row, emp_dict)}
             start_day = starts[employee_id]
             effective_start = max(start_day, month_start)
             if effective_start <= end:
@@ -12964,22 +12966,18 @@ class MainWindow(QMainWindow):
                 current_day = effective_start
                 while current_day <= end:
                     day_text = current_day.isoformat()
-                    h_row = holiday_map.get(day_text)
-                    is_h = is_holiday_for_employee(h_row, emp_dict) if h_row else False
-                    if current_day.weekday() in weekdays and not is_h:
+                    if current_day.weekday() in weekdays and day_text not in emp_holiday_dates:
                         working += 1
                     current_day += timedelta(days=1)
                 monthly_rows = [
                     row for row in attendance_by_employee[employee_id]
                     if effective_start.isoformat() <= row["work_date"] <= end.isoformat()
-                    and not (holiday_map.get(row["work_date"]) and is_holiday_for_employee(holiday_map[row["work_date"]], emp_dict))
+                    and row["work_date"] not in emp_holiday_dates
                     and is_attendance_scheduled_workday(row["work_date"], weekdays)
                 ]
                 holiday_count = 0
-                for holiday_d, h_row in holiday_map.items():
+                for holiday_d in emp_holiday_dates:
                     if not (effective_start.isoformat() <= holiday_d <= end.isoformat()):
-                        continue
-                    if not is_holiday_for_employee(h_row, emp_dict):
                         continue
                     try:
                         if date.fromisoformat(holiday_d).weekday() in weekdays:
@@ -13010,7 +13008,7 @@ class MainWindow(QMainWindow):
             since = sum(
                 1 for row in attendance_by_employee[employee_id]
                 if start_day.isoformat() <= row["work_date"] <= end.isoformat()
-                and not (holiday_map.get(row["work_date"]) and is_holiday_for_employee(holiday_map[row["work_date"]], emp_dict))
+                and row["work_date"] not in emp_holiday_dates
                 and is_attendance_scheduled_workday(row["work_date"], weekdays)
                 and (
                     is_present_attendance_status(row["attendance_status"])
@@ -13506,8 +13504,9 @@ class MainWindow(QMainWindow):
                     doc.add_paragraph(item,style="List Bullet")
             for e,tasks,_att in data:
                 tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
-                emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
-                emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+                tgt_dict = dict(tgt_info) if (tgt_info and hasattr(tgt_info, "keys")) else (tgt_info or {})
+                emp_target = (tgt_dict.get("target") or "NA") if tgt_dict else "NA"
+                emp_target_status = (tgt_dict.get("target_status") or "NA") if tgt_dict else "NA"
                 target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
                 target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
                 doc.add_heading(f"Name : {e['name']}",level=1)
@@ -13753,8 +13752,9 @@ class MainWindow(QMainWindow):
                     HRFlowable(width="100%", thickness=.6, color=cyan, spaceAfter=6)])
             for e, tasks, _att in data:
                 tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
-                emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
-                emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+                tgt_dict = dict(tgt_info) if (tgt_info and hasattr(tgt_info, "keys")) else (tgt_info or {})
+                emp_target = (tgt_dict.get("target") or "NA") if tgt_dict else "NA"
+                emp_target_status = (tgt_dict.get("target_status") or "NA") if tgt_dict else "NA"
                 target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
                 target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
                 story.append(employee_name(e["name"]))
@@ -13957,8 +13957,9 @@ class MainWindow(QMainWindow):
                 w.writerow(headers)
                 for e,tasks,_att in report_rows:
                     tgt_info = self.db.get_employee_target(e["id"], report_date) if hasattr(self.db, "get_employee_target") else None
-                    emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
-                    emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+                    tgt_dict = dict(tgt_info) if (tgt_info and hasattr(tgt_info, "keys")) else (tgt_info or {})
+                    emp_target = (tgt_dict.get("target") or "NA") if tgt_dict else "NA"
+                    emp_target_status = (tgt_dict.get("target_status") or "NA") if tgt_dict else "NA"
                     eod=self.source_status(e,"work",report_date) or ("Submitted" if tasks and all(is_explicitly_completed_task_status(t["status"]) for t in tasks) else "In progress / Partial" if tasks else "No tasks recorded")
                     task_rows=tasks or [None]
                     for t in task_rows:
@@ -14094,8 +14095,8 @@ class MainWindow(QMainWindow):
         lines=[f"RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD: {d}",""]
         all_tasks=[t for _,tasks,_ in data for t in tasks]
         if opts.get("summary",True):
-            approved_count = sum(1 for t in all_tasks if str(t["approval_status"] if "approval_status" in t.keys() else "").lower() == "approved")
-            pending_approval_count = sum(1 for t in all_tasks if str(t["approval_status"] if "approval_status" in t.keys() else "").lower() != "approved" and is_explicitly_completed_task_status(t["status"]))
+            approved_count = sum(1 for t in all_tasks if str(t["approval_status"] if (hasattr(t, "keys") and "approval_status" in t.keys()) else (dict(t).get("approval_status", "") if hasattr(t, "__iter__") else "")).lower() == "approved")
+            pending_approval_count = sum(1 for t in all_tasks if str(t["approval_status"] if (hasattr(t, "keys") and "approval_status" in t.keys()) else (dict(t).get("approval_status", "") if hasattr(t, "__iter__") else "")).lower() != "approved" and is_explicitly_completed_task_status(t["status"]))
             lines.extend(["DAILY SUMMARY",f"• Employees: {len(data)}",f"• Tasks recorded: {len(all_tasks)}",
                 f"• Approved by Admin: {approved_count}",
                 f"• Pending Admin approval: {pending_approval_count}",
@@ -14104,8 +14105,9 @@ class MainWindow(QMainWindow):
                 f'• Employees flagged for missing proof: {sum(1 for e,tasks,_ in data if self.employee_missing_proof(e,tasks,d).startswith("Yes"))}',""])
         for e,tasks,_att in data:
             tgt_info = self.db.get_employee_target(e["id"], d) if hasattr(self.db, "get_employee_target") else None
-            emp_target = (tgt_info.get("target") or "NA") if tgt_info else "NA"
-            emp_target_status = (tgt_info.get("target_status") or "NA") if tgt_info else "NA"
+            tgt_dict = dict(tgt_info) if (tgt_info and hasattr(tgt_info, "keys")) else (tgt_info or {})
+            emp_target = (tgt_dict.get("target") or "NA") if tgt_dict else "NA"
+            emp_target_status = (tgt_dict.get("target_status") or "NA") if tgt_dict else "NA"
             target_str = f"   Target: {emp_target}" if opts.get("target", True) else ""
             target_status_str = f"   Target status : {emp_target_status}" if opts.get("target_status", True) else ""
             lines.append(f"Name : {e['name']}")
@@ -14124,7 +14126,8 @@ class MainWindow(QMainWindow):
                 lines.append("TASKS / WORK ITEMS")
                 if tasks:
                     for i,t in enumerate(tasks,1):
-                        appr_badge = " [APPROVED]" if str(t["approval_status"] if "approval_status" in t.keys() else "").lower() == "approved" else " [PENDING APPROVAL]"
+                        t_appr = str(t["approval_status"] if (hasattr(t, "keys") and "approval_status" in t.keys()) else (dict(t).get("approval_status", "") if hasattr(t, "__iter__") else "")).lower()
+                        appr_badge = " [APPROVED]" if t_appr == "approved" else " [PENDING APPROVAL]"
                         lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}{appr_badge}')
                         target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
                         actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
