@@ -1,4 +1,4 @@
-import { pbkdf2Sync } from "node:crypto";
+import { computePbkdf2Sha256 } from "./pbkdf2.js";
 
 const encoder = new TextEncoder();
 const TOKEN_BYTES = 32;
@@ -1107,7 +1107,7 @@ async function currentUser(request, env) {
 function bearer(request) {const value=request.headers.get("Authorization")||"";const match=/^Bearer\s+(.+)$/i.exec(value);return match?match[1].trim():"";}
 
 function deriveHash(password, salt) {
-  return pbkdf2Sync(String(password || ""), String(salt || ""), PBKDF2_ITERATIONS, 32, "sha256").toString("hex");
+  return computePbkdf2Sha256(String(password || ""), String(salt || ""), PBKDF2_ITERATIONS);
 }
 function normalizeAnswer(value){return String(value||"").trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).join(" ");}
 function strongPassword(value){const s=String(value||"");return s.length>=8&&/[A-Za-z]/.test(s)&&/[0-9]/.test(s);}
