@@ -7,3 +7,41 @@ const req=(url,method="GET",body,headers={})=>new Request("https://api.test"+url
 test("channel creation encrypts credentials and only returns one-time webhook secret",async()=>{const r=await handleSalesChannels(req("/api/sales-channels","POST",{platform:"shopify",account_label:"Main Shopify",credentials:{access_token:"top-secret"}}),env,"/api/sales-channels",admin);assert.equal(r.status,201);const b=await r.json();assert.ok(b.webhook_secret);assert.ok(!JSON.stringify(b).includes("top-secret"));assert.ok(!env.DB.rows.channels[0].credentials_ciphertext.includes("top-secret"));});
 test("webhook rejects missing secret and imports a marketplace order",async()=>{const r=await handleSalesChannels(req("/api/sales-channels","POST",{platform:"other",account_label:"Partner feed",credentials:{}}),env,"/api/sales-channels",admin);const c=await r.json();const payload={event_id:"evt-1",event_type:"order.created",order:{id:"ORDER-100",status:"paid",total_amount:250,currency:"INR",items:[{sku:"RS-01",name:"Training kit",quantity:2,price:125}]}};const denied=await handleSalesWebhook(req("/api/sales-channels/"+c.channel_id+"/webhook","POST",payload),env,"/api/sales-channels/"+c.channel_id+"/webhook");assert.equal(denied.status,401);const accepted=await handleSalesWebhook(req("/api/sales-channels/"+c.channel_id+"/webhook","POST",payload,{"X-RS-Channel-Secret":c.webhook_secret}),env,"/api/sales-channels/"+c.channel_id+"/webhook");assert.equal(accepted.status,202);assert.equal((await accepted.json()).imported,true);assert.equal(env.DB.rows.orders[0].external_order_id,"ORDER-100");assert.equal(env.DB.rows.items.length,1);});
 test("unsupported sales platform is rejected",async()=>{const r=await handleSalesChannels(req("/api/sales-channels","POST",{platform:"random",account_label:"x"}),env,"/api/sales-channels",admin);assert.equal(r.status,422);});
+
+async function signWebhook(secret, body) {
+  const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const sig=await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(body));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+test("Shopify native webhook HMAC authenticates and imports the order",async()=>{
+  const secret="shopify-webhook-secret";
+  const created=await handleSalesChannels(req("/api/sales-channels","POST",{platform:"shopify",account_label:"Shopify live",credentials:{webhook_secret:secret}}),env,"/api/sales-channels",admin);
+  const channel=await created.json();
+  const body=JSON.stringify({id:98765,name:"#1001",financial_status:"paid",total_price:"1499.00",currency:"INR",created_at:"2026-11-12T09:00:00Z",customer:{first_name:"Test",last_name:"Buyer",email:"buyer@example.test"},line_items:[{id:1,sku:"RS-TSHIRT",title:"Raw Strength Tee",quantity:2,price:"749.50"}]});
+  const signature=await signWebhook(secret,body);
+  const response=await handleSalesWebhook(new Request("https://api.test/api/sales-channels/"+channel.channel_id+"/webhook",{method:"POST",headers:{"Content-Type":"application/json","X-Shopify-Hmac-Sha256":signature,"X-Shopify-Webhook-Id":"shopify-delivery-1","X-Shopify-Topic":"orders/create"},body}),env,"/api/sales-channels/"+channel.channel_id+"/webhook");
+  assert.equal(response.status,202);
+  const order=env.DB.rows.orders.find(x=>x.external_order_id==="98765");
+  assert.equal(order.total_amount,1499);
+  assert.equal(order.customer_email,"buyer@example.test");
+  assert.equal(env.DB.rows.items.at(-1)[5],"RS-TSHIRT");
+});
+test("WooCommerce native webhook signature and order fields are supported",async()=>{
+  const secret="woocommerce-webhook-secret";
+  const created=await handleSalesChannels(req("/api/sales-channels","POST",{platform:"woocommerce",account_label:"Woo store",credentials:{webhook_secret:secret}}),env,"/api/sales-channels",admin);
+  const channel=await created.json();
+  const body=JSON.stringify({id:4455,status:"processing",total:"825.00",currency:"INR",date_created:"2026-11-12T09:30:00",billing:{first_name:"Woo",last_name:"Buyer",email:"woo@example.test",phone:"9999999999"},shipping:{address_1:"Main Road"},line_items:[{id:8,sku:"RS-BAND",name:"Resistance Band",quantity:3,price:275}]});
+  const signature=await signWebhook(secret,body);
+  const response=await handleSalesWebhook(new Request("https://api.test/api/sales-channels/"+channel.channel_id+"/webhook",{method:"POST",headers:{"Content-Type":"application/json","X-WC-Webhook-Signature":signature,"X-WC-Webhook-Delivery-ID":"woo-delivery-1","X-WC-Webhook-Topic":"order.created"},body}),env,"/api/sales-channels/"+channel.channel_id+"/webhook");
+  assert.equal(response.status,202);
+  const order=env.DB.rows.orders.find(x=>x.external_order_id==="4455");
+  assert.equal(order.total_amount,825);
+  assert.equal(order.customer_name,"Woo Buyer");
+  assert.equal(order.customer_phone,"9999999999");
+});
+test("Shopify webhook rejects an invalid HMAC",async()=>{
+  const created=await handleSalesChannels(req("/api/sales-channels","POST",{platform:"shopify",account_label:"Bad signature test",credentials:{webhook_secret:"right-secret"}}),env,"/api/sales-channels",admin);
+  const channel=await created.json(),body=JSON.stringify({id:123,event_type:"order.created"});
+  const response=await handleSalesWebhook(new Request("https://api.test/api/sales-channels/"+channel.channel_id+"/webhook",{method:"POST",headers:{"Content-Type":"application/json","X-Shopify-Hmac-Sha256":"invalid","X-Shopify-Webhook-Id":"bad-signature"},body}),env,"/api/sales-channels/"+channel.channel_id+"/webhook");
+  assert.equal(response.status,401);
+});
