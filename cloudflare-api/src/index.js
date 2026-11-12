@@ -924,13 +924,14 @@ export default {
         if (existing) {
           return json({ success: true, id: existing.id, inserted: 0, duplicates: 1, duplicate: true }, 200, headers);
         }
+        const now = new Date().toISOString();
         const id = await insert(env.DB, "customer_prospects", {
           business_name: name, business_category: String(b.business_category || ""), kind: String(b.kind || "Store"),
           state, city, area: String(b.area || ""), contact_person: String(b.contact_person || ""), phone: String(b.phone || ""),
           email: String(b.email || ""), address: String(b.address || ""), website: String(b.website || ""), maps: String(b.maps || ""),
           followup_date: String(b.followup_date || ""), call_time: String(b.call_time || ""), connection: String(b.connection || ""),
           verified: String(b.verified || ""), response: String(b.response || ""), notes: String(b.notes || ""),
-          source_name: "Web App", source_type: "Web", dedupe_key: dedupe, created_at: new Date().toISOString()
+          source_name: "Web App", source_type: "Web", dedupe_key: dedupe, created_at: now, updated_at: now
         });
         return json({ success: true, id, inserted: 1, duplicates: 0, duplicate: false }, 200, headers);
       }
@@ -949,6 +950,7 @@ export default {
           const name = v.business_name || old.business_name, city = v.city || old.city, state = v.state || old.state;
           v.dedupe_key = (name + "|" + city + "|" + state).toLowerCase().replace(/\s+/g, " ");
         }
+        v.updated_at = new Date().toISOString();
         await update(env.DB, "customer_prospects", v, id);
         return json({ success: true }, 200, headers);
       }
