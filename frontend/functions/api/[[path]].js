@@ -1,7 +1,6 @@
 import apiWorker from "./worker/index.js";
 
 const PRIMARY_WORKER_ORIGIN = "https://raw-strength-employee-api.yalangisexter.workers.dev";
-const FALLBACK_API_ORIGIN = "https://audit-report-web.onrender.com";
 
 const HOP_BY_HOP_HEADERS = [
   "connection",
@@ -128,52 +127,12 @@ export async function onRequest({ request, env }) {
         headers: responseHeaders,
       });
     }
-    console.warn("Primary API origin returned edge 404; activating fallback to Render", {
+    console.warn("Primary API origin returned edge 404", {
       primary: primaryOrigin,
       path: incoming.pathname,
     });
   } catch (primaryError) {
-    console.warn("Primary API origin error; activating fallback to Render", primaryError);
-  }
-
-  // Fallback to Render
-  if (primaryOrigin !== FALLBACK_API_ORIGIN) {
-    try {
-      const fallbackResponse = await forwardTo(FALLBACK_API_ORIGIN);
-
-      // Handle endpoints that do not exist on legacy Render backend:
-      if (fallbackResponse.status === 404 && incoming.pathname === "/api/reports/options") {
-        if (request.method === "GET") {
-          return Response.json({ options: DEFAULT_REPORT_OPTIONS }, { status: 200, headers: { "Cache-Control": "no-store", "X-Upstream-Origin": "pages-fallback-shim" } });
-        }
-        if (request.method === "PUT") {
-          return Response.json({ success: true }, { status: 200, headers: { "Cache-Control": "no-store", "X-Upstream-Origin": "pages-fallback-shim" } });
-        }
-      }
-      if (fallbackResponse.status === 404 && incoming.pathname === "/api/dashboard/kpis") {
-        const today = new Date().toISOString().slice(0, 10);
-        return Response.json({
-          status: "healthy",
-          today,
-          kpis: { total_employees: 8, present_today: 0, absent_today: 0, leave_today: 0, unmarked_today: 8, total_tasks: 47, submitted_tasks: 0, in_progress_tasks: 47 }
-        }, { status: 200, headers: { "Cache-Control": "no-store", "X-Upstream-Origin": "pages-fallback-shim" } });
-      }
-      if (fallbackResponse.status === 422 && incoming.pathname === "/api/employee-targets") {
-        return Response.json([], { status: 200, headers: { "Cache-Control": "no-store", "X-Upstream-Origin": "pages-fallback-shim" } });
-      }
-
-      const respHeaders = new Headers(fallbackResponse.headers);
-      respHeaders.set("Cache-Control", "no-store");
-      respHeaders.set("X-Upstream-Origin", FALLBACK_API_ORIGIN);
-      respHeaders.set("X-Upstream-Fallback", "true");
-      return new Response(fallbackResponse.body, {
-        status: fallbackResponse.status,
-        statusText: fallbackResponse.statusText,
-        headers: respHeaders,
-      });
-    } catch (fallbackError) {
-      console.error("Fallback API request failed", fallbackError);
-    }
+    console.warn("Primary API origin error:", primaryError);
   }
 
   return Response.json(

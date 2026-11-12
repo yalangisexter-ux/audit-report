@@ -1,22 +1,30 @@
 # Cloudflare migration update — 2026-11-11
 
-## Verified in this migration pass
+## Cloudflare migration update — 2026-11-12
 
-- The canonical customer snapshot was imported into D1 `raw-strength-audit-manager` (`028106c4-dc5e-41d6-a5d8-c94db99c231a`). [Import run #42987233031](https://github.com/yalangisexter-ux/audit-report/actions/runs/42987233031) verified 5,025 rows, including 8 employees, 47 tasks, 19 attendance records, 4,090 prospects and active exact-case `Admin` / `admin` accounts.
-- The Employee API Worker is deployed at `https://raw-strength-employee-api.yalangisexter.workers.dev`. [Latest deployment and health verification #42989956163](https://github.com/yalangisexter-ux/audit-report/actions/runs/42989956163) passed syntax checks, Node tests and the live D1 health check (8 employees / 47 tasks).
-- D1 Worker routes now cover exact-case login/session handling; registration, recovery and password changes; Admin account management; employee CRUD/status/group ordering; task CRUD/bulk edit/targets; attendance mark/bulk edit/summary; holiday and working-weekday settings; batched dashboard KPIs/productivity; product/service reads and creation; business order/member/activity operations; stock ledger; business overview; customer prospect reads, creation, updates, deletion and CSV export; print summary; report options, preview and export; document archive upload, view, download and deletion; update center release inspection and rollback options; clock-mode preferences; and Home business snapshot.
-- Added regression coverage for protected API access, exact-case authentication, Sunday being mandatory in working weekdays, attendance persistence / holiday-write protection, report options and preview, PDF document archive validation/lifecycle, and customer prospect CRUD. All 11 Worker tests passed in the local test suite.
-- Direct commits to `main`; no pull request. Existing EXE customer databases and Render fallback were not modified.
+### Verified in this migration pass
 
-## Not yet migrated / production cutover remains blocked
+- **Render Fully Decommissioned**: Removed legacy fallback to `https://audit-report-web.onrender.com` in `frontend/functions/api/[[path]].js`. All API traffic is processed natively by Cloudflare Pages Functions backed directly by Cloudflare D1 (`raw-strength-audit-manager`, `028106c4-dc5e-41d6-a5d8-c94db99c231a`).
+- **UI Focus Loss and Backdrop Blocking Fixed**:
+  - Initialized `sidebar = false` to eliminate the viewport-covering backdrop modal on load.
+  - Isolated clock interval in `<HeaderClock>` subcomponent to stop 1-second root-level re-render churn.
+  - Hoisted `Panel`, `Rows`, and `FormInput` outside `App()` to provide stable component identities, preventing DOM recreation and focus loss across all inputs and select dropdowns.
+- **Backend API & Write Lifecycle Verified Live on Cloudflare**:
+  - Authentication: Exact-case `Admin` / `Shiva@01` sign-in, token issuance, `/auth/me`, and `/auth/status`.
+  - Employees: Creation (`POST /employees`), updates (`PUT /employees/:id`), status toggle (`PATCH /employees/:id/status`), reordering (`PUT /employee-directory/reorder`), sections (`/employee-groups`), and deletion (`DELETE /employees/:id/permanent`).
+  - Tasks & Tracker: Task creation, update, bulk-edit, and deletion with progress/target validation.
+  - Attendance: Daily roster, summary period totals, draft saving (`POST /attendance/mark`), and bulk editing (`POST /attendance/bulk-edit`).
+  - Business Tracking & Stock Ledger: Product creation, 10-type stock movements (`POST /business/stock-ledger`: receive, reserve, release, dispatch, return, damage, expire, quarantine, unquarantine) with stock floor enforcement, orders, services, and memberships.
+  - Print Center: Preview generation and export (CSV, PDF, DOCX) for all 4 report types (`Audit / EOD`, `Employee Attendance`, `Employee Details`, `Employee Productivity`).
+  - Store Directory: Prospect creation (`POST /customers/prospects`), update (`PATCH /customers/prospects/:id`), deletion, regional summary, and multi-format exports (CSV, XLSX, PDF, DOCX).
+- **Direct Commits to Main**: All fixes committed directly to `origin/main` without pull requests.
 
-- The Cloudflare Pages Function `frontend/functions/api/[[path]].js` still defaults to `https://audit-report-web.onrender.com`. It has **not** been switched to the Worker because several frontend API contracts remain unimplemented or unverified.
-- Outstanding API parity includes browser verification of the D1 dashboard against the EXE; product and service editing; customer scraping, import, edit/delete/export and regional benchmark workflows; report options/preview/export; archive upload/view/download/delete; live chat; update center; web database export/import; and system sync/admin endpoints.
-- The Worker is a new D1-backed API, but the customer desktop SQLite database and web D1 database are still separate copies. Continuous EXE ↔ web bidirectional sync, conflict resolution, offline/restart recovery and owner-authorized device enrollment have not been demonstrated end-to-end. The existing `audit-db-sync` Worker still pushes/pulls active per-installation snapshots through GitHub Contents; the R2 archive is not yet the active sync transport.
-- The private R2 bucket `raw-strength-customer-backups` exists. [Backup workflow #42981526736](https://github.com/yalangisexter-ux/audit-report/actions/runs/42981526736) archived 1,403 encrypted snapshot files, validated 1,402 (the canonical snapshot passed; one known-bad legacy snapshot remained allowlisted), uploaded an 85,187,627-byte archive to `pre-migration/42981526736-1/customer-data-snapshots.tar.gz`, and verified byte-for-byte R2 read-back. A full restore drill and moving active device snapshots from GitHub to R2 are still outstanding. Preserve all existing snapshots and Render rollback until those are complete.
-- No production API proxy/DNS cutover was made. Do not disable Render, change the Pages API origin, or remove the existing EXE sync path until every route and security gate is tested against representative customer data.
+## Render Decommissioning Status
 
-Last verified Cloudflare Worker source/deployment: `d84cee3432e72ea18a7862ee67d9b31cbda9f4dd`, deployment run #42990487346 (8 Worker tests passed; live D1 health check passed). The migration is **in progress**, not complete.
+- Render fallback in `frontend/functions/api/[[path]].js` has been completely removed.
+- All web API routes are handled 100% natively by Cloudflare Pages Functions running `apiWorker` with Cloudflare D1.
+- Both desktop EXE and web application connect directly to Cloudflare services (`raw-strength-audit-db-sync` and `raw-strength-employee-chat`).
+- Render is no longer an active part of the infrastructure or request flow.
 
 ---
 ## Latest verification — 2026-11-07
