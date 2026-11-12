@@ -727,23 +727,18 @@ export default {
         if(sundayRow && String(sundayRow.value).trim() === "0"){
           normDays = normDays.filter(d => d !== 6);
         }
-        return json({weekdays:normDays,sunday_required:true},200,headers);
+        return json({weekdays:normDays,sunday_configurable:true},200,headers);
       }
       if(path==="/api/settings/working-weekdays"&&request.method==="PUT"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const b=await readJson(request);
-        let days;
-        if(b.sunday_enabled === false){
-          days = [...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6&&n!==6))].sort();
-        } else {
-          days = [...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6).concat([6]))].sort();
-        }
+        const days=[...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6))].sort();
         if(!days.length)return json({detail:"Choose valid weekdays."},422,headers);
         const sundayActive = days.includes(6);
         await env.DB.prepare("INSERT INTO settings(key,value) VALUES('working_weekdays',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(days.join(",")).run();
         await env.DB.prepare("INSERT INTO settings(key,value) VALUES('sunday_workday',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(sundayActive ? "1" : "0").run();
         await audit(env.DB,user,"Working week changed",days.join(",") + (sundayActive ? " (Sunday: Enabled)" : " (Sunday: Disabled)"));
-        return json({success:true,weekdays:days,sunday_required:true},200,headers);
+        return json({success:true,weekdays:days,sunday_configurable:true},200,headers);
       }
       if(path==="/api/settings"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
