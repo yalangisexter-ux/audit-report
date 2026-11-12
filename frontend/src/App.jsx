@@ -17,6 +17,7 @@ import BusinessTracking from './BusinessTracking';
 import LiveChat from './LiveChat';
 import UpdateCenter from './UpdateCenter';
 import HomeWorkspace from './HomeWorkspace';
+import Storefront from './Storefront.jsx';
 
 const API = '/api';
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-'); };
@@ -200,6 +201,7 @@ function FormInput({ label, name, form, onChange, type = 'text', placeholder = '
 }
 
 export default function App() {
+  if (window.location.pathname === '/store' || window.location.pathname.startsWith('/store/')) return <Storefront />;
   const [tab,setTab]=useState('home'),[sidebar,setSidebar]=useState(false);
   const [token,setToken]=useState(()=>localStorage.getItem('rsc_auth_token')||'');
   const [user,setUser]=useState(null),[checked,setChecked]=useState(false);

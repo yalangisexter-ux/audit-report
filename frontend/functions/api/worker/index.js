@@ -118,6 +118,46 @@ export default {
         return json({success:true,message:"Password changed successfully. Sign in with your new password."},200,headers);
       }
 
+
+      // Public USA–Raw Strength customer storefront APIs.
+      if (path === "/api/store/catalog" && request.method === "GET") {
+        const rows = await all(env.DB,
+          "SELECT p.id,p.sku,p.name,p.category,p.brand,p.package_type,p.base_unit,p.selling_price,p.reorder_level,p.opening_stock,p.received_qty,p.reserved_qty,p.dispatched_qty,p.free_qty,p.returned_qty,p.damaged_qty,p.expired_qty,p.quarantined_qty FROM bt_products p ORDER BY p.name COLLATE NOCASE LIMIT 500");
+        return json(rows.map(p => ({ id:p.id, sku:p.sku, name:p.name, category:p.category, brand:p.brand,
+          package_type:p.package_type, unit:p.base_unit || "PCS", price:Number(p.selling_price || 0),
+          available_stock:availableStock(p) })),200,headers);
+      }
+      if (path === "/api/store/orders" && request.method === "POST") {
+        const b=await readJson(request), name=String(b.customer_name||"").trim(), phone=String(b.phone||"").trim();
+        const address=String(b.shipping_address||"").trim(), email=String(b.email||"").trim();
+        const items=Array.isArray(b.items)?b.items:[];
+        if(!name||name.length>120||!phone||phone.length>30||!address||address.length>1000)
+          return json({detail:"Enter your name, phone number and complete delivery address."},422,headers);
+        if(email && (email.length>254||!/^\S+@\S+\.\S+$/.test(email)))return json({detail:"Enter a valid email address."},422,headers);
+        if(!items.length||items.length>30)return json({detail:"Your cart must contain between 1 and 30 product lines."},422,headers);
+        const normalized=[],now=new Date().toISOString();let total=0;
+        for(const item of items){
+          const id=Number(item.product_id),qty=Number(item.quantity);
+          if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(qty)||qty<1||qty>100)
+            return json({detail:"Each cart item must have a valid product and quantity."},422,headers);
+          const product=await first(env.DB,"SELECT * FROM bt_products WHERE id=?",[id]);
+          if(!product)return json({detail:"A product in your cart is no longer available."},409,headers);
+          const available=availableStock(product);
+          if(qty>available)return json({detail:"Insufficient stock for "+product.name+". Available: "+available+"."},409,headers);
+          const price=Number(product.selling_price||0);
+          if(!Number.isFinite(price)||price<0)return json({detail:"This product cannot currently be ordered."},409,headers);
+          normalized.push({product_id:id,product_name:product.name,sku:product.sku||"",quantity:qty,unit:product.base_unit||"PCS",unit_price:price,line_total:price*qty});
+          total+=price*qty;
+        }
+        const code="USA-RS-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+randomHex(3).toUpperCase();
+        const orderId=await insert(env.DB,"store_orders",{order_code:code,customer_name:name,phone,email,shipping_address:address,
+          order_status:"Pending",payment_method:"Cash on Delivery",payment_status:"Unpaid",subtotal:total,total_amount:total,
+          customer_note:String(b.customer_note||"").slice(0,1000),created_at:now,updated_at:now});
+        for(const item of normalized)await insert(env.DB,"store_order_items",{order_id:orderId,...item});
+        return json({success:true,order_id:orderId,order_code:code,total_amount:total,currency:"INR",
+          message:"Order received. The USA–Raw Strength team will contact you to confirm availability and delivery."},201,headers);
+      }
+
       const user = await currentUser(request, env);
       if (!user) return json({ error: "Login required" }, 401, headers);
       if(path==="/api/auth/users"&&request.method==="GET"){
@@ -464,6 +504,26 @@ export default {
         return json({success:true},200,headers);
       }
 
+
+
+      if(path==="/api/store/orders"&&request.method==="GET"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const rows=await all(env.DB,"SELECT * FROM store_orders ORDER BY id DESC LIMIT 500");
+        for(const row of rows)row.items=await all(env.DB,"SELECT * FROM store_order_items WHERE order_id=? ORDER BY id",[row.id]);
+        return json(rows,200,headers);
+      }
+      const storeOrder=/^\/api\/store\/orders\/(\d+)$/.exec(path);
+      if(storeOrder&&request.method==="PATCH"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),status=String(b.status||"");
+        if(!["Pending","Confirmed","Packed","Dispatched","Delivered","Cancelled","Returned"].includes(status))
+          return json({detail:"Invalid store order status."},422,headers);
+        const result=await env.DB.prepare("UPDATE store_orders SET order_status=?,updated_at=? WHERE id=?")
+          .bind(status,new Date().toISOString(),Number(storeOrder[1])).run();
+        if(!result.meta?.changes)return json({detail:"Store order not found."},404,headers);
+        await audit(env.DB,user,"Store order status changed","Order "+storeOrder[1]+" -> "+status);
+        return json({success:true},200,headers);
+      }
 
       if(path==="/api/business/orders"&&request.method==="POST"){
         const b=await readJson(request),code=String(b.order_code||"").trim()||"WEB-"+randomHex(3).toUpperCase(),date=b.order_date||new Date().toISOString().slice(0,10),status=String(b.status||"Pending");
