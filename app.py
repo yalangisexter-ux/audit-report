@@ -13010,7 +13010,7 @@ class MainWindow(QMainWindow):
             since = sum(
                 1 for row in attendance_by_employee[employee_id]
                 if start_day.isoformat() <= row["work_date"] <= end.isoformat()
-                and row["work_date"] not in holiday_dates
+                and not (holiday_map.get(row["work_date"]) and is_holiday_for_employee(holiday_map[row["work_date"]], emp_dict))
                 and is_attendance_scheduled_workday(row["work_date"], weekdays)
                 and (
                     is_present_attendance_status(row["attendance_status"])
@@ -14094,8 +14094,8 @@ class MainWindow(QMainWindow):
         lines=[f"RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD: {d}",""]
         all_tasks=[t for _,tasks,_ in data for t in tasks]
         if opts.get("summary",True):
-            approved_count = sum(1 for t in all_tasks if str(t.get("approval_status", "") if "approval_status" in t.keys() else "").lower() == "approved")
-            pending_approval_count = sum(1 for t in all_tasks if str(t.get("approval_status", "") if "approval_status" in t.keys() else "").lower() != "approved" and is_explicitly_completed_task_status(t["status"]))
+            approved_count = sum(1 for t in all_tasks if str(t["approval_status"] if "approval_status" in t.keys() else "").lower() == "approved")
+            pending_approval_count = sum(1 for t in all_tasks if str(t["approval_status"] if "approval_status" in t.keys() else "").lower() != "approved" and is_explicitly_completed_task_status(t["status"]))
             lines.extend(["DAILY SUMMARY",f"• Employees: {len(data)}",f"• Tasks recorded: {len(all_tasks)}",
                 f"• Approved by Admin: {approved_count}",
                 f"• Pending Admin approval: {pending_approval_count}",
@@ -14124,7 +14124,7 @@ class MainWindow(QMainWindow):
                 lines.append("TASKS / WORK ITEMS")
                 if tasks:
                     for i,t in enumerate(tasks,1):
-                        appr_badge = " [APPROVED]" if str(t.get("approval_status", "") if "approval_status" in t.keys() else "").lower() == "approved" else " [PENDING APPROVAL]"
+                        appr_badge = " [APPROVED]" if str(t["approval_status"] if "approval_status" in t.keys() else "").lower() == "approved" else " [PENDING APPROVAL]"
                         lines.append(f'• {i}. {t["title"]} — Status: {task_status_label(t["status"])}{appr_badge}')
                         target_q = str(t["target_qty"] if "target_qty" in t.keys() else "") or ""
                         actual_q = str(t["actual_qty"] if "actual_qty" in t.keys() else "") or ""
