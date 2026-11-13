@@ -71,7 +71,8 @@ export default function HomeWorkspace({
   return (
     <div className="space-y-5">
       {/* Executive Session Strip matching desktop EXE benchmark */}
-      <section className="rounded-2xl border border-cyan-400/25 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
+      <section className="relative overflow-hidden rounded-2xl border border-cyan-400/35 bg-gradient-to-r from-slate-900/90 via-indigo-950/70 to-slate-900/90 backdrop-blur-2xl p-5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.7),0_0_30px_rgba(6,182,212,0.15)]">
+        <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-cyan-500/10 blur-3xl" />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -430,19 +431,20 @@ export default function HomeWorkspace({
               key={target}
               type="button"
               onClick={() => open(target)}
-              className="group rounded-xl border border-white/10 border-l-4 border-l-cyan-400 bg-slate-900/75 p-4 text-left transition hover:border-cyan-400/60 hover:border-l-purple-500 hover:bg-slate-900 shadow-md"
+              className="group relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 text-left transition-all duration-300 hover:border-cyan-400/50 hover:bg-slate-900/95 hover:shadow-[0_15px_40px_rgba(0,0,0,0.7),0_0_25px_rgba(6,182,212,0.2)] hover:-translate-y-1"
             >
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-xl font-bold">
+              <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-cyan-400 to-indigo-500 opacity-80 group-hover:w-1.5 transition-all" />
+              <div className="flex items-center gap-3 pl-1">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-cyan-400/30 bg-gradient-to-br from-cyan-400/20 to-indigo-500/10 text-2xl font-bold shadow-inner">
                   {icon}
                 </span>
-                <span className="min-w-0 flex-1 text-sm font-bold text-white group-hover:text-cyan-300 transition">
+                <span className="min-w-0 flex-1 text-sm sm:text-base font-extrabold text-white group-hover:text-cyan-300 transition">
                   {title}
                 </span>
-                <span className="text-cyan-400 transition group-hover:translate-x-1 font-bold">➔</span>
+                <span className="text-cyan-400 text-lg transition-transform duration-200 group-hover:translate-x-1.5 font-bold">➔</span>
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-slate-300">{guidance}</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{example}</p>
+              <p className="mt-2.5 text-xs leading-relaxed text-slate-300 pl-1">{guidance}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-500 pl-1">{example}</p>
             </button>
           ))}
         </div>
@@ -479,11 +481,20 @@ export default function HomeWorkspace({
               key={key}
               type="button"
               onClick={() => open('business')}
-              className="metric-card-2027 rounded-2xl border border-white/10 bg-slate-950/75 backdrop-blur-md p-4 text-left transition hover:border-cyan-400/40 shadow-lg"
+              className="metric-card-2027 group relative overflow-hidden rounded-2xl border border-white/15 bg-slate-950/80 backdrop-blur-xl p-5 text-left transition-all duration-300 hover:border-cyan-400/50 shadow-xl hover:shadow-[0_20px_45px_rgba(0,0,0,0.8),0_0_30px_rgba(6,182,212,0.3)] hover:-translate-y-1"
             >
-              <p className="text-xs font-semibold text-slate-400">{icon} {title}</p>
-              <p className="mt-2 text-2xl font-black tabular-nums text-cyan-300">{business ? numberText(business[key]) : '—'}</p>
-              <p className="mt-1 text-[11px] text-slate-500">{subtitle}</p>
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-500 opacity-80 group-hover:opacity-100 transition-opacity" />
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold text-slate-300 group-hover:text-cyan-300 transition-colors flex items-center gap-1.5">
+                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-cyan-400/10 border border-cyan-400/25 text-sm">{icon}</span>
+                  {title}
+                </p>
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <p className="mt-3 text-2xl sm:text-3xl font-black tabular-nums text-white group-hover:text-cyan-300 transition-colors drop-shadow-[0_2px_10px_rgba(34,211,238,0.3)]">
+                {business ? numberText(business[key]) : '—'}
+              </p>
+              <p className="mt-1 text-[11px] text-slate-400">{subtitle}</p>
             </button>
           ))}
         </div>

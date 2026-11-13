@@ -11,7 +11,7 @@
 }
 
 html, body, #root { height: 100%; }
-body { min-width: 320px; overflow-x: hidden; background: #070B14; color: #F8FAFC; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+body { min-width: 320px; overflow-x: hidden; background: #040712; color: #F8FAFC; font-family: 'Plus Jakarta Sans', Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 
 .webapp-shell { min-height: 100vh; }
 .webapp-sidebar { width: 16rem; }
@@ -45,7 +45,17 @@ body::before {
   transform: scale(1.015);
   animation: rsc-wallpaper-drift 42s ease-in-out infinite alternate;
 }
-body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: transparent; }
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 700px 500px at 15% 15%, rgba(6, 182, 212, 0.12), transparent 60%),
+    radial-gradient(ellipse 800px 600px at 85% 85%, rgba(139, 92, 246, 0.14), transparent 65%),
+    radial-gradient(circle 500px at 50% 50%, rgba(37, 99, 235, 0.07), transparent 60%);
+}
 .webapp-root { background: transparent !important; }
 body[data-rsc-wallpaper="Ambient Glow"]::before {
   background-image: radial-gradient(ellipse at 12% 8%,rgba(34,211,238,.24),transparent 40%),radial-gradient(ellipse at 88% 88%,rgba(124,58,237,.30),transparent 44%),linear-gradient(135deg,#070b14,#10152b);
@@ -398,8 +408,11 @@ body[data-rsc-theme="sunset"] main a[class*="bg-gradient-"] * {
 
 /* Header Brand Banner ALWAYS retains crisp luminous executive styling */
 header {
-  background: linear-gradient(to right, #020617, #0f172a, #020617) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: linear-gradient(to right, rgba(2, 6, 23, 0.94), rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.94)) !important;
+  backdrop-filter: blur(28px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7), 0 0 35px -5px rgba(6, 182, 212, 0.15) !important;
 }
 header h1 {
   color: #ffffff !important;
@@ -409,6 +422,7 @@ header h1 {
 header p {
   color: #38bdf8 !important;
   white-space: nowrap !important;
+  letter-spacing: 0.14em !important;
 }
 header input, header select, header textarea {
   color: #f8fafc !important;
@@ -422,26 +436,28 @@ header input, header select, header textarea {
 
 /* 1. Ultra-smooth 2027 custom scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: rgba(7, 11, 20, 0.6); }
-::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #22d3ee, #818cf8); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #38bdf8, #a855f7); box-shadow: 0 0 10px rgba(34, 211, 238, 0.6); }
+::-webkit-scrollbar-track { background: rgba(4, 7, 18, 0.8); }
+::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #00f2fe, #4facfe, #818cf8); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #38bdf8, #a855f7); box-shadow: 0 0 12px rgba(34, 211, 238, 0.7); }
 
 /* 2. Universal Glassmorphism Panels across entire project */
 .webapp-root section,
 .webapp-root [class*="bg-slate-900"],
 .card-glass-2027 {
-  backdrop-filter: blur(24px) saturate(190%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(190%) !important;
+  backdrop-filter: blur(28px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.78) 0%, rgba(7, 12, 26, 0.88) 100%) !important;
   border-radius: 1.25rem !important;
-  border: 1px solid rgba(255, 255, 255, 0.09) !important;
-  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
-  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 20px 45px -12px rgba(0, 0, 0, 0.7), 0 0 35px -5px rgba(6, 182, 212, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+  transition: border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .webapp-root section:hover,
 .webapp-root [class*="bg-slate-900"]:hover,
 .card-glass-2027:hover {
-  border-color: rgba(0, 229, 255, 0.25) !important;
+  border-color: rgba(34, 211, 238, 0.4) !important;
+  box-shadow: 0 25px 55px -10px rgba(0, 0, 0, 0.8), 0 0 50px -5px rgba(6, 182, 212, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
 }
 
 /* 3. Universal High-Performance Inputs & Form Controls */
@@ -451,17 +467,19 @@ header input, header select, header textarea {
 .login-screen input,
 .login-screen select {
   border-radius: 0.85rem !important;
-  background-color: rgba(6, 11, 22, 0.75) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  backdrop-filter: blur(12px) !important;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  background-color: rgba(4, 7, 18, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  backdrop-filter: blur(16px) !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+  color: #f1f5f9 !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .webapp-root input:hover,
 .webapp-root select:hover,
 .webapp-root textarea:hover,
 .login-screen input:hover {
-  border-color: rgba(0, 229, 255, 0.35) !important;
+  border-color: rgba(0, 229, 255, 0.45) !important;
 }
 
 .webapp-root input:focus,
@@ -469,7 +487,8 @@ header input, header select, header textarea {
 .webapp-root textarea:focus,
 .login-screen input:focus {
   border-color: #00e5ff !important;
-  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.25), 0 0 20px -3px rgba(0, 229, 255, 0.4) !important;
+  background-color: rgba(4, 8, 22, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.25), 0 0 24px -2px rgba(0, 229, 255, 0.5), inset 0 1px 2px rgba(0, 0, 0, 0.4) !important;
   outline: none !important;
 }
 
@@ -477,12 +496,12 @@ header input, header select, header textarea {
 .webapp-root button[class*="bg-cyan-"],
 .login-screen button[class*="bg-cyan-"],
 .btn-2027-glow {
-  background: linear-gradient(135deg, #00e5ff 0%, #38bdf8 50%, #818cf8 100%) !important;
+  background: linear-gradient(135deg, #00f2fe 0%, #38bdf8 50%, #6366f1 100%) !important;
   color: #020617 !important;
   font-weight: 800 !important;
   letter-spacing: 0.025em !important;
   border-radius: 0.85rem !important;
-  box-shadow: 0 6px 20px -3px rgba(0, 229, 255, 0.45) !important;
+  box-shadow: 0 8px 25px -4px rgba(0, 242, 254, 0.45) !important;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
   position: relative !important;
   overflow: hidden !important;
@@ -491,15 +510,15 @@ header input, header select, header textarea {
 .webapp-root button[class*="bg-cyan-"]:hover,
 .login-screen button[class*="bg-cyan-"]:hover,
 .btn-2027-glow:hover {
-  transform: translateY(-2px) !important;
-  box-shadow: 0 10px 28px -3px rgba(0, 229, 255, 0.6) !important;
-  filter: brightness(1.08) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+  box-shadow: 0 12px 35px -3px rgba(0, 242, 254, 0.65) !important;
+  filter: brightness(1.1) !important;
 }
 
 .webapp-root button[class*="bg-cyan-"]:active,
 .login-screen button[class*="bg-cyan-"]:active,
 .btn-2027-glow:active {
-  transform: translateY(0) !important;
+  transform: translateY(0) scale(0.99) !important;
   filter: brightness(0.96) !important;
 }
 
@@ -512,48 +531,51 @@ header input, header select, header textarea {
 }
 .webapp-root button[class*="border-white/10"]:hover,
 .webapp-root button[class*="border-white/15"]:hover {
-  border-color: rgba(0, 229, 255, 0.35) !important;
-  background-color: rgba(0, 229, 255, 0.08) !important;
+  border-color: rgba(0, 229, 255, 0.45) !important;
+  background-color: rgba(0, 229, 255, 0.12) !important;
   color: #ffffff !important;
 }
 
 /* 5. Modern Telemetry Tables */
 .webapp-root table {
   border-collapse: separate !important;
-  border-spacing: 0 !important;
+  border-spacing: 0 3px !important;
   width: 100% !important;
 }
 
 .webapp-root thead tr th {
-  background-color: rgba(4, 8, 16, 0.8) !important;
-  backdrop-filter: blur(16px) !important;
+  background-color: rgba(4, 8, 18, 0.92) !important;
+  backdrop-filter: blur(20px) !important;
   color: #38bdf8 !important;
   font-weight: 800 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.08em !important;
-  font-size: 0.7rem !important;
-  padding: 0.85rem 1rem !important;
-  border-bottom: 2px solid rgba(0, 229, 255, 0.2) !important;
+  font-size: 0.72rem !important;
+  padding: 0.9rem 1.1rem !important;
+  border-bottom: 2px solid rgba(0, 229, 255, 0.3) !important;
 }
 
 .webapp-root tbody tr td {
-  padding: 0.85rem 1rem !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
-  font-size: 0.825rem !important;
+  padding: 0.9rem 1.1rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  font-size: 0.85rem !important;
 }
 
 .webapp-root tbody tr {
-  transition: background-color 0.18s ease !important;
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .webapp-root tbody tr:hover {
-  background-color: rgba(0, 229, 255, 0.06) !important;
+  background-color: rgba(0, 229, 255, 0.1) !important;
+  transform: scale(1.003) !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 229, 255, 0.15) !important;
 }
 
 /* 6. Cyber Telemetry Radar Dot & Metric Physics */
 @keyframes cyber-radar-pulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.6); }
-  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(34, 211, 238, 0); }
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(34, 211, 238, 0); }
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
 }
 .cyber-radar-dot {
@@ -561,21 +583,26 @@ header input, header select, header textarea {
 }
 
 .metric-card-2027 {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.85) 0%, rgba(4, 8, 20, 0.92) 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-top: 2px solid #22d3ee !important;
+  border-radius: 1.25rem !important;
+  backdrop-filter: blur(24px) !important;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease !important;
 }
 .metric-card-2027:hover {
-  transform: translateY(-2px);
-  border-color: rgba(34, 211, 238, 0.4);
-  box-shadow: 0 14px 35px -8px rgba(0, 0, 0, 0.7), 0 0 25px -5px rgba(34, 211, 238, 0.25);
+  transform: translateY(-4px) scale(1.015) !important;
+  border-color: rgba(34, 211, 238, 0.5) !important;
+  box-shadow: 0 20px 45px -8px rgba(0, 0, 0, 0.8), 0 0 35px -5px rgba(34, 211, 238, 0.35) !important;
 }
 
 /* 7. Modal Windows with 2027 Aero-HUD Depth */
 .webapp-root [class*="fixed inset-0"] section {
   border-radius: 1.5rem !important;
-  border: 1px solid rgba(0, 229, 255, 0.3) !important;
-  background: radial-gradient(circle at 50% 0%, rgba(20, 30, 55, 0.95), rgba(7, 11, 22, 0.98)) !important;
-  backdrop-filter: blur(36px) saturate(200%) !important;
-  box-shadow: 0 35px 90px -20px rgba(0, 0, 0, 0.9), 0 0 60px -10px rgba(0, 229, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid rgba(0, 229, 255, 0.35) !important;
+  background: radial-gradient(circle at 50% 0%, rgba(20, 30, 55, 0.96), rgba(4, 7, 18, 0.98)) !important;
+  backdrop-filter: blur(40px) saturate(210%) !important;
+  box-shadow: 0 35px 90px -20px rgba(0, 0, 0, 0.95), 0 0 65px -10px rgba(0, 229, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
 }
 
 /* 8. Light Theme Compatibility Overrides */

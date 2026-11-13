@@ -95,9 +95,9 @@ const navItems = [
   ['business','💼  Business Tracking',Briefcase],['customers','🏪  Store Directory',Store],
   ['chat','💬  Live Chat',MessageCircle],['settings','⚙️  Settings & Backup',Settings]
 ];
-const card='card-glass-2027 rounded-2xl border border-white/10 bg-slate-900/75 p-5 shadow-2xl shadow-black/40 transition-all duration-300 hover:border-cyan-400/30';
-const field='w-full min-w-0 rounded-xl border border-white/15 bg-slate-950/80 backdrop-blur-md px-3.5 py-2.5 text-sm text-slate-100 outline-none transition-all duration-200 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30';
-const btn='inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-300 to-cyan-400 px-5 py-2.5 text-sm font-extrabold text-slate-950 tracking-wide transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-cyan-400/30 active:translate-y-0 disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
+const card='card-glass-2027 rounded-2xl border border-white/10 bg-slate-900/80 backdrop-blur-xl p-5 sm:p-6 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.7)] transition-all duration-300 hover:border-cyan-400/40 hover:shadow-[0_25px_60px_-10px_rgba(0,0,0,0.8),0_0_30px_rgba(34,211,238,0.2)]';
+const field='w-full min-w-0 rounded-xl border border-white/15 bg-slate-950/85 backdrop-blur-md px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all duration-200 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/30';
+const btn='inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-300 to-cyan-400 px-5 py-2.5 text-sm font-black text-slate-950 tracking-wide transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(34,211,238,0.4)] active:translate-y-0 disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
 
 const APPEARANCE_THEMES = ['day','night','ocean','sunset'];
 const WALLPAPER_STYLES = ['Ambient Glow','Aurora Waves','Starfield','Floating Bubbles','Rainfall','Matrix Drift','Galaxy','Milky Way','Milky Way Waves','Ocean Waves','Lord Shiva','Love Couple','Love & Couples','Cyberpunk Neon','Calisthenics Power','Cosmic Nebula','Custom Image'];
@@ -1060,16 +1060,110 @@ export default function App() {
   if (storeRoute) return <Storefront onBack={() => { window.location.hash = ''; setStoreRoute(false); setTab('home'); }} />;
 
   if(!checked)return <div className="grid min-h-screen place-items-center bg-[#080d18] text-cyan-300">Loading…</div>;
-  if(!user)return <div className="login-screen grid min-h-screen place-items-center bg-[#080d18] p-4 text-white"><div className="card-glass-2027 relative w-full max-w-md rounded-3xl border border-cyan-400/30 bg-slate-900/80 backdrop-blur-2xl p-6 sm:p-8 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.8),0_0_50px_rgba(34,211,238,0.15)]"><div className="mb-4 flex items-center justify-between"><div className="relative inline-block rounded-2xl p-[2px] bg-gradient-to-tr from-cyan-400 via-indigo-500 to-purple-500 shadow-lg shadow-cyan-500/20"><div className="h-14 w-14 rounded-[14px] bg-slate-950/90 flex items-center justify-center p-2"><img src={brandLogo} className="h-full w-full object-contain" alt="Raw Strength"/></div></div><div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-950/60 px-3 py-1 text-[10px] font-black tracking-widest uppercase text-cyan-300 shadow-sm shadow-cyan-500/20"><span className="cyber-radar-dot relative flex h-2 w-2 rounded-full bg-emerald-400"></span>2027 Executive OS</div></div><h1 className="text-2xl font-black tracking-tight text-white">Raw Strength Calisthenics</h1><p className="mb-5 mt-1 text-xs font-semibold uppercase tracking-wider text-cyan-300/80">Employee Audit Manager · {authMode==='login'?'Sign in':authMode==='register'?'Create account':authMode==='change'?'Change password':'Reset password'}</p>{authNotice&&<p className="mb-4 rounded-lg border border-cyan-400/20 bg-cyan-950/40 p-3 text-sm text-cyan-200">{authNotice}</p>}{error&&<p className="mb-4 rounded-lg bg-rose-950 p-3 text-sm text-rose-300">{error}</p>}{authMode==='login'&&<form onSubmit={submitLogin} action="javascript:void(0)"><label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter'&&!busy){e.preventDefault();submitLogin(e);}}} autoComplete="username" required/><span className="mt-1 block text-[11px] leading-relaxed text-slate-500">Use the exact account capitalization: customer <strong className="text-slate-300">Admin</strong>; developer/test <strong className="text-slate-300">admin</strong>. These are separate accounts.</span></label><label className="mb-5 block text-xs text-slate-400">Password<span className="mt-1 flex gap-2"><input className={field} type={showPassword?'text':'password'} value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter'&&!busy){e.preventDefault();submitLogin(e);}}} autoComplete="current-password" required/><button type="button" className="shrink-0 rounded-lg border border-white/10 px-3 text-xs text-cyan-200" onClick={()=>setShowPassword(v=>!v)}>{showPassword?'Hide':'Show'}</button></span></label><button type="submit" className={btn+' w-full'} disabled={busy}>{busy?'Signing in…':'Sign in'}</button><div className="mt-5 flex flex-wrap justify-between gap-3 text-sm"><button type="button" className="text-cyan-300" onClick={()=>{setError('');setAuthNotice('');setAuthMode('forgot');setRecoveryReady(false)}}>Forgot password?</button><button type="button" className="text-cyan-300" onClick={()=>{setError('');setAuthNotice('');setAuthMode('change');setPasswordChange({current_password:'',new_password:'',confirm_password:''})}}>Change password</button><button type="button" className="text-cyan-300" onClick={()=>{setError('');setAuthNotice('');setAuthMode('register')}}>Create new account</button></div></form>}{authMode==='register'&&<form onSubmit={submitRegistration}><label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} required/></label><label className="mb-3 block text-xs text-slate-400">Display name<input className={field+' mt-1'} value={authProfile.display_name} onChange={e=>setAuthProfile(p=>({...p,display_name:e.target.value}))} required/></label><label className="mb-3 block text-xs text-slate-400">Password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} required minLength={8}/></label><label className="mb-3 block text-xs text-slate-400">Confirm password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={authProfile.confirm_password} onChange={e=>setAuthProfile(p=>({...p,confirm_password:e.target.value}))} required/></label><label className="mb-3 block text-xs text-slate-400">Recovery question<select className={field+' mt-1'} value={authProfile.security_question} onChange={e=>setAuthProfile(p=>({...p,security_question:e.target.value}))}>{['What was the name of your first school?','What is the name of the city where you were born?','What was your childhood nickname?','What is the name of your first teacher?','What was the first concert or live event you attended?'].map(q=><option key={q}>{q}</option>)}</select></label><label className="mb-5 block text-xs text-slate-400">Recovery answer<input className={field+' mt-1'} value={authProfile.security_answer} onChange={e=>setAuthProfile(p=>({...p,security_answer:e.target.value}))} required/></label><button className={btn+' w-full'} disabled={busy}>{busy?'Submitting…':'Create account'}</button><button type="button" className="mt-4 w-full text-sm text-cyan-300" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button><p className="mt-3 text-xs text-slate-500">New accounts require Admin approval before they can sign in.</p></form>}{authMode==='forgot'&&<form onSubmit={submitPasswordReset}><label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1'} value={login.username} onChange={e=>{setLogin(p=>({...p,username:e.target.value}));setRecoveryReady(false)}} required/></label>{!recoveryReady?<button type="button" className={btn+' w-full'} onClick={findRecoveryQuestion}>Find recovery question</button>:<><div className="mb-3 rounded-lg bg-slate-950 p-3 text-sm text-cyan-200">{recoveryQuestion}</div><label className="mb-3 block text-xs text-slate-400">Recovery answer<input className={field+' mt-1'} value={authProfile.security_answer} onChange={e=>setAuthProfile(p=>({...p,security_answer:e.target.value}))} required/></label><label className="mb-3 block text-xs text-slate-400">New password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} required minLength={8}/></label><label className="mb-5 block text-xs text-slate-400">Confirm new password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={authProfile.confirm_password} onChange={e=>setAuthProfile(p=>({...p,confirm_password:e.target.value}))} required/></label><button className={btn+' w-full'} disabled={busy}>{busy?'Resetting…':'Reset password'}</button></>}<button type="button" className="mt-4 w-full text-sm text-cyan-300" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button></form>}{authMode==='change'&&<form onSubmit={submitPasswordChange}>
-  <label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} autoComplete="username" required/></label>
-  <label className="mb-3 block text-xs text-slate-400">Current password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={passwordChange.current_password} onChange={e=>setPasswordChange(p=>({...p,current_password:e.target.value}))} autoComplete="current-password" required/></label>
-  <label className="mb-3 block text-xs text-slate-400">New password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={passwordChange.new_password} onChange={e=>setPasswordChange(p=>({...p,new_password:e.target.value}))} autoComplete="new-password" minLength={8} required/></label>
-  <label className="mb-5 block text-xs text-slate-400">Confirm new password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={passwordChange.confirm_password} onChange={e=>setPasswordChange(p=>({...p,confirm_password:e.target.value}))} autoComplete="new-password" minLength={8} required/></label>
-  <button className={btn+' w-full'} disabled={busy}>{busy?'Changing…':'Change password'}</button>
-  <button type="button" className="mt-4 w-full text-sm text-cyan-300" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button>
-</form>}</div></div>;
+  if(!user)return <div className="login-screen grid min-h-screen place-items-center relative overflow-hidden bg-[#040711] p-4 text-white">
+    <div className="pointer-events-none absolute -top-40 -left-40 h-[500px] w-[500px] rounded-full bg-cyan-500/20 blur-[130px] animate-pulse" />
+    <div className="pointer-events-none absolute -bottom-40 -right-40 h-[500px] w-[500px] rounded-full bg-purple-600/20 blur-[140px] animate-pulse" />
+    <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[400px] w-[400px] rounded-full bg-indigo-500/10 blur-[100px]" />
 
-  return <div className="webapp-root flex h-screen min-h-0 overflow-hidden bg-[#080d18] text-slate-100">
+    <div className="card-glass-2027 relative z-10 w-full max-w-md rounded-3xl border border-cyan-400/40 bg-slate-900/85 backdrop-blur-3xl p-6 sm:p-8 shadow-[0_25px_80px_-15px_rgba(0,0,0,0.85),0_0_60px_rgba(34,211,238,0.2),inset_0_1px_0_rgba(255,255,255,0.2)]">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="relative inline-block rounded-2xl p-[2px] bg-gradient-to-tr from-cyan-400 via-indigo-500 to-purple-500 shadow-xl shadow-cyan-500/25">
+          <div className="h-14 w-14 rounded-[14px] bg-slate-950/90 flex items-center justify-center p-2">
+            <img src={brandLogo} className="h-full w-full object-contain" alt="Raw Strength"/>
+          </div>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/40 bg-cyan-950/70 px-3.5 py-1 text-[10px] font-black tracking-widest uppercase text-cyan-300 shadow-md shadow-cyan-500/20">
+          <span className="cyber-radar-dot relative flex h-2 w-2 rounded-full bg-emerald-400"></span>
+          2027 Executive OS · D1 Cloud
+        </div>
+      </div>
+      
+      <h1 className="text-2xl font-black tracking-tight text-white bg-gradient-to-r from-white via-slate-100 to-cyan-200 bg-clip-text text-transparent">
+        Raw Strength Calisthenics
+      </h1>
+      <p className="mb-4 mt-1 text-xs font-bold uppercase tracking-wider text-cyan-300/80">
+        Enterprise Operations OS · {authMode==='login'?'Sign in':authMode==='register'?'Create account':authMode==='change'?'Change password':'Reset password'}
+      </p>
+
+      {/* Quick Select Preset Credentials Chips */}
+      {authMode==='login' && (
+        <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.04] p-2.5">
+          <div className="mb-1.5 flex items-center justify-between text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+            <span>Quick Select Account</span>
+            <span className="text-cyan-400">Click to fill</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={()=>{setLogin({username:'Admin',password:login.password||'admin123'});setError('');}}
+              className={'rounded-lg border px-2.5 py-1.5 text-left text-xs transition flex flex-col '+(login.username==='Admin'?'border-cyan-400 bg-cyan-400/20 text-cyan-200 font-bold shadow-sm':'border-white/10 bg-slate-950/60 text-slate-300 hover:border-cyan-400/40 hover:text-white')}
+            >
+              <span className="font-extrabold text-white flex items-center gap-1">🏢 Customer <span className="text-cyan-300">Admin</span></span>
+              <span className="text-[10px] text-slate-400">Capital A</span>
+            </button>
+            <button
+              type="button"
+              onClick={()=>{setLogin({username:'admin',password:login.password||'admin123'});setError('');}}
+              className={'rounded-lg border px-2.5 py-1.5 text-left text-xs transition flex flex-col '+(login.username==='admin'?'border-purple-400 bg-purple-400/20 text-purple-200 font-bold shadow-sm':'border-white/10 bg-slate-950/60 text-slate-300 hover:border-purple-400/40 hover:text-white')}
+            >
+              <span className="font-extrabold text-white flex items-center gap-1">⚡ Dev / Test <span className="text-purple-300">admin</span></span>
+              <span className="text-[10px] text-slate-400">Lowercase a</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {authNotice&&<p className="mb-4 rounded-xl border border-cyan-400/30 bg-cyan-950/60 p-3 text-xs sm:text-sm text-cyan-200">{authNotice}</p>}
+      {error&&<p className="mb-4 rounded-xl border border-rose-500/40 bg-rose-950/80 p-3 text-xs sm:text-sm text-rose-300">{error}</p>}
+      
+      {authMode==='login'&&<form onSubmit={submitLogin} action="javascript:void(0)">
+        <label className="mb-3 block text-xs text-slate-400">
+          Username
+          <input className={field+' mt-1 font-mono'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter'&&!busy){e.preventDefault();submitLogin(e);}}} autoComplete="username" required/>
+          <span className="mt-1 block text-[11px] leading-relaxed text-slate-500">Use the exact account capitalization: customer <strong className="text-slate-300">Admin</strong>; developer/test <strong className="text-slate-300">admin</strong>. These are separate accounts.</span>
+        </label>
+        <label className="mb-5 block text-xs text-slate-400">
+          Password
+          <span className="mt-1 flex gap-2">
+            <input className={field} type={showPassword?'text':'password'} value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter'&&!busy){e.preventDefault();submitLogin(e);}}} autoComplete="current-password" required/>
+            <button type="button" className="shrink-0 rounded-xl border border-white/10 px-3 text-xs font-semibold text-cyan-200 hover:bg-white/5" onClick={()=>setShowPassword(v=>!v)}>{showPassword?'Hide':'Show'}</button>
+          </span>
+        </label>
+        <button type="submit" className={btn+' w-full shadow-lg shadow-cyan-400/25'} disabled={busy}>{busy?'Signing in…':'Sign in'}</button>
+        <div className="mt-5 flex flex-wrap justify-between gap-3 text-xs sm:text-sm">
+          <button type="button" className="text-cyan-300 hover:underline" onClick={()=>{setError('');setAuthNotice('');setAuthMode('forgot');setRecoveryReady(false)}}>Forgot password?</button>
+          <button type="button" className="text-cyan-300 hover:underline" onClick={()=>{setError('');setAuthNotice('');setAuthMode('change');setPasswordChange({current_password:'',new_password:'',confirm_password:''})}}>Change password</button>
+          <button type="button" className="text-cyan-300 hover:underline" onClick={()=>{setError('');setAuthNotice('');setAuthMode('register')}}>Create new account</button>
+        </div>
+      </form>}
+      {authMode==='register'&&<form onSubmit={submitRegistration}>
+        <label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1 font-mono'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} required/></label>
+        <label className="mb-3 block text-xs text-slate-400">Display name<input className={field+' mt-1'} value={authProfile.display_name} onChange={e=>setAuthProfile(p=>({...p,display_name:e.target.value}))} required/></label>
+        <label className="mb-3 block text-xs text-slate-400">Password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} required minLength={8}/></label>
+        <label className="mb-3 block text-xs text-slate-400">Confirm password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={authProfile.confirm_password} onChange={e=>setAuthProfile(p=>({...p,confirm_password:e.target.value}))} required/></label>
+        <label className="mb-3 block text-xs text-slate-400">Recovery question<select className={field+' mt-1'} value={authProfile.security_question} onChange={e=>setAuthProfile(p=>({...p,security_question:e.target.value}))}>{['What was the name of your first school?','What is the name of the city where you were born?','What was your childhood nickname?','What is the name of your first teacher?','What was the first concert or live event you attended?'].map(q=><option key={q}>{q}</option>)}</select></label>
+        <label className="mb-5 block text-xs text-slate-400">Recovery answer<input className={field+' mt-1'} value={authProfile.security_answer} onChange={e=>setAuthProfile(p=>({...p,security_answer:e.target.value}))} required/></label>
+        <button className={btn+' w-full'} disabled={busy}>{busy?'Submitting…':'Create account'}</button>
+        <button type="button" className="mt-4 w-full text-sm text-cyan-300 hover:underline" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button>
+        <p className="mt-3 text-xs text-slate-500">New accounts require Admin approval before they can sign in.</p>
+      </form>}
+      {authMode==='forgot'&&<form onSubmit={submitPasswordReset}>
+        <label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1 font-mono'} value={login.username} onChange={e=>{setLogin(p=>({...p,username:e.target.value}));setRecoveryReady(false)}} required/></label>
+        {!recoveryReady?<button type="button" className={btn+' w-full'} onClick={findRecoveryQuestion}>Find recovery question</button>:<><div className="mb-3 rounded-xl bg-slate-950 p-3 text-sm text-cyan-200 border border-cyan-400/20">{recoveryQuestion}</div><label className="mb-3 block text-xs text-slate-400">Recovery answer<input className={field+' mt-1'} value={authProfile.security_answer} onChange={e=>setAuthProfile(p=>({...p,security_answer:e.target.value}))} required/></label><label className="mb-3 block text-xs text-slate-400">New password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={login.password} onChange={e=>setLogin(p=>({...p,password:e.target.value}))} required minLength={8}/></label><label className="mb-5 block text-xs text-slate-400">Confirm new password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={authProfile.confirm_password} onChange={e=>setAuthProfile(p=>({...p,confirm_password:e.target.value}))} required/></label><button className={btn+' w-full'} disabled={busy}>{busy?'Resetting…':'Reset password'}</button></>}
+        <button type="button" className="mt-4 w-full text-sm text-cyan-300 hover:underline" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button>
+      </form>}
+      {authMode==='change'&&<form onSubmit={submitPasswordChange}>
+        <label className="mb-3 block text-xs text-slate-400">Username<input className={field+' mt-1 font-mono'} value={login.username} onChange={e=>setLogin(p=>({...p,username:e.target.value}))} autoComplete="username" required/></label>
+        <label className="mb-3 block text-xs text-slate-400">Current password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={passwordChange.current_password} onChange={e=>setPasswordChange(p=>({...p,current_password:e.target.value}))} autoComplete="current-password" required/></label>
+        <label className="mb-3 block text-xs text-slate-400">New password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={passwordChange.new_password} onChange={e=>setPasswordChange(p=>({...p,new_password:e.target.value}))} autoComplete="new-password" minLength={8} required/></label>
+        <label className="mb-5 block text-xs text-slate-400">Confirm new password<input className={field+' mt-1'} type={showPassword?'text':'password'} value={passwordChange.confirm_password} onChange={e=>setPasswordChange(p=>({...p,confirm_password:e.target.value}))} autoComplete="new-password" minLength={8} required/></label>
+        <button className={btn+' w-full'} disabled={busy}>{busy?'Changing…':'Change password'}</button>
+        <button type="button" className="mt-4 w-full text-sm text-cyan-300 hover:underline" onClick={()=>{setError('');setAuthMode('login')}}>Back to sign in</button>
+      </form>}
+    </div>
+  </div>;
+
+  return <div className="webapp-root flex h-screen min-h-0 overflow-hidden bg-transparent text-slate-100 relative">
     {groupManagerOpen&&<div className="fixed inset-0 z-[95] grid place-items-center overflow-y-auto bg-black/75 p-4"><section className="my-6 w-full max-w-3xl rounded-2xl border border-cyan-400/20 bg-slate-900 p-5 shadow-2xl">
       <div className="mb-4 flex items-center justify-between"><div><h2 className="font-bold text-white">Manage Employee Sections & Groups</h2><p className="mt-1 text-xs text-slate-400">Create, rename, reorder and remove employee sections.</p></div><button className="text-slate-400" onClick={()=>setGroupManagerOpen(false)}>Close</button></div>
       <form className="mb-4 flex flex-wrap gap-2" onSubmit={createEmployeeGroup}><input className={field+' min-w-0 flex-1'} placeholder="New section name" value={groupNameDraft} onChange={e=>setGroupNameDraft(e.target.value)} required/><button className={btn}><Plus size={15}/> Add Section</button></form>
@@ -1082,19 +1176,19 @@ export default function App() {
     {editRecord&&<div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black/70 p-4"><section className="my-6 w-full max-w-3xl rounded-2xl border border-cyan-400/20 bg-slate-900 p-5 shadow-2xl"><div className="mb-4 flex items-center justify-between"><h2 className="font-bold text-white">Edit {editRecord.editType==='employees'?'employee':editRecord.editType==='prospects'?'store / prospect':'task'}</h2><button className="text-slate-400" onClick={()=>setEditRecord(null)}>Close</button></div><div className="grid gap-3 sm:grid-cols-2">{(editRecord.editType==='employees'?['name','employee_code','department','designation','phone','email','joining_date','notes','active']:editRecord.editType==='prospects'?['business_name','business_category','kind','state','city','area','contact_person','phone','email','address','website','maps','followup_date','call_time','connection','verified','response','source_status','notes']:['title','employee_id','task_date','department','details','due_time','priority','status','progress','target_qty','actual_qty','next_action','proof_url','proof_note','manager_note','expose_link']).map(k=><label key={k} className="block text-xs text-slate-400"><span className="mb-1 block">{k.replaceAll('_',' ')}</span>{k==='employee_id'?<select className={field} value={editRecord[k]??''} onChange={e=>setEditRecord(p=>({...p,[k]:Number(e.target.value)}))}><option value="">Select employee</option>{data.employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select>:['details','notes','proof_note','manager_note','next_action','address'].includes(k)?<textarea className={field} rows="2" value={editRecord[k]??''} onChange={e=>setEditRecord(p=>({...p,[k]:e.target.value}))}/>:k==='active'?<select className={field} value={Number(editRecord[k]??1)} onChange={e=>setEditRecord(p=>({...p,[k]:Number(e.target.value)}))}><option value="1">Active</option><option value="0">Inactive</option></select>:k==='status'?<select className={field} value={editRecord[k]??'Not started'} onChange={e=>setEditRecord(p=>({...p,[k]:e.target.value}))}>{['Not started','In progress','Partially completed','Submitted','Completed','Blocked','Pending review','Pending','Cancelled'].map(v=><option key={v}>{v}</option>)}</select>:<input className={field} type={['task_date','joining_date','followup_date'].includes(k)?'date':k==='call_time'?'time':['website','maps'].includes(k)?'url':'text'} value={editRecord[k]??''} onChange={e=>setEditRecord(p=>({...p,[k]:['progress','expose_link','active'].includes(k)?Number(e.target.value):e.target.value}))}/>}</label>)}</div><div className="mt-5 flex justify-end gap-2"><button className="rounded-lg border border-white/10 px-4 py-2 text-sm" onClick={()=>setEditRecord(null)}>Cancel</button><button className={btn} onClick={saveEdit}>Save changes</button></div></section></div>}
     {notice&&<div className="fixed right-4 top-4 z-[90] rounded-xl border border-cyan-400/30 bg-slate-900 px-4 py-3 text-sm text-cyan-200">{notice}</div>}
     {sidebar&&<button aria-label="Close menu" onClick={()=>setSidebar(false)} className="fixed inset-0 z-40 bg-black/60 md:hidden"/>}
-    <aside className={`fixed inset-y-0 left-0 z-50 flex ${sidebarCollapsed?'w-16':'w-56'} flex-col border-r border-white/10 bg-slate-950/95 transition-all duration-200 md:static md:translate-x-0 ${sidebar?'translate-x-0':'-translate-x-full'}`}>
+    <aside className={`fixed inset-y-0 left-0 z-50 flex ${sidebarCollapsed?'w-16':'w-60'} flex-col border-r border-white/10 bg-slate-950/80 backdrop-blur-2xl transition-all duration-200 md:static md:translate-x-0 ${sidebar?'translate-x-0':'-translate-x-full'} shadow-[10px_0_30px_-5px_rgba(0,0,0,0.6)]`}>
       <div className="p-3 border-b border-white/10">
         <button
           type="button"
           onClick={()=>setSidebarCollapsed(c=>!c)}
-          className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-xs font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
+          className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-slate-300 hover:border-cyan-400/40 hover:bg-cyan-400/10 hover:text-cyan-200 transition"
           title="Collapse or expand navigation"
         >
           <span className="text-sm">☰</span>
-          {!sidebarCollapsed && <span className="font-bold tracking-wide">Collapse menu</span>}
+          {!sidebarCollapsed && <span className="font-extrabold tracking-wide uppercase text-[11px]">Collapse menu</span>}
         </button>
       </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
+      <nav className="flex-1 space-y-1.5 overflow-y-auto p-2.5">
         {visibleNavItems.map(([id,label,Icon])=>{
           const isActive = tab === id;
           return (
@@ -1102,39 +1196,49 @@ export default function App() {
               key={id}
               onClick={()=>{setTab(id);setSidebar(false)}}
               title={label}
-              className={`flex w-full items-center ${sidebarCollapsed ? 'justify-center px-1' : 'gap-2.5 px-3'} py-2.5 rounded-lg text-left text-xs font-semibold transition ${
+              className={`flex w-full items-center ${sidebarCollapsed ? 'justify-center px-1' : 'gap-2.5 px-3'} py-2.5 rounded-xl text-left text-xs transition-all duration-200 ${
                 isActive
-                  ? 'border-l-4 border-l-cyan-400 bg-cyan-400/15 text-cyan-200 font-bold shadow-sm'
-                  : 'border-l-4 border-l-transparent text-slate-400 hover:text-white hover:bg-white/5'
+                  ? 'bg-gradient-to-r from-cyan-500/25 via-blue-500/20 to-indigo-500/15 text-cyan-200 border border-cyan-400/40 font-extrabold shadow-[0_4px_20px_rgba(6,182,212,0.25)]'
+                  : 'border border-transparent text-slate-400 hover:text-white hover:bg-white/[0.06] hover:border-white/10 font-medium'
               }`}
             >
               {sidebarCollapsed ? (
                 <span className="text-base" title={label}>{label.split(' ')[0]}</span>
               ) : (
-                <span className="truncate">{label}</span>
+                <div className="flex items-center justify-between w-full min-w-0">
+                  <span className="truncate">{label}</span>
+                  {isActive && <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] shrink-0" />}
+                </div>
               )}
             </button>
           );
         })}
       </nav>
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-white/10 p-3 bg-white/[0.02]">
         {!sidebarCollapsed && (
-          <div className="mb-2 min-w-0">
-            <p className="truncate text-xs font-bold text-white">{user.display_name||user.username}</p>
-            <p className="text-[11px] text-cyan-300 font-semibold">{user.role}</p>
+          <div className="mb-3 rounded-xl border border-white/10 bg-slate-900/60 p-2.5 flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-cyan-400 to-indigo-600 flex items-center justify-center font-black text-slate-950 text-xs shadow-md shadow-cyan-500/20 shrink-0">
+              {(user.display_name||user.username||'A')[0].toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-black text-white">{user.display_name||user.username}</p>
+              <span className="inline-block rounded-full bg-cyan-400/10 border border-cyan-400/25 px-2 py-0.2 text-[10px] font-bold text-cyan-300">
+                {user.role}
+              </span>
+            </div>
           </div>
         )}
         <a
           href="https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
           target="_blank"
           rel="noopener noreferrer"
-          className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2'} text-xs font-semibold text-purple-300 hover:text-purple-200`}
+          className={`mb-2 flex items-center ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2'} rounded-lg border border-purple-400/25 bg-purple-500/10 px-2.5 py-1.5 text-xs font-semibold text-purple-200 hover:bg-purple-500/20 transition`}
           title="Download Windows Desktop App (.exe)"
         >
-          <Download size={14} /> {!sidebarCollapsed && <span>Download Desktop (.exe)</span>}
+          <Download size={14} className="text-purple-300 shrink-0" /> {!sidebarCollapsed && <span className="truncate">Download Desktop (.exe)</span>}
         </a>
-        <button onClick={logout} className={`flex items-center ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2'} text-xs font-semibold text-rose-300 hover:text-rose-200`} title="Sign out">
-          <LogOut size={14}/> {!sidebarCollapsed && <span>Sign out</span>}
+        <button onClick={logout} className={`flex items-center ${sidebarCollapsed ? 'justify-center w-full' : 'gap-2'} rounded-lg border border-rose-500/25 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-200 hover:bg-rose-500/20 transition`} title="Sign out">
+          <LogOut size={14} className="text-rose-300 shrink-0"/> {!sidebarCollapsed && <span>Sign out</span>}
         </button>
       </div>
     </aside>
