@@ -479,7 +479,7 @@ export default function HomeWorkspace({
               key={key}
               type="button"
               onClick={() => open('business')}
-              className="rounded-xl border border-white/10 bg-slate-950/70 p-3 text-left transition hover:border-cyan-400/40"
+              className="metric-card-2027 rounded-2xl border border-white/10 bg-slate-950/75 backdrop-blur-md p-4 text-left transition hover:border-cyan-400/40 shadow-lg"
             >
               <p className="text-xs font-semibold text-slate-400">{icon} {title}</p>
               <p className="mt-2 text-2xl font-black tabular-nums text-cyan-300">{business ? numberText(business[key]) : '—'}</p>
