@@ -317,6 +317,8 @@ class AttendanceMarkModel(BaseModel):
 class HolidayModel(BaseModel):
     holiday_date: str
     holiday_name: str
+    department: Optional[str] = "All"
+    employee_ids: Optional[str] = "All"
 
 class ProductModel(BaseModel):
     name: str
@@ -1830,7 +1832,10 @@ def list_holidays(
     conn: sqlite3.Connection = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    rows = conn.execute("SELECT holiday_date, holiday_name, created_at FROM holidays ORDER BY holiday_date ASC").fetchall()
+    try:
+        rows = conn.execute("SELECT holiday_date, holiday_name, COALESCE(department, 'All') AS department, COALESCE(employee_ids, 'All') AS employee_ids, created_at FROM holidays ORDER BY holiday_date ASC").fetchall()
+    except Exception:
+        rows = conn.execute("SELECT holiday_date, holiday_name, 'All' AS department, 'All' AS employee_ids, created_at FROM holidays ORDER BY holiday_date ASC").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -1858,10 +1863,18 @@ def add_holiday(
             detail=f"Holiday already declared: {existing['holiday_name'] or 'Holiday'}",
         )
     now = desktop_app.now_text()
-    conn.execute(
-        "INSERT INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?)",
-        (holiday_date, holiday_name, now),
-    )
+    department = str(getattr(h, "department", "All") or "All").strip() or "All"
+    employee_ids = str(getattr(h, "employee_ids", "All") or "All").strip() or "All"
+    try:
+        conn.execute(
+            "INSERT INTO holidays(holiday_date, holiday_name, department, employee_ids, created_at) VALUES(?,?,?,?,?)",
+            (holiday_date, holiday_name, department, employee_ids, now),
+        )
+    except Exception:
+        conn.execute(
+            "INSERT INTO holidays(holiday_date, holiday_name, created_at) VALUES(?,?,?)",
+            (holiday_date, holiday_name, now),
+        )
     _record_account_audit(conn, "Holiday declared", f"{holiday_date}: {holiday_name}")
     conn.commit()
     return {"success": True}
