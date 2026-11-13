@@ -1214,32 +1214,30 @@ export default function App() {
         </div>
       </header>
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
-        {tab==='home'&&(
-          <HomeWorkspace
-            user={user}
-            business={data.homeBusiness}
-            theme={theme}
-            onThemeChange={setTheme}
-            wallpaper={wallpaper}
-            wallpaperStyles={WALLPAPER_STYLES}
-            onWallpaperChange={setWallpaper}
-            onCustomWallpaperUpload={uploadCustomWallpaper}
-            canRollback={canAdminEmployees}
-            canAdminEmployees={canAdminEmployees}
-            employees={data.employees}
-            authUsers={authUsers}
-            newAccount={newAccount}
-            setNewAccount={setNewAccount}
-            createManagedAccount={createManagedAccount}
-            showCreatePerms={showCreatePerms}
-            setShowCreatePerms={setShowCreatePerms}
-            createPermsDraft={createPermsDraft}
-            setCreatePermsDraft={setCreatePermsDraft}
-            openPermissionsModal={openPermissionsModal}
-            toggleAccountActive={toggleAccountActive}
-            onNavigate={setTab}
-          />
-        )}
+        {tab==='home'&&<HomeWorkspace
+          user={user}
+          business={data.homeBusiness}
+          theme={theme}
+          onThemeChange={setTheme}
+          wallpaper={wallpaper}
+          wallpaperStyles={WALLPAPER_STYLES}
+          onWallpaperChange={setWallpaper}
+          onCustomWallpaperUpload={uploadCustomWallpaper}
+          canRollback={canAdminEmployees}
+          canAdminEmployees={canAdminEmployees}
+          employees={data.employees}
+          authUsers={authUsers}
+          newAccount={newAccount}
+          setNewAccount={setNewAccount}
+          createManagedAccount={createManagedAccount}
+          showCreatePerms={showCreatePerms}
+          setShowCreatePerms={setShowCreatePerms}
+          createPermsDraft={createPermsDraft}
+          setCreatePermsDraft={setCreatePermsDraft}
+          openPermissionsModal={openPermissionsModal}
+          toggleAccountActive={toggleAccountActive}
+          onNavigate={setTab}
+        />}
         {tab==='dashboard'&&<>
           <div className="rounded-2xl border border-cyan-400/25 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
