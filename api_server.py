@@ -181,7 +181,7 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
     if token and standalone:
         token_hash = __import__("hashlib").sha256(token.encode("utf-8")).hexdigest()
         session = conn.execute(
-            """SELECT u.id, u.username, u.display_name, u.role, u.security_question, u.answer_hash
+            """SELECT u.id, u.username, u.display_name, u.role
                FROM web_auth_sessions s
                JOIN auth_users u ON u.id=s.user_id
                WHERE s.token_hash=? AND s.expires_at>? AND u.active=1""",
@@ -189,11 +189,14 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
         ).fetchone()
         if session:
             d = dict(session)
-            d["has_recovery_question"] = bool(
-                d.get("security_question")
-                and d.get("security_question") != "(Pending user setup)"
-                and d.get("answer_hash")
-            )
+            has_rec = False
+            try:
+                rec_row = conn.execute("SELECT security_question, answer_hash FROM auth_users WHERE id=?", (d["id"],)).fetchone()
+                if rec_row and rec_row["security_question"] and rec_row["security_question"] != "(Pending user setup)" and rec_row["answer_hash"]:
+                    has_rec = True
+            except Exception:
+                has_rec = False
+            d["has_recovery_question"] = has_rec
             return d
     elif token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
@@ -398,16 +401,19 @@ def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
     token = secrets.token_hex(24)
+    has_rec = False
+    try:
+        if row["security_question"] and row["security_question"] != "(Pending user setup)" and row["answer_hash"]:
+            has_rec = True
+    except Exception:
+        has_rec = False
+
     user_info = {
         "id": row["id"],
         "username": row["username"],
         "display_name": row["display_name"] or row["username"],
         "role": row["role"],
-        "has_recovery_question": bool(
-            row["security_question"]
-            and row["security_question"] != "(Pending user setup)"
-            and row["answer_hash"]
-        ),
+        "has_recovery_question": has_rec,
     }
     if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
         # Standalone requests authenticate against SQLite, not this process-local
