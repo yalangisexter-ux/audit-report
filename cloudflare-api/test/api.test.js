@@ -538,3 +538,66 @@ test("employee status, targets, chat, and regional export endpoints respond succ
   const kpiBody = await kpiRes.json();
   assert.equal(kpiBody.kpis.total_employees, 5);
 });
+
+test("storefront live order tracking endpoint validates code and returns order with items", async () => {
+  const mockOrder = {
+    id: 42,
+    order_code: "USA-RS-20261113-XYZ",
+    customer_name: "Rahul Verma",
+    phone: "9876543210",
+    email: "rahul@example.com",
+    shipping_address: "Flat 402, Calisthenics Arena, Hyderabad 500081",
+    order_status: "Confirmed",
+    payment_method: "Instant UPI / QR",
+    payment_status: "Paid",
+    subtotal: 4299,
+    total_amount: 4299,
+    customer_note: "Please deliver after 5 PM",
+    created_at: "2026-11-13T08:00:00Z",
+    updated_at: "2026-11-13T08:30:00Z"
+  };
+  const mockItems = [
+    { product_name: "USA Raw Strength 100% Whey Isolate", sku: "RSC-WHEY-ISO", quantity: 1, unit: "JAR", unit_price: 4299, line_total: 4299 }
+  ];
+
+  const DB = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            async first() {
+              if (sql.includes("FROM store_orders WHERE order_code=?")) {
+                return String(values[0]).toUpperCase() === "USA-RS-20261113-XYZ" ? mockOrder : null;
+              }
+              return null;
+            },
+            async all() {
+              if (sql.includes("FROM store_order_items WHERE order_id=?")) {
+                return values[0] === 42 ? { results: mockItems } : { results: [] };
+              }
+              return { results: [] };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  // Missing code query
+  const resMissing = await worker.fetch(new Request("https://example.com/api/store/track", { method: "GET" }), { DB });
+  assert.equal(resMissing.status, 400);
+
+  // Unknown order code
+  const resNotFound = await worker.fetch(new Request("https://example.com/api/store/track?code=USA-RS-NOTFOUND", { method: "GET" }), { DB });
+  assert.equal(resNotFound.status, 404);
+
+  // Valid order code
+  const resValid = await worker.fetch(new Request("https://example.com/api/store/track?code=USA-RS-20261113-XYZ", { method: "GET" }), { DB });
+  assert.equal(resValid.status, 200);
+  const data = await resValid.json();
+  assert.equal(data.order_code, "USA-RS-20261113-XYZ");
+  assert.equal(data.order_status, "Confirmed");
+  assert.equal(data.customer_name, "Rahul Verma");
+  assert.equal(data.items.length, 1);
+  assert.equal(data.items[0].sku, "RSC-WHEY-ISO");
+});

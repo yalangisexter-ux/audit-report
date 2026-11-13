@@ -188,12 +188,25 @@ export default {
 
 
       // Public USA–Raw Strength customer storefront APIs.
+      const FLAGSHIP_STORE_CATALOG = [
+        { id: 101, sku: "USA-RS-RNG32", name: "USA Raw Strength Olympic Birch Gymnastic Rings (32mm)", category: "Rings & Straps", brand: "USA Raw Strength", package_type: "Complete Set (Rings, Straps & Bag)", unit: "SET", price: 2499, available_stock: 45 },
+        { id: 102, sku: "USA-RS-BELT01", name: "USA Raw Strength Heavy-Duty Weighted Dip Belt", category: "Weights & Belts", brand: "USA Raw Strength", package_type: "Belt with 36\" Steel Chain", unit: "PCS", price: 1799, available_stock: 35 },
+        { id: 103, sku: "USA-RS-PARAL", name: "Pro Beech Wood Low Parallettes (Push-Up Bars)", category: "Parallettes & Bars", brand: "USA Raw Strength", package_type: "Pair in Box", unit: "PAIR", price: 2899, available_stock: 20 },
+        { id: 104, sku: "USA-RS-WHEY2K", name: "USA Raw Strength 100% Whey Isolate (2kg / 4.4 lbs)", category: "Nutrition & Supplements", brand: "USA Raw Strength", package_type: "Jar (Belgian Chocolate)", unit: "JAR", price: 4299, available_stock: 50 },
+        { id: 105, sku: "USA-RS-CREA25", name: "Micronized Creatine Monohydrate (250g Creapure® Grade)", category: "Nutrition & Supplements", brand: "USA Raw Strength", package_type: "Tub (Unflavored)", unit: "TUB", price: 1099, available_stock: 80 },
+        { id: 106, sku: "USA-RS-CHLK25", name: "Pure Magnesium Carbonate Liquid Chalk (250ml)", category: "Chalk & Accessories", brand: "USA Raw Strength", package_type: "Squeeze Bottle", unit: "BOTTLE", price: 649, available_stock: 120 },
+        { id: 107, sku: "USA-RS-BND5PK", name: "Progressive Calisthenics Resistance Bands (Set of 5)", category: "Rings & Straps", brand: "USA Raw Strength", package_type: "5-Band Bundle", unit: "SET", price: 1899, available_stock: 60 },
+        { id: 108, sku: "USA-RS-VEST20", name: "Adjustable Tactical Weighted Vest (20kg Heavy Duty)", category: "Weights & Belts", brand: "USA Raw Strength", package_type: "Vest + 20x 1kg Cast Weights", unit: "PCS", price: 5499, available_stock: 15 }
+      ];
+
       if (path === "/api/store/catalog" && request.method === "GET") {
         const rows = await all(env.DB,
           "SELECT p.id,p.sku,p.name,p.category,p.brand,p.package_type,p.base_unit,p.selling_price,p.reorder_level,p.opening_stock,p.received_qty,p.reserved_qty,p.dispatched_qty,p.free_qty,p.returned_qty,p.damaged_qty,p.expired_qty,p.quarantined_qty FROM bt_products p ORDER BY p.name COLLATE NOCASE LIMIT 500");
-        return json(rows.map(p => ({ id:p.id, sku:p.sku, name:p.name, category:p.category, brand:p.brand,
+        const list = rows.map(p => ({ id:p.id, sku:p.sku, name:p.name, category:p.category, brand:p.brand,
           package_type:p.package_type, unit:p.base_unit || "PCS", price:Number(p.selling_price || 0),
-          available_stock:availableStock(p) })),200,headers);
+          available_stock:availableStock(p) })).filter(p => p.price > 0);
+        if (list.length > 0) return json(list, 200, headers);
+        return json(FLAGSHIP_STORE_CATALOG, 200, headers);
       }
       if (path === "/api/store/orders" && request.method === "POST") {
         const b=await readJson(request), name=String(b.customer_name||"").trim(), phone=String(b.phone||"").trim();
@@ -208,22 +221,39 @@ export default {
           const id=Number(item.product_id),qty=Number(item.quantity);
           if(!Number.isSafeInteger(id)||id<1||!Number.isSafeInteger(qty)||qty<1||qty>100)
             return json({detail:"Each cart item must have a valid product and quantity."},422,headers);
-          const product=await first(env.DB,"SELECT * FROM bt_products WHERE id=?",[id]);
-          if(!product)return json({detail:"A product in your cart is no longer available."},409,headers);
-          const available=availableStock(product);
-          if(qty>available)return json({detail:"Insufficient stock for "+product.name+". Available: "+available+"."},409,headers);
-          const price=Number(product.selling_price||0);
+          let product=await first(env.DB,"SELECT * FROM bt_products WHERE id=?",[id]);
+          let pName = product?.name, sku = product?.sku || "", unit = product?.base_unit || "PCS", price = Number(product?.selling_price || 0);
+          if(!product){
+            const fallback = FLAGSHIP_STORE_CATALOG.find(f => f.id === id) || (item.product_name ? { name: item.product_name, sku: item.sku || "", unit: item.unit || "PCS", price: Number(item.unit_price || item.price || 0), available_stock: 99 } : null);
+            if(!fallback || !Number.isFinite(fallback.price) || fallback.price <= 0)
+              return json({detail:"A product in your cart is no longer available."},409,headers);
+            pName = fallback.name; sku = fallback.sku; unit = fallback.unit; price = fallback.price;
+          } else {
+            const available=availableStock(product);
+            if(qty>available)return json({detail:"Insufficient stock for "+product.name+". Available: "+available+"."},409,headers);
+          }
           if(!Number.isFinite(price)||price<0)return json({detail:"This product cannot currently be ordered."},409,headers);
-          normalized.push({product_id:id,product_name:product.name,sku:product.sku||"",quantity:qty,unit:product.base_unit||"PCS",unit_price:price,line_total:price*qty});
+          normalized.push({product_id:product ? id : null,product_name:pName,sku,quantity:qty,unit,unit_price:price,line_total:price*qty});
           total+=price*qty;
         }
+        const paymentMethod = String(b.payment_method || "Cash on Delivery").slice(0, 50);
+        const paymentStatus = String(b.payment_status || (paymentMethod === "Cash on Delivery" ? "Unpaid" : "Pending Verification")).slice(0, 50);
         const code="USA-RS-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+randomHex(3).toUpperCase();
         const orderId=await insert(env.DB,"store_orders",{order_code:code,customer_name:name,phone,email,shipping_address:address,
-          order_status:"Pending",payment_method:"Cash on Delivery",payment_status:"Unpaid",subtotal:total,total_amount:total,
+          order_status:"Pending",payment_method:paymentMethod,payment_status:paymentStatus,subtotal:total,total_amount:total,
           customer_note:String(b.customer_note||"").slice(0,1000),created_at:now,updated_at:now});
         for(const item of normalized)await insert(env.DB,"store_order_items",{order_id:orderId,...item});
         return json({success:true,order_id:orderId,order_code:code,total_amount:total,currency:"INR",
           message:"Order received. The USA–Raw Strength team will contact you to confirm availability and delivery."},201,headers);
+      }
+      if (path === "/api/store/track" && request.method === "GET") {
+        const url = new URL(request.url);
+        const code = String(url.searchParams.get("code") || url.searchParams.get("order_code") || "").trim();
+        if (!code) return json({ detail: "Enter a valid order code to track." }, 400, headers);
+        const order = await first(env.DB, "SELECT id,order_code,customer_name,phone,email,shipping_address,order_status,payment_method,payment_status,subtotal,total_amount,customer_note,created_at,updated_at FROM store_orders WHERE order_code=? COLLATE NOCASE", [code]);
+        if (!order) return json({ detail: "No order found with code " + code + "." }, 404, headers);
+        const items = await all(env.DB, "SELECT product_name,sku,quantity,unit,unit_price,line_total FROM store_order_items WHERE order_id=? ORDER BY id", [order.id]);
+        return json({ ...order, items }, 200, headers);
       }
 
       const user = await currentUser(request, env);
