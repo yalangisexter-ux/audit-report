@@ -1095,7 +1095,7 @@ export default function App() {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              onClick={()=>{setLogin({username:'Admin',password:login.password||'admin123'});setError('');}}
+              onClick={()=>{setLogin({username:'Admin',password:'Shiva@01'});setError('');}}
               className={'rounded-lg border px-2.5 py-1.5 text-left text-xs transition flex flex-col '+(login.username==='Admin'?'border-cyan-400 bg-cyan-400/20 text-cyan-200 font-bold shadow-sm':'border-white/10 bg-slate-950/60 text-slate-300 hover:border-cyan-400/40 hover:text-white')}
             >
               <span className="font-extrabold text-white flex items-center gap-1">🏢 Customer <span className="text-cyan-300">Admin</span></span>
@@ -1103,7 +1103,7 @@ export default function App() {
             </button>
             <button
               type="button"
-              onClick={()=>{setLogin({username:'admin',password:login.password||'admin123'});setError('');}}
+              onClick={()=>{setLogin({username:'admin',password:'kiran123'});setError('');}}
               className={'rounded-lg border px-2.5 py-1.5 text-left text-xs transition flex flex-col '+(login.username==='admin'?'border-purple-400 bg-purple-400/20 text-purple-200 font-bold shadow-sm':'border-white/10 bg-slate-950/60 text-slate-300 hover:border-purple-400/40 hover:text-white')}
             >
               <span className="font-extrabold text-white flex items-center gap-1">⚡ Dev / Test <span className="text-purple-300">admin</span></span>
