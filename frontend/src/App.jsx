@@ -8,7 +8,7 @@ import couplesWallpaper from '../../assets/wallpapers/photos/love_couples.jpg';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase, Settings,
   RefreshCw, CheckCircle2, Menu, LogOut, MessageCircle, Store, Archive, ClipboardList,
-  Plus, Trash2, Search, Download, Clock3, Upload, Globe, FileText, X
+  Plus, Trash2, Search, Download, Clock3, Upload, Globe, FileText, X, Shield
 } from 'lucide-react';
 import TaskManager from './TaskManager';
 import PrintCenter from './PrintCenter';
