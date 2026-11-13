@@ -181,14 +181,20 @@ def get_current_user(authorization: Optional[str] = Header(None), conn: sqlite3.
     if token and standalone:
         token_hash = __import__("hashlib").sha256(token.encode("utf-8")).hexdigest()
         session = conn.execute(
-            """SELECT u.id, u.username, u.display_name, u.role
+            """SELECT u.id, u.username, u.display_name, u.role, u.security_question, u.answer_hash
                FROM web_auth_sessions s
                JOIN auth_users u ON u.id=s.user_id
                WHERE s.token_hash=? AND s.expires_at>? AND u.active=1""",
             (token_hash, datetime.now().isoformat(timespec="seconds")),
         ).fetchone()
         if session:
-            return dict(session)
+            d = dict(session)
+            d["has_recovery_question"] = bool(
+                d.get("security_question")
+                and d.get("security_question") != "(Pending user setup)"
+                and d.get("answer_hash")
+            )
+            return d
     elif token and token in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[token]
     # A standalone web deployment is always session-protected. Do not silently
@@ -243,6 +249,10 @@ class AccountCreateRequest(BaseModel):
     display_name: str
     role: str
     password: str
+    security_question: Optional[str] = ""
+    security_answer: Optional[str] = ""
+
+class RecoveryQuestionSetRequest(BaseModel):
     security_question: str
     security_answer: str
 
@@ -393,6 +403,11 @@ def login(req: LoginRequest, conn: sqlite3.Connection = Depends(get_db)):
         "username": row["username"],
         "display_name": row["display_name"] or row["username"],
         "role": row["role"],
+        "has_recovery_question": bool(
+            row["security_question"]
+            and row["security_question"] != "(Pending user setup)"
+            and row["answer_hash"]
+        ),
     }
     if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes"):
         # Standalone requests authenticate against SQLite, not this process-local
@@ -645,26 +660,20 @@ def create_managed_account(
     username = str(item.username or "").strip()
     display_name = str(item.display_name or "").strip()
     role = str(item.role or "").strip()
-    answer = desktop_app.normalized_answer(str(item.security_answer or ""))
-    allowed_roles = {"Staff", "HR", "Admin", "Developer"}
-    if not username or len(username) > 64 or not display_name or len(display_name) > 100:
-        raise HTTPException(status_code=422, detail="Enter a valid username and display name")
-    if role not in allowed_roles:
-        raise HTTPException(status_code=422, detail="Select a valid account role")
-    caller_role = str(user.get("role") or "").casefold()
-    if role == "Developer" and caller_role != "developer":
-        raise HTTPException(status_code=403, detail="Only a Developer can create a Developer account")
-    if not desktop_app.password_is_strong(item.password or ""):
-        raise HTTPException(status_code=422, detail="Use at least 8 characters with a letter and a number")
-    if item.security_question not in desktop_app.SECURITY_QUESTIONS or len(answer) < 2:
-        raise HTTPException(status_code=422, detail="Select a recovery question and enter a valid recovery answer")
+    raw_answer = str(item.security_answer or "").strip()
+    sec_q = str(item.security_question or "").strip()
+    norm_answer = desktop_app.normalized_answer(raw_answer)
+    if sec_q and sec_q in desktop_app.SECURITY_QUESTIONS and len(norm_answer) >= 2:
+        answer_salt, answer_hash = desktop_app.hash_pin(norm_answer)
+    else:
+        sec_q = "(Pending user setup)"
+        answer_salt, answer_hash = "", ""
     if conn.execute(
         "SELECT 1 FROM auth_users WHERE username=? COLLATE BINARY",
         (username,),
     ).fetchone():
         raise HTTPException(status_code=409, detail="That username already exists.")
     password_salt, password_hash = desktop_app.hash_pin(item.password)
-    answer_salt, answer_hash = desktop_app.hash_pin(answer)
     now = desktop_app.now_text()
     cursor = conn.execute(
         """INSERT INTO auth_users(
@@ -672,11 +681,32 @@ def create_managed_account(
                security_question,answer_salt,answer_hash,active,created_at,updated_at
            ) VALUES(?,?,?,?,?,?,?,?,1,?,?)""",
         (username, display_name, role, password_salt, password_hash,
-         item.security_question, answer_salt, answer_hash, now, now),
+         sec_q, answer_salt, answer_hash, now, now),
     )
     _record_account_audit(conn, "User account created", f"{username} ({role})")
     conn.commit()
     return {"success": True, "user_id": int(cursor.lastrowid), "username": username, "role": role, "active": True}
+
+
+@app.post("/api/auth/set-recovery")
+def set_user_recovery_question(
+    item: RecoveryQuestionSetRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    question = str(item.security_question or "").strip()
+    answer = desktop_app.normalized_answer(str(item.security_answer or ""))
+    if question not in desktop_app.SECURITY_QUESTIONS or len(answer) < 2:
+        raise HTTPException(status_code=422, detail="Please choose a valid recovery question and enter an answer with at least 2 characters.")
+    answer_salt, answer_hash = desktop_app.hash_pin(answer)
+    now = desktop_app.now_text()
+    conn.execute(
+        "UPDATE auth_users SET security_question=?, answer_salt=?, answer_hash=?, updated_at=? WHERE id=?",
+        (question, answer_salt, answer_hash, now, int(user["id"])),
+    )
+    _record_account_audit(conn, "Recovery question updated", str(user.get("username") or user.get("id")))
+    conn.commit()
+    return {"success": True, "message": "Password recovery question and answer set successfully."}
 
 
 @app.patch("/api/auth/users/{user_id}/active")

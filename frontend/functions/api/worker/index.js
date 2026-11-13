@@ -113,7 +113,7 @@ export default {
         if (!body || typeof body.username !== "string" || typeof body.password !== "string" ||
             body.username.length > 128 || body.password.length > 1024) return json({ error: "Invalid username or password" }, 400, headers);
         const user = await env.DB.prepare(
-          "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.permissions, e.name AS employee_name, u.password_salt, u.password_hash FROM auth_users u LEFT JOIN employees e ON u.employee_id = e.id WHERE u.username = ? COLLATE BINARY AND u.active = 1"
+          "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.permissions, e.name AS employee_name, u.security_question, u.answer_hash, u.password_salt, u.password_hash FROM auth_users u LEFT JOIN employees e ON u.employee_id = e.id WHERE u.username = ? COLLATE BINARY AND u.active = 1"
         ).bind(body.username.trim()).first();
         if (!user || !await verifyPassword(body.password, user.password_salt, user.password_hash)) {
           return json({ error: "Invalid username or password" }, 401, headers);
@@ -683,16 +683,17 @@ export default {
         const employees=await all(env.DB,"SELECT id,name,department,joining_date FROM employees WHERE active=1 ORDER BY name COLLATE NOCASE");
         if(!employees.length)return json({date:selected,month_start:monthStart,through_date:end,rows:[]},200,headers);
         const ids=employees.map(e=>Number(e.id)),marks=ids.map(()=>"?").join(",");
-        const [tasks,attendance,holidays,setting]=await Promise.all([
+        const [tasks,attendance,holidays,setting,sundaySetting]=await Promise.all([
           all(env.DB,"SELECT employee_id,MIN(task_date) AS first_day FROM tasks WHERE employee_id IN ("+marks+") AND task_date<>'' GROUP BY employee_id",ids),
           all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date<=? ORDER BY employee_id,work_date",[...ids,end]),
           all(env.DB,"SELECT holiday_date,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date<=?",[end]),
-          first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'")
+          first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'"),
+          first(env.DB,"SELECT value FROM settings WHERE key='sunday_workday'")
         ]);
         const firstTask=new Map(tasks.map(r=>[Number(r.employee_id),r.first_day]));
         const attBy=new Map(ids.map(id=>[id,[]]));for(const r of attendance)attBy.get(Number(r.employee_id)).push(r);
         const holidayMap=new Map(holidays.map(h=>[h.holiday_date, h]));
-        const weekdays=new Set(normalizeWeekdays(setting?.value));
+        const weekdays=new Set(normalizeWeekdays(setting?.value, sundaySetting?.value));
         const rows=[];
         for(const emp of employees){
           const id=Number(emp.id);let start=validDate(emp.joining_date)?emp.joining_date:firstTask.get(id);
@@ -753,10 +754,7 @@ export default {
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const row=await first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'");
         const sundayRow=await first(env.DB,"SELECT value FROM settings WHERE key='sunday_workday'");
-        let normDays = normalizeWeekdays(row?.value);
-        if(sundayRow && String(sundayRow.value).trim() === "0"){
-          normDays = normDays.filter(d => d !== 6);
-        }
+        const normDays = normalizeWeekdays(row?.value, sundayRow?.value);
         return json({weekdays:normDays,sunday_configurable:true},200,headers);
       }
       if(path==="/api/settings/working-weekdays"&&request.method==="PUT"){
@@ -1050,9 +1048,10 @@ export default {
         const starts=new Map();
         let productivity=[],avgProductivity=0;
         if(ids.length){
-          const [activityRows,setting]=await Promise.all([
+          const [activityRows,setting,sundaySetting]=await Promise.all([
             all(env.DB,"SELECT employee_id,MIN(activity_date) AS first_date FROM (SELECT employee_id,task_date AS activity_date FROM tasks WHERE employee_id IN ("+marks+") AND task_date<=? UNION ALL SELECT employee_id,work_date AS activity_date FROM attendance WHERE employee_id IN ("+marks+") AND work_date<=?) GROUP BY employee_id",[...ids,today,...ids,today]),
-            first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'")
+            first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'"),
+            first(env.DB,"SELECT value FROM settings WHERE key='sunday_workday'")
           ]);
           const activityById=new Map(activityRows.map(r=>[Number(r.employee_id),r.first_date]));
           for(const e of employees){const id=Number(e.id);starts.set(id,validDate(e.joining_date)?e.joining_date:(validDate(activityById.get(id))?activityById.get(id):today));}
@@ -1065,7 +1064,7 @@ export default {
           const taskBy=new Map(ids.map(id=>[id,[]])),attendanceBy=new Map(ids.map(id=>[id,[]]));
           for(const row of taskHistory)taskBy.get(Number(row.employee_id)).push(row);
           for(const row of attendanceHistory)attendanceBy.get(Number(row.employee_id)).push(row);
-          const holidays=new Set(holidayRows.map(h=>h.holiday_date)),weekdays=new Set(normalizeWeekdays(setting?.value)),scores=[];
+          const holidays=new Set(holidayRows.map(h=>h.holiday_date)),weekdays=new Set(normalizeWeekdays(setting?.value, sundaySetting?.value)),scores=[];
           const scheduled=d=>validDate(d)&&weekdays.has((new Date(d+"T00:00:00Z").getUTCDay()+6)%7)&&!holidays.has(d);
           for(const e of employees){
             const id=Number(e.id),start=starts.get(id),employeeTasks=taskBy.get(id),employeeAttendance=attendanceBy.get(id);
@@ -1614,7 +1613,7 @@ async function ensureGroup(db,name,now){const n=String(name||"").trim();if(!n)re
 async function upsertTarget(db,employee,date,target,status,now){await db.prepare("INSERT INTO employee_targets(employee_id,target_date,target,target_status,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(employee_id,target_date) DO UPDATE SET target=excluded.target,target_status=excluded.target_status,updated_at=excluded.updated_at").bind(employee,date,String(target||""),String(status||""),now).run();}
 async function audit(db,user,action,details){await db.prepare("INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)").bind(new Date().toISOString(),action,user.username+": "+details).run();}
 function taskValues(b){const status=String(b.status??"Not started").trim(),custom=b.custom_values??b.custom_fields??"",approval_status=String(b.approval_status||"Pending").trim();return {employee_id:Number(b.employee_id||1),task_date:String(b.task_date||new Date().toISOString().slice(0,10)),title:String(b.title||"").trim(),department:String(b.department||b.category||"").trim(),details:String(b.details||b.notes||"").trim(),due_time:String(b.due_time||"").trim(),priority:String(b.priority||"Normal").trim(),status,progress:Number(b.progress||0),proof_url:String(b.proof_url||"").trim(),proof_note:String(b.proof_note||"").trim(),submitted_at:String(b.submitted_at||""),manager_note:String(b.manager_note||b.next_action||"").trim(),expose_link:b.expose_link?1:0,target_qty:String(b.target_qty||"").trim(),actual_qty:String(b.actual_qty||"").trim(),next_action:String(b.next_action||b.manager_note||"").trim(),custom_values:typeof custom==="string"?custom:JSON.stringify(custom),approval_status};}
-function normalizeWeekdays(value){const a=String(value||"0,1,2,3,4,6").split(",").map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6);return [...new Set(a.concat([6]))].sort();}
+function normalizeWeekdays(value, sundaySetting){let days;if(value===null||value===undefined||String(value).trim()===""){days=[0,1,2,3,4,6];}else{days=String(value).split(",").map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6);if(!days.length)days=[0,1,2,3,4,6];}if(sundaySetting!==undefined&&sundaySetting!==null&&String(sundaySetting).trim()==="0"){days=days.filter(d=>d!==6);}return [...new Set(days)].sort((x,y)=>x-y);}
 function validDate(s){if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+"T00:00:00Z");return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===s;}
 function addDays(value,n=1){const d=new Date(value+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
 function validTime(s){return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);}
@@ -1686,6 +1685,11 @@ function publicUser(u){
       perms = u.permissions;
     }
   }
+  const hasRecovery = Boolean(
+    u.security_question &&
+    u.security_question !== "(Pending user setup)" &&
+    (u.answer_hash || u.has_recovery_question)
+  );
   return {
     id: u.id,
     username: u.username,
@@ -1693,7 +1697,8 @@ function publicUser(u){
     role: u.role,
     employee_id: u.employee_id||null,
     employee_name: u.employee_name||null,
-    permissions: perms
+    permissions: perms,
+    has_recovery_question: hasRecovery
   };
 }
 function role(user){return String(user?.role||"").trim().toLowerCase();}
@@ -1703,7 +1708,7 @@ async function currentUser(request, env) {
   if (!token || token.length > 256) return null;
   const hash = await sha256(token);
   const row = await env.DB.prepare(
-    "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.permissions, e.name AS employee_name FROM web_auth_sessions s JOIN auth_users u ON u.id=s.user_id LEFT JOIN employees e ON u.employee_id=e.id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1"
+    "SELECT u.id, u.username, u.display_name, u.role, u.employee_id, u.permissions, e.name AS employee_name, u.security_question, u.answer_hash FROM web_auth_sessions s JOIN auth_users u ON u.id=s.user_id LEFT JOIN employees e ON u.employee_id=e.id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1"
   ).bind(hash, new Date().toISOString()).first();
   return row ? publicUser(row) : null;
 }

@@ -293,7 +293,11 @@ export default function App() {
   const [accountRoleDrafts,setAccountRoleDrafts]=useState({});
   const [accountPasswordResetTarget,setAccountPasswordResetTarget]=useState(null);
   const [accountPasswordDraft,setAccountPasswordDraft]=useState({password:'',confirm:''});
-  const [newAccount,setNewAccount]=useState({username:'',display_name:'',role:'Employee',employee_id:'',password:'',security_question:'What was the name of your first school?',security_answer:''});
+  const [newAccount,setNewAccount]=useState({username:'',display_name:'',role:'Employee',employee_id:'',password:'',security_question:'(Pending user setup)',security_answer:''});
+  const [showRecoveryModal,setShowRecoveryModal]=useState(false);
+  const [recoveryForm,setRecoveryForm]=useState({security_question:'What was the name of your first school?',security_answer:'',show_answer:false});
+  const [recoverySaving,setRecoverySaving]=useState(false);
+  const [recoveryBannerDismissed,setRecoveryBannerDismissed]=useState(false);
   const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
   const [data,setData]=useState({dashboard:null,homeBusiness:null,employees:[],employeeGroups:[],tasks:[],attendance:{date:today(),roster:[],remarks_options:[]},attendanceSummary:{rows:[]},holidays:[],products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,archive:[],db:null});
   const [query,setQuery]=useState('');
@@ -524,10 +528,23 @@ export default function App() {
       await apiFetch('/auth/users',{method:'POST',body:JSON.stringify(payload)});
       const rows=await apiFetch('/auth/users');
       setAuthUsers(rows);
-      setNewAccount({username:'',display_name:'',role:'Employee',employee_id:'',password:'',security_question:'',security_answer:''});
+      setNewAccount({username:'',display_name:'',role:'Employee',employee_id:'',password:'',security_question:'(Pending user setup)',security_answer:''});
       setShowCreatePerms(false);
       notify('Account created and activated');
     }catch(e){notify(e.message)}
+  };
+  const submitRecoveryQuestion=async(e)=>{
+    e.preventDefault();
+    const ans=String(recoveryForm.security_answer||'').trim();
+    if(ans.length<2){notify('Enter a recovery answer with at least 2 characters');return;}
+    setRecoverySaving(true);
+    try{
+      const res=await apiFetch('/auth/set-recovery',{method:'POST',body:JSON.stringify({security_question:recoveryForm.security_question,security_answer:ans})});
+      notify(res.message||'Recovery question set successfully');
+      setUser(u=>({...u,has_recovery_question:true}));
+      setShowRecoveryModal(false);
+      setRecoveryForm(p=>({...p,security_answer:''}));
+    }catch(err){notify(err.message)}finally{setRecoverySaving(false)}
   };
   const openPermissionsModal = (targetUser) => {
     setPermissionsModalUser(targetUser);
@@ -1213,6 +1230,16 @@ export default function App() {
           </button>
         </div>
       </header>
+      {user&&user.has_recovery_question===false&&!recoveryBannerDismissed&&<div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+        <div className="flex items-center gap-2">
+          <Shield size={16} className="shrink-0 text-amber-400" />
+          <span><strong>Action Recommended:</strong> You have not configured your confidential password recovery question.</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={()=>setShowRecoveryModal(true)} className="rounded-lg bg-amber-400 px-3 py-1 font-bold text-slate-950 hover:bg-amber-300 transition text-xs">Set Up Now</button>
+          <button type="button" onClick={()=>setRecoveryBannerDismissed(true)} className="px-2 text-amber-400 hover:text-white" title="Dismiss">✕</button>
+        </div>
+      </div>}
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
         {tab==='home'&&<HomeWorkspace
           user={user}
@@ -1236,6 +1263,7 @@ export default function App() {
           setCreatePermsDraft={setCreatePermsDraft}
           openPermissionsModal={openPermissionsModal}
           toggleAccountActive={toggleAccountActive}
+          openRecoveryModal={()=>setShowRecoveryModal(true)}
           onNavigate={setTab}
         />}
         {tab==='dashboard'&&<>
@@ -1377,8 +1405,11 @@ export default function App() {
             }}>{['Employee','Staff','HR','Admin','Developer'].map(role=><option key={role} value={role} disabled={role==='Developer'&&String(user?.role||'').toLowerCase()!=='developer'}>{role}</option>)}</select></label>
             <label className="text-xs text-slate-400">Map to Employee<select className={field+' mt-1'} value={newAccount.employee_id||''} onChange={e=>{const empId=e.target.value;const emp=data.employees.find(x=>String(x.id)===String(empId));setNewAccount(p=>({...p,employee_id:empId,display_name:p.display_name&&p.display_name!==p.username?p.display_name:(emp?emp.name:p.display_name)}));}}><option value="">None / Unmapped</option>{data.employees.map(emp=><option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code||'EMP'+emp.id})</option>)}</select></label>
             <label className="text-xs text-slate-400">Initial password<input className={field+' mt-1'} type="password" autoComplete="new-password" minLength={8} value={newAccount.password} onChange={e=>setNewAccount(p=>({...p,password:e.target.value}))} required/></label>
-            <label className="text-xs text-slate-400">Recovery question<select className={field+' mt-1'} value={newAccount.security_question} onChange={e=>setNewAccount(p=>({...p,security_question:e.target.value}))}><option value="">(Account owner configures on sign-in)</option>{['What was the name of your first school?','What is the name of the city where you were born?','What was your childhood nickname?','What is the name of your first teacher?','What was the first concert or live event you attended?'].map(q=><option key={q}>{q}</option>)}</select></label>
-            <label className="text-xs text-slate-400 sm:col-span-2 xl:col-span-3">Recovery answer (Optional - account owner sets on own sign-in)<input className={field+' mt-1'} type="password" autoComplete="off" placeholder="Leave empty for employee to set" value={newAccount.security_answer} onChange={e=>setNewAccount(p=>({...p,security_answer:e.target.value}))}/></label>
+            <div className="flex flex-col justify-end">
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-950/40 p-2.5 text-xs text-cyan-200">
+                <span className="font-bold text-white">🔐 Account Recovery:</span> Kept confidential. Configured by the employee upon sign-in.
+              </div>
+            </div>
             
             <div className="sm:col-span-2 xl:col-span-3 flex items-center justify-between">
               <button
@@ -1586,9 +1617,86 @@ export default function App() {
             </div>
           </div>
         </Panel>}
-        {tab==='settings'&&<><Panel title="Employee data actions"><div className="flex flex-wrap gap-2"><button type="button" className={btn} onClick={downloadEmployeesCsv}>Export employees CSV</button><button type="button" className={btn} onClick={exposeAllProofLinks}>Expose all proof links</button></div><p className="mt-2 text-xs text-slate-500">CSV includes active and inactive employee records. Global exposure enables full proof URLs for every task and the default reports.</p></Panel><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><button className="mt-3 rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300" onClick={logout}>Sign out</button></Panel><Panel title="Database and encrypted sync"><div className="mb-3 grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database</p><p className="mt-1 text-sm font-semibold">{data.db?.database_connected?'Connected':'Unavailable'}</p><p className="text-xs text-slate-500">{data.db?.database_name||'Waiting for status'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database size</p><p className="mt-1 text-sm font-semibold">{data.db?.database_size_bytes!=null?(data.db.database_size_bytes/1024/1024).toFixed(2)+' MB':'—'}</p><p className="text-xs text-slate-500">Integrity: {data.db?.database_integrity||'Unknown'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Encrypted sync</p><p className="mt-1 text-sm font-semibold">{data.db?.sync?.status||'Status unavailable'}</p><p className="text-xs text-slate-500">{data.db?.sync?.configured?'Configured':'Not configured'}</p></div></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(data.db?.counts||{},null,2)}</pre><div className="mt-3 flex flex-wrap gap-2"><button className={btn} onClick={downloadDatabaseBackup}><Download size={16}/> Download database backup</button><button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={Boolean(data.db?.sync?.busy)} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Encrypted sync completed':(r.error||r.status||'Sync did not complete'));await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></div>{canAdminEmployees&&<div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/5 p-3"><label className="block text-xs text-slate-300">Restore database backup (Admin / Developer)<input className={field+' mt-2'} type="file" accept=".db,.sqlite,.sqlite3" onChange={e=>setRestoreFile(e.target.files?.[0]||null)}/></label><button className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2.5 text-sm text-rose-200 disabled:opacity-40" disabled={!restoreFile||restoreBusy} onClick={restoreDatabaseBackup}><Upload size={16}/>{restoreBusy?'Validating and restoring…':'Restore selected backup'}</button><p className="mt-2 text-xs text-slate-500">The server validates the SQLite file and creates a safety backup before replacement. Account names and password hashes in the restored database are preserved; browser sessions are cleared.</p></div>}</Panel></>}
+        {tab==='settings'&&<><Panel title="Employee data actions"><div className="flex flex-wrap gap-2"><button type="button" className={btn} onClick={downloadEmployeesCsv}>Export employees CSV</button><button type="button" className={btn} onClick={exposeAllProofLinks}>Expose all proof links</button></div><p className="mt-2 text-xs text-slate-500">CSV includes active and inactive employee records. Global exposure enables full proof URLs for every task and the default reports.</p></Panel><Panel title="Account"><p className="text-sm">Signed in as <b>{user.display_name||user.username}</b> · {user.role}</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-200 hover:bg-cyan-500/20" onClick={()=>setShowRecoveryModal(true)}>🛡️ Configure Recovery Question</button><button className="rounded-lg border border-white/10 px-4 py-2 text-sm text-rose-300 hover:bg-rose-500/10" onClick={logout}>Sign out</button></div></Panel><Panel title="Database and encrypted sync"><div className="mb-3 grid gap-2 sm:grid-cols-3"><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database</p><p className="mt-1 text-sm font-semibold">{data.db?.database_connected?'Connected':'Unavailable'}</p><p className="text-xs text-slate-500">{data.db?.database_name||'Waiting for status'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Database size</p><p className="mt-1 text-sm font-semibold">{data.db?.database_size_bytes!=null?(data.db.database_size_bytes/1024/1024).toFixed(2)+' MB':'—'}</p><p className="text-xs text-slate-500">Integrity: {data.db?.database_integrity||'Unknown'}</p></div><div className="rounded-lg bg-slate-950 p-3"><p className="text-xs text-slate-500">Encrypted sync</p><p className="mt-1 text-sm font-semibold">{data.db?.sync?.status||'Status unavailable'}</p><p className="text-xs text-slate-500">{data.db?.sync?.configured?'Configured':'Not configured'}</p></div></div><pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs text-slate-300">{JSON.stringify(data.db?.counts||{},null,2)}</pre><div className="mt-3 flex flex-wrap gap-2"><button className={btn} onClick={downloadDatabaseBackup}><Download size={16}/> Download database backup</button><button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2.5 text-sm text-cyan-200 disabled:opacity-50" disabled={Boolean(data.db?.sync?.busy)} onClick={async()=>{try{const r=await apiFetch('/system/sync-now',{method:'POST'});notify(r.success?'Encrypted sync completed':(r.error||r.status||'Sync did not complete'));await load()}catch(e){notify(e.message)}}}><RefreshCw size={16}/> Sync Now</button></div>{canAdminEmployees&&<div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/5 p-3"><label className="block text-xs text-slate-300">Restore database backup (Admin / Developer)<input className={field+' mt-2'} type="file" accept=".db,.sqlite,.sqlite3" onChange={e=>setRestoreFile(e.target.files?.[0]||null)}/></label><button className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-400/30 px-4 py-2.5 text-sm text-rose-200 disabled:opacity-40" disabled={!restoreFile||restoreBusy} onClick={restoreDatabaseBackup}><Upload size={16}/>{restoreBusy?'Validating and restoring…':'Restore selected backup'}</button><p className="mt-2 text-xs text-slate-500">The server validates the SQLite file and creates a safety backup before replacement. Account names and password hashes in the restored database are preserved; browser sessions are cleared.</p></div>}</Panel></>}
               {tab==='settings'&&<UpdateCenter apiFetch={apiFetch} notify={notify} canRollback={canAdminEmployees} card={card} field={field} btn={btn}/>}
 </main>
     </div>
+    {showRecoveryModal && user && (
+      <div className="fixed inset-0 z-[120] grid place-items-center bg-black/75 backdrop-blur-sm p-4">
+        <div className="w-full max-w-md rounded-3xl border border-cyan-400/30 bg-slate-900 p-6 shadow-2xl">
+          <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-xl bg-cyan-400/10 text-cyan-300 border border-cyan-400/20">
+                <Shield size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Password Recovery Question</h3>
+                <p className="text-xs text-slate-400">Account: <span className="text-cyan-200 font-semibold">{user.username}</span></p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setShowRecoveryModal(false)} className="text-slate-400 hover:text-white p-1">✕</button>
+          </div>
+          <p className="text-xs leading-relaxed text-slate-300 mb-4">
+            Only you know the answer to this question. If you ever forget your password, you will be required to answer this question to securely reset it.
+          </p>
+          <form onSubmit={submitRecoveryQuestion} className="space-y-4">
+            <label className="block text-xs font-semibold text-slate-300">
+              Security Question
+              <select
+                className="mt-1.5 w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-400"
+                value={recoveryForm.security_question}
+                onChange={e => setRecoveryForm(p => ({ ...p, security_question: e.target.value }))}
+              >
+                {[
+                  'What was the name of your first school?',
+                  'What is the name of the city where you were born?',
+                  'What was your childhood nickname?',
+                  'What is the name of your first teacher?',
+                  'What was the first concert or live event you attended?'
+                ].map(q => <option key={q} value={q}>{q}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-semibold text-slate-300">
+              Secret Answer *
+              <div className="mt-1.5 relative flex items-center">
+                <input
+                  className="w-full rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 pr-16 text-xs text-white outline-none focus:border-cyan-400"
+                  type={recoveryForm.show_answer ? 'text' : 'password'}
+                  value={recoveryForm.security_answer}
+                  onChange={e => setRecoveryForm(p => ({ ...p, security_answer: e.target.value }))}
+                  placeholder="Enter your confidential answer"
+                  minLength={2}
+                  required
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 text-[11px] font-semibold text-cyan-300 hover:underline px-2 py-1"
+                  onClick={() => setRecoveryForm(p => ({ ...p, show_answer: !p.show_answer }))}
+                >
+                  {recoveryForm.show_answer ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <span className="mt-1 block text-[11px] text-slate-500">Case-insensitive. Answers are securely hashed.</span>
+            </label>
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+                onClick={() => setShowRecoveryModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={recoverySaving}
+                className="rounded-xl bg-cyan-400 px-5 py-2 text-xs font-bold text-slate-950 hover:bg-cyan-300 disabled:opacity-50"
+              >
+                {recoverySaving ? 'Saving…' : 'Save Recovery Setup'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
   </div>;
 }
