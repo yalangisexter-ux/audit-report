@@ -1243,21 +1243,22 @@ export default function App() {
       </div>
     </aside>
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className="flex min-h-[88px] sm:min-h-[96px] shrink-0 items-center justify-between gap-2 sm:gap-3 border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 px-3 sm:px-4 py-2 shadow-lg overflow-hidden">
-        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
-          <button onClick={()=>setSidebar(true)} className="rounded-lg border border-white/10 p-2 md:hidden text-slate-300 hover:text-white shrink-0">
+      <header className="flex min-h-[88px] sm:min-h-[96px] shrink-0 items-center justify-between gap-2 sm:gap-3 border-b border-white/10 bg-slate-950/80 backdrop-blur-2xl px-3 sm:px-5 py-2.5 shadow-[0_10px_35px_-5px_rgba(0,0,0,0.7)] relative z-30">
+        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3.5">
+          <button onClick={()=>setSidebar(true)} className="rounded-xl border border-white/10 bg-white/[0.04] p-2 md:hidden text-slate-300 hover:text-white hover:border-cyan-400/40 transition shrink-0">
             <Menu size={18}/>
           </button>
-          <div className="relative rounded-xl p-[2px] bg-gradient-to-r from-cyan-400 via-indigo-500 to-purple-500 shadow-lg shadow-cyan-500/10 shrink-0">
-            <div className="h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 rounded-[10px] bg-slate-950/90 flex items-center justify-center p-1 sm:p-1.5">
+          <div className="relative rounded-2xl p-[2px] bg-gradient-to-tr from-cyan-400 via-indigo-500 to-purple-500 shadow-xl shadow-cyan-500/20 shrink-0">
+            <div className="h-12 w-12 sm:h-16 sm:w-16 md:h-18 md:w-18 rounded-[14px] bg-slate-950/90 flex items-center justify-center p-1 sm:p-1.5">
               <img src={brandLogo} alt="Raw Strength Calisthenics" className="h-full w-full object-contain" />
             </div>
           </div>
           <div className="shrink-0 flex flex-col justify-center">
-            <h1 className="text-sm sm:text-lg md:text-xl lg:text-2xl font-black tracking-tight text-white whitespace-nowrap select-none" style={{ whiteSpace: 'nowrap' }}>
+            <h1 className="text-sm sm:text-lg md:text-xl lg:text-2xl font-black tracking-tight text-white whitespace-nowrap select-none bg-gradient-to-r from-white via-slate-100 to-cyan-200 bg-clip-text text-transparent" style={{ whiteSpace: 'nowrap' }}>
               Raw Strength Calisthenics
             </h1>
-            <p className="mt-0.5 text-[9px] sm:text-[11px] md:text-xs font-extrabold tracking-[0.14em] uppercase text-cyan-300 whitespace-nowrap select-none" style={{ whiteSpace: 'nowrap' }}>
+            <p className="mt-0.5 text-[9px] sm:text-[11px] md:text-xs font-black tracking-[0.16em] uppercase text-cyan-300 whitespace-nowrap select-none flex items-center gap-1.5" style={{ whiteSpace: 'nowrap' }}>
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
               EXECUTIVE AUDIT &nbsp;•&nbsp; OPERATIONS OS &nbsp;•&nbsp; v1.3.82
             </p>
           </div>
@@ -1268,7 +1269,7 @@ export default function App() {
           <button
             type="button"
             onClick={()=>setTheme(theme==='night'?'day':'night')}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition shadow-sm ${theme==='night' ? 'border-amber-400/40 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25' : 'border-sky-400/40 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30'}`}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition shadow-sm ${theme==='night' ? 'border-amber-400/40 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25' : 'border-sky-400/40 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30'}`}
             title={theme==='night' ? "Switch to Day mode" : "Switch to Night mode"}
           >
             {theme==='night' ? '☀️ Day mode' : '🌙 Night mode'}
@@ -1277,7 +1278,7 @@ export default function App() {
           <button
             type="button"
             onClick={()=>{window.location.hash='#store';setStoreRoute(true);}}
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-cyan-400/40 bg-cyan-400/15 px-2.5 py-1.5 text-xs font-bold text-cyan-200 hover:bg-cyan-400/25 transition"
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/25 transition shadow-sm shadow-cyan-400/10"
             title="Open online customer storefront"
           >
             🛍️ Storefront ↗
@@ -1287,7 +1288,7 @@ export default function App() {
             type="button"
             onClick={()=>load()}
             title="Continuous Cloud Sync is Active. Data is continuously encrypted and synchronized automatically in the background. Click to check for updates now."
-            className="hidden 2xl:inline-flex items-center gap-1.5 rounded-lg border border-emerald-400/50 bg-gradient-to-b from-emerald-500/20 to-emerald-600/30 px-3 py-1.5 text-xs font-bold text-emerald-100 hover:from-emerald-500/30 hover:to-emerald-600/40 transition shadow-sm"
+            className="hidden 2xl:inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 transition shadow-sm"
           >
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> Auto-Synced
           </button>
@@ -1297,7 +1298,7 @@ export default function App() {
             target="_blank"
             rel="noopener noreferrer"
             title="Download the official Windows Desktop Application (.exe installer)"
-            className="hidden 2xl:inline-flex items-center gap-1.5 rounded-lg border border-purple-400/40 bg-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
+            className="hidden 2xl:inline-flex items-center gap-1.5 rounded-xl border border-purple-400/40 bg-purple-500/20 px-3 py-2 text-xs font-bold text-purple-200 hover:bg-purple-500/30 transition shadow-sm"
           >
             <Download size={13} className="text-purple-300" /> Windows (.exe)
           </a>
@@ -1305,7 +1306,7 @@ export default function App() {
           <div className="hidden xl:flex items-center gap-2">
             <select
               aria-label="Application theme"
-              className="max-w-28 rounded-lg border border-white/10 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-400"
+              className="max-w-28 rounded-xl border border-white/15 bg-slate-900/90 px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-cyan-400 transition"
               value={theme}
               onChange={e=>setTheme(e.target.value)}
             >
@@ -1313,12 +1314,12 @@ export default function App() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-slate-950/80 p-1 px-2 shadow-inner">
+          <div className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-slate-950/80 p-1 px-2.5 shadow-inner">
             <HeaderClock clockMode={clockMode} onToggleMode={()=>saveClockMode(clockMode==='digital'?'analog':'digital')}/>
             <button
               type="button"
               onClick={()=>saveClockMode(clockMode==='digital'?'analog':'digital')}
-              className="rounded bg-white/10 px-1.5 py-1 text-xs text-white hover:bg-white/20"
+              className="rounded-lg bg-white/10 px-1.5 py-1 text-xs text-white hover:bg-white/20 transition"
               title="Switch clock mode (Digital / Analog)"
             >
               🕒
@@ -1327,23 +1328,31 @@ export default function App() {
 
           <button
             onClick={()=>load()}
-            className="rounded-lg border border-white/10 p-2 text-cyan-300 hover:bg-white/5"
+            className="rounded-xl border border-white/15 bg-slate-900/80 p-2 text-cyan-300 hover:bg-cyan-400/10 hover:border-cyan-400/40 transition"
             title="Refresh all data"
           >
             <RefreshCw size={16} className={busy?'animate-spin':''}/>
           </button>
         </div>
       </header>
-      {user&&user.has_recovery_question===false&&!recoveryBannerDismissed&&<div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
-        <div className="flex items-center gap-2">
-          <Shield size={16} className="shrink-0 text-amber-400" />
-          <span><strong>Action Recommended:</strong> You have not configured your confidential password recovery question.</span>
+      {user&&user.has_recovery_question===false&&!recoveryBannerDismissed&&(
+        <div className="mx-3 sm:mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-gradient-to-r from-amber-950/70 via-amber-900/50 to-slate-950/80 backdrop-blur-2xl px-4 py-2.5 text-xs text-amber-200 shadow-lg shadow-amber-950/30">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/40 shrink-0">
+              <Shield size={15} />
+            </span>
+            <span><strong className="text-white font-extrabold">Security Setup Recommended:</strong> You have not configured your confidential password recovery question.</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={()=>setShowRecoveryModal(true)} className="rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 px-3.5 py-1.5 font-black text-slate-950 hover:brightness-110 transition text-xs shadow-md shadow-amber-400/20">
+              Set Up Now
+            </button>
+            <button type="button" onClick={()=>setRecoveryBannerDismissed(true)} className="rounded-lg p-1 text-amber-300/70 hover:text-white hover:bg-white/5 transition" title="Dismiss">
+              ✕
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={()=>setShowRecoveryModal(true)} className="rounded-lg bg-amber-400 px-3 py-1 font-bold text-slate-950 hover:bg-amber-300 transition text-xs">Set Up Now</button>
-          <button type="button" onClick={()=>setRecoveryBannerDismissed(true)} className="px-2 text-amber-400 hover:text-white" title="Dismiss">✕</button>
-        </div>
-      </div>}
+      )}
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
         {tab==='home'&&<HomeWorkspace
           user={user}
