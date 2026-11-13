@@ -433,7 +433,7 @@ export default function App() {
   },[]);
   useEffect(()=>{if(user&&token&&tab==='customers')load()},[tab,user,token]);
   useEffect(()=>{if(user&&token&&tab==='home'){apiFetch('/home/business-snapshot').then(snapshot=>setData(previous=>({...previous,homeBusiness:snapshot}))).catch(error=>notify('Home business snapshot refresh failed: '+error.message));}},[tab,user,token]);
-  useEffect(()=>{if(tab==='settings'&&user&&['admin','developer'].includes(String(user.role||'').toLowerCase())){Promise.all([apiFetch('/auth/users'),apiFetch('/settings/working-weekdays')]).then(([accounts,working])=>{setAuthUsers(accounts);setWorkingWeekdays(working.weekdays||[0,1,2,3,4,6])}).catch(e=>notify(e.message))}},[tab,user,token]);
+  useEffect(()=>{if((tab==='settings'||tab==='home')&&user&&['admin','developer'].includes(String(user.role||'').toLowerCase())){Promise.all([apiFetch('/auth/users'),apiFetch('/settings/working-weekdays')]).then(([accounts,working])=>{setAuthUsers(accounts);setWorkingWeekdays(working.weekdays||[0,1,2,3,4,6])}).catch(e=>notify(e.message))}},[tab,user,token]);
   const notify=(s)=>{setNotice(s);setTimeout(()=>setNotice(''),3500)};
   const saveClockMode=mode=>{
     const normalized=String(mode||'').trim().toLowerCase();
@@ -1214,7 +1214,32 @@ export default function App() {
         </div>
       </header>
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5">
-        {tab==='home'&&<HomeWorkspace user={user} business={data.homeBusiness} theme={theme} onThemeChange={setTheme} wallpaper={wallpaper} wallpaperStyles={WALLPAPER_STYLES} onWallpaperChange={setWallpaper} onCustomWallpaperUpload={uploadCustomWallpaper} canRollback={canAdminEmployees} onNavigate={setTab}/>}
+        {tab==='home'&&(
+          <HomeWorkspace
+            user={user}
+            business={data.homeBusiness}
+            theme={theme}
+            onThemeChange={setTheme}
+            wallpaper={wallpaper}
+            wallpaperStyles={WALLPAPER_STYLES}
+            onWallpaperChange={setWallpaper}
+            onCustomWallpaperUpload={uploadCustomWallpaper}
+            canRollback={canAdminEmployees}
+            canAdminEmployees={canAdminEmployees}
+            employees={data.employees}
+            authUsers={authUsers}
+            newAccount={newAccount}
+            setNewAccount={setNewAccount}
+            createManagedAccount={createManagedAccount}
+            showCreatePerms={showCreatePerms}
+            setShowCreatePerms={setShowCreatePerms}
+            createPermsDraft={createPermsDraft}
+            setCreatePermsDraft={setCreatePermsDraft}
+            openPermissionsModal={openPermissionsModal}
+            toggleAccountActive={toggleAccountActive}
+            onNavigate={setTab}
+          />
+        )}
         {tab==='dashboard'&&<>
           <div className="rounded-2xl border border-cyan-400/25 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-3">
