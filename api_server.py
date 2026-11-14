@@ -1869,28 +1869,24 @@ def approve_attendance(
     target_status = "rejected" if str(body.action or "").strip().lower() == "reject" else "approved"
     now = desktop_app.now_text()
     
-    if body.employee_ids and len(body.employee_ids) > 0:
-        placeholders = ",".join("?" for _ in body.employee_ids)
-        conn.execute(
-            f"UPDATE attendance SET approval_status=?, updated_at=? WHERE work_date=? AND employee_id IN ({placeholders})",
-            (target_status, now, work_date, *body.employee_ids)
-        )
-    else:
-        conn.execute(
-            "UPDATE attendance SET approval_status=?, updated_at=? WHERE work_date=?",
-            (target_status, now, work_date)
-        )
-    conn.commit()
-    return {"success": True, "date": work_date, "approval_status": target_status}
+    try:
+        if body.employee_ids and len(body.employee_ids) > 0:
+            placeholders = ",".join("?" for _ in body.employee_ids)
+            conn.execute(
+                f"UPDATE attendance SET approval_status=?, updated_at=? WHERE work_date=? AND employee_id IN ({placeholders})",
+                (target_status, now, work_date, *body.employee_ids)
+            )
+        else:
+            conn.execute(
+                "UPDATE attendance SET approval_status=?, updated_at=? WHERE work_date=?",
+                (target_status, now, work_date)
+            )
+        conn.commit()
     except Exception:
         conn.rollback()
         raise
 
-    saved = conn.execute(
-        "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
-        (item.employee_id, work_date),
-    ).fetchone()
-    return {"success": True, "attendance": dict(saved)}
+    return {"success": True, "date": work_date, "approval_status": target_status}
 
 @app.post("/api/attendance/bulk")
 def bulk_attendance(

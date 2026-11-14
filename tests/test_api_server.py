@@ -2900,3 +2900,78 @@ def test_standalone_login_persists_hashed_session_and_authenticates_after_restar
         assert authenticated["role"] == "Admin"
     finally:
         connection.close()
+
+def test_api_attendance_approval_updates_selected_employees_and_rolls_back_atomically():
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    work_date = "2999-04-05"
+    connection.executescript(
+        """
+        CREATE TABLE attendance (
+            employee_id INTEGER NOT NULL,
+            work_date TEXT NOT NULL,
+            approval_status TEXT NOT NULL DEFAULT 'pending',
+            updated_at TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(employee_id, work_date)
+        );
+        INSERT INTO attendance(employee_id, work_date, approval_status) VALUES
+            (1, '2999-04-05', 'pending'),
+            (2, '2999-04-05', 'pending'),
+            (3, '2999-04-05', 'pending');
+        """
+    )
+    admin = {"username": "attendance-approval-test", "role": "Admin"}
+    try:
+        result = api_server.approve_attendance(
+            api_server.AttendanceApproveModel(
+                date=work_date,
+                employee_ids=[1, 3],
+                action="reject",
+            ),
+            conn=connection,
+            user=admin,
+        )
+        assert result == {
+            "success": True,
+            "date": work_date,
+            "approval_status": "rejected",
+        }
+        rows = connection.execute(
+            "SELECT employee_id, approval_status FROM attendance ORDER BY employee_id"
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            (1, "rejected"),
+            (2, "pending"),
+            (3, "rejected"),
+        ]
+
+        connection.execute(
+            """CREATE TRIGGER fail_approval_update
+               BEFORE UPDATE ON attendance
+               WHEN NEW.employee_id=2
+               BEGIN SELECT RAISE(ABORT, 'fixture approval failure'); END"""
+        )
+        connection.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            api_server.approve_attendance(
+                api_server.AttendanceApproveModel(
+                    date=work_date,
+                    employee_ids=[1, 2],
+                    action="approve",
+                ),
+                conn=connection,
+                user=admin,
+            )
+
+        rows_after_failure = connection.execute(
+            "SELECT employee_id, approval_status FROM attendance ORDER BY employee_id"
+        ).fetchall()
+        assert [tuple(row) for row in rows_after_failure] == [
+            (1, "rejected"),
+            (2, "pending"),
+            (3, "rejected"),
+        ]
+        assert not connection.in_transaction
+    finally:
+        connection.close()
