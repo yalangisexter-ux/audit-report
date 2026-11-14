@@ -92,6 +92,8 @@ export default function ApprovalsHub({ apiFetch, notify, loadData, user, canAdmi
 
   const handleApproveAllAttendance = async () => {
     if (actionBusy || pendingData.attendance.length === 0) return;
+    const ok = window.confirm(`Are you sure you want to approve all ${pendingData.attendance.length} pending attendance records?`);
+    if (!ok) return;
     setActionBusy(true);
     try {
       const res = await apiFetch('/attendance/approve', {
@@ -151,6 +153,8 @@ export default function ApprovalsHub({ apiFetch, notify, loadData, user, canAdmi
 
   const handleApproveAllTasks = async () => {
     if (actionBusy || pendingData.tasks.length === 0) return;
+    const ok = window.confirm(`Are you sure you want to approve and complete all ${pendingData.tasks.length} pending tasks?`);
+    if (!ok) return;
     setActionBusy(true);
     try {
       const res = await apiFetch('/tasks/approve-all', {

@@ -503,7 +503,23 @@ export default function TaskManager({tasks=[],employees=[],user,apiFetch,onReloa
             </div>
           </td>
         </tr>;
-      })}</tbody></table>{!visibleTasks.length&&<p className="py-8 text-center text-sm text-slate-500">No tasks match the selected filters.</p>}</div>
+      })}</tbody></table>        {!visibleTasks.length && (
+          <div className="py-12 text-center">
+            <p className="text-sm font-semibold text-slate-400">No tasks match the selected filters.</p>
+            {filters.date !== 'all' && (tasks || []).length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs text-slate-500 mb-2">There are {(tasks || []).length} total tasks across other dates.</p>
+                <button
+                  type="button"
+                  onClick={() => updateFilter('date', 'all')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-2 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20 transition shadow-sm"
+                >
+                  📅 Show All Dates ({(tasks || []).length} tasks)
+                </button>
+              </div>
+            )}
+          </div>
+        )}</div>
     </section>
     )}
 

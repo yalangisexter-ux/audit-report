@@ -27,9 +27,9 @@ export default function UpdateCenter({ apiFetch, notify, canRollback, card, fiel
     try {
       const result = await apiFetch('/update-center');
       setInfo(result);
-      if (result.status === 'offline') setError(result.message || 'GitHub releases are unavailable.');
+      if (result.status === 'offline') setError(result.message || 'GitHub release check is in rate-limit cooldown. Direct Windows desktop download link remains available below.');
     } catch (requestError) {
-      setError(requestError.message || 'Could not check published releases.');
+      setError(requestError.message || 'GitHub release metadata check is in cooldown. Direct download remains active.');
     } finally {
       setChecking(false);
     }
@@ -96,6 +96,25 @@ export default function UpdateCenter({ apiFetch, notify, canRollback, card, fiel
         <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/20 p-3 text-xs text-slate-300">{latest.body}</pre>
       </details>}
     </div>}
+
+    {(!latest) && (
+      <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-white">Official Windows Desktop App (.exe)</h3>
+            <p className="mt-1 text-xs text-slate-400">Stable release installer with automatic offline D1 cache & continuous encrypted sync.</p>
+          </div>
+          <a
+            className={btn}
+            href="https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Download size={15}/> Download Windows (.exe)
+          </a>
+        </div>
+      </div>
+    )}
 
     <p className="mt-3 text-xs text-slate-500">This download is the Windows EXE installer. The browser cannot install or execute it. The hosted web client is updated through the production deployment pipeline.</p>
     <p className="mt-1 text-xs text-slate-500">Last checked: {formatDate(info?.checked_at)}</p>

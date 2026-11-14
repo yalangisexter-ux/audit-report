@@ -1467,7 +1467,7 @@ export default function App() {
         </div>
       </header>
       {user&&user.has_recovery_question===false&&!recoveryBannerDismissed&&(
-        <div className="mx-3 sm:mx-4 mt-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-gradient-to-r from-amber-950/70 via-amber-900/50 to-slate-950/80 backdrop-blur-2xl px-4 py-2.5 text-xs text-amber-200 shadow-lg shadow-amber-950/30">
+        <div className="shrink-0 mx-3 sm:mx-4 mt-2 mb-1 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-gradient-to-r from-amber-950/70 via-amber-900/50 to-slate-950/80 backdrop-blur-2xl px-4 py-2.5 text-xs text-amber-200 shadow-lg shadow-amber-950/30">
           <div className="flex items-center gap-2.5">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/40 shrink-0">
               <Shield size={15} />
@@ -1510,7 +1510,7 @@ export default function App() {
           deleteManagedAccount={deleteManagedAccount}
           openRecoveryModal={()=>setShowRecoveryModal(true)}
           pendingApprovalsCount={pendingApprovalsCount}
-          onNavigate={setTab}
+          onNavigate={(t) => { setTab(t); setSidebar(false); }}
         />}
         {tab==='approvals'&&<ApprovalsHub apiFetch={apiFetch} notify={notify} loadData={load} user={user} canAdmin={canAdminEmployees}/>}
         {tab==='dashboard'&&<>

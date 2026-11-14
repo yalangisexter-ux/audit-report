@@ -388,14 +388,8 @@ body[data-rsc-theme="day"] main a[class*="bg-gradient-"],
 body[data-rsc-theme="ocean"] main button[class*="bg-gradient-"],
 body[data-rsc-theme="ocean"] main a[class*="bg-gradient-"],
 body[data-rsc-theme="sunset"] main button[class*="bg-gradient-"],
-body[data-rsc-theme="sunset"] main a[class*="bg-gradient-"],
-body[data-rsc-theme="day"] main [class*="bg-purple-"],
-body[data-rsc-theme="ocean"] main [class*="bg-purple-"],
-body[data-rsc-theme="sunset"] main [class*="bg-purple-"],
-body[data-rsc-theme="day"] main [class*="bg-indigo-"],
-body[data-rsc-theme="ocean"] main [class*="bg-indigo-"],
-body[data-rsc-theme="sunset"] main [class*="bg-indigo-"] {
-  color: #ffffff !important;
+body[data-rsc-theme="sunset"] main a[class*="bg-gradient-"] {
+  color: #020617 !important;
 }
 body[data-rsc-theme="day"] main button[class*="bg-gradient-"] *,
 body[data-rsc-theme="day"] main a[class*="bg-gradient-"] *,
@@ -403,7 +397,15 @@ body[data-rsc-theme="ocean"] main button[class*="bg-gradient-"] *,
 body[data-rsc-theme="ocean"] main a[class*="bg-gradient-"] *,
 body[data-rsc-theme="sunset"] main button[class*="bg-gradient-"] *,
 body[data-rsc-theme="sunset"] main a[class*="bg-gradient-"] * {
-  color: inherit !important;
+  color: #020617 !important;
+}
+body[data-rsc-theme="day"] main [class*="bg-purple-"],
+body[data-rsc-theme="ocean"] main [class*="bg-purple-"],
+body[data-rsc-theme="sunset"] main [class*="bg-purple-"],
+body[data-rsc-theme="day"] main [class*="bg-indigo-"],
+body[data-rsc-theme="ocean"] main [class*="bg-indigo-"],
+body[data-rsc-theme="sunset"] main [class*="bg-indigo-"] {
+  color: #ffffff !important;
 }
 
 /* Header Brand Banner ALWAYS retains crisp luminous executive styling */
@@ -632,6 +634,115 @@ body[data-rsc-theme="sunset"] .webapp-root textarea {
   background-color: #ffffff !important;
   border-color: #cbd5e1 !important;
   color: #0f172a !important;
+}
+
+/* Light mode modals, inner panels and controls */
+body[data-rsc-theme="day"] [class*="fixed"] section,
+body[data-rsc-theme="day"] [class*="fixed"] [class*="bg-slate-900"],
+body[data-rsc-theme="day"] [class*="fixed"] [class*="bg-slate-950"],
+body[data-rsc-theme="ocean"] [class*="fixed"] section,
+body[data-rsc-theme="ocean"] [class*="fixed"] [class*="bg-slate-900"],
+body[data-rsc-theme="ocean"] [class*="fixed"] [class*="bg-slate-950"],
+body[data-rsc-theme="sunset"] [class*="fixed"] section,
+body[data-rsc-theme="sunset"] [class*="fixed"] [class*="bg-slate-900"],
+body[data-rsc-theme="sunset"] [class*="fixed"] [class*="bg-slate-950"] {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body[data-rsc-theme="day"] [class*="fixed"] section [class*="bg-slate-950"],
+body[data-rsc-theme="day"] [class*="fixed"] section [class*="bg-slate-900"],
+body[data-rsc-theme="ocean"] [class*="fixed"] section [class*="bg-slate-950"],
+body[data-rsc-theme="ocean"] [class*="fixed"] section [class*="bg-slate-900"],
+body[data-rsc-theme="sunset"] [class*="fixed"] section [class*="bg-slate-950"],
+body[data-rsc-theme="sunset"] [class*="fixed"] section [class*="bg-slate-900"] {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+body[data-rsc-theme="day"] [class*="fixed"] section h2,
+body[data-rsc-theme="day"] [class*="fixed"] section h3,
+body[data-rsc-theme="ocean"] [class*="fixed"] section h2,
+body[data-rsc-theme="ocean"] [class*="fixed"] section h3,
+body[data-rsc-theme="sunset"] [class*="fixed"] section h2,
+body[data-rsc-theme="sunset"] [class*="fixed"] section h3 {
+  color: #0f172a !important;
+}
+
+/* Accessible text colors in light modes */
+body[data-rsc-theme="day"] [class*="text-cyan-"],
+body[data-rsc-theme="ocean"] [class*="text-cyan-"],
+body[data-rsc-theme="sunset"] [class*="text-cyan-"] {
+  color: #0369a1 !important;
+}
+body[data-rsc-theme="day"] [class*="text-emerald-"],
+body[data-rsc-theme="ocean"] [class*="text-emerald-"],
+body[data-rsc-theme="sunset"] [class*="text-emerald-"] {
+  color: #047857 !important;
+}
+body[data-rsc-theme="day"] [class*="text-purple-"],
+body[data-rsc-theme="ocean"] [class*="text-purple-"],
+body[data-rsc-theme="sunset"] [class*="text-purple-"] {
+  color: #6b21a8 !important;
+}
+body[data-rsc-theme="day"] [class*="text-teal-"],
+body[data-rsc-theme="ocean"] [class*="text-teal-"],
+body[data-rsc-theme="sunset"] [class*="text-teal-"] {
+  color: #0f766e !important;
+}
+body[data-rsc-theme="day"] [class*="text-indigo-"],
+body[data-rsc-theme="ocean"] [class*="text-indigo-"],
+body[data-rsc-theme="sunset"] [class*="text-indigo-"] {
+  color: #3730a3 !important;
+}
+body[data-rsc-theme="day"] [class*="text-amber-"],
+body[data-rsc-theme="ocean"] [class*="text-amber-"],
+body[data-rsc-theme="sunset"] [class*="text-amber-"] {
+  color: #b45309 !important;
+}
+
+/* Light mode action buttons */
+body[data-rsc-theme="day"] button[class*="border-white/"],
+body[data-rsc-theme="ocean"] button[class*="border-white/"],
+body[data-rsc-theme="sunset"] button[class*="border-white/"] {
+  border-color: #cbd5e1 !important;
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+body[data-rsc-theme="day"] button[class*="bg-cyan-400/15"],
+body[data-rsc-theme="day"] a[class*="bg-cyan-400/15"],
+body[data-rsc-theme="ocean"] button[class*="bg-cyan-400/15"],
+body[data-rsc-theme="ocean"] a[class*="bg-cyan-400/15"],
+body[data-rsc-theme="sunset"] button[class*="bg-cyan-400/15"],
+body[data-rsc-theme="sunset"] a[class*="bg-cyan-400/15"] {
+  background-color: #e0f2fe !important;
+  border-color: #0284c7 !important;
+  color: #0369a1 !important;
+}
+body[data-rsc-theme="day"] button[class*="bg-cyan-400/15"]:hover,
+body[data-rsc-theme="day"] a[class*="bg-cyan-400/15"]:hover,
+body[data-rsc-theme="ocean"] button[class*="bg-cyan-400/15"]:hover,
+body[data-rsc-theme="ocean"] a[class*="bg-cyan-400/15"]:hover,
+body[data-rsc-theme="sunset"] button[class*="bg-cyan-400/15"]:hover,
+body[data-rsc-theme="sunset"] a[class*="bg-cyan-400/15"]:hover {
+  background-color: #bae6fd !important;
+  color: #0c4a6e !important;
+}
+
+body[data-rsc-theme="day"] aside a[class*="bg-purple-"],
+body[data-rsc-theme="ocean"] aside a[class*="bg-purple-"],
+body[data-rsc-theme="sunset"] aside a[class*="bg-purple-"] {
+  background-color: #f3e8ff !important;
+  border-color: #d8b4fe !important;
+  color: #6b21a8 !important;
+}
+body[data-rsc-theme="day"] aside a[class*="bg-purple-"] *,
+body[data-rsc-theme="ocean"] aside a[class*="bg-purple-"] *,
+body[data-rsc-theme="sunset"] aside a[class*="bg-purple-"] * {
+  color: #6b21a8 !important;
 }
 
 @media (prefers-reduced-motion: reduce) { body::before { animation: none; transform: none; } }
