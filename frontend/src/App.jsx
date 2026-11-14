@@ -8,7 +8,7 @@ import couplesWallpaper from '../../assets/wallpapers/photos/love_couples.jpg';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase, Settings,
   RefreshCw, CheckCircle2, Menu, LogOut, MessageCircle, Store, Archive, ClipboardList,
-  Plus, Trash2, Search, Download, Clock3, Upload, Globe, FileText, X, Shield, UserPlus
+  Plus, Trash2, Search, Download, Clock3, Upload, Globe, FileText, X, Shield, UserPlus, CheckCheck
 } from 'lucide-react';
 import TaskManager from './TaskManager';
 import PrintCenter from './PrintCenter';
@@ -18,12 +18,14 @@ import LiveChat from './LiveChat';
 import UpdateCenter from './UpdateCenter';
 import HomeWorkspace from './HomeWorkspace';
 import Storefront from './Storefront.jsx';
+import ApprovalsHub from './ApprovalsHub.jsx';
 
 const API = '/api';
 const today = () => { const d = new Date(); return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('-'); };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 export const ALL_APP_MODULES = [
   { id: 'home', name: 'Home', icon: '🏠', desc: 'Overview & Workspace Guide' },
+  { id: 'approvals', name: 'Approvals', icon: '📋', desc: 'Admin Approval Queue for Attendance, Breaks & Employee Requests' },
   { id: 'dashboard', name: 'Dashboard', icon: '📊', desc: 'Executive Telemetry & Metrics' },
   { id: 'employees', name: 'Employees', icon: '👥', desc: 'Workforce Directory & Management' },
   { id: 'tasks', name: 'Task Manager', icon: '✅', desc: 'Daily Tasks & Assignments' },
@@ -38,10 +40,10 @@ export const ALL_APP_MODULES = [
 ];
 
 export const ACCESS_LEVEL_PRESETS = {
-  admin: { home: 'full', dashboard: 'full', employees: 'full', tasks: 'full', tracker: 'full', attendance: 'full', reports: 'full', archive: 'full', business: 'full', customers: 'full', chat: 'full', settings: 'full' },
-  hr: { home: 'full', dashboard: 'full', employees: 'full', tasks: 'write', tracker: 'full', attendance: 'full', reports: 'full', archive: 'full', business: 'write', customers: 'write', chat: 'full', settings: 'read' },
-  staff: { home: 'read', dashboard: 'read', employees: 'read', tasks: 'write', tracker: 'write', attendance: 'read', reports: 'read', archive: 'read', business: 'read', customers: 'read', chat: 'write', settings: 'none' },
-  employee: { home: 'read', dashboard: 'none', employees: 'none', tasks: 'write', tracker: 'read', attendance: 'write', reports: 'none', archive: 'none', business: 'none', customers: 'none', chat: 'read', settings: 'none' },
+  admin: { home: 'full', approvals: 'full', dashboard: 'full', employees: 'full', tasks: 'full', tracker: 'full', attendance: 'full', reports: 'full', archive: 'full', business: 'full', customers: 'full', chat: 'full', settings: 'full' },
+  hr: { home: 'full', approvals: 'full', dashboard: 'full', employees: 'full', tasks: 'write', tracker: 'full', attendance: 'full', reports: 'full', archive: 'full', business: 'write', customers: 'write', chat: 'full', settings: 'read' },
+  staff: { home: 'read', approvals: 'none', dashboard: 'read', employees: 'read', tasks: 'write', tracker: 'write', attendance: 'read', reports: 'read', archive: 'read', business: 'read', customers: 'read', chat: 'write', settings: 'none' },
+  employee: { home: 'read', approvals: 'none', dashboard: 'none', employees: 'none', tasks: 'write', tracker: 'read', attendance: 'write', reports: 'none', archive: 'none', business: 'none', customers: 'none', chat: 'read', settings: 'none' },
 };
 
 export const ACCESS_LEVEL_OPTIONS = [
@@ -88,7 +90,9 @@ export function isHolidayForEmployee(holiday, emp) {
 }
 
 const navItems = [
-  ['home','🏠  Home',LayoutDashboard],['dashboard','📊  Dashboard',LayoutDashboard],
+  ['home','🏠  Home',LayoutDashboard],
+  ['approvals','📋  Approvals',CheckCheck],
+  ['dashboard','📊  Dashboard',LayoutDashboard],
   ['employees','👥  Employees',Users],['tasks','✅  Task Manager',CheckSquare],
   ['tracker','📝  Employee Tracker',ClipboardList],['attendance','🟢  Attendance',CalendarCheck],
   ['reports','🖨️  Print Center',Printer],['archive','📁  EOD Archive',Archive],
@@ -299,7 +303,7 @@ export default function App() {
   const [recoverySaving,setRecoverySaving]=useState(false);
   const [recoveryBannerDismissed,setRecoveryBannerDismissed]=useState(false);
   const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
-  const [data,setData]=useState({dashboard:null,homeBusiness:null,employees:[],employeeGroups:[],tasks:[],attendance:{date:today(),roster:[],remarks_options:[]},attendanceSummary:{rows:[]},holidays:[],products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,archive:[],db:null});
+  const [data,setData]=useState({dashboard:null,homeBusiness:null,employees:[],employeeGroups:[],tasks:[],attendance:{date:today(),roster:[],remarks_options:[]},attendanceSummary:{rows:[]},holidays:[],products:[],services:[],orders:[],members:[],prospects:[],messages:[],print:null,archive:[],db:null,pendingApprovals:{attendance:[],tasks:[],accounts:[],counts:{total:0,attendance:0,tasks:0,accounts:0}}});
   const [query,setQuery]=useState('');
   const [prospectStateFilter,setProspectStateFilter]=useState('all');
   const [prospectKindFilter,setProspectKindFilter]=useState('pure product selling stores');
@@ -346,6 +350,7 @@ export default function App() {
     init.attendance='write';
     init.home='read';
     init.chat='read';
+    init.approvals='none';
     return init;
   });
   const [holidayForm,setHolidayForm]=useState({holiday_date:today(),holiday_name:'',scope_type:'all',department:'All',employee_ids:'All',selected_depts:[],selected_emps:[]});
@@ -400,7 +405,8 @@ export default function App() {
       ['products','/business/products',[]],['services','/business/services',[]],
       ['orders','/business/orders',[]],['members','/business/members',[]],
       ['messages','/chat/messages?channel=general',[]],
-      ['print','/print-center/summary',null],['archive','/archive',[]],['db','/system/db-info',null]
+      ['print','/print-center/summary',null],['archive','/archive',[]],['db','/system/db-info',null],
+      ['pendingApprovals','/approvals/pending',{attendance:[],tasks:[],accounts:[],counts:{total:0,attendance:0,tasks:0,accounts:0}}]
     ];
     const results=await Promise.all(jobs.map(async([key,path,fallback])=>{try{return [key,await apiFetch(path)]}catch(e){return [key,fallback]}}));
     const nextData=Object.fromEntries(results);
@@ -741,6 +747,7 @@ export default function App() {
 
   const canEditEmployees = ['full', 'write'].includes(userAccess.employees) || ['hr','admin','developer'].includes(String(user?.role||'').toLowerCase());
   const canAdminEmployees=['admin','developer'].includes(String(user?.role||'').toLowerCase()) || userAccess.settings === 'full';
+  const pendingApprovalsCount = data.pendingApprovals?.counts?.total || 0;
   const isDeveloperSyncUser=String(user?.username||'').trim()!=='Admin'
     && !String(user?.username||'').toLowerCase().includes('taruna')
     && !String(user?.display_name||'').toLowerCase().includes('taruna')
@@ -1289,11 +1296,25 @@ export default function App() {
               }`}
             >
               {sidebarCollapsed ? (
-                <span className="text-base" title={label}>{label.split(' ')[0]}</span>
+                <div className="relative flex items-center justify-center">
+                  <span className="text-base" title={label}>{label.split(' ')[0]}</span>
+                  {id === 'approvals' && pendingApprovalsCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-1 text-[9px] font-black text-slate-950 shadow-md shadow-amber-500/40 animate-pulse">
+                      {pendingApprovalsCount > 9 ? '9+' : pendingApprovalsCount}
+                    </span>
+                  )}
+                </div>
               ) : (
                 <div className="flex items-center justify-between w-full min-w-0">
                   <span className="truncate">{label}</span>
-                  {isActive && <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] shrink-0" />}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {id === 'approvals' && pendingApprovalsCount > 0 && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-gradient-to-r from-amber-400 to-amber-500 px-1.5 text-[10px] font-black text-slate-950 shadow-md shadow-amber-500/30 animate-pulse">
+                        {pendingApprovalsCount}
+                      </span>
+                    )}
+                    {isActive && <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] shrink-0" />}
+                  </div>
                 </div>
               )}
             </button>
@@ -1488,8 +1509,10 @@ export default function App() {
           toggleAccountActive={toggleAccountActive}
           deleteManagedAccount={deleteManagedAccount}
           openRecoveryModal={()=>setShowRecoveryModal(true)}
+          pendingApprovalsCount={pendingApprovalsCount}
           onNavigate={setTab}
         />}
+        {tab==='approvals'&&<ApprovalsHub apiFetch={apiFetch} notify={notify} loadData={load} user={user} canAdmin={canAdminEmployees}/>}
         {tab==='dashboard'&&<>
           <div className="rounded-2xl border border-cyan-400/25 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 shadow-xl">
             <div className="flex flex-wrap items-center justify-between gap-3">

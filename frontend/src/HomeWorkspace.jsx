@@ -3,6 +3,7 @@ import { UserPlus, Shield, CheckCircle2, Users, Plus } from 'lucide-react';
 import { ALL_APP_MODULES as DEFAULT_MODULES, ACCESS_LEVEL_PRESETS as DEFAULT_PRESETS, ACCESS_LEVEL_OPTIONS as DEFAULT_OPTIONS } from './App';
 
 const WORKSPACE_GUIDE = [
+  ['📋', 'Approvals Hub', 'Review and approve employee attendance, multiple break intervals, work tasks, and account requests.', 'Quick action queue for Administrator approvals.', 'approvals'],
   ['📊', 'Dashboard', "Review today's totals, recent tasks, and employee productivity.", 'Open the dashboard to review workforce and task telemetry.', 'dashboard'],
   ['👥', 'Employees', 'Add or edit employee identity, department, job title, and optional contact details.', 'Example: Operations · Coordinator · phone and email optional.', 'employees'],
   ['✅', 'Task Manager', 'Choose a date or employee, then add, edit, or remove tasks and update evidence, status, or progress.', 'Example: Prepare daily report · In progress · 60%.', 'tasks'],
@@ -54,7 +55,8 @@ export default function HomeWorkspace({
   toggleAccountActive,
   deleteManagedAccount,
   openRecoveryModal,
-  onNavigate
+  onNavigate,
+  pendingApprovalsCount = 0
 }) {
   const open = target => {
     if (target === 'storefront') {
@@ -141,6 +143,21 @@ export default function HomeWorkspace({
                 <UserPlus size={15} className="text-slate-950" />
                 <span>+ Create Employee Account ➔</span>
               </a>
+            )}
+            {canAdminEmployees && (
+              <button
+                type="button"
+                onClick={() => open('approvals')}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3.5 py-2.5 text-xs sm:text-sm font-black text-amber-200 hover:bg-amber-500/25 transition shadow-sm"
+                title="Open Executive Approvals Hub"
+              >
+                <span>📋 Approvals Queue</span>
+                {pendingApprovalsCount > 0 && (
+                  <span className="rounded-full bg-amber-400 px-2 py-0.2 text-[10px] font-black text-slate-950">
+                    {pendingApprovalsCount}
+                  </span>
+                )}
+              </button>
             )}
             <button
               type="button"

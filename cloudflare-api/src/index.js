@@ -12,7 +12,7 @@ const ATTENDANCE_FIELDS = ["attendance_status","check_in","check_out","break_min
 const ADMIN_ROLES = new Set(["admin","developer"]);
 const EMPLOYEE_ROLES = new Set(["admin","developer","hr"]);
 const PRESENT_DETAIL = new Set(["present","worked","work from home","wfh","half day","late","early leave","on duty","late check-in","late check-out","on time","balanced hours","overtime","short hours","early departure"]);
-const ALL_MODULES = ["home","dashboard","employees","tasks","tracker","attendance","reports","archive","business","customers","chat","settings"];
+const ALL_MODULES = ["home","approvals","dashboard","employees","tasks","tracker","attendance","reports","archive","business","customers","chat","settings"];
 const VALID_ACCESS_LEVELS = new Set(["full","write","approval","read","none"]);
 
 function isHolidayForEmployee(holiday, emp) {
@@ -46,14 +46,14 @@ function getModuleAccess(user, moduleKey) {
   }
   if (userRole === 'admin' || userRole === 'developer') return 'full';
   if (userRole === 'hr') {
-    if (['home','dashboard','employees','attendance','tracker','reports','archive','chat'].includes(moduleKey)) return 'full';
+    if (['home','approvals','dashboard','employees','attendance','tracker','reports','archive','chat'].includes(moduleKey)) return 'full';
     if (['tasks','business','customers'].includes(moduleKey)) return 'write';
     if (moduleKey === 'settings') return 'read';
     return 'read';
   }
   if (userRole === 'staff') {
     if (['tasks','tracker','chat'].includes(moduleKey)) return 'write';
-    if (moduleKey === 'settings') return 'none';
+    if (['settings','approvals'].includes(moduleKey)) return 'none';
     return 'read';
   }
   if (userRole === 'employee') {
@@ -550,9 +550,22 @@ export default {
         const b=await readJson(request).catch(()=>({}));
         const approval_status=String(b.approval_status||"Approved").trim();
         const now=new Date().toISOString();
-        await env.DB.prepare("UPDATE tasks SET approval_status=?,updated_at=? WHERE id=?").bind(approval_status,now,id).run();
+        if(approval_status==="Approved"&&b.mark_completed){
+          await env.DB.prepare("UPDATE tasks SET approval_status=?,status='Completed',progress=100,updated_at=? WHERE id=?").bind(approval_status,now,id).run();
+        }else{
+          await env.DB.prepare("UPDATE tasks SET approval_status=?,updated_at=? WHERE id=?").bind(approval_status,now,id).run();
+        }
         await audit(env.DB,user,"Task approval updated",`Task #${id} "${targetTask.title}" -> ${approval_status}`);
         return json({success:true,id,approval_status},200,headers);
+      }
+      if(path==="/api/tasks/approve-all"&&request.method==="POST"){
+        if(!ADMIN_ROLES.has(role(user))&&role(user)!=="hr")return forbidden(headers);
+        const b=await readJson(request).catch(()=>({}));
+        const action=String(b.action||"approve").toLowerCase()==="reject"?"Rejected":"Approved";
+        const now=new Date().toISOString();
+        const res=await env.DB.prepare("UPDATE tasks SET approval_status=?,status='Completed',progress=100,updated_at=? WHERE (approval_status='Pending' OR status IN ('Submitted','Pending review')) AND approval_status!='Approved'").bind(action,now).run();
+        await audit(env.DB,user,"Tasks "+action+" all pending",`Total: ${res.meta?.changes||0}`);
+        return json({success:true,action,count:res.meta?.changes||0},200,headers);
       }
       if(path==="/api/tasks/bulk-edit"&&request.method==="POST"){
         if (role(user) === "employee") return forbidden(headers);
@@ -720,16 +733,41 @@ export default {
 
       if(path==="/api/attendance/approve"&&request.method==="POST"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
-        const b=await readJson(request),date=b.work_date||new Date().toISOString().slice(0,10);
-        const ids=[...new Set((b.employee_ids||(b.employee_id?[b.employee_id]:[])).map(Number).filter(n=>Number.isInteger(n)&&n>0))];
+        const b=await readJson(request);
         const action=String(b.action||"approve").toLowerCase()==="reject"?"rejected":"approved";
-        if(!ids.length)return json({detail:"Select at least one employee."},422,headers);
         const now=new Date().toISOString();
+        if(b.all_pending){
+          const res=await env.DB.prepare("UPDATE attendance SET approval_status=?,updated_at=? WHERE approval_status='pending'").bind(action,now).run();
+          await audit(env.DB,user,"Attendance "+action+" all pending",`Total: ${res.meta?.changes||0}`);
+          return json({success:true,action,count:res.meta?.changes||0},200,headers);
+        }
+        const date=b.work_date||now.slice(0,10);
+        const ids=[...new Set((b.employee_ids||(b.employee_id?[b.employee_id]:[])).map(Number).filter(n=>Number.isInteger(n)&&n>0))];
+        if(!ids.length)return json({detail:"Select at least one employee."},422,headers);
         for(const id of ids){
           await env.DB.prepare("UPDATE attendance SET approval_status=?,updated_at=? WHERE employee_id=? AND work_date=?").bind(action,now,id,date).run();
         }
         await audit(env.DB,user,"Attendance "+action,"Date: "+date+", Employees: "+ids.join(","));
         return json({success:true,action,count:ids.length},200,headers);
+      }
+      if(path==="/api/approvals/pending"&&request.method==="GET"){
+        if(!ADMIN_ROLES.has(role(user))&&role(user)!=="hr")return forbidden(headers);
+        const [pendingAttendance, pendingTasks, pendingAccounts] = await Promise.all([
+          all(env.DB, "SELECT a.work_date, a.employee_id, e.name AS employee_name, e.employee_code, e.department, e.designation, a.attendance_status, a.check_in, a.check_out, a.break_minutes, a.break_start, a.break_end, a.breaks, a.attendance_note, a.approval_status, a.updated_at FROM attendance a JOIN employees e ON a.employee_id=e.id WHERE a.approval_status='pending' ORDER BY a.work_date DESC, e.name ASC"),
+          all(env.DB, "SELECT t.id, t.employee_id, e.name AS employee_name, e.employee_code, e.department, t.task_date, t.title, t.details, t.status, t.progress, t.due_time, t.priority, t.proof_url, t.proof_note, t.manager_note, t.approval_status, t.submitted_at, t.updated_at FROM tasks t JOIN employees e ON t.employee_id=e.id WHERE (t.approval_status='Pending' OR t.status IN ('Submitted','Pending review')) AND t.approval_status!='Approved' ORDER BY t.task_date DESC, t.id DESC"),
+          all(env.DB, "SELECT id, username, display_name, role, employee_id, created_at FROM auth_users WHERE active=0 ORDER BY created_at DESC")
+        ]);
+        return json({
+          attendance: pendingAttendance || [],
+          tasks: pendingTasks || [],
+          accounts: pendingAccounts || [],
+          counts: {
+            attendance: (pendingAttendance || []).length,
+            tasks: (pendingTasks || []).length,
+            accounts: (pendingAccounts || []).length,
+            total: (pendingAttendance || []).length + (pendingTasks || []).length + (pendingAccounts || []).length
+          }
+        }, 200, headers);
       }
       if(path==="/api/attendance/summary"&&request.method==="GET"){
         const selected=url.searchParams.get("work_date")||new Date().toISOString().slice(0,10);
