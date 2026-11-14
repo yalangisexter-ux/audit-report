@@ -8,7 +8,7 @@ import couplesWallpaper from '../../assets/wallpapers/photos/love_couples.jpg';
 import {
   LayoutDashboard, CheckSquare, CalendarCheck, Users, Printer, Briefcase, Settings,
   RefreshCw, CheckCircle2, Menu, LogOut, MessageCircle, Store, Archive, ClipboardList,
-  Plus, Trash2, Search, Download, Clock3, Upload, Globe, FileText, X, Shield
+  Plus, Trash2, Search, Download, Clock3, Upload, Globe, FileText, X, Shield, UserPlus
 } from 'lucide-react';
 import TaskManager from './TaskManager';
 import PrintCenter from './PrintCenter';
@@ -1360,6 +1360,28 @@ export default function App() {
           >
             {theme==='night' ? '☀️ Day mode' : '🌙 Night mode'}
           </button>
+
+          {canAdminEmployees && (
+            <button
+              type="button"
+              onClick={()=>{
+                setTab('home');
+                setTimeout(()=>{
+                  const el=document.getElementById('employee-account-creation-panel');
+                  if(el){
+                    el.scrollIntoView({behavior:'smooth',block:'start'});
+                    el.classList.add('ring-2','ring-cyan-400','ring-offset-2','ring-offset-slate-950');
+                    setTimeout(()=>el.classList.remove('ring-2','ring-cyan-400','ring-offset-2','ring-offset-slate-950'),2500);
+                  }
+                },120);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition shadow-sm"
+              title="Create employee account (jump to onboarding panel on Home)"
+            >
+              <UserPlus size={13} className="text-emerald-300" />
+              <span>Create Account</span>
+            </button>
+          )}
 
           <button
             type="button"

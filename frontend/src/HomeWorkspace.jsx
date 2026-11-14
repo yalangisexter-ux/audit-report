@@ -107,6 +107,27 @@ export default function HomeWorkspace({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
+            {canAdminEmployees && (
+              <a
+                href="#employee-account-creation-panel"
+                onClick={(e) => {
+                  e.preventDefault();
+                  const target = document.getElementById('employee-account-creation-panel');
+                  if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    target.classList.add('ring-2', 'ring-cyan-400', 'ring-offset-2', 'ring-offset-slate-950');
+                    setTimeout(() => {
+                      target.classList.remove('ring-2', 'ring-cyan-400', 'ring-offset-2', 'ring-offset-slate-950');
+                    }, 2500);
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 px-4 py-2.5 text-xs sm:text-sm font-black text-slate-950 shadow-lg shadow-emerald-500/25 transition-all hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                title="Jump directly to Employee Account Creation Panel"
+              >
+                <UserPlus size={15} className="text-slate-950" />
+                <span>+ Create Employee Account ➔</span>
+              </a>
+            )}
             <button
               type="button"
               onClick={() => open('dashboard')}
@@ -244,7 +265,7 @@ export default function HomeWorkspace({
 
       {/* 4. Account Creation for Employees directly on Home */}
       {canAdminEmployees && (
-        <section className="rounded-3xl border border-cyan-400/35 bg-slate-900/85 p-5 sm:p-7 shadow-2xl backdrop-blur-2xl">
+        <section id="employee-account-creation-panel" className="scroll-mt-6 rounded-3xl border border-cyan-400/35 bg-slate-900/85 p-5 sm:p-7 shadow-2xl backdrop-blur-2xl transition-all duration-500">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div>
               <div className="flex items-center gap-2.5">
