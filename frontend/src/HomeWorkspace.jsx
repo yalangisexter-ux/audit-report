@@ -52,6 +52,7 @@ export default function HomeWorkspace({
   setCreatePermsDraft,
   openPermissionsModal,
   toggleAccountActive,
+  deleteManagedAccount,
   openRecoveryModal,
   onNavigate
 }) {
@@ -470,13 +471,26 @@ export default function HomeWorkspace({
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => openPermissionsModal?.(a)}
-                            className="rounded-lg border border-purple-400/30 bg-purple-500/10 px-2.5 py-1 text-[11px] font-bold text-purple-200 hover:bg-purple-500/20 transition"
-                          >
-                            🛡️ Permissions
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openPermissionsModal?.(a)}
+                              className="rounded-lg border border-purple-400/30 bg-purple-500/10 px-2.5 py-1 text-[11px] font-bold text-purple-200 hover:bg-purple-500/20 transition"
+                            >
+                              🛡️ Permissions
+                            </button>
+                            {canAdminEmployees && (
+                              <button
+                                type="button"
+                                onClick={() => deleteManagedAccount?.(a)}
+                                disabled={Number(a.id) === Number(user?.id)}
+                                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[11px] font-bold text-rose-300 hover:bg-rose-500/25 transition disabled:opacity-40"
+                                title="Delete account permanently"
+                              >
+                                🗑️ Delete
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

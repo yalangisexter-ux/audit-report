@@ -73,6 +73,9 @@ async function ensureDbMigrations(db) {
   try { await db.prepare("ALTER TABLE auth_users ADD COLUMN permissions TEXT DEFAULT NULL").run(); } catch {}
   try { await db.prepare("ALTER TABLE holidays ADD COLUMN department TEXT DEFAULT 'All'").run(); } catch {}
   try { await db.prepare("ALTER TABLE holidays ADD COLUMN employee_ids TEXT DEFAULT 'All'").run(); } catch {}
+  try { await db.prepare("ALTER TABLE attendance ADD COLUMN break_start TEXT DEFAULT ''").run(); } catch {}
+  try { await db.prepare("ALTER TABLE attendance ADD COLUMN break_end TEXT DEFAULT ''").run(); } catch {}
+  try { await db.prepare("ALTER TABLE attendance ADD COLUMN approval_status TEXT DEFAULT 'approved'").run(); } catch {}
   _dbMigrated = true;
 }
 
@@ -373,6 +376,23 @@ export default {
           return json({success:true,user_id:id,message:"Password reset successfully. The account must sign in again."},200,headers);
         }
       }
+      const deleteUserMatch = /^\/api\/auth\/users\/(\d+)$/.exec(path);
+      if(deleteUserMatch && request.method === "DELETE"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const id=Number(deleteUserMatch[1]);
+        const target=await first(env.DB,"SELECT id,username,role,active FROM auth_users WHERE id=?",[id]);
+        if(!target)return json({detail:"Account not found"},404,headers);
+        if(Number(user.id)===id)return json({detail:"You cannot delete your own account"},400,headers);
+        if(target.role==="Developer"&&role(user)!=="developer")return forbidden(headers);
+        if(target.role==="Admin"){
+          const count=await first(env.DB,"SELECT COUNT(*) AS n FROM auth_users WHERE active=1 AND role='Admin' AND id<>?",[id]);
+          if(Number(count?.n||0)<1)return json({detail:"The last active Admin account cannot be deleted"},409,headers);
+        }
+        await env.DB.prepare("DELETE FROM web_auth_sessions WHERE user_id=?").bind(id).run();
+        await env.DB.prepare("DELETE FROM auth_users WHERE id=?").bind(id).run();
+        await audit(env.DB,user,"User deleted",target.username+" ("+target.role+")");
+        return json({success:true,deleted_user_id:id},200,headers);
+      }
       if (path === "/api/employees" && request.method === "GET") {
         const where = ["1=1"], args = [];
         if (url.searchParams.get("active_only") !== "false") where.push("active=1");
@@ -577,7 +597,7 @@ export default {
       if(path==="/api/attendance"&&request.method==="GET"){
         const date=url.searchParams.get("work_date")||new Date().toISOString().slice(0,10);
         if(!validDate(date))return json({detail:"work_date must use YYYY-MM-DD format"},422,headers);
-        let rosterSql="SELECT e.id AS employee_id,e.name,e.employee_code,e.department,e.designation,COALESCE(a.attendance_status,'Unmarked') AS attendance_status,COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,COALESCE(a.break_minutes,0) AS break_minutes,COALESCE(a.attendance_note,'') AS attendance_note,a.updated_at FROM employees e LEFT JOIN attendance a ON e.id=a.employee_id AND a.work_date=? WHERE e.active=1 ";
+        let rosterSql="SELECT e.id AS employee_id,e.name,e.employee_code,e.department,e.designation,COALESCE(a.attendance_status,'Unmarked') AS attendance_status,COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,COALESCE(a.break_minutes,0) AS break_minutes,COALESCE(a.break_start,'') AS break_start,COALESCE(a.break_end,'') AS break_end,COALESCE(a.approval_status,'approved') AS approval_status,COALESCE(a.attendance_note,'') AS attendance_note,a.updated_at FROM employees e LEFT JOIN attendance a ON e.id=a.employee_id AND a.work_date=? WHERE e.active=1 ";
         const rosterArgs=[date];
         if (role(user) === "employee") {
           rosterSql += "AND e.id=? ";
@@ -629,16 +649,22 @@ export default {
         const old=await first(env.DB,"SELECT * FROM attendance WHERE employee_id=? AND work_date=?",[id,date]);
         let status=String(b.status||b.attendance_status||"Present").trim();
         if(["present","absent","leave","unmarked"].includes(status.toLowerCase()))status=status[0].toUpperCase()+status.slice(1).toLowerCase();
+        else if(status.toLowerCase()==="company holiday"||status.toLowerCase()==="holiday")status="Company Holiday";
         else if(!PRESENT_DETAIL.has(status.toLowerCase()))return json({detail:"Invalid attendance status."},422,headers);
         const checkIn=b.check_in===undefined?(old?.check_in||""):String(b.check_in||"").trim();
         const checkOut=b.check_out===undefined?(old?.check_out||""):String(b.check_out||"").trim();
         const note=b.notes===undefined?(b.attendance_note===undefined?(old?.attendance_note||""):b.attendance_note):b.notes;
         const breakMinutes=b.break_minutes===undefined?Number(old?.break_minutes||0):Math.max(0,Number(b.break_minutes||0));
+        const breakStart=b.break_start!==undefined?String(b.break_start):String(old?.break_start||"");
+        const breakEnd=b.break_end!==undefined?String(b.break_end):String(old?.break_end||"");
+        const userRole=role(user);
+        const isCallerAdmin=ADMIN_ROLES.has(userRole)||(user.permissions&&user.permissions.attendance==="full");
+        const approvalStatus=isCallerAdmin?(b.approval_status?String(b.approval_status):"approved"):"pending";
         if((checkIn&&!validTime(checkIn))||(checkOut&&!validTime(checkOut)))return json({detail:"Check-in and check-out must use 24-hour HH:MM format."},422,headers);
-        if(["Absent","Leave","Unmarked"].includes(status)){if(checkIn||checkOut)return json({detail:"Absent, Leave and Unmarked cannot have check-in/out times."},422,headers);}
+        if(["Absent","Leave","Unmarked","Company Holiday","Holiday"].includes(status)){if(checkIn||checkOut)return json({detail:"Absent, Leave, Company Holiday and Unmarked cannot have check-in/out times."},422,headers);}
         if(checkOut&&!checkIn)return json({detail:"Check-out requires a check-in"},422,headers);
         const now=new Date().toISOString();
-        await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at").bind(id,date,status,checkIn,checkOut,breakMinutes,String(note||""),now).run();
+        await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at,break_start,break_end,approval_status) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at,break_start=excluded.break_start,break_end=excluded.break_end,approval_status=excluded.approval_status").bind(id,date,status,checkIn,checkOut,breakMinutes,String(note||""),now,breakStart,breakEnd,approvalStatus).run();
         return json({success:true,attendance:await first(env.DB,"SELECT * FROM attendance WHERE employee_id=? AND work_date=?",[id,date])},200,headers);
       }
 
@@ -648,8 +674,8 @@ export default {
         if(!validDate(date))return json({detail:"work_date must use YYYY-MM-DD format"},422,headers);
         if(!ids.length||ids.length>1000)return json({detail:"Select between 1 and 1000 employees."},422,headers);
         if(![b.apply_status,b.apply_check_in,b.apply_check_out,b.apply_break,b.apply_remarks].some(Boolean))return json({detail:"Select at least one field to apply."},422,headers);
-        const statusMap={present:"Present",absent:"Absent",leave:"Leave",unmarked:"Unmarked"};
-        if(b.apply_status&&!statusMap[String(b.status||"").toLowerCase()])return json({detail:"Attendance status must be Present, Absent, Leave or Unmarked."},422,headers);
+        const statusMap={present:"Present",absent:"Absent",leave:"Leave",unmarked:"Unmarked","company holiday":"Company Holiday",holiday:"Company Holiday"};
+        if(b.apply_status&&!statusMap[String(b.status||"").toLowerCase()])return json({detail:"Attendance status must be Present, Absent, Leave, Company Holiday or Unmarked."},422,headers);
         if(b.apply_check_in&&b.check_in&&!validTime(b.check_in))return json({detail:"Check-in must use 24-hour HH:MM format."},422,headers);
         if(b.apply_check_out&&b.check_out&&!validTime(b.check_out))return json({detail:"Check-out must use 24-hour HH:MM format."},422,headers);
         const holiday = await first(env.DB,"SELECT holiday_date,holiday_name,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date=?",[date]);
@@ -669,13 +695,27 @@ export default {
           let checkOut=b.apply_check_out?String(b.check_out||"").trim():(old?.check_out||"");
           const remarks=b.apply_remarks?String(b.remarks||""):(old?.attendance_note||"");
           const breakMinutes=b.apply_break?Math.max(0,Number(b.break_minutes||0)):Number(old?.break_minutes||0);
-          if(["Absent","Leave","Unmarked"].includes(status)){checkIn="";checkOut="";}
+          if(["Absent","Leave","Unmarked","Company Holiday","Holiday"].includes(status)){checkIn="";checkOut="";}
           else if((checkIn||checkOut)&&!PRESENT_DETAIL.has(status.toLowerCase()))status="Present";
           if(checkOut&&!checkIn)return json({detail:"Check-out requires a check-in."},422,headers);
-          await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at").bind(id,date,status,checkIn,checkOut,breakMinutes,remarks,now).run();
+          await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at,break_start,break_end,approval_status) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at,break_start=excluded.break_start,break_end=excluded.break_end,approval_status=excluded.approval_status").bind(id,date,status,checkIn,checkOut,breakMinutes,remarks,now,"","","approved").run();
           updated++;
         }
         return json({success:true,updated},200,headers);
+      }
+
+      if(path==="/api/attendance/approve"&&request.method==="POST"){
+        if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
+        const b=await readJson(request),date=b.work_date||new Date().toISOString().slice(0,10);
+        const ids=[...new Set((b.employee_ids||(b.employee_id?[b.employee_id]:[])).map(Number).filter(n=>Number.isInteger(n)&&n>0))];
+        const action=String(b.action||"approve").toLowerCase()==="reject"?"rejected":"approved";
+        if(!ids.length)return json({detail:"Select at least one employee."},422,headers);
+        const now=new Date().toISOString();
+        for(const id of ids){
+          await env.DB.prepare("UPDATE attendance SET approval_status=?,updated_at=? WHERE employee_id=? AND work_date=?").bind(action,now,id,date).run();
+        }
+        await audit(env.DB,user,"Attendance "+action,"Date: "+date+", Employees: "+ids.join(","));
+        return json({success:true,action,count:ids.length},200,headers);
       }
       if(path==="/api/attendance/summary"&&request.method==="GET"){
         const selected=url.searchParams.get("work_date")||new Date().toISOString().slice(0,10);
@@ -686,7 +726,7 @@ export default {
         const ids=employees.map(e=>Number(e.id)),marks=ids.map(()=>"?").join(",");
         const [tasks,attendance,holidays,setting,sundaySetting]=await Promise.all([
           all(env.DB,"SELECT employee_id,MIN(task_date) AS first_day FROM tasks WHERE employee_id IN ("+marks+") AND task_date<>'' GROUP BY employee_id",ids),
-          all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date<=? ORDER BY employee_id,work_date",[...ids,end]),
+          all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date<=? AND COALESCE(approval_status,'approved')='approved' ORDER BY employee_id,work_date",[...ids,end]),
           all(env.DB,"SELECT holiday_date,COALESCE(department,'All') AS department,COALESCE(employee_ids,'All') AS employee_ids FROM holidays WHERE holiday_date<=?",[end]),
           first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'"),
           first(env.DB,"SELECT value FROM settings WHERE key='sunday_workday'")
@@ -724,6 +764,7 @@ export default {
                 if(isPresent)present++;
                 if(st==="absent")absent++;
                 if(st==="leave")leave++;
+                if(st==="company holiday"||st==="holiday")holidayCount++;
               }
             }
           }
@@ -1026,20 +1067,33 @@ export default {
         let attendance=[],todayTasks=[];
         if(ids.length){
           [attendance,todayTasks]=await Promise.all([
-            all(env.DB,"SELECT employee_id,attendance_status,check_in,check_out FROM attendance WHERE work_date=? AND employee_id IN ("+marks+")",[today,...ids]),
+            all(env.DB,"SELECT employee_id,attendance_status,check_in,check_out,COALESCE(approval_status,'approved') AS approval_status FROM attendance WHERE work_date=? AND employee_id IN ("+marks+")",[today,...ids]),
             all(env.DB,"SELECT t.id,t.employee_id,t.title,t.status,t.progress,t.due_time,t.priority,t.task_date,e.name AS employee_name,e.employee_code,COALESCE(NULLIF(t.department,''),e.department,'') AS department FROM tasks t JOIN employees e ON e.id=t.employee_id WHERE t.task_date=? ORDER BY e.display_order ASC,e.name COLLATE NOCASE,t.id DESC",[today])
           ]);
         }
         const attendanceById=new Map(attendance.map(r=>[Number(r.employee_id),r]));
-        let presentToday=0,absentToday=0,leaveToday=0,checkinsToday=0;
+        let presentToday=0,absentToday=0,leaveToday=0,checkinsToday=0,pendingAttendanceCount=0;
         const attendanceRoster=employees.map(e=>{
           const r=attendanceById.get(Number(e.id)),raw=String(r?.attendance_status||"Unmarked").trim(),normalized=raw.toLowerCase(),checkIn=String(r?.check_in||"").trim(),checkOut=String(r?.check_out||"").trim();
+          const isApproved=String(r?.approval_status||"approved").toLowerCase()==="approved";
           let status=raw;
-          if(PRESENT_DETAIL.has(normalized)||(["unmarked",""].includes(normalized)&&!!checkIn)){if(normalized==="unmarked")status="Present";presentToday++;if(checkIn)checkinsToday++;}
-          else if(normalized==="absent"){status="Absent";absentToday++;}
-          else if(normalized==="leave"){status="Leave";leaveToday++;}
-          else if(["unmarked","","not checked"].includes(normalized))status="Not checked";
-          return {employee_id:e.id,name:e.name,status,check_in:checkIn||"—",check_out:checkOut||"—"};
+          if(!isApproved){
+            status="Pending approval";
+            pendingAttendanceCount++;
+          } else if(PRESENT_DETAIL.has(normalized)||(["unmarked",""].includes(normalized)&&!!checkIn)){
+            if(normalized==="unmarked")status="Present";
+            presentToday++;
+            if(checkIn)checkinsToday++;
+          } else if(normalized==="absent"){
+            status="Absent";
+            absentToday++;
+          } else if(normalized==="leave"){
+            status="Leave";
+            leaveToday++;
+          } else if(normalized==="company holiday"||normalized==="holiday"){
+            status="Company Holiday";
+          } else if(["unmarked","","not checked"].includes(normalized))status="Not checked";
+          return {employee_id:e.id,name:e.name,status,check_in:checkIn||"—",check_out:checkOut||"—",approval_status:r?.approval_status||"approved"};
         });
         const completedStatus=s=>["completed","submitted"].includes(String(s||"").trim().toLowerCase());
         const cancelledStatus=s=>String(s||"").trim().toLowerCase()==="cancelled";
@@ -1059,7 +1113,7 @@ export default {
           const earliest=[...starts.values()].sort()[0];
           const [taskHistory,attendanceHistory,holidayRows]=await Promise.all([
             all(env.DB,"SELECT employee_id,task_date,progress,status FROM tasks WHERE employee_id IN ("+marks+") AND task_date BETWEEN ? AND ?",[...ids,earliest,today]),
-            all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date BETWEEN ? AND ?",[...ids,earliest,today]),
+            all(env.DB,"SELECT employee_id,work_date,attendance_status,check_in FROM attendance WHERE employee_id IN ("+marks+") AND work_date BETWEEN ? AND ? AND COALESCE(approval_status,'approved')='approved'",[...ids,earliest,today]),
             all(env.DB,"SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN ? AND ?",[earliest,today])
           ]);
           const taskBy=new Map(ids.map(id=>[id,[]])),attendanceBy=new Map(ids.map(id=>[id,[]]));
@@ -1086,7 +1140,7 @@ export default {
           avgProductivity=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10:0;
         }
         const total=employees.length,notChecked=Math.max(0,total-presentToday-absentToday-leaveToday),rate=total?Math.round(presentToday/total*100):0;
-        return json({today,kpis:{total_employees:total,present_today:presentToday,absent_today:absentToday,leave_today:leaveToday,not_checked_today:notChecked,open_tasks:openTasks,completed_tasks:completedTasks,checkins_today:checkinsToday,attendance_rate:rate,avg_productivity:avgProductivity},recent_employees:employees.slice(-8).reverse(),today_tasks:todayTasks.slice(0,12),attendance_roster:attendanceRoster.slice(0,8),productivity,attendance_summary:rate+"% checked in\n"+presentToday+" Present  ·  "+absentToday+" Absent  ·  "+leaveToday+" Leave  ·  "+notChecked+" Not checked"},200,headers);
+        return json({today,kpis:{total_employees:total,present_today:presentToday,absent_today:absentToday,leave_today:leaveToday,not_checked_today:notChecked,pending_attendance:pendingAttendanceCount,open_tasks:openTasks,completed_tasks:completedTasks,checkins_today:checkinsToday,attendance_rate:rate,avg_productivity:avgProductivity},recent_employees:employees.slice(-8).reverse(),today_tasks:todayTasks.slice(0,12),attendance_roster:attendanceRoster.slice(0,8),productivity,attendance_summary:rate+"% checked in\n"+presentToday+" Present  ·  "+absentToday+" Absent  ·  "+leaveToday+" Leave  ·  "+notChecked+" Not checked"},200,headers);
       }
       if(path==="/api/dashboard/kpis"&&request.method==="GET"){
         const today = new Date().toISOString().slice(0, 10);

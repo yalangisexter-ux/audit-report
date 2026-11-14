@@ -313,6 +313,14 @@ class AttendanceMarkModel(BaseModel):
     break_minutes: Optional[int] = 0
     attendance_note: Optional[str] = ""
     notes: Optional[str] = None  # alias for convenience
+    break_start: Optional[str] = ""
+    break_end: Optional[str] = ""
+    approval_status: Optional[str] = "approved"
+
+class AttendanceApproveModel(BaseModel):
+    date: str
+    employee_ids: Optional[List[int]] = None
+    action: Optional[str] = "approve"
 
 class HolidayModel(BaseModel):
     holiday_date: str
@@ -818,6 +826,32 @@ def reset_managed_account_password(
     return {"success": True, "user_id": user_id, "message": "Password reset successfully. The account must sign in again."}
 
 
+@app.delete("/api/auth/users/{user_id}")
+def delete_auth_user(
+    user_id: int,
+    user: Dict[str, Any] = Depends(get_current_user),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    _require_account_admin(user)
+    if int(user.get("id") or 0) == user_id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    target = conn.execute("SELECT id,username,role,active FROM auth_users WHERE id=?", (user_id,)).fetchone()
+    if not target:
+        raise HTTPException(status_code=404, detail="Account not found")
+    caller_role = str(user.get("role") or "").casefold()
+    if str(target["role"]).casefold() == "developer" and caller_role != "developer":
+        raise HTTPException(status_code=403, detail="Only a Developer can delete a Developer account")
+    if str(target["role"]).casefold() == "admin":
+        count = conn.execute("SELECT COUNT(*) AS n FROM auth_users WHERE active=1 AND role='Admin' AND id<>?", (user_id,)).fetchone()
+        if int(count["n"] or 0) < 1:
+            raise HTTPException(status_code=409, detail="The last active Admin account cannot be deleted")
+    _invalidate_account_sessions(user_id, conn)
+    conn.execute("DELETE FROM auth_users WHERE id=?", (user_id,))
+    _record_account_audit(conn, "User deleted by admin", target["username"])
+    conn.commit()
+    return {"success": True, "deleted_user_id": user_id}
+
+
 # --- Home workspace business snapshot ---
 @app.get("/api/home/business-snapshot")
 def get_home_business_snapshot(
@@ -877,23 +911,27 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, An
     attendance_by_id = {}
     if employee_ids:
         for row in conn.execute(
-            f"""SELECT employee_id, attendance_status, check_in, check_out
+            f"""SELECT employee_id, attendance_status, check_in, check_out, COALESCE(approval_status, 'approved') as approval_status
                 FROM attendance
                 WHERE work_date=? AND employee_id IN ({placeholders})""",
             (today_str, *employee_ids),
         ).fetchall():
             attendance_by_id[int(row["employee_id"])] = dict(row)
 
-    present_today = absent_today = leave_today = checkins_today = 0
+    present_today = absent_today = leave_today = checkins_today = pending_attendance = 0
     attendance_roster = []
     for employee in employees:
         record = attendance_by_id.get(int(employee["id"]))
         status = str((record or {}).get("attendance_status") or "Unmarked").strip()
         check_in = str((record or {}).get("check_in") or "").strip()
         check_out = str((record or {}).get("check_out") or "").strip()
+        approval_status = str((record or {}).get("approval_status") or "approved").strip().casefold()
         normalized_status = status.casefold()
         has_check_in = bool(check_in)
-        if desktop_app.is_present_attendance_status(status) or (
+        if record and approval_status != "approved":
+            status = "Pending approval"
+            pending_attendance += 1
+        elif desktop_app.is_present_attendance_status(status) or (
             normalized_status == "unmarked" and has_check_in
         ):
             if normalized_status == "unmarked":
@@ -907,6 +945,8 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, An
         elif normalized_status == "leave":
             status = "Leave"
             leave_today += 1
+        elif normalized_status in {"company holiday", "holiday"}:
+            status = "Holiday"
         elif normalized_status in {"unmarked", "", "not checked"}:
             status = "Not checked"
         else:
@@ -918,6 +958,7 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, An
                 "status": status,
                 "check_in": check_in or "—",
                 "check_out": check_out or "—",
+                "approval_status": (record or {}).get("approval_status") or "approved",
             }
         )
 
@@ -999,7 +1040,8 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, An
             f"""SELECT employee_id, work_date, attendance_status, check_in
                 FROM attendance
                 WHERE employee_id IN ({placeholders})
-                  AND work_date BETWEEN ? AND ?""",
+                  AND work_date BETWEEN ? AND ?
+                  AND COALESCE(approval_status, 'approved') = 'approved'""",
             (*employee_ids, earliest_start, today_str),
         ).fetchall()
         holiday_rows = conn.execute(
@@ -1128,6 +1170,7 @@ def get_dashboard(conn: sqlite3.Connection = Depends(get_db), user: Dict[str, An
             "absent_today": absent_today,
             "leave_today": leave_today,
             "not_checked_today": not_checked_today,
+            "pending_attendance": pending_attendance,
             "open_tasks": open_tasks,
             "completed_tasks": completed_tasks,
             "checkins_today": checkins_today,
@@ -1640,8 +1683,11 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
                   COALESCE(a.attendance_status, 'Unmarked') as attendance_status,
                   COALESCE(a.check_in, '') as check_in,
                   COALESCE(a.check_out, '') as check_out,
+                  COALESCE(a.break_start, '') as break_start,
+                  COALESCE(a.break_end, '') as break_end,
                   COALESCE(a.break_minutes, 0) as break_minutes,
                   COALESCE(a.attendance_note, '') as attendance_note,
+                  COALESCE(a.approval_status, 'approved') as approval_status,
                   a.updated_at
            FROM employees e
            LEFT JOIN attendance a ON e.id = a.employee_id AND a.work_date=?
@@ -1697,19 +1743,30 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
             (item.employee_id, work_date),
         ).fetchone()
 
+        user_role = str(user.get("role") or "").casefold()
+        is_admin = user_role in {"admin", "developer"}
+        if is_admin:
+            approval_status = str(item.approval_status or "approved").strip().lower()
+            if approval_status not in {"approved", "pending", "rejected"}:
+                approval_status = "approved"
+        else:
+            approval_status = "pending"
+
         status = str(item.status or item.attendance_status or "Present").strip()
         allowed_statuses = {
             "present": "Present",
             "absent": "Absent",
             "leave": "Leave",
             "unmarked": "Unmarked",
+            "company holiday": "Company Holiday",
+            "holiday": "Company Holiday",
         }
         if status.casefold() in allowed_statuses:
             status = allowed_statuses[status.casefold()]
         elif not desktop_app.is_present_attendance_status(status):
             raise HTTPException(
                 status_code=422,
-                detail="Attendance status must be Present, Absent, Leave, Unmarked or a recognized worked-day detail status.",
+                detail="Attendance status must be Present, Absent, Leave, Company Holiday, Unmarked or a recognized worked-day detail status.",
             )
         note = (
             item.notes if "notes" in fields_set else
@@ -1724,6 +1781,14 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
             str(item.check_out or "").strip() if "check_out" in fields_set
             else str(old["check_out"] or "").strip() if old else ""
         )
+        break_start = (
+            str(item.break_start or "").strip() if "break_start" in fields_set
+            else str(old["break_start"] or "").strip() if old and "break_start" in old.keys() else ""
+        )
+        break_end = (
+            str(item.break_end or "").strip() if "break_end" in fields_set
+            else str(old["break_end"] or "").strip() if old and "break_end" in old.keys() else ""
+        )
         break_minutes = (
             max(0, int(item.break_minutes or 0)) if "break_minutes" in fields_set
             else int(old["break_minutes"] or 0) if old else 0
@@ -1733,8 +1798,9 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
             raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
         if check_out and not desktop_app.valid_hhmm(check_out):
             raise HTTPException(status_code=422, detail="Check-out must use 24-hour HH:MM format.")
-        if status.casefold() in {"absent", "leave", "unmarked"}:
-            check_in = check_out = ""
+        if status.casefold() in {"absent", "leave", "unmarked", "company holiday", "holiday"}:
+            check_in = check_out = break_start = break_end = ""
+            break_minutes = 0
         elif (check_in or check_out) and not desktop_app.is_present_attendance_status(status):
             status = "Present"
         if check_out and not check_in:
@@ -1743,18 +1809,59 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
         conn.execute(
             """INSERT INTO attendance(
                    employee_id, work_date, attendance_status, check_in, check_out,
-                   break_minutes, attendance_note, updated_at
-               ) VALUES(?,?,?,?,?,?,?,?)
+                   break_minutes, attendance_note, updated_at, break_start, break_end, approval_status
+               ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(employee_id, work_date) DO UPDATE SET
                    attendance_status=excluded.attendance_status,
                    check_in=excluded.check_in,
                    check_out=excluded.check_out,
                    break_minutes=excluded.break_minutes,
                    attendance_note=excluded.attendance_note,
-                   updated_at=excluded.updated_at""",
-            (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now)
+                   updated_at=excluded.updated_at,
+                   break_start=excluded.break_start,
+                   break_end=excluded.break_end,
+                   approval_status=excluded.approval_status""",
+            (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now, break_start, break_end, approval_status)
         )
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    saved = conn.execute(
+        "SELECT * FROM attendance WHERE employee_id=? AND work_date=?",
+        (item.employee_id, work_date),
+    ).fetchone()
+    return {"success": True, "attendance": dict(saved)}
+
+@app.post("/api/attendance/approve")
+def approve_attendance(
+    body: AttendanceApproveModel,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    _require_account_admin(user)
+    try:
+        work_date = date.fromisoformat(str(body.date or "").strip()).isoformat()
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="date must use YYYY-MM-DD format")
+    
+    target_status = "rejected" if str(body.action or "").strip().lower() == "reject" else "approved"
+    now = desktop_app.now_text()
+    
+    if body.employee_ids and len(body.employee_ids) > 0:
+        placeholders = ",".join("?" for _ in body.employee_ids)
+        conn.execute(
+            f"UPDATE attendance SET approval_status=?, updated_at=? WHERE work_date=? AND employee_id IN ({placeholders})",
+            (target_status, now, work_date, *body.employee_ids)
+        )
+    else:
+        conn.execute(
+            "UPDATE attendance SET approval_status=?, updated_at=? WHERE work_date=?",
+            (target_status, now, work_date)
+        )
+    conn.commit()
+    return {"success": True, "date": work_date, "approval_status": target_status}
     except Exception:
         conn.rollback()
         raise

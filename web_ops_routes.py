@@ -685,10 +685,10 @@ def bulk_edit_attendance(
     if not any((body.apply_status, body.apply_check_in, body.apply_check_out, body.apply_break, body.apply_remarks)):
         raise HTTPException(status_code=422, detail="Select at least one field to apply.")
 
-    allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
+    allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked", "company holiday": "Company Holiday", "holiday": "Company Holiday"}
     selected_status = str(body.status or "").strip()
     if body.apply_status and selected_status.casefold() not in allowed_statuses:
-        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave or Unmarked.")
+        raise HTTPException(status_code=422, detail="Attendance status must be Present, Absent, Leave, Company Holiday or Unmarked.")
     if body.apply_check_in and body.check_in and not api.desktop_app.valid_hhmm(body.check_in):
         raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
     if body.apply_check_out and body.check_out and not api.desktop_app.valid_hhmm(body.check_out):
@@ -747,7 +747,7 @@ def bulk_edit_attendance(
                 else int(old["break_minutes"] or 0) if old else 0
             )
 
-            if status.casefold() in {"absent", "leave", "unmarked"}:
+            if status.casefold() in {"absent", "leave", "unmarked", "company holiday", "holiday"}:
                 check_in = check_out = ""
             elif (check_in or check_out) and not api.desktop_app.is_present_attendance_status(status):
                 status = "Present"
@@ -904,6 +904,7 @@ def attendance_summary(
         conn,
         f"""SELECT employee_id, work_date, attendance_status, check_in
             FROM attendance WHERE employee_id IN ({marks}) AND work_date BETWEEN ? AND ?
+              AND COALESCE(approval_status, 'approved') = 'approved'
             ORDER BY employee_id, work_date""",
         (*employee_ids, earliest_start.isoformat(), end.isoformat()),
     )
@@ -950,6 +951,7 @@ def attendance_summary(
         present = sum(1 for row in monthly_rows if is_present(row))
         absent = sum(1 for row in monthly_rows if str(row.get("attendance_status") or "").strip().casefold() == "absent")
         leave = sum(1 for row in monthly_rows if str(row.get("attendance_status") or "").strip().casefold() == "leave")
+        company_holidays = sum(1 for row in monthly_rows if str(row.get("attendance_status") or "").strip().casefold() in {"company holiday", "holiday"})
         total_present = 0
         for row in attendance_by_employee[employee_id]:
             try:
@@ -967,7 +969,7 @@ def attendance_summary(
             "present": present,
             "absent": absent,
             "leave": leave,
-            "holidays": holiday_count,
+            "holidays": holiday_count + company_holidays,
             "total_present": total_present,
         })
 
