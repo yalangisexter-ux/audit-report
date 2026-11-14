@@ -71,26 +71,28 @@ export default function HomeWorkspace({
 
   return (
     <div className="space-y-6">
-      {/* 1. Executive Session Strip */}
+      {/* 1. Executive Operations Bar matching EXE */}
       <section className="relative overflow-hidden rounded-3xl border border-cyan-400/40 bg-gradient-to-r from-slate-900/95 via-indigo-950/80 to-slate-900/95 backdrop-blur-2xl p-5 sm:p-6 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.8),0_0_35px_rgba(6,182,212,0.18)]">
         <div className="pointer-events-none absolute -right-20 -top-20 h-52 w-52 rounded-full bg-cyan-500/15 blur-3xl" />
         <div className="pointer-events-none absolute -left-20 -bottom-20 h-52 w-52 rounded-full bg-purple-500/15 blur-3xl" />
-        <div className="flex flex-wrap items-center justify-between gap-4 relative z-10">
+        
+        {/* Tier 1: User Identity & Live Edge Telemetry */}
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-400/15 px-2.5 py-1 rounded-md border border-cyan-400/30 shadow-sm">
+              <span className="text-[10px] font-black uppercase tracking-widest text-cyan-400 bg-cyan-400/15 px-2.5 py-1 rounded-md border border-cyan-400/30 shadow-sm shrink-0">
                 SIGNED IN
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-white truncate tracking-tight">
                 {user?.display_name || user?.username || 'Executive User'}
               </h2>
-              <span className="rounded-full bg-indigo-500/25 border border-indigo-400/40 px-3 py-0.5 text-xs font-extrabold text-indigo-200">
+              <span className="rounded-full bg-indigo-500/25 border border-indigo-400/40 px-3 py-0.5 text-xs font-extrabold text-indigo-200 shrink-0">
                 {user?.role || 'Administrator'}
               </span>
               <button
                 type="button"
                 onClick={openRecoveryModal}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition border ${
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition border shrink-0 ${
                   user?.has_recovery_question
                     ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
                     : 'border-amber-400/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 animate-pulse'
@@ -106,6 +108,18 @@ export default function HomeWorkspace({
               Version {business?.version || '1.3.82'} · Cloudflare D1 Native Database · Continuous Encrypted Sync Active
             </p>
           </div>
+
+          <div className="hidden sm:inline-flex items-center gap-2 rounded-xl border border-white/10 bg-slate-950/60 px-3.5 py-1.5 text-xs text-slate-300 shadow-inner">
+            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+            <span className="font-semibold text-white">Cloudflare D1 Native Edge</span>
+            <span className="text-slate-500">·</span>
+            <span className="text-emerald-400 font-medium">Continuous Encrypted Sync Active</span>
+          </div>
+        </div>
+
+        {/* Tier 2: Action Center - Separated & De-crowded */}
+        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+          {/* Primary Operations Actions (Left) */}
           <div className="flex flex-wrap items-center gap-2.5">
             {canAdminEmployees && (
               <a
@@ -135,11 +149,15 @@ export default function HomeWorkspace({
             >
               📊 Executive Dashboard ➔
             </button>
+          </div>
+
+          {/* Desktop & System Utilities (Right) */}
+          <div className="flex flex-wrap items-center gap-2">
             <a
               href="https://github.com/yalangisexter-ux/audit-report/releases/latest/download/RawStrengthEmployeeAuditManager-Setup.exe"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 px-4 py-2.5 text-xs sm:text-sm font-black text-white shadow-lg shadow-purple-600/25 transition-all hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-500 px-3.5 py-2 text-xs font-black text-white shadow-md shadow-purple-600/20 transition-all hover:brightness-110 hover:scale-[1.02] active:scale-[0.98]"
               title="Download official Windows Desktop Installer (.exe)"
             >
               💻 Download Desktop App (.exe)
@@ -147,7 +165,7 @@ export default function HomeWorkspace({
             <button
               type="button"
               onClick={() => open('settings')}
-              className="rounded-xl border border-white/15 bg-slate-900/90 px-3.5 py-2.5 text-xs font-bold text-slate-200 hover:border-cyan-400/50 hover:bg-slate-800 transition"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-slate-900/90 px-3 py-2 text-xs font-bold text-slate-200 hover:border-cyan-400/50 hover:bg-slate-800 transition"
             >
               ⬇ Update application
             </button>
@@ -155,14 +173,15 @@ export default function HomeWorkspace({
               <button
                 type="button"
                 onClick={() => open('settings')}
-                className="rounded-xl border border-amber-300/40 bg-amber-950/30 px-3.5 py-2.5 text-xs font-bold text-amber-200 hover:bg-amber-300/20 transition"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/40 bg-amber-950/40 px-3 py-2 text-xs font-bold text-amber-200 hover:bg-amber-300/20 transition"
               >
                 ↶ Previous versions
               </button>
             )}
           </div>
         </div>
-        <p className="mt-3.5 border-t border-white/10 pt-2.5 text-[11px] text-slate-400">
+
+        <p className="mt-3 text-[11px] text-slate-400">
           The Update Center provides stable Windows installer downloads and password-protected previous versions. The browser does not execute or roll back a Windows installer.
         </p>
       </section>
@@ -182,7 +201,7 @@ export default function HomeWorkspace({
             </div>
             <p className="mt-1 text-xs text-slate-400">Live operational figures synchronized directly from the Cloudflare D1 business ledger.</p>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <a
               href="/#store"
               target="_blank"
@@ -268,7 +287,7 @@ export default function HomeWorkspace({
         <section id="employee-account-creation-panel" className="scroll-mt-6 rounded-3xl border border-cyan-400/35 bg-slate-900/85 p-5 sm:p-7 shadow-2xl backdrop-blur-2xl transition-all duration-500">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div>
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-tr from-cyan-400 to-indigo-500 text-slate-950 font-black shadow-md shadow-cyan-400/20">
                   <UserPlus size={19} />
                 </span>

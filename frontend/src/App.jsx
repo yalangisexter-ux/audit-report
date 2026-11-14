@@ -1375,7 +1375,7 @@ export default function App() {
                   }
                 },120);
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition shadow-sm"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25 hover:border-emerald-400/60 transition shadow-sm"
               title="Create employee account (jump to onboarding panel on Home)"
             >
               <UserPlus size={13} className="text-emerald-300" />
@@ -1386,7 +1386,7 @@ export default function App() {
           <button
             type="button"
             onClick={()=>{window.location.hash='#store';setStoreRoute(true);}}
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/25 transition shadow-sm shadow-cyan-400/10"
+            className="hidden md:inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-400/25 transition shadow-sm shadow-cyan-400/10"
             title="Open online customer storefront"
           >
             🛍️ Storefront ↗
@@ -1411,7 +1411,7 @@ export default function App() {
             <Download size={13} className="text-purple-300" /> Windows (.exe)
           </a>
 
-          <div className="hidden xl:flex items-center gap-2">
+          <div className="hidden 2xl:flex items-center gap-2">
             <select
               aria-label="Application theme"
               className="max-w-28 rounded-xl border border-white/15 bg-slate-900/90 px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-cyan-400 transition"
@@ -1422,6 +1422,7 @@ export default function App() {
             </select>
           </div>
 
+          {/* Integrated Instrument Capsule: Clock & Refresh */}
           <div className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-slate-950/80 p-1 px-2.5 shadow-inner">
             <HeaderClock clockMode={clockMode} onToggleMode={()=>saveClockMode(clockMode==='digital'?'analog':'digital')}/>
             <button
@@ -1432,15 +1433,16 @@ export default function App() {
             >
               🕒
             </button>
+            <div className="h-4 w-px bg-white/15 mx-0.5" />
+            <button
+              type="button"
+              onClick={()=>load()}
+              className="rounded-lg p-1 text-cyan-300 hover:text-white hover:bg-white/10 transition"
+              title="Refresh all data"
+            >
+              <RefreshCw size={14} className={busy?'animate-spin':''}/>
+            </button>
           </div>
-
-          <button
-            onClick={()=>load()}
-            className="rounded-xl border border-white/15 bg-slate-900/80 p-2 text-cyan-300 hover:bg-cyan-400/10 hover:border-cyan-400/40 transition"
-            title="Refresh all data"
-          >
-            <RefreshCw size={16} className={busy?'animate-spin':''}/>
-          </button>
         </div>
       </header>
       {user&&user.has_recovery_question===false&&!recoveryBannerDismissed&&(
