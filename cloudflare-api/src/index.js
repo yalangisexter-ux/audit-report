@@ -647,7 +647,7 @@ export default {
         const b=await readJson(request),date=b.work_date,ids=[...new Set((b.employee_ids||[]).map(Number).filter(n=>Number.isInteger(n)&&n>0))];
         if(!validDate(date))return json({detail:"work_date must use YYYY-MM-DD format"},422,headers);
         if(!ids.length||ids.length>1000)return json({detail:"Select between 1 and 1000 employees."},422,headers);
-        if(![b.apply_status,b.apply_check_in,b.apply_check_out,b.apply_remarks].some(Boolean))return json({detail:"Select at least one field to apply."},422,headers);
+        if(![b.apply_status,b.apply_check_in,b.apply_check_out,b.apply_break,b.apply_remarks].some(Boolean))return json({detail:"Select at least one field to apply."},422,headers);
         const statusMap={present:"Present",absent:"Absent",leave:"Leave",unmarked:"Unmarked"};
         if(b.apply_status&&!statusMap[String(b.status||"").toLowerCase()])return json({detail:"Attendance status must be Present, Absent, Leave or Unmarked."},422,headers);
         if(b.apply_check_in&&b.check_in&&!validTime(b.check_in))return json({detail:"Check-in must use 24-hour HH:MM format."},422,headers);
@@ -668,10 +668,11 @@ export default {
           let checkIn=b.apply_check_in?String(b.check_in||"").trim():(old?.check_in||"");
           let checkOut=b.apply_check_out?String(b.check_out||"").trim():(old?.check_out||"");
           const remarks=b.apply_remarks?String(b.remarks||""):(old?.attendance_note||"");
+          const breakMinutes=b.apply_break?Math.max(0,Number(b.break_minutes||0)):Number(old?.break_minutes||0);
           if(["Absent","Leave","Unmarked"].includes(status)){checkIn="";checkOut="";}
           else if((checkIn||checkOut)&&!PRESENT_DETAIL.has(status.toLowerCase()))status="Present";
           if(checkOut&&!checkIn)return json({detail:"Check-out requires a check-in."},422,headers);
-          await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at").bind(id,date,status,checkIn,checkOut,Number(old?.break_minutes||0),remarks,now).run();
+          await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at").bind(id,date,status,checkIn,checkOut,breakMinutes,remarks,now).run();
           updated++;
         }
         return json({success:true,updated},200,headers);

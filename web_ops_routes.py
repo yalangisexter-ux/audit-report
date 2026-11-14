@@ -656,6 +656,8 @@ class AttendanceBulkEditModel(BaseModel):
     check_in: str = ""
     apply_check_out: bool = False
     check_out: str = ""
+    apply_break: bool = False
+    break_minutes: int = 0
     apply_remarks: bool = False
     remarks: str = ""
 
@@ -680,7 +682,7 @@ def bulk_edit_attendance(
         raise HTTPException(status_code=422, detail="Select at least one employee.")
     if len(employee_ids) > 1000:
         raise HTTPException(status_code=422, detail="Bulk attendance is limited to 1000 employees.")
-    if not any((body.apply_status, body.apply_check_in, body.apply_check_out, body.apply_remarks)):
+    if not any((body.apply_status, body.apply_check_in, body.apply_check_out, body.apply_break, body.apply_remarks)):
         raise HTTPException(status_code=422, detail="Select at least one field to apply.")
 
     allowed_statuses = {"present": "Present", "absent": "Absent", "leave": "Leave", "unmarked": "Unmarked"}
@@ -739,7 +741,11 @@ def bulk_edit_attendance(
                 if body.apply_remarks
                 else str(old["attendance_note"] or "") if old else ""
             )
-            break_minutes = int(old["break_minutes"] or 0) if old else 0
+            break_minutes = (
+                max(0, int(body.break_minutes or 0))
+                if body.apply_break
+                else int(old["break_minutes"] or 0) if old else 0
+            )
 
             if status.casefold() in {"absent", "leave", "unmarked"}:
                 check_in = check_out = ""
