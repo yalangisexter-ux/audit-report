@@ -1631,6 +1631,7 @@ class Database:
             ("break_minutes", "INTEGER DEFAULT 0"),
             ("break_start", "TEXT DEFAULT ''"),
             ("break_end", "TEXT DEFAULT ''"),
+            ("breaks", "TEXT DEFAULT '[]'"),
             ("approval_status", "TEXT DEFAULT 'approved'"),
             ("attendance_status", "TEXT DEFAULT 'Unmarked'"),
             ("attendance_note", "TEXT DEFAULT ''"),

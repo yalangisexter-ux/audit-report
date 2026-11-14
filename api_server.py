@@ -315,6 +315,7 @@ class AttendanceMarkModel(BaseModel):
     notes: Optional[str] = None  # alias for convenience
     break_start: Optional[str] = ""
     break_end: Optional[str] = ""
+    breaks: Optional[str] = "[]"
     approval_status: Optional[str] = "approved"
 
 class AttendanceApproveModel(BaseModel):
@@ -1686,6 +1687,7 @@ def get_attendance(work_date: Optional[str] = None, conn: sqlite3.Connection = D
                   COALESCE(a.break_start, '') as break_start,
                   COALESCE(a.break_end, '') as break_end,
                   COALESCE(a.break_minutes, 0) as break_minutes,
+                  COALESCE(a.breaks, '[]') as breaks,
                   COALESCE(a.attendance_note, '') as attendance_note,
                   COALESCE(a.approval_status, 'approved') as approval_status,
                   a.updated_at
@@ -1789,10 +1791,26 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
             str(item.break_end or "").strip() if "break_end" in fields_set
             else str(old["break_end"] or "").strip() if old and "break_end" in old.keys() else ""
         )
+        breaks_val = (
+            str(item.breaks or "[]").strip() if "breaks" in fields_set
+            else str(old["breaks"] or "[]").strip() if old and "breaks" in old.keys() else "[]"
+        )
         break_minutes = (
             max(0, int(item.break_minutes or 0)) if "break_minutes" in fields_set
             else int(old["break_minutes"] or 0) if old else 0
         )
+        try:
+            parsed_breaks = json.loads(breaks_val)
+            if isinstance(parsed_breaks, list) and len(parsed_breaks) > 0:
+                sum_m = sum(int(x.get("minutes") or 0) for x in parsed_breaks if isinstance(x, dict))
+                if sum_m > 0:
+                    break_minutes = sum_m
+                if not break_start and parsed_breaks[0].get("start"):
+                    break_start = str(parsed_breaks[0].get("start"))
+                if not break_end and parsed_breaks[-1].get("end"):
+                    break_end = str(parsed_breaks[-1].get("end"))
+        except Exception:
+            pass
 
         if check_in and not desktop_app.valid_hhmm(check_in):
             raise HTTPException(status_code=422, detail="Check-in must use 24-hour HH:MM format.")
@@ -1800,6 +1818,7 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
             raise HTTPException(status_code=422, detail="Check-out must use 24-hour HH:MM format.")
         if status.casefold() in {"absent", "leave", "unmarked", "company holiday", "holiday"}:
             check_in = check_out = break_start = break_end = ""
+            breaks_val = "[]"
             break_minutes = 0
         elif (check_in or check_out) and not desktop_app.is_present_attendance_status(status):
             status = "Present"
@@ -1809,8 +1828,8 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
         conn.execute(
             """INSERT INTO attendance(
                    employee_id, work_date, attendance_status, check_in, check_out,
-                   break_minutes, attendance_note, updated_at, break_start, break_end, approval_status
-               ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                   break_minutes, attendance_note, updated_at, break_start, break_end, approval_status, breaks
+               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(employee_id, work_date) DO UPDATE SET
                    attendance_status=excluded.attendance_status,
                    check_in=excluded.check_in,
@@ -1820,8 +1839,9 @@ def mark_attendance(item: AttendanceMarkModel, conn: sqlite3.Connection = Depend
                    updated_at=excluded.updated_at,
                    break_start=excluded.break_start,
                    break_end=excluded.break_end,
-                   approval_status=excluded.approval_status""",
-            (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now, break_start, break_end, approval_status)
+                   approval_status=excluded.approval_status,
+                   breaks=excluded.breaks""",
+            (item.employee_id, work_date, status, check_in, check_out, break_minutes, str(note), now, break_start, break_end, approval_status, breaks_val)
         )
         conn.commit()
     except Exception:

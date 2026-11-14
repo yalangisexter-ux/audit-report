@@ -322,7 +322,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
         return true;
       }
 
-      const activeToken = localStorage.getItem('rsc_auth_token') || '';
+      const activeToken = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('rsc_auth_token') : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem('rsc_auth_token') : '') || '';
       const response = archivedSelected
         ? await fetch('/api/archive/' + selectedArchivedReport.id + '/download', {
             headers: activeToken ? { Authorization: 'Bearer ' + activeToken } : {}
@@ -404,7 +404,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
     target.document.close();
     setBusy(true);
     try {
-      const token = localStorage.getItem('rsc_auth_token') || '';
+      const token = (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('rsc_auth_token') : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem('rsc_auth_token') : '') || '';
       const response = await fetch('/api/archive/' + selectedArchivedReport.id + '/view', {
         headers: token ? { Authorization: 'Bearer ' + token } : {}
       });

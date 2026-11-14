@@ -76,6 +76,7 @@ async function ensureDbMigrations(db) {
   try { await db.prepare("ALTER TABLE attendance ADD COLUMN break_start TEXT DEFAULT ''").run(); } catch {}
   try { await db.prepare("ALTER TABLE attendance ADD COLUMN break_end TEXT DEFAULT ''").run(); } catch {}
   try { await db.prepare("ALTER TABLE attendance ADD COLUMN approval_status TEXT DEFAULT 'approved'").run(); } catch {}
+  try { await db.prepare("ALTER TABLE attendance ADD COLUMN breaks TEXT DEFAULT '[]'").run(); } catch {}
   _dbMigrated = true;
 }
 
@@ -597,7 +598,7 @@ export default {
       if(path==="/api/attendance"&&request.method==="GET"){
         const date=url.searchParams.get("work_date")||new Date().toISOString().slice(0,10);
         if(!validDate(date))return json({detail:"work_date must use YYYY-MM-DD format"},422,headers);
-        let rosterSql="SELECT e.id AS employee_id,e.name,e.employee_code,e.department,e.designation,COALESCE(a.attendance_status,'Unmarked') AS attendance_status,COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,COALESCE(a.break_minutes,0) AS break_minutes,COALESCE(a.break_start,'') AS break_start,COALESCE(a.break_end,'') AS break_end,COALESCE(a.approval_status,'approved') AS approval_status,COALESCE(a.attendance_note,'') AS attendance_note,a.updated_at FROM employees e LEFT JOIN attendance a ON e.id=a.employee_id AND a.work_date=? WHERE e.active=1 ";
+        let rosterSql="SELECT e.id AS employee_id,e.name,e.employee_code,e.department,e.designation,COALESCE(a.attendance_status,'Unmarked') AS attendance_status,COALESCE(a.check_in,'') AS check_in,COALESCE(a.check_out,'') AS check_out,COALESCE(a.break_minutes,0) AS break_minutes,COALESCE(a.break_start,'') AS break_start,COALESCE(a.break_end,'') AS break_end,COALESCE(a.breaks,'[]') AS breaks,COALESCE(a.approval_status,'approved') AS approval_status,COALESCE(a.attendance_note,'') AS attendance_note,a.updated_at FROM employees e LEFT JOIN attendance a ON e.id=a.employee_id AND a.work_date=? WHERE e.active=1 ";
         const rosterArgs=[date];
         if (role(user) === "employee") {
           rosterSql += "AND e.id=? ";
@@ -654,17 +655,30 @@ export default {
         const checkIn=b.check_in===undefined?(old?.check_in||""):String(b.check_in||"").trim();
         const checkOut=b.check_out===undefined?(old?.check_out||""):String(b.check_out||"").trim();
         const note=b.notes===undefined?(b.attendance_note===undefined?(old?.attendance_note||""):b.attendance_note):b.notes;
-        const breakMinutes=b.break_minutes===undefined?Number(old?.break_minutes||0):Math.max(0,Number(b.break_minutes||0));
-        const breakStart=b.break_start!==undefined?String(b.break_start):String(old?.break_start||"");
-        const breakEnd=b.break_end!==undefined?String(b.break_end):String(old?.break_end||"");
+        let breaks=b.breaks!==undefined?(typeof b.breaks==="string"?b.breaks:JSON.stringify(b.breaks)):String(old?.breaks||"[]");
+        let breakMinutes=b.break_minutes===undefined?Number(old?.break_minutes||0):Math.max(0,Number(b.break_minutes||0));
+        let breakStart=b.break_start!==undefined?String(b.break_start):String(old?.break_start||"");
+        let breakEnd=b.break_end!==undefined?String(b.break_end):String(old?.break_end||"");
+        try{
+          const parsedBreaks=JSON.parse(breaks);
+          if(Array.isArray(parsedBreaks)&&parsedBreaks.length>0){
+            const sumM=parsedBreaks.reduce((acc,x)=>acc+(Number(x.minutes)||0),0);
+            if(sumM>0)breakMinutes=sumM;
+            if(!breakStart&&parsedBreaks[0]?.start)breakStart=parsedBreaks[0].start;
+            if(!breakEnd&&parsedBreaks[parsedBreaks.length-1]?.end)breakEnd=parsedBreaks[parsedBreaks.length-1].end;
+          }
+        }catch{}
         const userRole=role(user);
         const isCallerAdmin=ADMIN_ROLES.has(userRole)||(user.permissions&&user.permissions.attendance==="full");
         const approvalStatus=isCallerAdmin?(b.approval_status?String(b.approval_status):"approved"):"pending";
         if((checkIn&&!validTime(checkIn))||(checkOut&&!validTime(checkOut)))return json({detail:"Check-in and check-out must use 24-hour HH:MM format."},422,headers);
-        if(["Absent","Leave","Unmarked","Company Holiday","Holiday"].includes(status)){if(checkIn||checkOut)return json({detail:"Absent, Leave, Company Holiday and Unmarked cannot have check-in/out times."},422,headers);}
+        if(["Absent","Leave","Unmarked","Company Holiday","Holiday"].includes(status)){
+          if(checkIn||checkOut)return json({detail:"Absent, Leave, Company Holiday and Unmarked cannot have check-in/out times."},422,headers);
+          breaks="[]";breakMinutes=0;breakStart="";breakEnd="";
+        }
         if(checkOut&&!checkIn)return json({detail:"Check-out requires a check-in"},422,headers);
         const now=new Date().toISOString();
-        await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at,break_start,break_end,approval_status) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at,break_start=excluded.break_start,break_end=excluded.break_end,approval_status=excluded.approval_status").bind(id,date,status,checkIn,checkOut,breakMinutes,String(note||""),now,breakStart,breakEnd,approvalStatus).run();
+        await env.DB.prepare("INSERT INTO attendance(employee_id,work_date,attendance_status,check_in,check_out,break_minutes,attendance_note,updated_at,break_start,break_end,approval_status,breaks) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,work_date) DO UPDATE SET attendance_status=excluded.attendance_status,check_in=excluded.check_in,check_out=excluded.check_out,break_minutes=excluded.break_minutes,attendance_note=excluded.attendance_note,updated_at=excluded.updated_at,break_start=excluded.break_start,break_end=excluded.break_end,approval_status=excluded.approval_status,breaks=excluded.breaks").bind(id,date,status,checkIn,checkOut,breakMinutes,String(note||""),now,breakStart,breakEnd,approvalStatus,breaks).run();
         return json({success:true,attendance:await first(env.DB,"SELECT * FROM attendance WHERE employee_id=? AND work_date=?",[id,date])},200,headers);
       }
 

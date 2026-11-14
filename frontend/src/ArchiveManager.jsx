@@ -45,7 +45,7 @@ export default function ArchiveManager({
   }, [items, selectedId]);
 
   const authHeaders = () => {
-    const activeToken = token || localStorage.getItem('rsc_auth_token') || '';
+    const activeToken = token || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('rsc_auth_token') : '') || (typeof localStorage !== 'undefined' ? localStorage.getItem('rsc_auth_token') : '') || '';
     return activeToken ? { Authorization: 'Bearer ' + activeToken } : {};
   };
 
