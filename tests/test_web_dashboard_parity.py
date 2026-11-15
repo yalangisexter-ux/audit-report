@@ -33,6 +33,7 @@ def _create_dashboard_database(path: Path):
             employee_id INTEGER NOT NULL,
             work_date TEXT NOT NULL,
             attendance_status TEXT,
+            approval_status TEXT NOT NULL DEFAULT 'approved',
             check_in TEXT,
             check_out TEXT
         );
