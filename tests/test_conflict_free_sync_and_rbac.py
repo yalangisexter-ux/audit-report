@@ -135,12 +135,20 @@ def test_conflict_free_snapshot_merge_unifies_records_without_data_loss(tmp_path
         "VALUES (?, ?, ?, ?, ?, ?, ?, '2026-10-15', '2026-10-15')",
         (local_alice_id, "2026-10-15", "Quarterly Audit", "Prepare audit documents", "In Progress", 50, "Drafting in progress")
     )
+    local_conn.executemany(
+        "INSERT INTO settings(key, value) VALUES(?, ?)",
+        [("working_weekdays", "0,1,2,3,4"), ("sunday_workday", "0")],
+    )
     local_conn.commit()
 
     # Set up remote database with different auto-increment IDs
     remote_conn = sqlite3.connect(remote_db_path)
     remote_conn.row_factory = sqlite3.Row
     setup_test_schema(remote_conn)
+    remote_conn.executemany(
+        "INSERT INTO settings(key, value) VALUES(?, ?)",
+        [("working_weekdays", "0,1,2,3,4,6"), ("sunday_workday", "1")],
+    )
 
     # Remote tries to declare admin as Staff (must NOT demote local admin!)
     remote_conn.execute(
@@ -203,6 +211,10 @@ def test_conflict_free_snapshot_merge_unifies_records_without_data_loss(tmp_path
     assert changes["employees"] >= 1
     assert changes["attendance"] >= 1
     assert changes["tasks"] >= 1
+    merged_calendar = dict(local_conn.execute("SELECT key, value FROM settings").fetchall())
+    assert merged_calendar["working_weekdays"] == "0,1,2,3,4,6"
+    assert merged_calendar["sunday_workday"] == "1"
+    assert 6 in app.working_weekdays_from_connection(local_conn)
 
     # 1. Verify User Accounts
     users = {row["username"]: row["role"] for row in local_conn.execute("SELECT username, role FROM auth_users").fetchall()}

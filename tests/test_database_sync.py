@@ -47,7 +47,8 @@ def test_database_snapshot_includes_authentication_and_excludes_local_settings(t
         CREATE TABLE employees(id INTEGER PRIMARY KEY, name TEXT NOT NULL);
         CREATE TABLE tasks(id INTEGER PRIMARY KEY, title TEXT NOT NULL);
         CREATE TABLE attendance(id INTEGER PRIMARY KEY, status TEXT NOT NULL);
-        INSERT INTO settings VALUES('working_weekdays', '0,1,2,3,4');
+        INSERT INTO settings VALUES('working_weekdays', '0,1,2,3,4,6');
+        INSERT INTO settings VALUES('sunday_workday', '1');
         INSERT INTO settings VALUES('github_sync_token_dpapi', 'local protected credential');
         INSERT INTO auth_users VALUES(1, 'local password hash');
         INSERT INTO employees VALUES(1, 'Example Employee');
@@ -74,7 +75,10 @@ def test_database_snapshot_includes_authentication_and_excludes_local_settings(t
         assert snapshot.execute("SELECT name FROM employees").fetchone()[0] == "Example Employee"
         assert snapshot.execute("SELECT title FROM tasks").fetchone()[0] == "Example task"
         assert snapshot.execute("SELECT status FROM attendance").fetchone()[0] == "Present"
-        assert snapshot.execute("SELECT key FROM settings").fetchall() == [("working_weekdays",)]
+        assert dict(snapshot.execute("SELECT key, value FROM settings").fetchall()) == {
+            "working_weekdays": "0,1,2,3,4,6",
+            "sunday_workday": "1",
+        }
     finally:
         snapshot.close()
 

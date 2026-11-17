@@ -2965,7 +2965,7 @@ def merge_remote_database_snapshot(local_conn: sqlite3.Connection, snapshot_path
 
         # 9. Merge settings (only shared business settings like working_weekdays)
         if "settings" in remote_tables:
-            for rk in ("working_weekdays", "initial_audit_2026_10_09_imported"):
+            for rk in ("working_weekdays", "sunday_workday", "initial_audit_2026_10_09_imported"):
                 r_val = remote.execute("SELECT value FROM settings WHERE key=?", (rk,)).fetchone()
                 if r_val and r_val[0]:
                     local_conn.execute(

@@ -220,7 +220,7 @@ def create_encrypted_database_snapshot(db_path: str | Path, token: str) -> bytes
         if "settings" in tables:
             # Keep only the business calendar setting; credentials, install IDs,
             # appearance preferences, and other local configuration stay local.
-            destination.execute("DELETE FROM settings WHERE key <> 'working_weekdays'")
+            destination.execute("DELETE FROM settings WHERE key NOT IN ('working_weekdays', 'sunday_workday')")
         destination.commit()
         integrity = destination.execute("PRAGMA integrity_check").fetchone()
         if not integrity or integrity[0] != "ok":
