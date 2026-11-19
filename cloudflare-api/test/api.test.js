@@ -272,7 +272,7 @@ test("report options and preview return desktop-compatible structure", async () 
   assert.equal(preview.status, 200);
   const prevBody = await preview.json();
   assert.equal(prevBody.report_type, "Audit / EOD");
-  assert.match(prevBody.preview_text, /RAW STRENGTH CALISTHENICS/);
+  assert.match(prevBody.preview_text, /APEX OPERATIONS|RAW STRENGTH CALISTHENICS/);
 });
 
 test("archive documents list and validate PDF upload", async () => {

@@ -263,7 +263,7 @@ def test_release_metadata_is_consistent_and_newer_than_installed_version():
     assert f'APP_VERSION: "{version}"' in workflow
     # The workflow publishes a fixed, explicitly versioned tag via its PowerShell release step.
     assert f'$tag = "v{version}"' in workflow
-    assert f'--title "Raw Strength Employee Audit Manager v{version}"' in workflow
+    assert (f'--title "Apex Operations Employee Audit Manager v{version}"' in workflow or f'--title "Raw Strength Employee Audit Manager v{version}"' in workflow)
     assert "gh release upload $tag $asset --clobber" in workflow
     assert "gh release view $tag --json assets,isDraft,isPrerelease" in workflow
 

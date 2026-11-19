@@ -421,10 +421,10 @@ jobs:
           for ($attempt = 1; $attempt -le 4; $attempt++) {
             gh release view $tag *> $null
             if ($LASTEXITCODE -eq 0) {
-              gh release edit $tag --title "Raw Strength Employee Audit Manager v1.3.82" --target $env:GITHUB_SHA
+              gh release edit $tag --title "Apex Operations Employee Audit Manager v1.3.82" --target $env:GITHUB_SHA
             }
             else {
-              gh release create $tag $asset --title "Raw Strength Employee Audit Manager v1.3.82" --generate-notes --target $env:GITHUB_SHA
+              gh release create $tag $asset --title "Apex Operations Employee Audit Manager v1.3.82" --generate-notes --target $env:GITHUB_SHA
             }
             if ($LASTEXITCODE -eq 0) {
               gh release upload $tag $asset --clobber
