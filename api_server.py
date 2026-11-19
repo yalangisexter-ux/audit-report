@@ -1,4 +1,4 @@
-"""FastAPI REST API server for Raw Strength Calisthenics Employee Audit & Operations OS.
+"""FastAPI REST API server for Apex Operations Employee Audit & Operations OS.
 Exposes complete REST endpoints while preserving 100% of underlying SQLite business logic.
 """
 import os
@@ -55,9 +55,9 @@ if os.environ.get("WEB_STANDALONE", "0").strip().lower() in ("1", "true", "yes")
 from build_info import APP_VERSION
 
 app = FastAPI(
-    title="Raw Strength Calisthenics REST API",
+    title="Apex Operations REST API",
     version=APP_VERSION,
-    description="High-performance REST API backend for Raw Strength Calisthenics Employee Audit & Operations OS",
+    description="High-performance REST API backend for Apex Operations Employee Audit & Operations OS",
 )
 
 # Enable CORS for React dev server
@@ -2254,7 +2254,7 @@ def _build_report_preview(req, conn):
                WHERE e.active=1""" + scope_sql + " ORDER BY e.name",
             [req.date, *scope_params],
         ).fetchall()
-        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", f"Date: {req.date}", ""]
+        lines = ["APEX OPERATIONS — EMPLOYEE ATTENDANCE", f"Date: {req.date}", ""]
         if holiday_name:
             lines.extend([f"Declared holiday: {holiday_name}", ""])
 
@@ -2297,7 +2297,7 @@ def _build_report_preview(req, conn):
             scope_params,
         ).fetchall()
         lines = [
-            "RAW STRENGTH CALISTHENICS — EMPLOYEE DETAILS",
+            "APEX OPERATIONS — EMPLOYEE DETAILS",
             f"Generated: {datetime.now().isoformat(timespec='seconds')}",
             "",
         ]
@@ -2326,7 +2326,7 @@ def _build_report_preview(req, conn):
             scope_params,
         ).fetchall()
         weekdays = desktop_app.working_weekdays_from_connection(conn)
-        lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE PRODUCTIVITY", f"Date: {req.date}", ""]
+        lines = ["APEX OPERATIONS — EMPLOYEE PRODUCTIVITY", f"Date: {req.date}", ""]
         for employee in rows:
             employee_id = int(employee["id"])
             start_day = None
@@ -2456,7 +2456,7 @@ def _build_report_preview(req, conn):
         if any(_report_is_completed(task["status"]) and not str(task["proof_url"] or "").strip() for task in tasks)
     )
     lines = [
-        "RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD",
+        "APEX OPERATIONS — EMPLOYEE AUDIT / EOD",
         f"Report date: {req.date}",
         f"Scope: {'Individual employee' if req.employee_id else ('Consolidated, excluding employee ' + str(req.exclude_employee_id) if req.exclude_employee_id else 'All employees')}",
         "",
@@ -2697,7 +2697,7 @@ def export_report(
         document.styles["Normal"].font.size = Pt(9)
         title = document.add_paragraph()
         title.alignment = 1
-        title_run = title.add_run("RAW STRENGTH CALISTHENICS")
+        title_run = title.add_run("APEX OPERATIONS")
         title_run.bold = True
         title_run.font.size = Pt(16)
         subtitle = document.add_paragraph()
@@ -2858,7 +2858,7 @@ def export_report(
             if not line:
                 story.append(Spacer(1, 2 * mm))
                 continue
-            if line.startswith("RAW STRENGTH CALISTHENICS"):
+            if line.startswith("APEX OPERATIONS"):
                 continue
             if line.startswith(("Report date:", "Scope:", "Date:", "Generated:")):
                 continue
@@ -2890,7 +2890,7 @@ def export_report(
             canvas.line(15 * mm, 13 * mm, page_width - 15 * mm, 13 * mm)
             canvas.setFont(regular_name, 7)
             canvas.setFillColor(muted)
-            canvas.drawString(15 * mm, 7.5 * mm, "Raw Strength Calisthenics | Confidential internal report")
+            canvas.drawString(15 * mm, 7.5 * mm, "Apex Operations | Confidential internal report")
             canvas.drawRightString(page_width - 15 * mm, 7.5 * mm, f"Page {doc_obj.page}")
             canvas.restoreState()
 
@@ -2898,7 +2898,7 @@ def export_report(
             output, pagesize=A4, rightMargin=17 * mm, leftMargin=17 * mm,
             topMargin=16 * mm, bottomMargin=18 * mm,
             title=str(req.report_type or "Report"),
-            author="Raw Strength Calisthenics",
+            author="Apex Operations",
             subject=f"{req.report_type or 'Report'} - {req.date}",
         )
         pdf.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
@@ -3141,12 +3141,12 @@ else:
     @app.get("/")
     def index_placeholder():
         return {
-            "message": "Raw Strength Calisthenics REST API is running! Frontend is building or accessible via Vite dev server at http://localhost:5173",
+            "message": "Apex Operations REST API is running! Frontend is building or accessible via Vite dev server at http://localhost:5173",
             "docs": "/docs",
             "version": APP_VERSION
         }
 
 if __name__ == "__main__":
     import uvicorn
-    print(f"Starting Raw Strength Calisthenics REST API Server on http://localhost:8000 ...")
+    print(f"Starting Apex Operations REST API Server on http://localhost:8000 ...")
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)

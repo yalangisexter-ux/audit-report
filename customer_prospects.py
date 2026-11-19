@@ -2377,7 +2377,7 @@ class CustomerProspectsTab(QWidget):
             )
             print_layout.addWidget(btn)
 
-        print_note = QLabel("Official Raw Strength Calisthenics Print Center")
+        print_note = QLabel("Official Apex Operations Print Center")
         print_note.setStyleSheet("font-size: 8.5pt; color: #CBD5E1; font-style: italic;")
         print_layout.addWidget(print_note, 1)
 
@@ -2574,7 +2574,7 @@ class CustomerProspectsTab(QWidget):
             )
             reg_print_layout.addWidget(btn)
 
-        reg_print_note = QLabel("Replicates official Raw Strength Calisthenics Print Center")
+        reg_print_note = QLabel("Replicates official Apex Operations Print Center")
         reg_print_note.setStyleSheet("font-size: 8pt; color: #64748B; font-style: italic;")
         reg_print_layout.addWidget(reg_print_note, 1)
 
@@ -2644,7 +2644,7 @@ class CustomerProspectsTab(QWidget):
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setOrientation(QPrinter.Orientation.Landscape)
         preview_dialog = QPrintPreviewDialog(printer, self)
-        preview_dialog.setWindowTitle("Print Preview — Regional Dashboard (Raw Strength Calisthenics)")
+        preview_dialog.setWindowTitle("Print Preview — Regional Dashboard (Apex Operations)")
         preview_dialog.resize(1000, 720)
 
         def handle_paint(p):
@@ -2693,7 +2693,7 @@ class CustomerProspectsTab(QWidget):
 </style>
 </head>
 <body>
-<h1>RAW STRENGTH CALISTHENICS — REGIONAL DASHBOARD AUDIT</h1>
+<h1>APEX OPERATIONS — REGIONAL DASHBOARD AUDIT</h1>
 <div class="sub">Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | Territories: {len(rows)} | All Stores: {tot_stores:,} | All Gyms: {tot_gyms:,}</div>
 <table>
 <thead>
@@ -2857,7 +2857,7 @@ class CustomerProspectsTab(QWidget):
             tot_gyms = sum(r.get("gyms", 0) for r in rows)
 
             elements = [
-                Paragraph("<b>RAW STRENGTH CALISTHENICS — REGIONAL DASHBOARD AUDIT</b>", title_style),
+                Paragraph("<b>APEX OPERATIONS — REGIONAL DASHBOARD AUDIT</b>", title_style),
                 Paragraph(
                     f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | "
                     f"Territories: {len(rows)} Covered | All Stores: {tot_stores:,} | All Gyms: {tot_gyms:,}",
@@ -3266,7 +3266,7 @@ class CustomerProspectsTab(QWidget):
 
             state_label = self.state_filter.currentText()
             elements = [
-                Paragraph("<b>RAW STRENGTH CALISTHENICS — STORE AUDIT & CUSTOMER PROSPECTS</b>", title_style),
+                Paragraph("<b>APEX OPERATIONS — STORE AUDIT & CUSTOMER PROSPECTS</b>", title_style),
                 Paragraph(
                     f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} | "
                     f"Filter: {state_label} | Total Stores: {len(records):,}", styles['Normal']
@@ -3334,7 +3334,7 @@ class CustomerProspectsTab(QWidget):
             state_label = self.state_filter.currentText()
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
             html = f"""<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head><meta charset='utf-8'><title>Raw Strength - Store Prospects</title>
+<head><meta charset='utf-8'><title>Apex Operations - Store Prospects</title>
 <style>
 body {{ font-family: Calibri, sans-serif; margin: 20px; }}
 h2 {{ color: #0F172A; margin-bottom: 4px; }}
@@ -3347,7 +3347,7 @@ a {{ color: #2563EB; text-decoration: underline; }}
 </style>
 </head>
 <body>
-<h2>Raw Strength Calisthenics — Customer & Store Directory</h2>
+<h2>Apex Operations — Customer & Store Directory</h2>
 <p class='meta'>Generated: {now_str} | Region Filter: {state_label} | Total Stores: {len(records):,}</p>
 <table>
 <thead>
@@ -3559,7 +3559,7 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
 </style>
 </head>
 <body>
-<h2>Raw Strength Calisthenics — Store Directory</h2>
+<h2>Apex Operations — Store Directory</h2>
 <p>Filter: <b>{kind_label}</b> · State: <b>{state_label}</b> | Stores: <b>{len(records):,}</b> | Generated: <b>{datetime.now().strftime('%Y-%m-%d %H:%M')}</b></p>
 <table>
 <thead>
@@ -3594,7 +3594,7 @@ tr:nth-child(even) {{ background-color: #F8FAFC; }}
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setOrientation(QPrinter.Orientation.Landscape)
         preview_dialog = QPrintPreviewDialog(printer, self)
-        preview_dialog.setWindowTitle("Print Preview — Store Directory (Raw Strength Calisthenics)")
+        preview_dialog.setWindowTitle("Print Preview — Store Directory (Apex Operations)")
         preview_dialog.resize(1000, 720)
 
         def handle_paint(p):
@@ -3672,7 +3672,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 </head>
 <body>
 <div class="header">
-  <div class="title">Raw Strength Calisthenics — Store Profile Dossier</div>
+  <div class="title">Apex Operations — Store Profile Dossier</div>
   <div class="subtitle">Official Verification & Store Details | Generated: {now_str}</div>
 </div>
 
@@ -3712,7 +3712,7 @@ table.details td.val {{ width: 74%; color: #0F172A; border-bottom: 1px solid #E2
 </div>
 
 <div class="footer">
-  Raw Strength Calisthenics Store Directory Management System · Confidential Institutional Record
+  Apex Operations Store Directory Management System · Confidential Institutional Record
 </div>
 </body>
 </html>"""

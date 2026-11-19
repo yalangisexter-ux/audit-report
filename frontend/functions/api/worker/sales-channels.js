@@ -197,7 +197,7 @@ export async function handleSalesChannels(request, env, path, user) {
   if (mappingMatch && request.method === "POST") {
     const id=Number(mappingMatch[1]),b=await request.json(),sku=String(b.external_sku||"").trim(),productId=Number(b.product_id);
     const product=await first(env.DB,"SELECT id FROM bt_products WHERE id=?",[productId]);
-    if(!sku||sku.length>160||!product)return new Response(JSON.stringify({detail:"A valid external SKU and existing Raw Strength product are required"}),{status:422,headers});
+    if(!sku||sku.length>160||!product)return new Response(JSON.stringify({detail:"A valid external SKU and existing Apex Operations product are required"}),{status:422,headers});
     const stamp=now();
     await env.DB.prepare("INSERT INTO channel_product_mappings(channel_id,external_listing_id,external_sku,product_id,mapping_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(channel_id,external_sku) DO UPDATE SET external_listing_id=excluded.external_listing_id,product_id=excluded.product_id,mapping_status='confirmed',updated_at=excluded.updated_at").bind(id,String(b.external_listing_id||""),sku,productId,"confirmed",stamp,stamp).run();
     return new Response(JSON.stringify({success:true}),{status:200,headers});

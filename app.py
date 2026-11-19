@@ -77,7 +77,7 @@ def get_ssl_context():
 
 
 def brand_mark_pixmap(size):
-    """Return the official colored Raw Strength Calisthenics emblem at the requested size."""
+    """Return the official colored Apex Operations emblem at the requested size."""
     size = max(24, int(size))
     if QApplication.instance() is None:
         _ = QApplication([""])
@@ -144,93 +144,55 @@ def brand_mark_pixmap(size):
     painter.setPen(QPen(QColor(0, 229, 255, 60), max(1.0, s * 0.015)))
     painter.drawPath(inner)
 
-    # 4. Strength Barbell Shaft & Weight Plates
-    bar_y = s * 0.32
-    bar_grad = QLinearGradient(s * 0.18, bar_y, s * 0.82, bar_y)
-    bar_grad.setColorAt(0.0, QColor("#00E5FF"))
-    bar_grad.setColorAt(0.5, QColor("#FFFFFF"))
-    bar_grad.setColorAt(1.0, QColor("#00E5FF"))
-    painter.setPen(QPen(QBrush(bar_grad), max(2.5, s * 0.038), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    painter.drawLine(QPointF(s * 0.18, bar_y), QPointF(s * 0.82, bar_y))
-    for plate_x in (s * 0.19, s * 0.23, s * 0.77, s * 0.81):
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#00E5FF" if plate_x in (s * 0.19, s * 0.81) else "#8B5CF6"))
-        painter.drawRoundedRect(QRectF(plate_x - s * 0.016, bar_y - s * 0.065, s * 0.032, s * 0.13), 2, 2)
+    # 4. Apex Peak Chevron & Operational Beams
+    apex_path = QPainterPath()
+    apex_path.moveTo(cx, s * 0.22)
+    apex_path.lineTo(cx - s * 0.24, s * 0.60)
+    apex_path.lineTo(cx - s * 0.14, s * 0.60)
+    apex_path.lineTo(cx, s * 0.35)
+    apex_path.lineTo(cx + s * 0.14, s * 0.60)
+    apex_path.lineTo(cx + s * 0.24, s * 0.60)
+    apex_path.closeSubpath()
 
-    # 5. Calisthenics Gymnastic Rings
-    for ring_x in (s * 0.33, s * 0.67):
-        painter.setPen(QPen(QColor(148, 163, 184, 160), max(1.2, s * 0.02)))
-        painter.drawLine(QPointF(ring_x, s * 0.12), QPointF(ring_x, s * 0.38))
-        painter.setPen(QPen(QColor("#F59E0B"), max(2.2, s * 0.035)))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        ring_r = s * 0.065
-        painter.drawEllipse(QPointF(ring_x, s * 0.44), ring_r, ring_r)
+    apex_grad = QLinearGradient(cx, s * 0.22, cx, s * 0.60)
+    apex_grad.setColorAt(0.0, QColor("#00E5FF"))
+    apex_grad.setColorAt(0.5, QColor("#38BDF8"))
+    apex_grad.setColorAt(1.0, QColor("#8B5CF6"))
+    painter.fillPath(apex_path, apex_grad)
 
-    # 6. Calisthenics Athlete Silhouette in Iron Cross / Planche
-    body_grad = QLinearGradient(cx, s * 0.36, cx, s * 0.68)
-    body_grad.setColorAt(0.0, QColor("#FFFFFF"))
-    body_grad.setColorAt(0.5, QColor("#00E5FF"))
-    body_grad.setColorAt(1.0, QColor("#38BDF8"))
-
-    # Head
+    # Crossbar Beam
+    bar_y = s * 0.46
+    painter.setPen(QPen(QColor("#FFFFFF"), max(2.0, s * 0.035), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    painter.drawLine(QPointF(cx - s * 0.16, bar_y), QPointF(cx + s * 0.16, bar_y))
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(QColor("#FFFFFF"))
-    painter.drawEllipse(QPointF(cx, s * 0.36), s * 0.045, s * 0.045)
+    painter.setBrush(QColor("#00E5FF"))
+    painter.drawEllipse(QPointF(cx - s * 0.16, bar_y), s * 0.02, s * 0.02)
+    painter.setBrush(QColor("#8B5CF6"))
+    painter.drawEllipse(QPointF(cx + s * 0.16, bar_y), s * 0.02, s * 0.02)
 
-    # Torso
-    athlete = QPainterPath()
-    athlete.moveTo(cx - s * 0.11, s * 0.41)
-    athlete.lineTo(cx + s * 0.11, s * 0.41)
-    athlete.lineTo(cx + s * 0.05, s * 0.58)
-    athlete.lineTo(cx - s * 0.05, s * 0.58)
-    athlete.closeSubpath()
-    painter.fillPath(athlete, body_grad)
-
-    # Arms
-    arms = QPainterPath()
-    arms.moveTo(s * 0.33, s * 0.44)
-    arms.lineTo(cx - s * 0.08, s * 0.42)
-    arms.lineTo(cx + s * 0.08, s * 0.42)
-    arms.lineTo(s * 0.67, s * 0.44)
-    arms.lineTo(s * 0.65, s * 0.47)
-    arms.lineTo(cx + s * 0.07, s * 0.45)
-    arms.lineTo(cx - s * 0.07, s * 0.45)
-    arms.lineTo(s * 0.35, s * 0.47)
-    arms.closeSubpath()
-    painter.fillPath(arms, body_grad)
-
-    # Planche Legs
-    legs = QPainterPath()
-    legs.moveTo(cx - s * 0.045, s * 0.58)
-    legs.lineTo(cx + s * 0.045, s * 0.58)
-    legs.lineTo(cx + s * 0.03, s * 0.70)
-    legs.lineTo(cx - s * 0.03, s * 0.70)
-    legs.closeSubpath()
-    painter.fillPath(legs, QColor("#00E5FF"))
-
-    # 7. Bold Typography 'RAW STRENGTH' & 'CALISTHENICS'
+    # 7. Bold Typography 'APEX' & 'OPERATIONS'
     if s >= 48:
         f_size = max(7, round(s * 0.092))
         font = QFont("Segoe UI", f_size, QFont.Weight.Black)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(1.0, s * 0.022))
         painter.setFont(font)
         painter.setPen(QColor(0, 0, 0, 220))
-        painter.drawText(QRectF(0, s * 0.72 + 1.2, s, s * 0.14), Qt.AlignmentFlag.AlignCenter, "RAW STRENGTH")
+        painter.drawText(QRectF(0, s * 0.72 + 1.2, s, s * 0.14), Qt.AlignmentFlag.AlignCenter, "APEX")
         painter.setPen(QColor("#FFFFFF"))
-        painter.drawText(QRectF(0, s * 0.72, s, s * 0.14), Qt.AlignmentFlag.AlignCenter, "RAW STRENGTH")
+        painter.drawText(QRectF(0, s * 0.72, s, s * 0.14), Qt.AlignmentFlag.AlignCenter, "APEX")
 
         sub_size = max(5, round(s * 0.055))
         sub_font = QFont("Segoe UI", sub_size, QFont.Weight.ExtraBold)
         sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, max(1.2, s * 0.030))
         painter.setFont(sub_font)
         painter.setPen(QColor("#00E5FF"))
-        painter.drawText(QRectF(0, s * 0.84, s, s * 0.10), Qt.AlignmentFlag.AlignCenter, "CALISTHENICS")
+        painter.drawText(QRectF(0, s * 0.84, s, s * 0.10), Qt.AlignmentFlag.AlignCenter, "OPERATIONS")
     else:
         f_size = max(6, round(s * 0.28))
         font = QFont("Segoe UI", f_size, QFont.Weight.Black)
         painter.setFont(font)
         painter.setPen(QColor("#FFFFFF"))
-        painter.drawText(QRectF(0, s * 0.66, s, s * 0.30), Qt.AlignmentFlag.AlignCenter, "RS")
+        painter.drawText(QRectF(0, s * 0.66, s, s * 0.30), Qt.AlignmentFlag.AlignCenter, "AO")
 
     painter.end()
     return pixmap
@@ -318,65 +280,65 @@ def is_next_action_included(opts):
 SOURCE_FILENAME = "EMPLOYEE AUDIT 09-10-2026.docx"
 SOURCE_DATE_DISPLAY = "09-10-2026"
 SOURCE_DATE_ISO = "2026-10-09"
-SOURCE_TEXT = 'EMPLOYEE AUDIT: 09-10-2026\n\n\n\nGOPI:\nWORK : Submitted\nLATE: no\nLinks :  Open\nMissing proof: No\nCompleted: \n   \tUSA comical video for fun and facts\nhttps://drive.google.com/file/d/1suvFWDq6mxPv6xzNZTBYOXn0HV21H79o/view?usp=drive_link\n\nshoot completed for Myusa educational reel\n https://drive.google.com/drive/folders/16RwXdDsl7Yrcgxk-ePf4sHeh9geZvcJW?usp=drive_link\n\neducational reel edit \nhttps://drive.google.com/file/d/1ZxCHlEUmiJwqz75ZERt1TNkHKjihTT_f/view?usp=drive_link\n\nPARTIAL : No\nPENDING : No \n\nVINAY:\nwork : submitted\nLate :no\nLinks : open\nMissing proof: all proofs submitted\nCompleted: \n  \t\tprotein bar story line – 1 carousal (6 slides)\n \t\tcomical carousals-1 (7 slides)\n \t\tvideo static – 1 meme video\n \t\tInstagram stories – 3\n \t\tdussehra creatives- 3\nhttps://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing\npending: NO\n\n\nSIRI:\nWORK: submitted\nLATE : no\nLINKS OPEN: yes\nMISSING PROOF : No\nCOMPLETED: \n \t\tNew data collected: jammu and Kashmir=20\n \t\t\t\t        Gujarat=33,Jharkhand =15,Haryana=2,goa=1\n      \t\t\tshe has total stores count=1231\n              \tcalls done : 17 but connected 8  & confirm decision makers names: 5\nDatabase: https://1drv.ms/x/c/42cb0433cf46e2a2/IQBmYm2HAA65RKFmVhyPK4siAY_ozlYUA35h0SMWNOHAvBI?e=OKv1o8\n\nDashboard: https://1drv.ms/x/c/42cb0433cf46e2a2/IQDkko37oqDORb_b5GVbdBFLAe5_LTQh0JQzGV0NqDA-fnw?e=TdKlvg\n\nHaryana Store Calling Sheet: https://1drv.ms/x/c/42cb0433cf46e2a2/IQAj4MUlGYMHTpMpSqQ2d3VIAZNU63tnUY4r8qktC98QaqA?e=iQnwK9\n\nTelangana & Andhra Pradesh Automation Sheet: https://1drv.ms/x/c/42cb0433cf46e2a2/IQD6T_R83XX2QaaqGMj_WsSCAfGivAh1j3CCOpn7ykk-M0k?e=TVPcgu\nPENDING :  No\nshe has done: attached siri and sanjana numbers to automation ,so they can get to know about message sending or not ( received or not to customers/distributors).\n \nSANJANA: \n\nWORK: submitted\nLATE: no\nPROOF : links open\nMISSING PROOF: NO\nCOMPLETED: \n \t\t\tMY operator automation messages sent to AP & telangana\n \t\t\tvijayawada and tirupathi samples sachets –dispatched\n \t\t\thiprocket regarding the return charges. The team advised waiting 10–15 days for an update on the ticket raised.\n \t\t\trecieved siri database  and calls done= 60 but connected 37, 29 from sanjana  and 8 from siri \n \t\t\twarm distributors- sri sai balaji –tirupathi and sent 5 samples \n \t\t\tconnected to nutracore to got confirmation for samples sachets recieved or    not.\n \t\t\tOut for delivery calls: 1 \n \t\t\tpredispatch message sent=3 \nhttps://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726\n\nhttps://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323\n\nPENDING:No\n\n LOHITH:\n\nWORK: Submitted \nLATE : No\nOPEN LINKS: No links but proofs attached in EOD\nMISSING PROOF :NO\nCOMPLETED: All assigned tasks\nPENDING: B2B need to finalise\n\n\nTARUNA:\nWORK: Submitted in time\nLATE:  no\nOPEN LINKS : all links submitted and open\ncompleted:\nStock reconciliation\nstock movement\noutgoing and incoming payment list\ncollected proof links \norder dispatchness\nverified registers and assets and submitted operational requirements in EOD\nproof links:\nFUN AND FACTS TRACKER:\nfun ^L0 facts postings.xlsx\nstock movement.xlsx\nhttps://1drv.ms/x/c/c11b3da91d61d188/IQDclrlPdHLFQ7cUImGfQ9xCAaHY-_xYC5Pjll-TJPSHsM8?e=do2sFs\noutgoing payment list.xlsx\nincoming payment list.xlsx\nMISSING PROOF: No\nPENDING :NO\n\n\nSAILU:\nWORK: Submitted in time\nLATE:  No \nOPEN LINKS : yes\nMISSING PROOF: No\nCOMPLETED: Lillte footprints all 3 activities done\n \t\tmits medha admission script\n \t\tharish sir educational  script:\n \t\tDasara script\n \t\tcoordinated with sai teja and gopi explaining scripts for shoot and also helped in editing .\xa0\n \t\tFun and facts reel caption\nLillte footprints last script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCqK4Js0RMeTZ_ujf9N34CHAS0748iel1v89ppKu1Wbi4c?e=xC4Ubb\xa0\n\nmits medha script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCFXtlMMKBLSq4WPcqo6UMnASlqLgzKvbKQSojjyV3bovM?e=lxc3WP\xa0\n\nharish sir script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9\xa0\n\nDasara script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9\xa0\n\nTomorrow educational script:\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9\xa0\n\n\nPENDING : No\nMissing: Morning comical reel script\n\nSAI TEJA\n\nWORK: Submitted \nLATE : No\nOPEN LINKS: Yes\nMISSING PROOF :NO\nCOMPLETED : All villan world characters modifications done\n \t\t       comical video shoot done  and edited with needed changes and posted in fun and facts\nPENDING: Villan intro animations.\nproof links:\nhttps://drive.google.com/drive/folders/1ns_EPaE3jamFYkq0Y0BRIeKLkROy1Ygs?usp=share_link\n\nhttps://www.instagram.com/reel/DeRhfPdSKvH/?rpxt=enR1bWpyOWc5YWZo\n\nhttps://drive.google.com/drive/folders/1dCMip95NJjrEKQSVAQeW0imH7qYvWFzY?usp=share_link'
+SOURCE_TEXT = 'EMPLOYEE AUDIT: 09-10-2026\n\n\n\nMARCUS:\nWORK : Submitted\nLATE: no\nLinks :  Open\nMissing proof: No\nCompleted: \n   \tCorporate comical video for fun and facts\nhttps://drive.google.com/file/d/1suvFWDq6mxPv6xzNZTBYOXn0HV21H79o/view?usp=drive_link\n\nshoot completed for corporate educational reel\n https://drive.google.com/drive/folders/16RwXdDsl7Yrcgxk-ePf4sHeh9geZvcJW?usp=drive_link\n\neducational reel edit \nhttps://drive.google.com/file/d/1ZxCHlEUmiJwqz75ZERt1TNkHKjihTT_f/view?usp=drive_link\n\nPARTIAL : No\nPENDING : No \n\nDAVID:\nwork : submitted\nLate :no\nLinks : open\nMissing proof: all proofs submitted\nCompleted: \n  \t\tprotein bar story line – 1 carousal (6 slides)\n \t\tcomical carousals-1 (7 slides)\n \t\tvideo static – 1 meme video\n \t\tInstagram stories – 3\n \t\tdussehra creatives- 3\nhttps://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing\npending: NO\n\n\nSARAH:\nWORK: submitted\nLATE : no\nLINKS OPEN: yes\nMISSING PROOF : No\nCOMPLETED: \n \t\tNew data collected: jammu and Kashmir=20\n \t\t\t\t        Gujarat=33,Jharkhand =15,Haryana=2,goa=1\n      \t\t\tshe has total stores count=1231\n              \tcalls done : 17 but connected 8  & confirm decision makers names: 5\nDatabase: https://1drv.ms/x/c/42cb0433cf46e2a2/IQBmYm2HAA65RKFmVhyPK4siAY_ozlYUA35h0SMWNOHAvBI?e=OKv1o8\n\nDashboard: https://1drv.ms/x/c/42cb0433cf46e2a2/IQDkko37oqDORb_b5GVbdBFLAe5_LTQh0JQzGV0NqDA-fnw?e=TdKlvg\n\nHaryana Store Calling Sheet: https://1drv.ms/x/c/42cb0433cf46e2a2/IQAj4MUlGYMHTpMpSqQ2d3VIAZNU63tnUY4r8qktC98QaqA?e=iQnwK9\n\nTelangana & Andhra Pradesh Automation Sheet: https://1drv.ms/x/c/42cb0433cf46e2a2/IQD6T_R83XX2QaaqGMj_WsSCAfGivAh1j3CCOpn7ykk-M0k?e=TVPcgu\nPENDING :  No\nshe has done: attached sarah and samantha numbers to automation ,so they can get to know about message sending or not ( received or not to customers/distributors).\n \nSAMANTHA: \n\nWORK: submitted\nLATE: no\nPROOF : links open\nMISSING PROOF: NO\nCOMPLETED: \n \t\t\tMY operator automation messages sent to AP & telangana\n \t\t\tvijayawada and tirupathi samples sachets –dispatched\n \t\t\thiprocket regarding the return charges. The team advised waiting 10–15 days for an update on the ticket raised.\n \t\t\trecieved sarah database  and calls done= 60 but connected 37, 29 from samantha  and 8 from sarah \n \t\t\twarm distributors- sri sai balaji –tirupathi and sent 5 samples \n \t\t\tconnected to nutracore to got confirmation for samples sachets recieved or    not.\n \t\t\tOut for delivery calls: 1 \n \t\t\tpredispatch message sent=3 \nhttps://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726\n\nhttps://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323\n\nPENDING:No\n\n LUCAS:\n\nWORK: Submitted \nLATE : No\nOPEN LINKS: No links but proofs attached in EOD\nMISSING PROOF :NO\nCOMPLETED: All assigned tasks\nPENDING: B2B need to finalise\n\n\nTAYLOR:\nWORK: Submitted in time\nLATE:  no\nOPEN LINKS : all links submitted and open\ncompleted:\nStock reconciliation\nstock movement\noutgoing and incoming payment list\ncollected proof links \norder dispatchness\nverified registers and assets and submitted operational requirements in EOD\nproof links:\nFUN AND FACTS TRACKER:\nfun ^L0 facts postings.xlsx\nstock movement.xlsx\nhttps://1drv.ms/x/c/c11b3da91d61d188/IQDclrlPdHLFQ7cUImGfQ9xCAaHY-_xYC5Pjll-TJPSHsM8?e=do2sFs\noutgoing payment list.xlsx\nincoming payment list.xlsx\nMISSING PROOF: No\nPENDING :NO\n\n\nSOPHIA:\nWORK: Submitted in time\nLATE:  No \nOPEN LINKS : yes\nMISSING PROOF: No\nCOMPLETED: Lillte footprints all 3 activities done\n \t\tmits medha admission script\n \t\tharrison educational script:\n \t\tDasara script\n \t\tcoordinated with jordan and marcus explaining scripts for shoot and also helped in editing .\xa0\n \t\tFun and facts reel caption\nLillte footprints last script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCqK4Js0RMeTZ_ujf9N34CHAS0748iel1v89ppKu1Wbi4c?e=xC4Ubb\xa0\n\nmits medha script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCFXtlMMKBLSq4WPcqo6UMnASlqLgzKvbKQSojjyV3bovM?e=lxc3WP\xa0\n\nharrison script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9\xa0\n\nDasara script:\xa0\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9\xa0\n\nTomorrow educational script:\n\nhttps://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9\xa0\n\n\nPENDING : No\nMissing: Morning comical reel script\n\nJORDAN\n\nWORK: Submitted \nLATE : No\nOPEN LINKS: Yes\nMISSING PROOF :NO\nCOMPLETED : All villan world characters modifications done\n \t\t       comical video shoot done  and edited with needed changes and posted in fun and facts\nPENDING: Villan intro animations.\nproof links:\nhttps://drive.google.com/drive/folders/1ns_EPaE3jamFYkq0Y0BRIeKLkROy1Ygs?usp=share_link\n\nhttps://www.instagram.com/reel/DeRhfPdSKvH/?rpxt=enR1bWpyOWc5YWZo\n\nhttps://drive.google.com/drive/folders/1dCMip95NJjrEKQSVAQeW0imH7qYvWFzY?usp=share_link'
 
 EMPLOYEES = [
-    {"name": "Gopi", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links: Open. Missing proof: No. PARTIAL: No. PENDING: No."},
-    {"name": "Vinay", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links: Open. Missing proof: All proofs submitted. PENDING: No."},
-    {"name": "Siri", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links open: Yes. Missing proof: No. PENDING: No."},
-    {"name": "Sanjana", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Proof links: Open. Missing proof: No. PENDING: No."},
-    {"name": "Lohith", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. No separate links; proofs attached in EOD. Missing proof: No. PENDING: B2B need to finalise."},
-    {"name": "Taruna", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted in time. LATE: No. All submitted links reported open. Missing proof: No. PENDING: No."},
-    {"name": "Sailu", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted in time. LATE: No. Links open: Yes. Missing proof: No. PENDING: No. Missing: Morning comical reel script."},
-    {"name": "Sai Teja", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links open: Yes. Missing proof: No. PENDING: Villain intro animations."},
+    {"name": "Marcus", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links: Open. Missing proof: No. PARTIAL: No. PENDING: No."},
+    {"name": "David", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links: Open. Missing proof: All proofs submitted. PENDING: No."},
+    {"name": "Sarah", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links open: Yes. Missing proof: No. PENDING: No."},
+    {"name": "Samantha", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Proof links: Open. Missing proof: No. PENDING: No."},
+    {"name": "Lucas", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. No separate links; proofs attached in EOD. Missing proof: No. PENDING: B2B need to finalise."},
+    {"name": "Taylor", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted in time. LATE: No. All submitted links reported open. Missing proof: No. PENDING: No."},
+    {"name": "Sophia", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted in time. LATE: No. Links open: Yes. Missing proof: No. PENDING: No. Missing: Morning comical reel script."},
+    {"name": "Jordan", "notes": "Imported from historical audit 09-10-2026. WORK: Submitted. LATE: No. Links open: Yes. Missing proof: No. PENDING: Villain intro animations."},
 ]
 
 # Each completed source item remains Submitted (not silently converted to Completed),
 # with source wording and source status retained. Pending items remain Pending.
 TASKS = [
-    ("Gopi", "USA comical video for fun and facts", "Completed item in source report. Original WORK status: Submitted.", ["https://drive.google.com/file/d/1suvFWDq6mxPv6xzNZTBYOXn0HV21H79o/view?usp=drive_link"], "", "Submitted", 100),
-    ("Gopi", "Shoot completed for Myusa educational reel", "Completed item in source report. Original WORK status: Submitted.", ["https://drive.google.com/drive/folders/16RwXdDsl7Yrcgxk-ePf4sHeh9geZvcJW?usp=drive_link"], "", "Submitted", 100),
-    ("Gopi", "Educational reel edit", "Completed item in source report. Original WORK status: Submitted.", ["https://drive.google.com/file/d/1ZxCHlEUmiJwqz75ZERt1TNkHKjihTT_f/view?usp=drive_link"], "", "Submitted", 100),
+    ("Marcus", "Corporate comical video for fun and facts", "Completed item in source report. Original WORK status: Submitted.", ["https://drive.google.com/file/d/1suvFWDq6mxPv6xzNZTBYOXn0HV21H79o/view?usp=drive_link"], "", "Submitted", 100),
+    ("Marcus", "Shoot completed for corporate educational reel", "Completed item in source report. Original WORK status: Submitted.", ["https://drive.google.com/drive/folders/16RwXdDsl7Yrcgxk-ePf4sHeh9geZvcJW?usp=drive_link"], "", "Submitted", 100),
+    ("Marcus", "Educational reel edit", "Completed item in source report. Original WORK status: Submitted.", ["https://drive.google.com/file/d/1ZxCHlEUmiJwqz75ZERt1TNkHKjihTT_f/view?usp=drive_link"], "", "Submitted", 100),
 
-    ("Vinay", "Protein bar story line — 1 carousel (6 slides)", "Completed item in source report. Shared proof folder supplied for Vinay's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "Source: 1 carousel, 6 slides.", "Submitted", 100),
-    ("Vinay", "Comical carousals — 1 (7 slides)", "Completed item in source report. Shared proof folder supplied for Vinay's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "Source wording preserved: comical carousals-1 (7 slides).", "Submitted", 100),
-    ("Vinay", "Video static — 1 meme video", "Completed item in source report. Shared proof folder supplied for Vinay's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "", "Submitted", 100),
-    ("Vinay", "Instagram stories — 3", "Completed item in source report. Shared proof folder supplied for Vinay's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "", "Submitted", 100),
-    ("Vinay", "Dussehra creatives — 3", "Completed item in source report. Shared proof folder supplied for Vinay's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "", "Submitted", 100),
+    ("David", "Protein bar story line — 1 carousel (6 slides)", "Completed item in source report. Shared proof folder supplied for David's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "Source: 1 carousel, 6 slides.", "Submitted", 100),
+    ("David", "Comical carousals — 1 (7 slides)", "Completed item in source report. Shared proof folder supplied for David's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "Source wording preserved: comical carousals-1 (7 slides).", "Submitted", 100),
+    ("David", "Video static — 1 meme video", "Completed item in source report. Shared proof folder supplied for David's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "", "Submitted", 100),
+    ("David", "Instagram stories — 3", "Completed item in source report. Shared proof folder supplied for David's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "", "Submitted", 100),
+    ("David", "Dussehra creatives — 3", "Completed item in source report. Shared proof folder supplied for David's completed work.", ["https://drive.google.com/drive/folders/1ryLbi_DMBzg3cm_cUQUSBsjLCInZTPIo?usp=sharing"], "", "Submitted", 100),
 
-    ("Siri", "New data collected across states", "Jammu and Kashmir=20; Gujarat=33; Jharkhand=15; Haryana=2; Goa=1. Total stores count=1231.", ["https://1drv.ms/x/c/42cb0433cf46e2a2/IQBmYm2HAA65RKFmVhyPK4siAY_ozlYUA35h0SMWNOHAvBI?e=OKv1o8", "https://1drv.ms/x/c/42cb0433cf46e2a2/IQDkko37oqDORb_b5GVbdBFLAe5_LTQh0JQzGV0NqDA-fnw?e=TdKlvg"], "Source evidence labels: Database; Dashboard.", "Submitted", 100),
-    ("Siri", "Store calling activity and decision-maker confirmation", "Calls done: 17; connected: 8; confirmed decision-maker names: 5.", ["https://1drv.ms/x/c/42cb0433cf46e2a2/IQAj4MUlGYMHTpMpSqQ2d3VIAZNU63tnUY4r8qktC98QaqA?e=iQnwK9"], "Source evidence label: Haryana Store Calling Sheet.", "Submitted", 100),
-    ("Siri", "Automation message delivery tracking setup", "Attached Siri and Sanjana numbers to automation so message sending/receipt can be checked for customers/distributors.", ["https://1drv.ms/x/c/42cb0433cf46e2a2/IQD6T_R83XX2QaaqGMj_WsSCAfGivAh1j3CCOpn7ykk-M0k?e=TVPcgu"], "Source evidence label: Telangana & Andhra Pradesh Automation Sheet.", "Submitted", 100),
+    ("Sarah", "New data collected across states", "Jammu and Kashmir=20; Gujarat=33; Jharkhand=15; Haryana=2; Goa=1. Total stores count=1231.", ["https://1drv.ms/x/c/42cb0433cf46e2a2/IQBmYm2HAA65RKFmVhyPK4siAY_ozlYUA35h0SMWNOHAvBI?e=OKv1o8", "https://1drv.ms/x/c/42cb0433cf46e2a2/IQDkko37oqDORb_b5GVbdBFLAe5_LTQh0JQzGV0NqDA-fnw?e=TdKlvg"], "Source evidence labels: Database; Dashboard.", "Submitted", 100),
+    ("Sarah", "Store calling activity and decision-maker confirmation", "Calls done: 17; connected: 8; confirmed decision-maker names: 5.", ["https://1drv.ms/x/c/42cb0433cf46e2a2/IQAj4MUlGYMHTpMpSqQ2d3VIAZNU63tnUY4r8qktC98QaqA?e=iQnwK9"], "Source evidence label: Haryana Store Calling Sheet.", "Submitted", 100),
+    ("Sarah", "Automation message delivery tracking setup", "Attached Sarah and Samantha numbers to automation so message sending/receipt can be checked for customers/distributors.", ["https://1drv.ms/x/c/42cb0433cf46e2a2/IQD6T_R83XX2QaaqGMj_WsSCAfGivAh1j3CCOpn7ykk-M0k?e=TVPcgu"], "Source evidence label: Telangana & Andhra Pradesh Automation Sheet.", "Submitted", 100),
 
-    ("Sanjana", "MY operator automation messages sent to AP & Telangana", "Completed item in source report.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726"], "Second source sheet: https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323", "Submitted", 100),
-    ("Sanjana", "Vijayawada and Tirupati sample sachets dispatched", "Completed item in source report.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "", "Submitted", 100),
-    ("Sanjana", "Hiprocket return-charge ticket follow-up", "Team advised waiting 10–15 days for an update on the ticket raised.", [], "Follow-up is waiting for the team's update; source report still lists PENDING: No.", "Submitted", 100),
-    ("Sanjana", "Received Siri database and completed calls", "Total calls: 60; connected: 37; 29 from Sanjana and 8 from Siri.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726", "https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "Both original spreadsheet links retained.", "Submitted", 100),
-    ("Sanjana", "Warm distributor — Sri Sai Balaji, Tirupati; 5 samples sent", "Completed item in source report.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "", "Submitted", 100),
-    ("Sanjana", "Contacted Nutracore to confirm sample sachets receipt", "Connected to Nutracore to get confirmation whether sample sachets were received.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726", "https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "", "Submitted", 100),
-    ("Sanjana", "Out-for-delivery calls and pre-dispatch messages", "Out for delivery calls: 1. Pre-dispatch messages sent: 3.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726"], "", "Submitted", 100),
+    ("Samantha", "MY operator automation messages sent to AP & Telangana", "Completed item in source report.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726"], "Second source sheet: https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323", "Submitted", 100),
+    ("Samantha", "Vijayawada and Tirupati sample sachets dispatched", "Completed item in source report.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "", "Submitted", 100),
+    ("Samantha", "Hiprocket return-charge ticket follow-up", "Team advised waiting 10–15 days for an update on the ticket raised.", [], "Follow-up is waiting for the team's update; source report still lists PENDING: No.", "Submitted", 100),
+    ("Samantha", "Received Sarah database and completed calls", "Total calls: 60; connected: 37; 29 from Samantha and 8 from Sarah.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726", "https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "Both original spreadsheet links retained.", "Submitted", 100),
+    ("Samantha", "Warm distributor — Sri Sai Balaji, Tirupati; 5 samples sent", "Completed item in source report.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "", "Submitted", 100),
+    ("Samantha", "Contacted Nutracore to confirm sample sachets receipt", "Connected to Nutracore to get confirmation whether sample sachets were received.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726", "https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=825994323"], "", "Submitted", 100),
+    ("Samantha", "Out-for-delivery calls and pre-dispatch messages", "Out for delivery calls: 1. Pre-dispatch messages sent: 3.", ["https://docs.google.com/spreadsheets/d/1Dblj5pmjVnNZSXKRSpbqyTf5vOqQXAc8cRXxUbolS58/edit?gid=70451726"], "", "Submitted", 100),
 
-    ("Lohith", "All assigned tasks", "Source report states: All assigned tasks completed.", [], "No separate links; proofs attached in EOD. Source missing proof: No.", "Submitted", 100),
-    ("Lohith", "B2B needs to finalise", "Pending item exactly as stated in source report.", [], "Imported as pending work; do not mark completed until manager updates it.", "Pending", 0),
+    ("Lucas", "All assigned tasks", "Source report states: All assigned tasks completed.", [], "No separate links; proofs attached in EOD. Source missing proof: No.", "Submitted", 100),
+    ("Lucas", "B2B needs to finalise", "Pending item exactly as stated in source report.", [], "Imported as pending work; do not mark completed until manager updates it.", "Pending", 0),
 
-    ("Taruna", "Stock reconciliation", "Completed item in source report.", [], "Source proof references: Fun and Facts Tracker filename: fun ^L0 facts postings.xlsx. No URL supplied for this filename.", "Submitted", 100),
-    ("Taruna", "Stock movement", "Completed item in source report.", ["https://1drv.ms/x/c/c11b3da91d61d188/IQDclrlPdHLFQ7cUImGfQ9xCAaHY-_xYC5Pjll-TJPSHsM8?e=do2sFs"], "Source filename: stock movement.xlsx.", "Submitted", 100),
-    ("Taruna", "Outgoing and incoming payment lists", "Completed item in source report.", [], "Source filenames: outgoing payment list.xlsx; incoming payment list.xlsx. No URLs supplied for these filenames.", "Submitted", 100),
-    ("Taruna", "Collected proof links", "Completed item in source report.", [], "Source report does not specify a separate URL for this item.", "Submitted", 100),
-    ("Taruna", "Order dispatchness", "Original wording preserved from source report.", [], "No separate URL supplied for this item.", "Submitted", 100),
-    ("Taruna", "Verified registers and assets; submitted operational requirements in EOD", "Completed item in source report.", [], "No separate URL supplied for this item.", "Submitted", 100),
+    ("Taylor", "Stock reconciliation", "Completed item in source report.", [], "Source proof references: Fun and Facts Tracker filename: fun ^L0 facts postings.xlsx. No URL supplied for this filename.", "Submitted", 100),
+    ("Taylor", "Stock movement", "Completed item in source report.", ["https://1drv.ms/x/c/c11b3da91d61d188/IQDclrlPdHLFQ7cUImGfQ9xCAaHY-_xYC5Pjll-TJPSHsM8?e=do2sFs"], "Source filename: stock movement.xlsx.", "Submitted", 100),
+    ("Taylor", "Outgoing and incoming payment lists", "Completed item in source report.", [], "Source filenames: outgoing payment list.xlsx; incoming payment list.xlsx. No URLs supplied for these filenames.", "Submitted", 100),
+    ("Taylor", "Collected proof links", "Completed item in source report.", [], "Source report does not specify a separate URL for this item.", "Submitted", 100),
+    ("Taylor", "Order dispatchness", "Original wording preserved from source report.", [], "No separate URL supplied for this item.", "Submitted", 100),
+    ("Taylor", "Verified registers and assets; submitted operational requirements in EOD", "Completed item in source report.", [], "No separate URL supplied for this item.", "Submitted", 100),
 
-    ("Sailu", "Little footprints — all 3 activities done", "Completed item in source report. Original spelling preserved in source snapshot.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCqK4Js0RMeTZ_ujf9N34CHAS0748iel1v89ppKu1Wbi4c?e=xC4Ubb"], "Source label: Lillte footprints last script.", "Submitted", 100),
-    ("Sailu", "MITs Medha admission script", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCFXtlMMKBLSq4WPcqo6UMnASlqLgzKvbKQSojjyV3bovM?e=lxc3WP"], "Source label: mits medha script.", "Submitted", 100),
-    ("Sailu", "Harish Sir educational script", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9"], "Source label: harish sir script.", "Submitted", 100),
-    ("Sailu", "Dasara script", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9"], "Duplicate URL is intentionally preserved exactly as shown in the source.", "Submitted", 100),
-    ("Sailu", "Coordinated with Sai Teja and Gopi; explained shoot scripts and helped editing", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCqK4Js0RMeTZ_ujf9N34CHAS0748iel1v89ppKu1Wbi4c?e=xC4Ubb"], "Shared source evidence retained; no unique link was stated for this item.", "Submitted", 100),
-    ("Sailu", "Fun and Facts reel caption / tomorrow educational script", "Fun and Facts reel caption is listed under completed work; source also lists Tomorrow educational script as a proof reference.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9"], "Tomorrow educational script URL duplicated the Harish Sir / Dasara URL in the source; preserved exactly.", "Submitted", 100),
-    ("Sailu", "Morning comical reel script", "Missing item noted at the end of Sailu's source section.", [], "Source wording: Missing: Morning comical reel script.", "Pending", 0),
+    ("Sophia", "Little footprints — all 3 activities done", "Completed item in source report. Original spelling preserved in source snapshot.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCqK4Js0RMeTZ_ujf9N34CHAS0748iel1v89ppKu1Wbi4c?e=xC4Ubb"], "Source label: Lillte footprints last script.", "Submitted", 100),
+    ("Sophia", "MITs Medha admission script", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCFXtlMMKBLSq4WPcqo6UMnASlqLgzKvbKQSojjyV3bovM?e=lxc3WP"], "Source label: mits medha script.", "Submitted", 100),
+    ("Sophia", "Harrison educational script", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9"], "Source label: harrison script.", "Submitted", 100),
+    ("Sophia", "Dasara script", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9"], "Duplicate URL is intentionally preserved exactly as shown in the source.", "Submitted", 100),
+    ("Sophia", "Coordinated with Jordan and Marcus; explained shoot scripts and helped editing", "Completed item in source report.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCqK4Js0RMeTZ_ujf9N34CHAS0748iel1v89ppKu1Wbi4c?e=xC4Ubb"], "Shared source evidence retained; no unique link was stated for this item.", "Submitted", 100),
+    ("Sophia", "Fun and Facts reel caption / tomorrow educational script", "Fun and Facts reel caption is listed under completed work; source also lists Tomorrow educational script as a proof reference.", ["https://1drv.ms/w/c/e2ee80143bb8aa3f/IQCQzkvBuaQpRYXqNLtunt0_AQK0O0xaqgAQO4pZDanLo4M?e=BblsL9"], "Tomorrow educational script URL duplicated the Harrison / Dasara URL in the source; preserved exactly.", "Submitted", 100),
+    ("Sophia", "Morning comical reel script", "Missing item noted at the end of Sophia's source section.", [], "Source wording: Missing: Morning comical reel script.", "Pending", 0),
 
-    ("Sai Teja", "All villain world characters modifications done", "Completed item in source report.", ["https://drive.google.com/drive/folders/1ns_EPaE3jamFYkq0Y0BRIeKLkROy1Ygs?usp=share_link"], "", "Submitted", 100),
-    ("Sai Teja", "Comical video shoot completed, edited with needed changes, and posted in Fun and Facts", "Completed item in source report.", ["https://www.instagram.com/reel/DeRhfPdSKvH/?rpxt=enR1bWpyOWc5YWZo", "https://drive.google.com/drive/folders/1dCMip95NJjrEKQSVAQeW0imH7qYvWFzY?usp=share_link"], "Both original links are retained.", "Submitted", 100),
-    ("Sai Teja", "Villain intro animations", "Pending item exactly as stated in source report.", [], "Do not mark completed until manager updates the task.", "Pending", 0),
+    ("Jordan", "All villain world characters modifications done", "Completed item in source report.", ["https://drive.google.com/drive/folders/1ns_EPaE3jamFYkq0Y0BRIeKLkROy1Ygs?usp=share_link"], "", "Submitted", 100),
+    ("Jordan", "Comical video shoot completed, edited with needed changes, and posted in Fun and Facts", "Completed item in source report.", ["https://www.instagram.com/reel/DeRhfPdSKvH/?rpxt=enR1bWpyOWc5YWZo", "https://drive.google.com/drive/folders/1dCMip95NJjrEKQSVAQeW0imH7qYvWFzY?usp=share_link"], "Both original links are retained.", "Submitted", 100),
+    ("Jordan", "Villain intro animations", "Pending item exactly as stated in source report.", [], "Do not mark completed until manager updates the task.", "Pending", 0),
 ]
 
 
@@ -470,7 +432,7 @@ def seed_initial_audit(db):
         raise RuntimeError(f"Initial audit seed failed: {exc}") from exc
 
 
-APP_NAME = "Raw Strength Calisthenics — Employee Audit Manager"
+APP_NAME = "Apex Operations — Employee Audit Manager"
 GITHUB_REPOSITORY = "yalangisexter-ux/audit-report"
 GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases?per_page=100"
 GITHUB_RELEASE_DOWNLOAD_PREFIX = f"https://github.com/{GITHUB_REPOSITORY}/releases/download/"
@@ -2278,7 +2240,7 @@ def is_developer_test_user(user_or_role) -> bool:
         role = ""
         display_name = ""
     # Taruna's customer identity takes precedence over the generic Admin role label.
-    if raw_username == "Admin" or "taruna" in raw_username.casefold() or "taruna" in display_name:
+    if raw_username == "Admin" or "taylor" in raw_username.casefold() or "taruna" in raw_username.casefold() or "taylor" in display_name or "taruna" in display_name:
         return False
     if raw_username == "admin":
         return True
@@ -2299,7 +2261,7 @@ def is_master_customer_user(user_or_role) -> bool:
         raw_username = str(user_or_role or "").strip()
         uname = raw_username.casefold()
         dname = ""
-    return raw_username == "Admin" or "taruna" in uname or "taruna" in dname or "master" in dname
+    return raw_username == "Admin" or "taylor" in uname or "taruna" in uname or "taylor" in dname or "taruna" in dname or "master" in dname
 
 
 def find_active_auth_user(conn: sqlite3.Connection, username: str):
@@ -3435,7 +3397,7 @@ class LoginDialog(QDialog):
         logo.setPixmap(brand_mark_pixmap(72))
         layout.addWidget(logo)
 
-        title = QLabel("Raw Strength Calisthenics")
+        title = QLabel("Apex Operations")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setWordWrap(True)
         title.setProperty("pageTitle", True)
@@ -3480,7 +3442,7 @@ class LoginDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(12)
         self.username = QLineEdit()
-        self.username.setPlaceholderText("Enter username (e.g. taruna or admin)")
+        self.username.setPlaceholderText("Enter username (e.g. taylor or admin)")
         self.username.setMinimumHeight(36)
         pw_container = password_field("Enter password")
         self.password = pw_container.field
@@ -3520,7 +3482,7 @@ class LoginDialog(QDialog):
     def check(self):
         raw_username = self.username.text().strip()
         uname = raw_username.lower()
-        if uname in ("admin / taruna", "admin/taruna", "taruna"):
+        if uname in ("admin / taylor", "admin/taylor", "taylor", "admin / taruna", "admin/taruna", "taruna"):
             target_username = "taruna"
         elif raw_username == "admin":
             target_username = "admin"
@@ -6393,13 +6355,13 @@ class MainWindow(QMainWindow):
         self.brand_logo.setObjectName("brandLogo")
         self.brand_logo.setFixedSize(76, 76)
         self.brand_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.brand_logo.setToolTip("Raw Strength Calisthenics brand mark")
+        self.brand_logo.setToolTip("Apex Operations brand mark")
         self.brand_logo.setPixmap(brand_mark_pixmap(68))
         logo_frame_layout.addWidget(self.brand_logo)
         brand_layout.addWidget(self.brand_logo_frame)
         brand_copy = QVBoxLayout()
         brand_copy.setSpacing(2)
-        self.brand_heading = QLabel("Raw Strength Calisthenics")
+        self.brand_heading = QLabel("Apex Operations")
         self.brand_heading.setObjectName("brandHeading")
         self.brand_subheading = QLabel(f"EXECUTIVE AUDIT  •  OPERATIONS OS  •  v{APP_VERSION}")
         self.brand_subheading.setObjectName("brandSubheading")
@@ -6588,11 +6550,11 @@ class MainWindow(QMainWindow):
             self.db.set_active_user(user)
         if is_developer_test_user(user):
             self.statusBar().showMessage(
-                f"  Signed in: admin (Developer)  •  🧪 Local Test Mode (Master Sync PAUSED - Changes stay local)  •  Raw Strength Calisthenics"
+                f"  Signed in: admin (Developer)  •  🧪 Local Test Mode (Master Sync PAUSED - Changes stay local)  •  Apex Operations"
             )
         else:
             self.statusBar().showMessage(
-                f"  Signed in: {user.get('display_name') or user.get('username')}  •  👑 Master Customer Mode (Live Sync ACTIVE)  •  Role: {self.user_role}  •  Raw Strength Calisthenics"
+                f"  Signed in: {user.get('display_name') or user.get('username')}  •  👑 Master Customer Mode (Live Sync ACTIVE)  •  Role: {self.user_role}  •  Apex Operations"
             )
         self.refresh_all()
         # Check for update in background and display home banner if a newer release exists
@@ -9021,7 +8983,7 @@ class MainWindow(QMainWindow):
                 if getattr(sys, "frozen", False):
                     exe_target = str(Path(sys.executable).resolve())
                 else:
-                    exe_target = str(Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Raw Strength Employee Audit Manager" / "RawStrengthEmployeeAuditManager.exe")
+                    exe_target = str(Path(os.environ.get("ProgramFiles", "C:\\Program Files")) / "Apex Operations Employee Audit Manager" / "ApexOperationsEmployeeAuditManager.exe")
                 setup_stem = installer_path.stem
                 watchdog_cmd = (
                     f"$setupBase = '{setup_stem}'; "
@@ -9046,7 +9008,7 @@ class MainWindow(QMainWindow):
                     f"  Start-Sleep -Seconds 3; "
                     f"  try {{ "
                     f"    $ws = New-Object -ComObject WScript.Shell; "
-                    f"    $ws.AppActivate('Raw Strength Calisthenics'); "
+                    f"    $ws.AppActivate('Apex Operations'); "
                     f"  }} catch {{}}; "
                     f"}}"
                 )
@@ -9090,7 +9052,7 @@ class MainWindow(QMainWindow):
                 "This installation is missing a required application runtime file, "
                 "so the update could not continue. Your local employee database is "
                 "stored separately and should not be deleted. Close the application "
-                "and run the latest verified Raw Strength Employee Audit Manager "
+                "and run the latest verified Apex Operations Employee Audit Manager "
                 "installer to repair/replace the application files. Do not delete "
                 "%LOCALAPPDATA%\\EmployeeAuditManager."
             )
@@ -13424,7 +13386,7 @@ class MainWindow(QMainWindow):
         sec.top_margin=Inches(.62); sec.bottom_margin=Inches(.58); sec.left_margin=Inches(.68); sec.right_margin=Inches(.68)
         styles=doc.styles; styles["Normal"].font.name="Aptos"; styles["Normal"].font.size=Pt(9); styles["Normal"].paragraph_format.space_after=Pt(4)
         styles["Title"].font.name="Aptos Display"; styles["Title"].font.size=Pt(20); styles["Title"].font.bold=True; styles["Title"].font.color.rgb=RGBColor(31,59,87)
-        header=sec.header.paragraphs[0]; header.text="RAW STRENGTH CALISTHENICS  |  EMPLOYEE AUDIT MANAGER"; header.alignment=1
+        header=sec.header.paragraphs[0]; header.text="APEX OPERATIONS  |  EMPLOYEE AUDIT MANAGER"; header.alignment=1
         for r in header.runs: r.font.name="Aptos"; r.font.size=Pt(8); r.font.bold=True; r.font.color.rgb=RGBColor(71,85,105)
         footer=sec.footer.paragraphs[0]; footer.text=f"Confidential internal report  •  Generated {now_text()}"; footer.alignment=1
         for r in footer.runs: r.font.size=Pt(8); r.font.color.rgb=RGBColor(100,116,139)
@@ -13846,13 +13808,13 @@ class MainWindow(QMainWindow):
             canvas.line(15*mm, 13*mm, page_width-15*mm, 13*mm)
             canvas.setFont(regular_name, 7)
             canvas.setFillColor(muted)
-            canvas.drawString(15*mm, 7.5*mm, "Raw Strength Calisthenics | Confidential internal report")
+            canvas.drawString(15*mm, 7.5*mm, "Apex Operations | Confidential internal report")
             canvas.drawRightString(page_width-15*mm, 7.5*mm, f"Page {doc_obj.page}")
             canvas.restoreState()
 
         document = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=17*mm, leftMargin=17*mm,
             topMargin=16*mm, bottomMargin=18*mm, title=self._report_title(report_type),
-            author="Raw Strength Calisthenics", subject=f"{report_type} - {report_date}")
+            author="Apex Operations", subject=f"{report_type} - {report_date}")
         document.build(story, onFirstPage=draw_page, onLaterPages=draw_page)
 
     def export_report_csv(self, path, report_date, employee_id=None, report_type="Audit / EOD", eod_options=None):
@@ -14096,7 +14058,7 @@ class MainWindow(QMainWindow):
 
     def report_preview_text(self,d,eid):
         data=self.report_data(d,eid); opts=self.selected_eod_options()
-        lines=[f"RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD: {d}",""]
+        lines=[f"APEX OPERATIONS — EMPLOYEE AUDIT / EOD: {d}",""]
         all_tasks=[t for _,tasks,_ in data for t in tasks]
         if opts.get("summary",True):
             approved_count = sum(1 for t in all_tasks if str(t["approval_status"] if (hasattr(t, "keys") and "approval_status" in t.keys()) else (dict(t).get("approval_status", "") if hasattr(t, "__iter__") else "")).lower() == "approved")
@@ -15290,7 +15252,7 @@ def resource_path(relative_path):
 
 
 class StartupSplashScreen(QWidget):
-    """Modern frameless loading splash screen for Raw Strength Calisthenics."""
+    """Modern frameless loading splash screen for Apex Operations."""
 
     def __init__(self):
         super().__init__()
@@ -15346,7 +15308,7 @@ class StartupSplashScreen(QWidget):
         title_col = QVBoxLayout()
         title_col.setSpacing(3)
 
-        title_lbl = QLabel("RAW STRENGTH CALISTHENICS")
+        title_lbl = QLabel("APEX OPERATIONS")
         title_lbl.setStyleSheet("color: #F8FAFC; font-size: 14pt; font-weight: 800; letter-spacing: 1px; background: transparent; border: none;")
         title_col.addWidget(title_lbl)
 

@@ -1,4 +1,4 @@
-// Raw Strength Executive Operations API v1.3.82 - Cloudflare Native Backend
+// Apex Operations Executive Operations API v1.3.82 - Cloudflare Native Backend
 import { handleSalesChannels, handleSalesWebhook } from "./sales-channels.js";
 import { computePbkdf2Sha256 } from "./pbkdf2.js";
 
@@ -191,16 +191,16 @@ export default {
       }
 
 
-      // Public USA–Raw Strength customer storefront APIs.
+      // Public Apex Operations customer storefront APIs.
       const FLAGSHIP_STORE_CATALOG = [
-        { id: 101, sku: "USA-RS-RNG32", name: "USA Raw Strength Olympic Birch Gymnastic Rings (32mm)", category: "Rings & Straps", brand: "USA Raw Strength", package_type: "Complete Set (Rings, Straps & Bag)", unit: "SET", price: 2499, available_stock: 45 },
-        { id: 102, sku: "USA-RS-BELT01", name: "USA Raw Strength Heavy-Duty Weighted Dip Belt", category: "Weights & Belts", brand: "USA Raw Strength", package_type: "Belt with 36\" Steel Chain", unit: "PCS", price: 1799, available_stock: 35 },
-        { id: 103, sku: "USA-RS-PARAL", name: "Pro Beech Wood Low Parallettes (Push-Up Bars)", category: "Parallettes & Bars", brand: "USA Raw Strength", package_type: "Pair in Box", unit: "PAIR", price: 2899, available_stock: 20 },
-        { id: 104, sku: "USA-RS-WHEY2K", name: "USA Raw Strength 100% Whey Isolate (2kg / 4.4 lbs)", category: "Nutrition & Supplements", brand: "USA Raw Strength", package_type: "Jar (Belgian Chocolate)", unit: "JAR", price: 4299, available_stock: 50 },
-        { id: 105, sku: "USA-RS-CREA25", name: "Micronized Creatine Monohydrate (250g Creapure® Grade)", category: "Nutrition & Supplements", brand: "USA Raw Strength", package_type: "Tub (Unflavored)", unit: "TUB", price: 1099, available_stock: 80 },
-        { id: 106, sku: "USA-RS-CHLK25", name: "Pure Magnesium Carbonate Liquid Chalk (250ml)", category: "Chalk & Accessories", brand: "USA Raw Strength", package_type: "Squeeze Bottle", unit: "BOTTLE", price: 649, available_stock: 120 },
-        { id: 107, sku: "USA-RS-BND5PK", name: "Progressive Calisthenics Resistance Bands (Set of 5)", category: "Rings & Straps", brand: "USA Raw Strength", package_type: "5-Band Bundle", unit: "SET", price: 1899, available_stock: 60 },
-        { id: 108, sku: "USA-RS-VEST20", name: "Adjustable Tactical Weighted Vest (20kg Heavy Duty)", category: "Weights & Belts", brand: "USA Raw Strength", package_type: "Vest + 20x 1kg Cast Weights", unit: "PCS", price: 5499, available_stock: 15 }
+        { id: 101, sku: "APX-RNG32", name: "Apex Operations Olympic Birch Gymnastic Rings (32mm)", category: "Rings & Straps", brand: "Apex Operations", package_type: "Complete Set (Rings, Straps & Bag)", unit: "SET", price: 2499, available_stock: 45 },
+        { id: 102, sku: "APX-BELT01", name: "Apex Operations Heavy-Duty Weighted Dip Belt", category: "Weights & Belts", brand: "Apex Operations", package_type: "Belt with 36\" Steel Chain", unit: "PCS", price: 1799, available_stock: 35 },
+        { id: 103, sku: "APX-PARAL", name: "Pro Beech Wood Low Parallettes (Push-Up Bars)", category: "Parallettes & Bars", brand: "Apex Operations", package_type: "Pair in Box", unit: "PAIR", price: 2899, available_stock: 20 },
+        { id: 104, sku: "APX-WHEY2K", name: "Apex Operations 100% Whey Isolate (2kg / 4.4 lbs)", category: "Nutrition & Supplements", brand: "Apex Operations", package_type: "Jar (Belgian Chocolate)", unit: "JAR", price: 4299, available_stock: 50 },
+        { id: 105, sku: "APX-CREA25", name: "Micronized Creatine Monohydrate (250g Creapure® Grade)", category: "Nutrition & Supplements", brand: "Apex Operations", package_type: "Tub (Unflavored)", unit: "TUB", price: 1099, available_stock: 80 },
+        { id: 106, sku: "APX-CHLK25", name: "Pure Magnesium Carbonate Liquid Chalk (250ml)", category: "Chalk & Accessories", brand: "Apex Operations", package_type: "Squeeze Bottle", unit: "BOTTLE", price: 649, available_stock: 120 },
+        { id: 107, sku: "APX-BND5PK", name: "Progressive Calisthenics Resistance Bands (Set of 5)", category: "Rings & Straps", brand: "Apex Operations", package_type: "5-Band Bundle", unit: "SET", price: 1899, available_stock: 60 },
+        { id: 108, sku: "APX-VEST20", name: "Adjustable Tactical Weighted Vest (20kg Heavy Duty)", category: "Weights & Belts", brand: "Apex Operations", package_type: "Vest + 20x 1kg Cast Weights", unit: "PCS", price: 5499, available_stock: 15 }
       ];
 
       if (path === "/api/store/catalog" && request.method === "GET") {
@@ -242,13 +242,13 @@ export default {
         }
         const paymentMethod = String(b.payment_method || "Cash on Delivery").slice(0, 50);
         const paymentStatus = String(b.payment_status || (paymentMethod === "Cash on Delivery" ? "Unpaid" : "Pending Verification")).slice(0, 50);
-        const code="USA-RS-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+randomHex(3).toUpperCase();
+        const code="APX-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+randomHex(3).toUpperCase();
         const orderId=await insert(env.DB,"store_orders",{order_code:code,customer_name:name,phone,email,shipping_address:address,
           order_status:"Pending",payment_method:paymentMethod,payment_status:paymentStatus,subtotal:total,total_amount:total,
           customer_note:String(b.customer_note||"").slice(0,1000),created_at:now,updated_at:now});
         for(const item of normalized)await insert(env.DB,"store_order_items",{order_id:orderId,...item});
         return json({success:true,order_id:orderId,order_code:code,total_amount:total,currency:"INR",
-          message:"Order received. The USA–Raw Strength team will contact you to confirm availability and delivery."},201,headers);
+          message:"Order received. The Apex Operations team will contact you to confirm availability and delivery."},201,headers);
       }
       if (path === "/api/store/track" && request.method === "GET") {
         const url = new URL(request.url);
@@ -865,7 +865,7 @@ export default {
       if(path==="/api/settings"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const rows=await all(env.DB,"SELECT key,value FROM settings");
-        return json({settings:Object.fromEntries(rows.map(r=>[r.key,r.value])),app_version:"1.3.82",app_name:"Raw Strength Calisthenics — Employee Audit Manager"},200,headers);
+        return json({settings:Object.fromEntries(rows.map(r=>[r.key,r.value])),app_version:"1.3.82",app_name:"Apex Operations — Employee Audit Manager"},200,headers);
       }
       if(path==="/api/settings"&&request.method==="POST"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
@@ -1757,7 +1757,7 @@ function generateWorkerPdf(text, meta) {
   for (let p = 0; p < pages.length; p++) {
     const stream = [];
     stream.push("BT", "/F1 12 Tf", "40 800 Td");
-    stream.push("(" + escapePdfText("RAW STRENGTH CALISTHENICS - " + (meta.report_type || "OPERATIONS REPORT")) + ") Tj");
+    stream.push("(" + escapePdfText("APEX OPERATIONS - " + (meta.report_type || "OPERATIONS REPORT")) + ") Tj");
     stream.push("/F1 8 Tf", "0 -15 Td");
     stream.push("(" + escapePdfText("Report Date: " + (meta.date || "") + "  |  Generated: " + new Date().toISOString().slice(0,10)) + ") Tj");
     stream.push("0 -18 Td", "/F1 8.5 Tf");
@@ -1901,7 +1901,7 @@ async function buildReportPreview(env, req) {
       FROM employees e
       LEFT JOIN attendance a ON a.employee_id = e.id AND a.work_date = ?
       WHERE 1=1 ${scopeSql} ORDER BY e.name COLLATE NOCASE`, [dateStr, ...args]);
-    const lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE ATTENDANCE", `Date: ${dateStr}`, ""];
+    const lines = ["APEX OPERATIONS — EMPLOYEE ATTENDANCE", `Date: ${dateStr}`, ""];
     if (holidayName) lines.push(`Declared holiday: ${holidayName}`, "");
     const statusOf = r => holidayDeclared ? "Holiday" : (r.status || "Unmarked");
     const isPresent = r => {
@@ -1927,7 +1927,7 @@ async function buildReportPreview(env, req) {
 
   if (reportType === "Employee Details") {
     const rows = await all(env.DB, `SELECT * FROM employees e WHERE 1=1 ${scopeSql} ORDER BY e.name COLLATE NOCASE`, args);
-    const lines = ["RAW STRENGTH CALISTHENICS — EMPLOYEE DETAILS", `Generated: ${new Date().toISOString().slice(0, 19).replace("T", " ")}`, ""];
+    const lines = ["APEX OPERATIONS — EMPLOYEE DETAILS", `Generated: ${new Date().toISOString().slice(0, 19).replace("T", " ")}`, ""];
     for (const r of rows) {
       const parts = [r.name || ""];
       if (opts.details_identity) parts.push(`Employee ID: ${r.employee_code || "N/A"}`, `Department: ${r.department || "N/A"}`, `Role: ${r.designation || "N/A"}`);
@@ -1962,7 +1962,7 @@ async function buildReportPreview(env, req) {
 
   const scopeDesc = req.employee_id ? "Individual employee" : (req.exclude_employee_id ? "Consolidated, excluding employee " + req.exclude_employee_id : "All employees");
   const lines = [
-    "RAW STRENGTH CALISTHENICS — EMPLOYEE AUDIT / EOD",
+    "APEX OPERATIONS — EMPLOYEE AUDIT / EOD",
     `Report date: ${dateStr}`,
     `Scope: ${scopeDesc}`,
     ""

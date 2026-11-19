@@ -860,7 +860,7 @@ def export_customer_directory(
         section = document.sections[0]
         section.orientation = WD_ORIENT.LANDSCAPE
         section.page_width, section.page_height = section.page_height, section.page_width
-        document.add_heading("Raw Strength Calisthenics — Store Directory", level=1)
+        document.add_heading("Apex Operations — Store Directory", level=1)
         document.add_paragraph("Generated " + datetime.now().strftime("%Y-%m-%d %H:%M") + " · " + str(len(records)) + " records")
         fields = (("State", "state"), ("City / Area", "city"), ("Business name", "business_name"),
                   ("Category", "business_category"), ("Phone", "phone"), ("Full address", "address"), ("Google Maps", "maps"))
@@ -887,7 +887,7 @@ def export_customer_directory(
         for record in records
     ]
     return _export_pdf(
-        "RAW STRENGTH CALISTHENICS — STORE AUDIT & CUSTOMER PROSPECTS",
+        "APEX OPERATIONS — STORE AUDIT & CUSTOMER PROSPECTS",
         "Generated: " + datetime.now().strftime("%Y-%m-%d %H:%M") + " | Filtered records: " + str(len(records)),
         [label for label, _key in fields],
         pdf_rows,
@@ -980,7 +980,7 @@ def export_customer_regional_dashboard(
         "—", "—",
     ]
     return _export_pdf(
-        "RAW STRENGTH CALISTHENICS — REGIONAL DASHBOARD AUDIT",
+        "APEX OPERATIONS — REGIONAL DASHBOARD AUDIT",
         "Generated: " + datetime.now().strftime("%Y-%m-%d %H:%M") + " | Territories: " + str(len(rows)),
         [label for label, _key in fields],
         pdf_rows,

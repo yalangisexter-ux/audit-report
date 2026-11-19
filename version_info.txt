@@ -14,12 +14,12 @@ VSVersionInfo(
       StringTable(
         '040904B0',
         [
-          StringStruct('CompanyName', 'Raw Strength Calisthenics'),
-          StringStruct('FileDescription', 'Raw Strength Calisthenics Employee Audit Manager'),
+          StringStruct('CompanyName', 'Apex Operations'),
+          StringStruct('FileDescription', 'Apex Operations Employee Audit Manager'),
           StringStruct('FileVersion', '1.3.82.0'),
           StringStruct('InternalName', 'RawStrengthEmployeeAuditManager'),
           StringStruct('OriginalFilename', 'RawStrengthEmployeeAuditManager.exe'),
-          StringStruct('ProductName', 'Raw Strength Calisthenics - Employee Audit Manager'),
+          StringStruct('ProductName', 'Apex Operations - Employee Audit Manager'),
           StringStruct('ProductVersion', '1.3.82.0')
         ]
       )

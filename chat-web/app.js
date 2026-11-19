@@ -571,7 +571,7 @@
     $("appView").classList.add("hidden"); $("loginView").classList.remove("hidden"); $("password").value = ""; $("username").focus();
   });
   $("newPrivateBtn").addEventListener("click", () => {
-    showDialog("Start a private chat", [{id:"username",label:"Employee username",placeholder:"e.g. taruna"}], async values => {
+    showDialog("Start a private chat", [{id:"username",label:"Employee username",placeholder:"e.g. taylor"}], async values => {
       const data = await api("/api/conversations/private",{method:"POST",body:JSON.stringify({username:values.username})});
       await loadConversations(data.conversationId);
     });
@@ -579,7 +579,7 @@
   $("newGroupBtn").addEventListener("click", () => {
     showDialog("Create an authorized group", [
       {id:"groupName",label:"Group name",placeholder:"e.g. Operations"},
-      {id:"members",label:"Member usernames (comma-separated)",placeholder:"taruna, siri, gopi",required:false}
+      {id:"members",label:"Member usernames (comma-separated)",placeholder:"taylor, sarah, marcus",required:false}
     ], async values => {
       const usernames = values.members.split(",").map(value => value.trim()).filter(Boolean);
       const data = await api("/api/conversations/group",{method:"POST",body:JSON.stringify({name:values.groupName,usernames})});

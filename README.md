@@ -1,4 +1,4 @@
-# Raw Strength Calisthenics — Employee Audit Manager & Operations OS
+# Apex Operations — Employee Audit Manager & Operations OS
 
 ## Modern React SPA + FastAPI REST API Interface (v1.3.82)
 
@@ -62,7 +62,7 @@ The target Windows PC does not need Python installed. Use the setup installer fo
 
 - Web navigation uses a collapsible left sidebar. The Windows EXE retains its native navigation and controls; the parity ledger records missing web actions.
 - The Home page opens first with signed-in session details and concise instructions and examples for each section.
-- The interface follows the supplied purple dashboard and blue project-management references, with Raw Strength branding and the bundled DejaVu Sans font.
+- The interface follows the supplied purple dashboard and blue project-management references, with Apex Operations branding and the bundled DejaVu Sans font.
 - Forms use readable controls; report scope/options and PDF/DOCX/CSV exports are implemented, while side-by-side document layout and field parity remain under verification.
 - The first run against a fresh database requires creating an Admin username, password, and recovery question/answer before login. No default password is provided.
 

@@ -1,6 +1,6 @@
-#define MyAppName "Raw Strength Calisthenics - Employee Audit Manager"
+#define MyAppName "Apex Operations - Employee Audit Manager"
 #define MyAppVersion "1.3.82"
-#define MyAppPublisher "Raw Strength Calisthenics"
+#define MyAppPublisher "Apex Operations"
 #define MyAppExeName "RawStrengthEmployeeAuditManager.exe"
 
 [Setup]
@@ -11,7 +11,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://github.com/yalangisexter-ux/audit-report
 AppSupportURL=https://github.com/yalangisexter-ux/audit-report
 AppUpdatesURL=https://github.com/yalangisexter-ux/audit-report
-DefaultDirName={autopf}\Raw Strength Employee Audit Manager
+DefaultDirName={autopf}\Apex Operations Employee Audit Manager
 UsePreviousAppDir=yes
 DefaultGroupName={#MyAppName}
 OutputDir=installer-output
@@ -37,14 +37,14 @@ Source: "update_recovery.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "resolve_customer_data_dir.ps1"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Icons]
-Name: "{group}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
-Name: "{autodesktop}\Raw Strength Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
+Name: "{group}\Apex Operations Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
+Name: "{autodesktop}\Apex Operations Employee Audit Manager"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch Raw Strength Employee Audit Manager"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch Apex Operations Employee Audit Manager"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: FileExists(ExpandConstant('{app}\{#MyAppExeName}'))
 
 [Code]
 var
@@ -150,7 +150,7 @@ end;
 
 function InitializeSetup: Boolean;
 begin
-	InstallDirectory := ExpandConstant('{autopf}\Raw Strength Employee Audit Manager');
+	InstallDirectory := ExpandConstant('{autopf}\Apex Operations Employee Audit Manager');
 	DataDirectory := Trim(ExpandConstant('{param:DATA_DIR|}'));
 	PendingBackupDirectory := '';
 	StableBackupDirectory := '';

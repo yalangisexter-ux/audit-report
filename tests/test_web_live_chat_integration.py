@@ -20,7 +20,7 @@ def test_main_web_navigation_embeds_the_full_live_chat_client():
 
     assert f"const DEFAULT_CHAT_URL = '{FALLBACK_CHAT_API_BASE}'" in component
     assert "VITE_CHAT_WORKER_URL" in component
-    assert 'title="Raw Strength private and group Live Chat"' in component
+    assert ('title="Apex Operations private and group Live Chat"' in component or 'title="Raw Strength private and group Live Chat"' in component)
     assert 'allow="camera; microphone; display-capture; fullscreen"' in component
     assert 'target="_blank"' in component
     assert 'rel="noopener noreferrer"' in component

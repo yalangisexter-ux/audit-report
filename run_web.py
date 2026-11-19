@@ -1,4 +1,4 @@
-"""Web UI & REST API launcher for Raw Strength Calisthenics Employee Audit & Operations OS.
+"""Web UI & REST API launcher for Apex Operations Employee Audit & Operations OS.
 Launches the FastAPI backend and opens the modern React web application in the default browser.
 """
 import os
@@ -28,7 +28,7 @@ def open_browser_delayed(url: str, delay: float = 1.2):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Raw Strength Calisthenics Modern React Web UI")
+    parser = argparse.ArgumentParser(description="Apex Operations Modern React Web UI")
     parser.add_argument("--host", default="127.0.0.1", help="Host address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to (default: 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open the browser automatically")
@@ -44,7 +44,7 @@ def main():
 
     url = f"http://{args.host}:{args.port}"
     print("=" * 64)
-    print(f" Raw Strength Calisthenics - Modern React Interface v{APP_VERSION}")
+    print(f" Apex Operations - Modern React Interface v{APP_VERSION}")
     print(f" REST API + React SPA running at: {url}")
     print(f" Interactive API Docs (Swagger):  {url}/docs")
     print("=" * 64)
