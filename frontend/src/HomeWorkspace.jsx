@@ -14,7 +14,7 @@ const WORKSPACE_GUIDE = [
   ['💼', 'Business Tracking', 'Track catalog products, inventory stock, customer orders, gym memberships, and employee activities.', 'Example: Stock reorders · Order tracking · Membership sessions left.', 'business'],
   ['🏪', 'Store Directory', 'Maintain the directory of sports nutrition and supplement stores across India.', 'Review verified addresses, websites, and Google Maps links.', 'customers'],
   ['💬', 'Live Chat', 'Use team collaboration channels for shift announcements, audit coordination, and daily notes.', 'Private/group chat uses its separate membership sign-in.', 'chat'],
-  ['🛍️', 'Online Storefront', 'Public e-commerce storefront for USA–Raw Strength customer orders.', 'Browse catalog, place COD orders, and manage orders in Business Tracking.', 'storefront'],
+  ['🛍️', 'Online Storefront', 'Public e-commerce storefront for Apex Operations customer orders.', 'Browse catalog, place COD orders, and manage orders in Business Tracking.', 'storefront'],
   ['⚙️', 'Settings & Backup', 'Set working days, create or restore backups, manage account security, and export employees.', 'Create and verify a backup before restoring data or replacing a production build.', 'settings']
 ];
 

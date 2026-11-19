@@ -1,5 +1,5 @@
 /**
- * Raw Strength Calisthenics - Employee Audit Manager Mobile App
+ * Apex Operations - Employee Audit Manager Mobile App
  * Synchronized with Desktop Database via Cloudflare Encrypted Sync
  * Version 1.3.26
  */

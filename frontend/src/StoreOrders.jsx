@@ -80,7 +80,7 @@ export default function StoreOrders({ apiFetch, notify = () => {}, canManage = f
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-bold text-white">
-            <ClipboardList className="text-cyan-400" size={20} /> USA–Raw Strength Store Orders
+            <ClipboardList className="text-cyan-400" size={20} /> Apex Operations Store Orders
           </h2>
           <p className="mt-1 text-xs text-slate-400">
             Real-time customer orders placed via the online storefront. Orders are captured as COD requests and can be confirmed or updated below.

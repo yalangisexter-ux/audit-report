@@ -88,7 +88,7 @@ export default function LiveChat({ messages = [], user, onSendGeneral }) {
           </div>
           <iframe
             key={frameKey}
-            title="Raw Strength private and group Live Chat"
+            title="Apex Operations private and group Live Chat"
             src={CHAT_URL + '/'}
             loading="lazy"
             referrerPolicy="no-referrer"

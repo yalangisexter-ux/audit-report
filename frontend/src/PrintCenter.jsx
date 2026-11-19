@@ -24,7 +24,7 @@ export function generateExecutivePdf(text, meta = {}) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(255, 255, 255);
-    doc.text('RAW STRENGTH CALISTHENICS', margin + 12, y + 17);
+    doc.text('APEX OPERATIONS', margin + 12, y + 17);
     doc.setFontSize(8);
     doc.setTextColor(0, 174, 234);
     doc.text('EXECUTIVE AUDIT  •  OPERATIONS OS  •  v1.3.82', margin + 12, y + 30);
@@ -47,7 +47,7 @@ export function generateExecutivePdf(text, meta = {}) {
       continue;
     }
 
-    if (line.startsWith('RAW STRENGTH CALISTHENICS') || line.startsWith('Report date:') || line.startsWith('Scope:')) {
+    if (line.startsWith('APEX OPERATIONS') || line.startsWith('RAW STRENGTH CALISTHENICS') || line.startsWith('Report date:') || line.startsWith('Scope:')) {
       continue;
     }
 
@@ -139,7 +139,7 @@ export function generateExecutivePdf(text, meta = {}) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
-    doc.text('Raw Strength Calisthenics  •  Confidential Operations Audit', margin, pageHeight - margin + 16);
+    doc.text('Apex Operations  •  Confidential Operations Audit', margin, pageHeight - margin + 16);
     doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - margin + 16, { align: 'right' });
   }
 
@@ -400,7 +400,7 @@ export default function PrintCenter({ employees = [], archive = [], apiFetch, no
 
     const target = window.open('', '_blank');
     if (!target) return notify('Allow pop-ups to open the PDF preview.');
-    target.document.write('<!doctype html><html><head><title>Preparing Raw Strength PDF…</title></head><body style="font:14px Arial,sans-serif;padding:32px;color:#102B42">Preparing your branded PDF…</body></html>');
+    target.document.write('<!doctype html><html><head><title>Preparing Apex Operations PDF…</title></head><body style="font:14px Arial,sans-serif;padding:32px;color:#102B42">Preparing your branded PDF…</body></html>');
     target.document.close();
     setBusy(true);
     try {

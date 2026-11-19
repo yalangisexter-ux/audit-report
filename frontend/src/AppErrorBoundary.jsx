@@ -11,7 +11,7 @@ export default class AppErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error('Raw Strength workspace render failure:', error, info);
+    console.error('Apex Operations workspace render failure:', error, info);
   }
 
   render() {
@@ -24,7 +24,7 @@ export default class AppErrorBoundary extends React.Component {
         >
           <section className="w-full max-w-lg rounded-3xl border border-cyan-300/20 bg-slate-900/95 p-7 text-center shadow-2xl shadow-black/40">
             <div className="mb-4 text-sm font-black tracking-[0.24em] text-cyan-300">
-              RAW STRENGTH CALISTHENICS
+              APEX OPERATIONS
             </div>
             <h1 id="rsc-render-error-title" className="text-2xl font-black">
               Workspace could not be loaded

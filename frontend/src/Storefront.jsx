@@ -22,10 +22,10 @@ const money = value => new Intl.NumberFormat('en-IN', { style: 'currency', curre
 const FLAGSHIP_CATALOG = [
   {
     id: 101,
-    sku: 'USA-RS-RNG32',
-    name: 'USA Raw Strength Olympic Birch Gymnastic Rings (32mm)',
+    sku: 'APX-RNG32',
+    name: 'Apex Pro Olympic Birch Gymnastic Rings (32mm)',
     category: 'Rings & Straps',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Complete Set (Rings, Straps & Storage Bag)',
     unit: 'SET',
     price: 2499,
@@ -47,10 +47,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 102,
-    sku: 'USA-RS-BELT01',
-    name: 'USA Raw Strength Heavy-Duty Weighted Dip Belt',
+    sku: 'APX-BELT01',
+    name: 'Apex Heavy-Duty Weighted Dip Belt',
     category: 'Weights & Belts',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Belt with 36" Stainless Steel Chain',
     unit: 'PCS',
     price: 1799,
@@ -71,10 +71,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 103,
-    sku: 'USA-RS-PARAL',
+    sku: 'APX-PARAL',
     name: 'Pro Beech Wood Low Parallettes (Push-Up Bars)',
     category: 'Parallettes & Bars',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Pair in Protective Box',
     unit: 'PAIR',
     price: 2899,
@@ -95,10 +95,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 104,
-    sku: 'USA-RS-WHEY2K',
-    name: 'USA Raw Strength 100% Whey Isolate (2kg / 4.4 lbs)',
+    sku: 'APX-WHEY2K',
+    name: 'Apex 100% Whey Isolate (2kg / 4.4 lbs)',
     category: 'Nutrition & Supplements',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Jar (Gourmet Belgian Chocolate)',
     unit: 'JAR',
     price: 4299,
@@ -120,10 +120,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 105,
-    sku: 'USA-RS-CREA25',
+    sku: 'APX-CREA25',
     name: 'Micronized Creatine Monohydrate (250g Creapure® Grade)',
     category: 'Nutrition & Supplements',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Tub (100% Pure Unflavored)',
     unit: 'TUB',
     price: 1099,
@@ -144,10 +144,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 106,
-    sku: 'USA-RS-CHLK25',
+    sku: 'APX-CHLK25',
     name: 'Pure Magnesium Carbonate Liquid Chalk (250ml)',
     category: 'Chalk & Accessories',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Quick-Dry Squeeze Bottle (250ml)',
     unit: 'BOTTLE',
     price: 649,
@@ -168,10 +168,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 107,
-    sku: 'USA-RS-BND5PK',
+    sku: 'APX-BND5PK',
     name: 'Progressive Calisthenics Resistance Bands (Set of 5)',
     category: 'Rings & Straps',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: '5-Band Bundle with Carry Pouch',
     unit: 'SET',
     price: 1899,
@@ -191,10 +191,10 @@ const FLAGSHIP_CATALOG = [
   },
   {
     id: 108,
-    sku: 'USA-RS-VEST20',
+    sku: 'APX-VEST20',
     name: 'Adjustable Tactical Weighted Vest (20kg Heavy Duty)',
     category: 'Weights & Belts',
-    brand: 'USA Raw Strength',
+    brand: 'Apex Operations',
     package_type: 'Vest with 20x 1kg Solid Cast Iron Weights',
     unit: 'PCS',
     price: 5499,
@@ -250,15 +250,15 @@ const FAQS = [
   },
   {
     q: 'Can I track my order live on this storefront?',
-    a: 'Absolutely. Every order generates an official order code (e.g. USA-RS-20261113-A1F). Simply click "Track Order" in the top navigation, enter your order code, and view real-time status progression from Order Placed to Dispatched and Delivered.'
+    a: 'Absolutely. Every order generates an official order code (e.g. APX-20261113-A1F). Simply click "Track Order" in the top navigation, enter your order code, and view real-time status progression from Order Placed to Dispatched and Delivered.'
   },
   {
-    q: 'What is the warranty and return policy on Calisthenics equipment?',
-    a: 'All USA–Raw Strength rings, parallettes, dip belts, and vests carry an unconditional 1-year replacement warranty against manufacturing defects, wood splintering, buckle slippage, or strap failure. We also provide a 7-day hassle-free replacement for any transit damage.'
+    q: 'What is the warranty and return policy on equipment?',
+    a: 'All Apex Operations rings, parallettes, dip belts, and vests carry an unconditional 1-year replacement warranty against manufacturing defects, wood splintering, buckle slippage, or strap failure. We also provide a 7-day hassle-free replacement for any transit damage.'
   },
   {
     q: 'Are the sports nutrition supplements 100% authentic and lab-tested?',
-    a: 'Yes. Every batch of USA–Raw Strength Whey Isolate and Micronized Creatine is third-party lab tested for purity, heavy metals, and banned substances with FSSAI & Informed-Choice compliance. Each tub features an authentic scratch-and-verify QR authenticity code.'
+    a: 'Yes. Every batch of Apex Operations Whey Isolate and Micronized Creatine is third-party lab tested for purity, heavy metals, and banned substances with FSSAI & Informed-Choice compliance. Each tub features an authentic scratch-and-verify QR authenticity code.'
   }
 ];
 
@@ -271,7 +271,7 @@ export default function Storefront({ onBack }) {
   // Cart state persisted to localStorage
   const [cart, setCart] = useState(() => {
     try {
-      const saved = localStorage.getItem('rsc_storefront_cart');
+      const saved = localStorage.getItem('apx_storefront_cart');
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -280,7 +280,7 @@ export default function Storefront({ onBack }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem('rsc_storefront_cart', JSON.stringify(cart));
+      localStorage.setItem('apx_storefront_cart', JSON.stringify(cart));
     } catch {}
   }, [cart]);
 
@@ -351,8 +351,8 @@ export default function Storefront({ onBack }) {
                 rating: 4.8,
                 reviews_count: 25,
                 badge: 'Official Gear',
-                tagline: r.category || 'USA–Raw Strength Official Equipment',
-                description: r.name + ' - Certified Calisthenics Equipment & Sports Nutrition by USA–Raw Strength.',
+                tagline: r.category || 'Apex Operations Official Equipment',
+                description: r.name + ' - Certified Calisthenics Equipment & Sports Nutrition by Apex Operations.',
                 specs: [{ label: 'Unit', value: r.unit || 'PCS' }]
               });
             }
@@ -446,14 +446,14 @@ export default function Storefront({ onBack }) {
     setCouponError('');
     const code = couponInput.trim().toUpperCase();
     if (!code) return;
-    if (code === 'RAW10') {
-      setAppliedCoupon({ code: 'RAW10', type: 'pct', value: 10, label: '10% Instant Discount' });
+    if (code === 'APEX10' || code === 'APEX10') {
+      setAppliedCoupon({ code: 'APEX10', type: 'pct', value: 10, label: '10% Instant Discount' });
       setCouponInput('');
     } else if (code === 'FREESHIP') {
       setAppliedCoupon({ code: 'FREESHIP', type: 'freeship', value: 0, label: 'Free Express Shipping' });
       setCouponInput('');
     } else {
-      setCouponError('Invalid coupon code. Try RAW10 or FREESHIP');
+      setCouponError('Invalid coupon code. Try APEX10 or FREESHIP');
     }
   };
 
@@ -526,7 +526,7 @@ export default function Storefront({ onBack }) {
   const handleTrackLookup = async codeToLook => {
     const code = (codeToLook || trackingCode).trim();
     if (!code) {
-      setTrackingError('Please enter an order code (e.g. USA-RS-...)');
+      setTrackingError('Please enter an order code (e.g. APX-...)');
       return;
     }
     setTrackingLoading(true);
@@ -569,7 +569,7 @@ export default function Storefront({ onBack }) {
             </span>
             <span>Free Express Delivery across India on orders over ₹999</span>
             <span className="hidden md:inline text-white/30">•</span>
-            <span className="hidden md:inline">Use Code <strong className="text-cyan-300 font-bold">RAW10</strong> for 10% Off</span>
+            <span className="hidden md:inline">Use Code <strong className="text-cyan-300 font-bold">APEX10</strong> for 10% Off</span>
           </div>
           <div className="hidden sm:flex items-center gap-4 text-[11px] text-slate-400 shrink-0">
             <span className="inline-flex items-center gap-1"><ShieldCheck size={13} className="text-emerald-400" /> 100% Genuine Gear</span>
@@ -593,10 +593,10 @@ export default function Storefront({ onBack }) {
               </div>
               <div>
                 <strong className="block text-base font-black tracking-wider text-white group-hover:text-cyan-300 transition">
-                  USA–RAW STRENGTH
+                  APEX OPERATIONS
                 </strong>
                 <span className="text-[11px] text-slate-400 font-medium tracking-tight">
-                  United Sciences Alliance · Official Store
+                  Apex Operations · Official Store
                 </span>
               </div>
             </div>
@@ -687,7 +687,7 @@ export default function Storefront({ onBack }) {
                 </div>
                 <div>
                   <h2 className="text-xl sm:text-2xl font-black text-white">Order Confirmed!</h2>
-                  <p className="text-xs text-slate-400">Thank you for ordering with USA–Raw Strength Calisthenics.</p>
+                  <p className="text-xs text-slate-400">Thank you for ordering with Apex Operations.</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -812,7 +812,7 @@ export default function Storefront({ onBack }) {
               <span className="text-xs font-bold uppercase tracking-widest text-cyan-300">Live Logistics Gateway</span>
               <h1 className="text-2xl sm:text-4xl font-black text-white">Track Your Order</h1>
               <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                Enter your USA-RS order code to inspect real-time courier and packaging telemetry.
+                Enter your APX order code to inspect real-time courier and packaging telemetry.
               </p>
             </div>
             <button
@@ -834,7 +834,7 @@ export default function Storefront({ onBack }) {
                 <input
                   value={trackingCode}
                   onChange={e => setTrackingCode(e.target.value)}
-                  placeholder="Enter order code (e.g. USA-RS-20261113-A1F)"
+                  placeholder="Enter order code (e.g. APX-20261113-A1F)"
                   className="w-full rounded-xl border border-white/10 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white font-mono outline-none focus:border-cyan-400"
                 />
               </div>
@@ -852,10 +852,10 @@ export default function Storefront({ onBack }) {
               <span>Quick sample search:</span>
               <button
                 type="button"
-                onClick={() => { setTrackingCode('USA-RS-20261113-XYZ'); handleTrackLookup('USA-RS-20261113-XYZ'); }}
+                onClick={() => { setTrackingCode('APX-20261113-XYZ'); handleTrackLookup('APX-20261113-XYZ'); }}
                 className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-mono text-cyan-300 hover:bg-cyan-400/20"
               >
-                USA-RS-20261113-XYZ
+                APX-20261113-XYZ
               </button>
             </div>
           </div>
@@ -968,10 +968,10 @@ export default function Storefront({ onBack }) {
 
             <div className="relative z-10 max-w-3xl">
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300 mb-4">
-                <Sparkles size={13} /> OFFICIAL CALISTHENICS &amp; PERFORMANCE STORE · INDIA
+                <Sparkles size={13} /> OFFICIAL APEX PERFORMANCE &amp; OPERATIONS STORE · INDIA
               </div>
               <h1 className="text-3xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl leading-[1.1]">
-                Forge Unstoppable <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-300">Raw Strength</span>
+                Forge Unstoppable <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-300">Apex Operations</span>
               </h1>
               <p className="mt-4 text-sm sm:text-base leading-relaxed text-slate-300 max-w-2xl">
                 Competition-grade 32mm Baltic birch gymnastic rings, ergonomic beech parallettes, heavy-duty weighted dip belts, and ultra-filtered sports nutrition engineered for serious bodyweight athletes.
@@ -1215,7 +1215,7 @@ export default function Storefront({ onBack }) {
           <section id="reviews" className="mb-16 border-t border-white/10 pt-12">
             <div className="text-center max-w-2xl mx-auto mb-8">
               <span className="text-xs font-bold uppercase tracking-widest text-cyan-300">Verified Proof</span>
-              <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">Trusted by Elite Calisthenics Athletes</h2>
+              <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">Trusted by Industry-Leading Operations Teams</h2>
               <p className="text-xs sm:text-sm text-slate-400 mt-2">
                 Real feedback from competitive gymnasts, street workout athletes, and national strength coaches across India.
               </p>
@@ -1448,7 +1448,7 @@ export default function Storefront({ onBack }) {
                         <input
                           value={couponInput}
                           onChange={e => setCouponInput(e.target.value)}
-                          placeholder="Coupon code (e.g. RAW10)"
+                          placeholder="Coupon code (e.g. APEX10)"
                           className="flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-xs text-white uppercase outline-none focus:border-cyan-400"
                         />
                         <button
@@ -1524,7 +1524,7 @@ export default function Storefront({ onBack }) {
             </button>
 
             <div className="border-b border-white/10 pb-4 mb-6">
-              <span className="text-xs font-bold uppercase tracking-widest text-cyan-300">USA–Raw Strength Store</span>
+              <span className="text-xs font-bold uppercase tracking-widest text-cyan-300">Apex Operations Store</span>
               <h2 className="text-xl font-black text-white mt-1">Delivery &amp; Checkout</h2>
               <p className="text-xs text-slate-400 mt-0.5">Please provide your delivery address and preferred payment method.</p>
             </div>
@@ -1651,7 +1651,7 @@ export default function Storefront({ onBack }) {
                         <QrCode size={48} />
                       </div>
                       <div className="text-xs">
-                        <strong className="text-white block font-mono">rawstrength@upi</strong>
+                        <strong className="text-white block font-mono">apexoperations@upi</strong>
                         <p className="text-slate-400 text-[11px] mt-0.5">Scan with GPay, PhonePe, or Paytm.</p>
                         <p className="text-cyan-300 font-bold mt-1">Amount: {money(grandTotal)}</p>
                       </div>
@@ -1694,10 +1694,10 @@ export default function Storefront({ onBack }) {
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 pb-8 border-b border-white/10">
             <div>
               <div className="flex items-center gap-2 text-white font-black text-base">
-                <Store size={18} className="text-cyan-400" /> USA–RAW STRENGTH
+                <Store size={18} className="text-cyan-400" /> APEX OPERATIONS
               </div>
               <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                United Sciences Alliance · Professional Calisthenics &amp; Sports Nutrition Store. Engineered for competitive bodyweight athletes and strength enthusiasts across India.
+                Apex Operations · Enterprise Performance &amp; Operations Store. Engineered for competitive performance and elite teams across India.
               </p>
               <div className="mt-4 flex items-center gap-3 text-slate-400">
                 <span className="text-[11px]">ISO 9001:2015 · FSSAI Certified</span>
@@ -1719,7 +1719,7 @@ export default function Storefront({ onBack }) {
               <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3">Customer Support</h4>
               <ul className="space-y-2 text-xs text-slate-300">
                 <li className="flex items-center gap-2"><Phone size={13} className="text-cyan-400" /> +91 98765 43210</li>
-                <li className="flex items-center gap-2"><Mail size={13} className="text-cyan-400" /> support@rawstrength.in</li>
+                <li className="flex items-center gap-2"><Mail size={13} className="text-cyan-400" /> support@apexoperations.in</li>
                 <li className="flex items-center gap-2"><Clock size={13} className="text-cyan-400" /> Mon–Sat: 9:00 AM – 7:00 PM IST</li>
                 <li className="flex items-center gap-2"><MapPin size={13} className="text-cyan-400" /> Regional Hub, Bengaluru, India</li>
               </ul>
@@ -1749,7 +1749,7 @@ export default function Storefront({ onBack }) {
 
           <div className="pt-6 flex flex-wrap items-center justify-between gap-4 text-[11px] text-slate-500">
             <div>
-              © {new Date().getFullYear()} United Sciences Alliance · USA–Raw Strength Calisthenics. All rights reserved.
+              © {new Date().getFullYear()} Apex Operations · Apex Operations Calisthenics. All rights reserved.
             </div>
             <div className="flex items-center gap-3">
               <span>Pan-India COD</span>

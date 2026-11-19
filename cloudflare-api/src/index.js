@@ -199,7 +199,7 @@ export default {
         { id: 104, sku: "APX-WHEY2K", name: "Apex Operations 100% Whey Isolate (2kg / 4.4 lbs)", category: "Nutrition & Supplements", brand: "Apex Operations", package_type: "Jar (Belgian Chocolate)", unit: "JAR", price: 4299, available_stock: 50 },
         { id: 105, sku: "APX-CREA25", name: "Micronized Creatine Monohydrate (250g Creapure® Grade)", category: "Nutrition & Supplements", brand: "Apex Operations", package_type: "Tub (Unflavored)", unit: "TUB", price: 1099, available_stock: 80 },
         { id: 106, sku: "APX-CHLK25", name: "Pure Magnesium Carbonate Liquid Chalk (250ml)", category: "Chalk & Accessories", brand: "Apex Operations", package_type: "Squeeze Bottle", unit: "BOTTLE", price: 649, available_stock: 120 },
-        { id: 107, sku: "APX-BND5PK", name: "Progressive Calisthenics Resistance Bands (Set of 5)", category: "Rings & Straps", brand: "Apex Operations", package_type: "5-Band Bundle", unit: "SET", price: 1899, available_stock: 60 },
+        { id: 107, sku: "APX-BND5PK", name: "Progressive Resistance Bands (Set of 5)", category: "Rings & Straps", brand: "Apex Operations", package_type: "5-Band Bundle", unit: "SET", price: 1899, available_stock: 60 },
         { id: 108, sku: "APX-VEST20", name: "Adjustable Tactical Weighted Vest (20kg Heavy Duty)", category: "Weights & Belts", brand: "Apex Operations", package_type: "Vest + 20x 1kg Cast Weights", unit: "PCS", price: 5499, available_stock: 15 }
       ];
 

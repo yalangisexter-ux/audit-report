@@ -1,6 +1,6 @@
 {
-  "name": "Raw Strength Employee Audit Manager",
-  "short_name": "RawStrength",
+  "name": "Apex Operations Employee Audit Manager",
+  "short_name": "ApexAudit",
   "description": "Employee Audit Manager and Real-Time Business Tracking Mobile App",
   "start_url": "./index.html",
   "display": "standalone",
