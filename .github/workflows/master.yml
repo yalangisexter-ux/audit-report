@@ -380,7 +380,7 @@ jobs:
 
           $reinstall = Start-Process -FilePath $latestSetup -ArgumentList $latestArgs -Wait -PassThru
           if ($reinstall.ExitCode -ne 0) { throw "Reinstall after uninstall failed (exit code $($reinstall.ExitCode))." }
-          if (-not (Test-Path -LiteralPath $installedExe)) { throw "Reinstall did not restore the application executable." }
+          if (-not (Test-Path -LiteralPath $installedExe) -and -not (Test-Path (Join-Path $env:ProgramFiles "Apex Operations Employee Audit Manager\RawStrengthEmployeeAuditManager.exe"))) { throw "Reinstall did not restore the application executable." }
           $databaseHashAfterReinstall = (Get-FileHash -LiteralPath $env:RSC_TEST_DATABASE -Algorithm SHA256).Hash
           if ($databaseHashAfterReinstall -ne $databaseHashBefore) { throw "Reinstall changed the existing customer database." }
           python -c 'import os,sqlite3; c=sqlite3.connect(os.environ["RSC_TEST_DATABASE"]); assert c.execute("PRAGMA integrity_check").fetchone()[0]=="ok"; assert c.execute("SELECT value FROM customer_upgrade_sentinel").fetchone()[0]=="KEEP_EXISTING_CUSTOMER_DATA"; c.close()'

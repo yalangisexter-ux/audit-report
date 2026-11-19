@@ -11,7 +11,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL=https://github.com/yalangisexter-ux/audit-report
 AppSupportURL=https://github.com/yalangisexter-ux/audit-report
 AppUpdatesURL=https://github.com/yalangisexter-ux/audit-report
-DefaultDirName={autopf}\Apex Operations Employee Audit Manager
+DefaultDirName={autopf}\Raw Strength Employee Audit Manager
 UsePreviousAppDir=yes
 DefaultGroupName={#MyAppName}
 OutputDir=installer-output
@@ -150,7 +150,7 @@ end;
 
 function InitializeSetup: Boolean;
 begin
-	InstallDirectory := ExpandConstant('{autopf}\Apex Operations Employee Audit Manager');
+	InstallDirectory := ExpandConstant('{autopf}\Raw Strength Employee Audit Manager');
 	DataDirectory := Trim(ExpandConstant('{param:DATA_DIR|}'));
 	PendingBackupDirectory := '';
 	StableBackupDirectory := '';
