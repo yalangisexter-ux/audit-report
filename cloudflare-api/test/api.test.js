@@ -44,7 +44,8 @@ function makeDb(users = [], initialSettings = {}) {
                 return { success: true, meta: { changes: existed ? 1 : 0 } };
               }
               if (sql.startsWith("INSERT INTO settings")) {
-                settings.set(values[0], values[1]);
+                const key = sql.includes("sunday_workday") ? "sunday_workday" : "working_weekdays";
+                settings.set(key, values[0]);
                 return { success: true, meta: { changes: 1 } };
               }
               return { success: true, meta: { changes: 0 } };
