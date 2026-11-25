@@ -849,18 +849,20 @@ export default {
         const row=await first(env.DB,"SELECT value FROM settings WHERE key='working_weekdays'");
         const sundayRow=await first(env.DB,"SELECT value FROM settings WHERE key='sunday_workday'");
         const normDays = normalizeWeekdays(row?.value, sundayRow?.value);
-        return json({weekdays:normDays,sunday_configurable:true},200,headers);
+        return json({weekdays:normDays,sunday_configurable:false},200,headers);
       }
       if(path==="/api/settings/working-weekdays"&&request.method==="PUT"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
         const b=await readJson(request);
-        const days=[...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6))].sort();
+        const days=[...new Set((b.weekdays||[]).map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6))];
         if(!days.length)return json({detail:"Choose valid weekdays."},422,headers);
-        const sundayActive = days.includes(6);
+        if(!days.includes(6))days.push(6);
+        days.sort((a,b)=>a-b);
+        const sundayActive = true;
         await env.DB.prepare("INSERT INTO settings(key,value) VALUES('working_weekdays',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(days.join(",")).run();
         await env.DB.prepare("INSERT INTO settings(key,value) VALUES('sunday_workday',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(sundayActive ? "1" : "0").run();
         await audit(env.DB,user,"Working week changed",days.join(",") + (sundayActive ? " (Sunday: Enabled)" : " (Sunday: Disabled)"));
-        return json({success:true,weekdays:days,sunday_configurable:true},200,headers);
+        return json({success:true,weekdays:days,sunday_configurable:false},200,headers);
       }
       if(path==="/api/settings"&&request.method==="GET"){
         if(!ADMIN_ROLES.has(role(user)))return forbidden(headers);
@@ -1731,7 +1733,7 @@ async function ensureGroup(db,name,now){const n=String(name||"").trim();if(!n)re
 async function upsertTarget(db,employee,date,target,status,now){await db.prepare("INSERT INTO employee_targets(employee_id,target_date,target,target_status,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(employee_id,target_date) DO UPDATE SET target=excluded.target,target_status=excluded.target_status,updated_at=excluded.updated_at").bind(employee,date,String(target||""),String(status||""),now).run();}
 async function audit(db,user,action,details){await db.prepare("INSERT INTO audit_log(timestamp,action,details) VALUES(?,?,?)").bind(new Date().toISOString(),action,user.username+": "+details).run();}
 function taskValues(b){const status=String(b.status??"Not started").trim(),custom=b.custom_values??b.custom_fields??"",approval_status=String(b.approval_status||"Pending").trim();return {employee_id:Number(b.employee_id||1),task_date:String(b.task_date||new Date().toISOString().slice(0,10)),title:String(b.title||"").trim(),department:String(b.department||b.category||"").trim(),details:String(b.details||b.notes||"").trim(),due_time:String(b.due_time||"").trim(),priority:String(b.priority||"Normal").trim(),status,progress:Number(b.progress||0),proof_url:String(b.proof_url||"").trim(),proof_note:String(b.proof_note||"").trim(),submitted_at:String(b.submitted_at||""),manager_note:String(b.manager_note||b.next_action||"").trim(),expose_link:b.expose_link?1:0,target_qty:String(b.target_qty||"").trim(),actual_qty:String(b.actual_qty||"").trim(),next_action:String(b.next_action||b.manager_note||"").trim(),custom_values:typeof custom==="string"?custom:JSON.stringify(custom),approval_status};}
-function normalizeWeekdays(value, sundaySetting){let days;if(value===null||value===undefined||String(value).trim()===""){days=[0,1,2,3,4,6];}else{days=String(value).split(",").map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6);if(!days.length)days=[0,1,2,3,4,6];}if(sundaySetting!==undefined&&sundaySetting!==null&&String(sundaySetting).trim()==="0"){days=days.filter(d=>d!==6);}return [...new Set(days)].sort((x,y)=>x-y);}
+function normalizeWeekdays(value){let days;if(value===null||value===undefined||String(value).trim()===""){days=[0,1,2,3,4,6];}else{days=String(value).split(",").map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<=6);if(!days.length)days=[0,1,2,3,4,6];}days.push(6);return [...new Set(days)].sort((x,y)=>x-y);}
 function validDate(s){if(typeof s!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+"T00:00:00Z");return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===s;}
 function addDays(value,n=1){const d=new Date(value+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
 function validTime(s){return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);}

@@ -1,14 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
+import pagesWorker from "../../frontend/functions/api/worker/index.js";
 import { webcrypto, createHash, pbkdf2Sync } from "node:crypto";
 
 globalThis.crypto ||= webcrypto;
-function makeDb(users = []) {
+function makeDb(users = [], initialSettings = {}) {
   const sessions = new Map();
+  const settings = new Map(Object.entries(initialSettings));
   const statements = [];
   return {
-    sessions, statements,
+    sessions, settings, statements,
     prepare(sql) {
       const state = { sql, values: [] }; statements.push(state);
       return {
@@ -25,6 +27,10 @@ function makeDb(users = []) {
                 if (!s || s.expires_at <= now) return null;
                 return users.find(u => u.id === s.user_id && u.active === 1) || null;
               }
+              if (sql.includes("FROM settings")) {
+                const key = sql.includes("sunday_workday") ? "sunday_workday" : "working_weekdays";
+                return settings.has(key) ? { value: settings.get(key) } : null;
+              }
               if (sql.includes("COUNT(*)")) return { n: 0 };
               return null;
             },
@@ -36,6 +42,10 @@ function makeDb(users = []) {
               if (sql.startsWith("DELETE FROM web_auth_sessions")) {
                 const existed = sessions.delete(values[0]);
                 return { success: true, meta: { changes: existed ? 1 : 0 } };
+              }
+              if (sql.startsWith("INSERT INTO settings")) {
+                settings.set(values[0], values[1]);
+                return { success: true, meta: { changes: 1 } };
               }
               return { success: true, meta: { changes: 0 } };
             },
@@ -100,27 +110,31 @@ test("protected employee API rejects requests without a valid session", async ()
   assert.equal(response.status, 401);
 });
 
-test("working-weekday settings default to Sunday and allow the Admin to configure it", async () => {
-  const user = makeUser("Admin", "correct horse");
-  const DB = makeDb([user]);
-  const token = "test-admin-session";
-  DB.sessions.set(createHash("sha256").update(token).digest("hex"), {
-    user_id: user.id,
-    expires_at: new Date(Date.now() + 60000).toISOString(),
-  });
-  const env = { DB };
-  const get = await worker.fetch(request("/api/settings/working-weekdays", "GET", null, token), env);
-  assert.equal(get.status, 200);
-  const defaults = await get.json();
-  assert.deepEqual(defaults.weekdays, [0, 1, 2, 3, 4, 6]);
-  assert.equal(defaults.sunday_configurable, true);
+for (const [label, apiWorker] of [["standalone API Worker", worker], ["Pages native API Worker", pagesWorker]]) {
+  test(`${label} always includes Sunday for legacy Monday-Friday settings`, async () => {
+    const user = makeUser("Admin", "correct horse");
+    const DB = makeDb([user], { working_weekdays: "0,1,2,3,4", sunday_workday: "0" });
+    const token = "test-admin-session";
+    DB.sessions.set(createHash("sha256").update(token).digest("hex"), {
+      user_id: user.id,
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+    });
+    const env = { DB };
+    const get = await apiWorker.fetch(request("/api/settings/working-weekdays", "GET", null, token), env);
+    assert.equal(get.status, 200);
+    const defaults = await get.json();
+    assert.deepEqual(defaults.weekdays, [0, 1, 2, 3, 4, 6]);
+    assert.equal(defaults.sunday_configurable, false);
 
-  const save = await worker.fetch(request("/api/settings/working-weekdays", "PUT", { weekdays: [0, 1, 2, 3, 4] }, token), env);
-  assert.equal(save.status, 200);
-  const result = await save.json();
-  assert.deepEqual(result.weekdays, [0, 1, 2, 3, 4]);
-  assert.equal(result.sunday_configurable, true);
-});
+    const save = await apiWorker.fetch(request("/api/settings/working-weekdays", "PUT", { weekdays: [0, 1, 2, 3, 4] }, token), env);
+    assert.equal(save.status, 200);
+    const result = await save.json();
+    assert.deepEqual(result.weekdays, [0, 1, 2, 3, 4, 6]);
+    assert.equal(result.sunday_configurable, false);
+    assert.equal(DB.settings.get("working_weekdays"), "0,1,2,3,4,6");
+    assert.equal(DB.settings.get("sunday_workday"), "1");
+  });
+}
 
 test("attendance mark persists the selected date and blocks declared holidays", async () => {
   const user = makeUser("Admin", "correct horse");
